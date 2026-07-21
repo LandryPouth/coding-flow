@@ -903,5 +903,6 @@ module.exports = {
   ensureHarnessConfig,
   collectHarnessReport,
   parseTestsCommands,
+  getSecretPatterns,
   harnessCommand,
 };

@@ -66,12 +66,13 @@ function printHelp() {
   log(`Coding Flow
 
 Usage:
-  ai-flow init [--storage local] [--no-branch-per-epic] [--force] [--dry-run]
+  ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--force] [--dry-run]
   ai-flow upgrade [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
   ai-flow bootstrap --scan [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
+  ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
@@ -88,6 +89,7 @@ Commands:
   status       List epics, stories, and inferred story status.
   bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
   harness      Run security evidence checks (check), execute declared validation commands (verify), and write run evidence.
+  guard        PreToolUse hook: deny writes to blocked paths or secret content at the tool boundary (wired into .claude/settings.json by init).
   worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
   ship         Push the current branch and open/update one PR to the base (uses gh if available).
   commands     Show the easiest commands for this project.
@@ -113,6 +115,8 @@ Flags:
   --web      Open the pull request in the browser after ship.
   --storage  Storage backend recorded at init: local (default; github is reserved).
   --no-branch-per-epic  Disable the "one epic = one branch, never main" policy.
+  --no-guard  Skip wiring the PreToolUse guard hook into .claude/settings.json at init.
+  --input    Read the guard hook payload from a file instead of stdin (for testing).
 `);
 }
 

@@ -307,7 +307,7 @@ manuel. Canal de découverte (marketplace) = distribution quasi-gratuite.
 ## Checklist de reprise (état vivant)
 
 - [x] M1 identity — module + provenance dans verify/evidence + tests verts + commit
-- [ ] M2 guard — hook + settings template + wiring init + tests + commit
+- [x] M2 guard — hook + settings merge + wiring init + tests + commit
 - [ ] M3 ship évidence — injection PR idempotente + tests + commit
 - [ ] M4 audit ledger — append-only + export + --check + tests + commit
 - [ ] M5 trace — chaîne story↔commit↔PR↔évidence↔test + tests + commit

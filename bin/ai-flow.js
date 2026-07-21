@@ -17,9 +17,11 @@ const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { bootstrapScan } = require("./lib/bootstrap");
 const { harnessCommand } = require("./lib/harness");
+const { guardCommand } = require("./lib/guard");
 const { worktreeCommand } = require("./lib/worktree");
 const { shipCommand } = require("./lib/ship");
 const { ensureConfig, STORAGE_BACKENDS } = require("./lib/config");
+const { ensureHookSettings } = require("./lib/settings");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
 const { printCommands, printHelp } = require("./lib/commands");
@@ -93,6 +95,23 @@ if (command === "init") {
     log("Config: unchanged");
   }
 
+  // Câble le hook PreToolUse `guard` : garde-fou déterministe (secrets/chemins
+  // bloqués refusés AVANT écriture). Fusion non destructive dans settings.json.
+  if (!flags.has("--no-guard")) {
+    const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
+    const dry = flags.has("--dry-run");
+
+    if (hook.status === "created") {
+      log(dry ? "Guard hook: would create .claude/settings.json" : "Guard hook: wired in .claude/settings.json");
+    } else if (hook.status === "merged") {
+      log(dry ? "Guard hook: would merge into .claude/settings.json" : "Guard hook: merged into .claude/settings.json");
+    } else if (hook.status === "unchanged") {
+      log("Guard hook: already wired");
+    } else if (hook.status === "unparseable") {
+      log("Guard hook: skipped (.claude/settings.json is not valid JSON — wire `guard` manually)");
+    }
+  }
+
   printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });
 
   if (result.skipped.length > 0) {
@@ -129,6 +148,8 @@ if (command === "init") {
   });
 } else if (command === "harness") {
   harnessCommand({ commandArgs, getFlagValue, flags });
+} else if (command === "guard") {
+  guardCommand({ getFlagValue, flags });
 } else if (command === "worktree") {
   worktreeCommand({
     commandArgs,
