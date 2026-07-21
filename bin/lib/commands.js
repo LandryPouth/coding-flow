@@ -66,7 +66,7 @@ function printHelp() {
   log(`Coding Flow
 
 Usage:
-  ai-flow init [--force] [--dry-run]
+  ai-flow init [--storage local] [--no-branch-per-epic] [--force] [--dry-run]
   ai-flow upgrade [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
@@ -111,6 +111,8 @@ Flags:
   --title    Title for the pull request ship opens (default: derived from commits).
   --draft    Open ship's pull request as a draft.
   --web      Open the pull request in the browser after ship.
+  --storage  Storage backend recorded at init: local (default; github is reserved).
+  --no-branch-per-epic  Disable the "one epic = one branch, never main" policy.
 `);
 }
 

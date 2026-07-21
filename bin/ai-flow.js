@@ -19,6 +19,7 @@ const { bootstrapScan } = require("./lib/bootstrap");
 const { harnessCommand } = require("./lib/harness");
 const { worktreeCommand } = require("./lib/worktree");
 const { shipCommand } = require("./lib/ship");
+const { ensureConfig, STORAGE_BACKENDS } = require("./lib/config");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
 const { printCommands, printHelp } = require("./lib/commands");
@@ -45,6 +46,19 @@ function getFlagValue(name, fallback = null) {
 }
 
 if (command === "init") {
+  const storage = getFlagValue("--storage", "local");
+
+  if (!STORAGE_BACKENDS.includes(storage)) {
+    fail(`unknown --storage "${storage}". Use one of: ${STORAGE_BACKENDS.join(", ")}.`);
+  }
+
+  if (storage !== "local") {
+    fail(
+      `storage backend "${storage}" n'est pas encore disponible. ` +
+        "Seul \"local\" est supporté pour l'instant (voir docs/plans/storage-backends.md).",
+    );
+  }
+
   const result = copyTemplates({
     force: flags.has("--force"),
     dryRun: flags.has("--dry-run"),
@@ -52,6 +66,11 @@ if (command === "init") {
   const convenience = ensureConvenienceFiles({
     force: flags.has("--force"),
     dryRun: flags.has("--dry-run"),
+  });
+  const configResult = ensureConfig(cwd, {
+    dryRun: flags.has("--dry-run"),
+    storage,
+    branchPerEpic: !flags.has("--no-branch-per-epic"),
   });
 
   if (flags.has("--dry-run")) {
@@ -67,6 +86,13 @@ if (command === "init") {
     log(flags.has("--dry-run") ? "Harness config: would create" : "Harness config: created");
   }
 
+  if (configResult.created) {
+    const suffix = `storage=${configResult.config.storage}, branchPerEpic=${configResult.config.branchPerEpic}`;
+    log(`${flags.has("--dry-run") ? "Config: would create" : "Config: created"} (${suffix})`);
+  } else {
+    log("Config: unchanged");
+  }
+
   printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });
 
   if (result.skipped.length > 0) {
@@ -74,6 +100,9 @@ if (command === "init") {
     log("Use --force to overwrite them.");
   }
 } else if (command === "upgrade") {
+  // Migration : les projets installes avant le seam de stockage n'ont pas de
+  // config.json. On la cree avec les defauts sans jamais ecraser un choix existant.
+  ensureConfig(cwd, { dryRun: flags.has("--dry-run") });
   upgrade({
     force: flags.has("--force"),
     dryRun: flags.has("--dry-run"),
