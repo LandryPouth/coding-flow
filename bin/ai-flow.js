@@ -18,6 +18,7 @@ const { status } = require("./lib/status");
 const { bootstrapScan } = require("./lib/bootstrap");
 const { harnessCommand } = require("./lib/harness");
 const { guardCommand } = require("./lib/guard");
+const { auditCommand } = require("./lib/audit");
 const { worktreeCommand } = require("./lib/worktree");
 const { shipCommand } = require("./lib/ship");
 const { ensureConfig, STORAGE_BACKENDS } = require("./lib/config");
@@ -150,6 +151,8 @@ if (command === "init") {
   harnessCommand({ commandArgs, getFlagValue, flags });
 } else if (command === "guard") {
   guardCommand({ getFlagValue, flags });
+} else if (command === "audit") {
+  auditCommand({ getFlagValue, flags });
 } else if (command === "worktree") {
   worktreeCommand({
     commandArgs,

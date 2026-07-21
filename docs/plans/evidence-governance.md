@@ -309,7 +309,7 @@ manuel. Canal de découverte (marketplace) = distribution quasi-gratuite.
 - [x] M1 identity — module + provenance dans verify/evidence + tests verts + commit
 - [x] M2 guard — hook + settings merge + wiring init + tests + commit
 - [x] M3 ship évidence — injection PR idempotente + tests + commit
-- [ ] M4 audit ledger — append-only + export + --check + tests + commit
+- [x] M4 audit ledger — append-only + export + --check + tests + commit
 - [ ] M5 trace — chaîne story↔commit↔PR↔évidence↔test + tests + commit
 - [ ] M6 CI clean-room — template workflow + scaffolder + tests + commit
 - [ ] M7 plugin — manifeste + marketplace + README + commit
