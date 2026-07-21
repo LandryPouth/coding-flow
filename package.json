@@ -1,10 +1,18 @@
 {
-  "name": "coding-flow",
+  "name": "@landrypouth/coding-flow",
   "version": "0.1.0",
   "description": "AI-native engineering workflow templates for Claude Code and Codex.",
   "license": "MIT",
   "author": "Landry Pouth",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LandryPouth/codin-flow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LandryPouth/codin-flow/issues"
+  },
+  "homepage": "https://github.com/LandryPouth/codin-flow#readme",
   "bin": {
     "coding-flow": "./bin/ai-flow.js",
     "ai-flow": "./bin/ai-flow.js"
@@ -15,9 +23,14 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "test": "node --test",
     "check": "node bin/ai-flow.js doctor",
-    "pack:dry": "npm pack --dry-run"
+    "pack:dry": "npm pack --dry-run",
+    "prepublishOnly": "npm test"
   },
   "engines": {
     "node": ">=18"
