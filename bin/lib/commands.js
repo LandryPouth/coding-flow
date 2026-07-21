@@ -74,6 +74,7 @@ Usage:
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
   ai-flow audit [--export] [--check] [--since iso] [--json] [--dry-run]
+  ai-flow trace [--story path] [--json]
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
@@ -92,6 +93,7 @@ Commands:
   harness      Run security evidence checks (check), execute declared validation commands (verify), and write run evidence.
   guard        PreToolUse hook: deny writes to blocked paths or secret content at the tool boundary (wired into .claude/settings.json by init).
   audit        Aggregate evidence runs into an append-only ledger; --export writes docs/AUDIT.md, --check gates on the latest verify.
+  trace        Show the story -> commits -> PR -> evidence -> tests chain and flag missing links.
   worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
   ship         Push the current branch and open/update one PR to the base (uses gh if available).
   commands     Show the easiest commands for this project.
