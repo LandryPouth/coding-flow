@@ -313,7 +313,8 @@ manuel. Canal de découverte (marketplace) = distribution quasi-gratuite.
 - [x] M5 trace — chaîne story↔commit↔PR↔évidence↔test + tests + commit
 - [x] M6 CI clean-room — template workflow + scaffolder + tests + commit
 - [x] M7 plugin — manifeste + marketplace + README + commit
-- [ ] Docs/README finaux + bump version + publication npm
+- [x] Docs/README finaux + bump version (0.2.0)
+- [ ] Publication npm (bloquée sur l'auth npm côté user)
 
 > Règle de reprise : ne jamais démarrer un module sans que le précédent soit
 > **vert + committé**. Si le contexte sature, s'arrêter sur un module committé et

@@ -787,6 +787,13 @@ Quand une stop condition se déclenche, l'agent doit expliquer :
 | `ai-flow harness check --story <path>` | Vérifier secrets, fichiers sensibles et preuves minimales de story. |
 | `ai-flow harness verify --story <path>` | Exécuter les commandes de validation déclarées, capturer verbatim le résultat, échouer si ça casse. |
 | `ai-flow harness evidence --story <path>` | Écrire une preuve légère dans `.coding-flow/runs/`. |
+| `ai-flow guard` | Hook PreToolUse : refuse (exit 2) l'écriture d'un chemin bloqué ou d'un secret, **avant** le disque. Câblé dans `.claude/settings.json` par `init` (`--no-guard` pour ignorer). |
+| `ai-flow audit` | Agréger les preuves en un registre append-only (`.coding-flow/ledger.jsonl`). |
+| `ai-flow audit --export` | Écrire `docs/AUDIT.md` (artefact de conformité) depuis le registre. |
+| `ai-flow audit --check` | Gate CI : échoue si la dernière `verify` par story est rouge ou absente. |
+| `ai-flow trace [--story <path>]` | Chaîne story → commits → PR → évidence → tests, avec les maillons manquants. |
+| `ai-flow ci init` | Scaffolder un workflow GitHub Actions clean-room (`verify` + `audit --check`) dans le projet. |
+| `ai-flow plugin sync\|check` | Synchroniser/vérifier les skills du plugin natif vs les templates. |
 | `ai-flow commands` | Afficher les commandes les plus utiles pour le projet courant. |
 | `ai-flow uninstall` | Retirer Coding Flow du projet en conservant `epics/`. |
 | `ai-flow list-skills` | Afficher les skills disponibles. |
@@ -895,6 +902,56 @@ La testabilité niveau production (exécution non-maquillable, preuve négative,
 discipline anti AI-slop) est détaillée dans `docs/plans/testability.md`. Le seam
 de stockage, la config projet et la policy de branche : `docs/plans/storage-backends.md`.
 
+## Couche Évidence & Gouvernance
+
+Au-delà du scan, coding-flow transforme chaque garde-fou *conseillé* en garde-fou
+*exécuté*, attaché à une **identité**, agrégé en un **registre exportable**, et
+vérifié **hors de la main de l'agent**. C'est la réponse au vrai blocage de
+l'adoption entreprise : la gouvernance, l'audit et la conformité — pas la qualité
+du code. Détails et conception : `docs/plans/evidence-governance.md`.
+
+- **`guard` — enforcement déterministe.** Un hook PreToolUse refuse l'écriture
+  d'un `.env`, d'une clé, ou d'un contenu contenant un secret **avant** que ça
+  n'atteigne le disque (exit 2). Un secret ne *peut* pas fuiter, on n'espère plus
+  qu'il ne fuie pas. Câblé dans `.claude/settings.json` par `init`, il voyage
+  aussi avec le plugin natif.
+- **Provenance.** Chaque preuve `verify`/`evidence` embarque `provenance` : commit,
+  branche, auteur git, état *dirty* — « asserted ≠ proven ; anonymous ≠ auditable ».
+- **`audit` — registre append-only.** Agrège `.coding-flow/runs/*` en
+  `.coding-flow/ledger.jsonl` (jamais réécrit). `--export` produit `docs/AUDIT.md`
+  (l'artefact de conformité) ; `--check` est le gate « pas de merge sans dernière
+  `verify` verte ».
+- **`ship` attache la preuve.** Le résumé du dernier `verify` (résultat +
+  provenance + table par commande) est injecté dans le corps de la PR, entre
+  marqueurs idempotents — le reviewer voit « ça passe, prouvé » sans effort.
+- **`trace` — bout en bout.** story → commits → PR → évidence → tests, en signalant
+  chaque maillon manquant. « Prouve que cette exigence est livrée *et* vérifiée. »
+- **`ci init` — gate clean-room.** Un workflow GitHub Actions rejoue `verify` +
+  `audit --check` sur un checkout neuf : le signal non-jouable, sur compute gratuit.
+
+```bash
+ai-flow audit --export          # docs/AUDIT.md depuis le registre
+ai-flow audit --check           # gate CI : dernière verify verte par story
+ai-flow trace --story epics/epic-01/story-01-01
+ai-flow ci init                 # workflow clean-room dans le projet
+```
+
+## Installer Comme Plugin Natif Claude Code
+
+En plus du canal npm/`npx` (CLI + CI), coding-flow s'installe comme **plugin natif**
+Claude Code — les skills et le hook `guard` arrivent sans `ai-flow init`, et se
+mettent à jour via le marketplace (fin du re-ship manuel à chaque release) :
+
+```text
+/plugin marketplace add LandryPouth/codin-flow
+/plugin install coding-flow
+```
+
+Les deux canaux coexistent : npm pour le CLI et la CI, le plugin pour l'intégration
+IDE. Les skills du plugin (`skills/`) sont matérialisés depuis les templates par
+`ai-flow plugin sync` et gardés sans dérive par `ai-flow plugin check` (vérifié en
+test/CI).
+
 ## Développement Local Du Package
 
 ### Architecture Du CLI (`bin/`)
@@ -909,6 +966,13 @@ modules cohésifs dans `bin/lib/`. Aucune dépendance runtime.
 | `lib/config.js` | Config projet `.coding-flow/config.json` (storage, branchPerEpic, validation) |
 | `lib/templates.js` | Installation, manifeste, scripts, cheat-sheet, `upgrade` |
 | `lib/harness.js` | Sécurité, scan secrets/fichiers sensibles, preflight/check/`verify`/evidence |
+| `lib/identity.js` | Provenance git (commit, branche, auteur, dirty, PR) injectée dans chaque preuve |
+| `lib/guard.js` | Hook PreToolUse déterministe (refus chemins bloqués / secrets avant écriture) |
+| `lib/settings.js` | Fusion idempotente du hook `guard` dans `.claude/settings.json` |
+| `lib/audit.js` | Registre append-only, export `docs/AUDIT.md`, gate `--check` |
+| `lib/trace.js` | Chaîne story → commits → PR → évidence → tests |
+| `lib/ci.js` | Scaffolder du workflow CI clean-room (`verify` + `audit`) |
+| `lib/plugin.js` | Canal plugin natif : sync/check des skills vs templates |
 | `lib/storage/` | Seam de stockage : `local` (défaut) et `github` (différé) |
 | `lib/policy.js` | Policy « une epic = une branche, jamais main » |
 | `lib/doctor.js` | Diagnostic + `--fix` |
@@ -917,7 +981,7 @@ modules cohésifs dans `bin/lib/`. Aucune dépendance runtime.
 | `lib/bootstrap.js` | Scan brownfield |
 | `lib/uninstall.js` | Désinstallation préservant `epics/` |
 | `lib/worktree.js` | Worktrees Git optionnels (travail parallèle) |
-| `lib/ship.js` | `ship` : push de la branche courante + une PR |
+| `lib/ship.js` | `ship` : push de la branche courante + une PR, avec la preuve `verify` attachée |
 | `lib/commands.js` | `help` et `commands` |
 
 Le graphe de dépendances est acyclique : `context → util → config → harness →
@@ -931,6 +995,7 @@ templates → {doctor, uninstall, skills, commands}` ; `status` s'appuie sur
 | [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md) | Git worktree & bare : concept, partage `node_modules`/`.env`, quand ne pas l'utiliser |
 | [`docs/plans/parallel-mode.md`](docs/plans/parallel-mode.md) | Mode parallèle (`worktree`), lien story, `ship` |
 | [`docs/plans/storage-backends.md`](docs/plans/storage-backends.md) | Seam de stockage, config projet, policy de branche |
+| [`docs/plans/evidence-governance.md`](docs/plans/evidence-governance.md) | Couche évidence & gouvernance : guard, provenance, audit, trace, CI, plugin |
 | [`docs/plans/testability.md`](docs/plans/testability.md) | Testabilité niveau production : `verify`, preuve négative, anti-slop |
 | [`docs/plans/testing-and-ci.md`](docs/plans/testing-and-ci.md) | Suite de tests et CI du package |
 
