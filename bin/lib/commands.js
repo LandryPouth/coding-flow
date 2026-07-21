@@ -76,7 +76,7 @@ Usage:
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
-  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--dry-run]
+  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--dry-run]
   ai-flow commands [--json]
   ai-flow uninstall [--dry-run] [--force] [--json]
   ai-flow list-skills [--json]
@@ -113,6 +113,7 @@ Flags:
   --title    Title for the pull request ship opens (default: derived from commits).
   --draft    Open ship's pull request as a draft.
   --web      Open the pull request in the browser after ship.
+  --no-evidence  Do not attach the latest verify evidence to ship's PR body.
   --storage  Storage backend recorded at init: local (default; github is reserved).
   --no-branch-per-epic  Disable the "one epic = one branch, never main" policy.
   --no-guard  Skip wiring the PreToolUse guard hook into .claude/settings.json at init.
