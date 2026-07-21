@@ -987,20 +987,20 @@ npm link
 ## Publication npm (optionnelle)
 
 La distribution GitHub ci-dessus suffit à utiliser l'outil. Pour publier une
-version épinglée et installable via `npx @landrypouth/coding-flow`, le package est
-prêt : nom scopé `@landrypouth/coding-flow`, `publishConfig.access = public`, et un
+version épinglée et installable via `npx @landry_pouth/coding-flow`, le package est
+prêt : nom scopé `@landry_pouth/coding-flow`, `publishConfig.access = public`, et un
 garde-fou `prepublishOnly` qui lance la suite de tests avant toute publication.
 
 ```bash
-npm login                 # une fois, sur le compte @landrypouth
+npm login                 # une fois, sur le compte @landry_pouth
 npm test                  # doit être vert (aussi exécuté par prepublishOnly)
-npm publish               # publie @landrypouth/coding-flow@<version>
+npm publish               # publie @landry_pouth/coding-flow@<version>
 ```
 
 > Le nom court `coding-flow` est déjà pris par un tiers sur npm ; le scope
-> `@landrypouth/*` garantit un nom libre et sans collision future.
+> `@landry_pouth/*` garantit un nom libre et sans collision future.
 
-Après publication, l'install devient `npx @landrypouth/coding-flow init` (les
+Après publication, l'install devient `npx @landry_pouth/coding-flow init` (les
 commandes `github:LandryPouth/codin-flow` restent valides en parallèle).
 
 ## Roadmap
