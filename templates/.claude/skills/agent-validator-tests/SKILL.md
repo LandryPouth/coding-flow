@@ -52,6 +52,22 @@ Use `tests-check` for quick adequacy checks after ordinary stories. Use this ski
 - Critical journey has no E2E/manual validation evidence.
 - Tests assert implementation details and miss user-visible behavior.
 - Validation commands failed without documented cause.
+- A critical test cannot fail: the behavior was broken and the test still passed (no negative evidence).
+- Tautological, over-mocked, or implementation-mirroring tests stand in for real behavior coverage.
+- Nondeterministic or order-dependent tests are treated as reliable signal.
+
+## Independent Execution
+
+Run the suite yourself; never trust a reported result. When `ai-flow` is available,
+run `ai-flow harness verify --story <dir>` and read the captured evidence file. Treat
+any unrun command as an evidence gap. Judge from the story and the diff, not from the
+implementer's reasoning.
+
+## Negative Evidence
+
+For each critical criterion, require a demonstrated red→green: breaking the behavior
+makes the guarding test fail for the expected reason, restoring it makes it pass.
+Absent that proof, treat the coverage as unproven regardless of a green run.
 
 ## Output
 

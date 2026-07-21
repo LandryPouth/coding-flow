@@ -23,6 +23,7 @@ This workflow includes the normal story pipeline plus security validation. Use i
 When `ai-flow` is available in the project, use the Security Evidence Harness automatically. This is part of the secure workflow, not an optional manual step.
 
 - Before orchestration, run `ai-flow harness preflight --story <story-dir>` and use the output to confirm risk, stop conditions, and required checks.
+- After implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail; a failed command is a blocker, not something to work around.
 - After implementation, validators, and `implementation-notes.md`, run `ai-flow harness check --story <story-dir>`.
 - If the harness check fails, fix the issue or report a blocking security risk before finalizing.
 - At the end, run `ai-flow harness evidence --story <story-dir>` to write `.coding-flow/runs/*-evidence.json`.

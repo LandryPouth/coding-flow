@@ -26,6 +26,7 @@ When `ai-flow` is available in the project, use the Security Evidence Harness au
 
 - Before choosing or finalizing the mode, run `ai-flow harness preflight --story <story-dir>` when a story directory exists.
 - Use the preflight risk and required checks to confirm FAST, STANDARD, STRICT, or escalation to `$run-story-secure`.
+- After implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail; fix real failures rather than weakening tests.
 - After implementation, validation, and notes, run `ai-flow harness check --story <story-dir>` for story work.
 - At the end of STANDARD or STRICT story work, run `ai-flow harness evidence --story <story-dir>` to write `.coding-flow/runs/*-evidence.json`.
 - If no story directory exists, use `ai-flow harness check --quick` after the change for a lightweight secret/sensitive-file pass.

@@ -45,6 +45,16 @@ For each acceptance criterion, identify:
 - Strength: strong, weak, brittle, excessive.
 - Required action: none, add test, adjust test, run command, document manual validation.
 
+## Anti-Slop Quick Flags
+
+- A test that cannot fail (tautology, or re-asserting a mock you just set).
+- Assertions on implementation details instead of observable behavior.
+- Over-mocking that fakes the behavior under test.
+- Flaky or order-dependent tests.
+
+When `ai-flow` is available, run `ai-flow harness verify --story <dir>` and treat its
+captured pass/fail as the source of truth, not a self-reported "tests pass".
+
 ## Output
 
 ```md
