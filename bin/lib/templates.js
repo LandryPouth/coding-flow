@@ -1,0 +1,586 @@
+"use strict";
+
+// Installation et mise a jour des fichiers de template : copie, manifeste
+// (empreintes pour detecter les edits locaux), scripts npm de commodite,
+// cheat-sheet, et miroir .agents/skills.
+
+const fs = require("fs");
+const path = require("path");
+
+const { templatesRoot, cwd, packageJson, githubNpxCommand, flowScripts } = require("./context");
+const {
+  log,
+  fail,
+  toPortable,
+  walkFiles,
+  hashFile,
+  readJson,
+  writeJson,
+} = require("./util");
+const { ensureHarnessConfig } = require("./harness");
+
+function ensureTemplatesExist() {
+  if (!fs.existsSync(templatesRoot)) {
+    fail(`templates directory not found: ${templatesRoot}`);
+  }
+}
+
+function listTemplateSkillNames() {
+  const skillsRoot = path.join(templatesRoot, ".claude", "skills");
+
+  if (!fs.existsSync(skillsRoot)) {
+    return [];
+  }
+
+  return fs.readdirSync(skillsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function getTemplateSpecs() {
+  ensureTemplatesExist();
+
+  const specs = [];
+
+  for (const source of walkFiles(templatesRoot)) {
+    const relativePath = toPortable(path.relative(templatesRoot, source));
+    specs.push({
+      source,
+      sourceRel: relativePath,
+      targetRel: relativePath,
+      kind: "template",
+    });
+  }
+
+  const skillsRoot = path.join(templatesRoot, ".claude", "skills");
+
+  for (const source of walkFiles(skillsRoot)) {
+    const relativeSkillPath = toPortable(path.relative(skillsRoot, source));
+    specs.push({
+      source,
+      sourceRel: `.claude/skills/${relativeSkillPath}`,
+      targetRel: `.agents/skills/${relativeSkillPath}`,
+      kind: "mirror",
+    });
+  }
+
+  return specs.sort((a, b) => a.targetRel.localeCompare(b.targetRel));
+}
+
+function manifestPath() {
+  return path.join(cwd, ".coding-flow", "manifest.json");
+}
+
+function commandsPath() {
+  return path.join(cwd, ".coding-flow", "COMMANDS.md");
+}
+
+function readManifest() {
+  return readJson(manifestPath(), {
+    version: null,
+    installedAt: null,
+    updatedAt: null,
+    packageJsonCreated: false,
+    files: {},
+  });
+}
+
+function buildManifestFromCurrentTargets(previous = null) {
+  const files = {};
+
+  for (const spec of getTemplateSpecs()) {
+    const target = path.join(cwd, spec.targetRel);
+    const sourceHash = hashFile(spec.source);
+
+    if (fs.existsSync(target) && hashFile(target) === sourceHash) {
+      files[spec.targetRel] = {
+        source: spec.sourceRel,
+        hash: sourceHash,
+        kind: spec.kind,
+      };
+    } else if (previous && previous.files && previous.files[spec.targetRel]) {
+      files[spec.targetRel] = previous.files[spec.targetRel];
+    }
+  }
+
+  return {
+    package: packageJson.name,
+    version: packageJson.version,
+    installedAt: previous && previous.installedAt ? previous.installedAt : new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    packageJsonCreated: Boolean(previous && previous.packageJsonCreated),
+    files,
+  };
+}
+
+function writeManifest(previous = null) {
+  writeJson(manifestPath(), buildManifestFromCurrentTargets(previous));
+}
+
+function markGeneratedPackageJson() {
+  const manifest = readManifest();
+  manifest.packageJsonCreated = true;
+  manifest.updatedAt = new Date().toISOString();
+  writeJson(manifestPath(), manifest);
+}
+
+function detectProjectPackageJson() {
+  const packagePath = path.join(cwd, "package.json");
+
+  if (!fs.existsSync(packagePath)) {
+    return {
+      exists: false,
+      path: packagePath,
+      packageJson: null,
+    };
+  }
+
+  return {
+    exists: true,
+    path: packagePath,
+    packageJson: readJson(packagePath, null),
+  };
+}
+
+function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
+  const dailyCommands = hasPackageJson
+    ? [
+        "npm run flow:doctor   # check the installation",
+        "npm run flow:check    # strict docs + harness quick check",
+        "npm run flow:skills   # list available skills",
+        "npm run flow:status   # show epics and stories",
+        "npm run flow:harness  # quick security evidence check",
+      ]
+    : [
+        `${githubNpxCommand} doctor`,
+        `${githubNpxCommand} doctor --strict`,
+        `${githubNpxCommand} list-skills`,
+        `${githubNpxCommand} status`,
+        `${githubNpxCommand} harness check --quick`,
+      ];
+  const setupCommands = hasPackageJson
+    ? [
+        `${githubNpxCommand} init`,
+        "npm run flow:upgrade",
+        "npm run flow:fix",
+        "npm run flow:uninstall -- --dry-run",
+        "npm run flow:uninstall",
+      ]
+    : [
+        `${githubNpxCommand} init`,
+        `${githubNpxCommand} upgrade`,
+        `${githubNpxCommand} doctor --fix`,
+        `${githubNpxCommand} uninstall --dry-run`,
+        `${githubNpxCommand} uninstall`,
+      ];
+
+  return [
+    "# Coding Flow Commands",
+    "",
+    "This file is generated by `ai-flow init` as a local command cheat sheet.",
+    "",
+    "## Daily Commands",
+    "",
+    "```bash",
+    ...dailyCommands,
+    "```",
+    "",
+    "## Setup And Updates",
+    "",
+    "```bash",
+    ...setupCommands,
+    "```",
+    "",
+    "## Direct GitHub Commands",
+    "",
+    "Use these when the project has no `package.json` scripts yet or when you want the explicit source:",
+    "",
+    "```bash",
+    `${githubNpxCommand} init`,
+    `${githubNpxCommand} doctor`,
+    `${githubNpxCommand} list-skills`,
+    `${githubNpxCommand} status`,
+    `${githubNpxCommand} commands`,
+    "```",
+    "",
+    "## Agent Workflow Prompts",
+    "",
+    "```txt",
+    "Use $quick-story for a tiny isolated change.",
+    "Use $run-story in STANDARD mode for story-01-01.",
+    "Use $run-story-secure for auth, permissions, admin, secrets, payments, uploads, or sensitive data.",
+    "```",
+    "",
+  ].join("\n");
+}
+
+function ensureCommandsFile({ dryRun = false, force = false, hasPackageJson = false } = {}) {
+  const target = commandsPath();
+  const content = buildCommandsMarkdown({ hasPackageJson });
+  const exists = fs.existsSync(target);
+
+  if (exists && !force) {
+    return "skipped";
+  }
+
+  if (!dryRun) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content);
+  }
+
+  return exists ? "updated" : "created";
+}
+
+function ensurePackageScripts({ dryRun = false } = {}) {
+  const detected = detectProjectPackageJson();
+  const result = {
+    packageJsonExists: detected.exists,
+    packageJsonCreated: !detected.exists,
+    added: [],
+    existing: [],
+    conflicts: [],
+  };
+
+  if (detected.exists && (!detected.packageJson || typeof detected.packageJson !== "object")) {
+    result.conflicts.push({
+      script: null,
+      current: null,
+      expected: null,
+      reason: "package.json could not be parsed",
+    });
+    return result;
+  }
+
+  const packageJsonTarget = detected.exists ? detected.packageJson : { private: true };
+  const scripts = packageJsonTarget.scripts && typeof packageJsonTarget.scripts === "object"
+    ? packageJsonTarget.scripts
+    : {};
+
+  for (const [name, value] of Object.entries(flowScripts)) {
+    if (!scripts[name]) {
+      scripts[name] = value;
+      result.added.push(name);
+    } else if (scripts[name] === value) {
+      result.existing.push(name);
+    } else {
+      result.conflicts.push({
+        script: name,
+        current: scripts[name],
+        expected: value,
+        reason: "existing script uses a different command",
+      });
+    }
+  }
+
+  if (result.added.length > 0 && !dryRun) {
+    packageJsonTarget.scripts = scripts;
+    writeJson(detected.path, packageJsonTarget);
+
+    if (result.packageJsonCreated) {
+      markGeneratedPackageJson();
+    }
+  }
+
+  return result;
+}
+
+function removePackageScripts({ dryRun = false, removeGeneratedPackageJson = false } = {}) {
+  const detected = detectProjectPackageJson();
+  const result = {
+    packageJsonExists: detected.exists,
+    packageJsonRemoved: false,
+    removed: [],
+    skipped: [],
+    conflicts: [],
+  };
+
+  if (!detected.exists) {
+    return result;
+  }
+
+  if (!detected.packageJson || typeof detected.packageJson !== "object") {
+    result.conflicts.push({
+      script: null,
+      reason: "package.json could not be parsed",
+    });
+    return result;
+  }
+
+  const packageJsonTarget = detected.packageJson;
+  const scripts = packageJsonTarget.scripts && typeof packageJsonTarget.scripts === "object"
+    ? packageJsonTarget.scripts
+    : {};
+
+  for (const [name, value] of Object.entries(flowScripts)) {
+    if (!scripts[name]) {
+      continue;
+    }
+
+    if (scripts[name] === value) {
+      delete scripts[name];
+      result.removed.push(name);
+    } else {
+      result.skipped.push(name);
+    }
+  }
+
+  if (Object.keys(scripts).length > 0) {
+    packageJsonTarget.scripts = scripts;
+  } else {
+    delete packageJsonTarget.scripts;
+  }
+
+  const shouldRemovePackageJson = removeGeneratedPackageJson && isGeneratedPackageJsonRemovable(packageJsonTarget);
+
+  if (shouldRemovePackageJson) {
+    result.packageJsonRemoved = true;
+
+    if (!dryRun) {
+      fs.unlinkSync(detected.path);
+    }
+  } else if (result.removed.length > 0 && !dryRun) {
+    writeJson(detected.path, packageJsonTarget);
+  }
+
+  return result;
+}
+
+function isGeneratedPackageJsonRemovable(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const keys = Object.keys(value);
+  return keys.length === 1 && value.private === true;
+}
+
+function ensureConvenienceFiles({ dryRun = false, force = false } = {}) {
+  const scripts = ensurePackageScripts({ dryRun });
+  const commandsFile = ensureCommandsFile({
+    dryRun,
+    force,
+    hasPackageJson: scripts.packageJsonExists || scripts.packageJsonCreated,
+  });
+
+  return {
+    scripts,
+    commandsFile,
+  };
+}
+
+function printConvenienceSummary(convenience, { dryRun = false } = {}) {
+  if (convenience.scripts.packageJsonCreated) {
+    log(`Package.json: ${dryRun ? "would create" : "created"} at project root`);
+  }
+
+  if (convenience.scripts.packageJsonExists || convenience.scripts.packageJsonCreated) {
+    if (convenience.scripts.added.length > 0) {
+      log(`Package scripts: ${dryRun ? "would add" : "added"} ${convenience.scripts.added.join(", ")}`);
+    } else {
+      log("Package scripts: unchanged");
+    }
+
+    if (convenience.scripts.conflicts.length > 0) {
+      log(`Package script conflicts: ${convenience.scripts.conflicts.length}`);
+      for (const conflict of convenience.scripts.conflicts) {
+        if (conflict.script) {
+          log(`- ${conflict.script}: kept existing script`);
+        } else {
+          log(`- ${conflict.reason}`);
+        }
+      }
+    }
+  }
+
+  if (convenience.commandsFile === "created") {
+    log(dryRun ? "Commands cheat sheet: would create" : "Commands cheat sheet: created");
+  } else if (convenience.commandsFile === "updated") {
+    log(dryRun ? "Commands cheat sheet: would update" : "Commands cheat sheet: updated");
+  } else {
+    log("Commands cheat sheet: unchanged");
+  }
+}
+
+function copyFileToTarget(source, targetRel, { force = false, dryRun = false } = {}) {
+  const target = path.join(cwd, targetRel);
+  const targetExists = fs.existsSync(target);
+
+  if (targetExists && !force) {
+    return "skipped";
+  }
+
+  if (!dryRun) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(source, target);
+  }
+
+  return targetExists ? "updated" : "copied";
+}
+
+function copyTemplates({ force = false, dryRun = false } = {}) {
+  ensureTemplatesExist();
+
+  const copied = [];
+  const updated = [];
+  const skipped = [];
+
+  for (const spec of getTemplateSpecs()) {
+    const result = copyFileToTarget(spec.source, spec.targetRel, { force, dryRun });
+
+    if (result === "copied") {
+      copied.push(spec.targetRel);
+    } else if (result === "updated") {
+      updated.push(spec.targetRel);
+    } else {
+      skipped.push(spec.targetRel);
+    }
+  }
+
+  if (!dryRun) {
+    writeManifest(force ? null : readManifest());
+  }
+
+  const harnessCreated = ensureHarnessConfig({ dryRun });
+
+  return { copied, updated, skipped, harnessCreated };
+}
+
+function syncAgentsMirror({ dryRun = false } = {}) {
+  const copied = [];
+  const updated = [];
+  const sourceRoot = path.join(cwd, ".claude", "skills");
+
+  if (!fs.existsSync(sourceRoot)) {
+    return { copied, updated };
+  }
+
+  for (const source of walkFiles(sourceRoot)) {
+    const relativeSkillPath = toPortable(path.relative(sourceRoot, source));
+    const targetRel = `.agents/skills/${relativeSkillPath}`;
+    const target = path.join(cwd, targetRel);
+    const targetExists = fs.existsSync(target);
+
+    if (!targetExists || hashFile(source) !== hashFile(target)) {
+      if (targetExists) {
+        updated.push(targetRel);
+      } else {
+        copied.push(targetRel);
+      }
+
+      if (!dryRun) {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(source, target);
+      }
+    }
+  }
+
+  return { copied, updated };
+}
+
+function upgrade({ force = false, dryRun = false, json = false } = {}) {
+  const previous = readManifest();
+  const copied = [];
+  const updated = [];
+  const skippedModified = [];
+  const unchanged = [];
+
+  for (const spec of getTemplateSpecs().filter((item) => item.kind === "template")) {
+    const target = path.join(cwd, spec.targetRel);
+    const sourceHash = hashFile(spec.source);
+    const manifestEntry = previous.files ? previous.files[spec.targetRel] : null;
+
+    if (!fs.existsSync(target)) {
+      copied.push(spec.targetRel);
+
+      if (!dryRun) {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(spec.source, target);
+      }
+
+      continue;
+    }
+
+    const currentHash = hashFile(target);
+
+    if (currentHash === sourceHash) {
+      unchanged.push(spec.targetRel);
+      continue;
+    }
+
+    const safeToOverwrite = force || (manifestEntry && manifestEntry.hash === currentHash);
+
+    if (safeToOverwrite) {
+      updated.push(spec.targetRel);
+
+      if (!dryRun) {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(spec.source, target);
+      }
+    } else {
+      skippedModified.push(spec.targetRel);
+    }
+  }
+
+  const mirror = dryRun
+    ? { copied: [], updated: [] }
+    : syncAgentsMirror({ dryRun: false });
+
+  if (!dryRun) {
+    writeManifest(previous);
+  }
+
+  const convenience = ensureConvenienceFiles({ dryRun, force: false });
+
+  const result = {
+    copied,
+    updated: [...updated, ...mirror.updated],
+    skippedModified,
+    unchanged,
+    mirrorCopied: mirror.copied,
+    convenience,
+  };
+
+  if (json) {
+    log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (dryRun) {
+    log("Upgrade dry run complete.");
+  } else {
+    log("Coding Flow upgraded.");
+  }
+
+  log(`Copied: ${result.copied.length}`);
+  log(`Updated: ${result.updated.length}`);
+  log(`Unchanged: ${result.unchanged.length}`);
+  printConvenienceSummary(result.convenience, { dryRun });
+
+  if (result.skippedModified.length > 0) {
+    log(`Skipped modified files: ${result.skippedModified.length}`);
+    log("Use --force only if you intentionally want to overwrite local edits.");
+    for (const file of result.skippedModified) {
+      log(`- ${file}`);
+    }
+  }
+}
+
+module.exports = {
+  ensureTemplatesExist,
+  listTemplateSkillNames,
+  getTemplateSpecs,
+  manifestPath,
+  commandsPath,
+  readManifest,
+  writeManifest,
+  detectProjectPackageJson,
+  copyTemplates,
+  syncAgentsMirror,
+  ensureConvenienceFiles,
+  printConvenienceSummary,
+  ensurePackageScripts,
+  removePackageScripts,
+  isGeneratedPackageJsonRemovable,
+  upgrade,
+};
