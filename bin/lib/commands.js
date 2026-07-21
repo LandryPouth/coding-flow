@@ -75,6 +75,7 @@ Usage:
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
+  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--dry-run]
   ai-flow commands [--json]
   ai-flow uninstall [--dry-run] [--force] [--json]
   ai-flow list-skills [--json]
@@ -88,6 +89,7 @@ Commands:
   bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
   harness      Run security evidence checks and write lightweight run evidence.
   worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
+  ship         Push the current branch and open/update one PR to the base (uses gh if available).
   commands     Show the easiest commands for this project.
   uninstall    Remove Coding Flow files and scripts while preserving epics/stories.
   list-skills  List available workflow skills.
@@ -105,6 +107,10 @@ Flags:
   --from     Base ref for a new worktree branch (default: HEAD).
   --deps     Dependency handling for a worktree: install, link, or skip.
   --story    Story dir for a worktree; names the branch after it (status links them).
+  --base     Target branch for ship's pull request (default: origin's default branch).
+  --title    Title for the pull request ship opens (default: derived from commits).
+  --draft    Open ship's pull request as a draft.
+  --web      Open the pull request in the browser after ship.
 `);
 }
 

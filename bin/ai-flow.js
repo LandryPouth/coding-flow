@@ -18,6 +18,7 @@ const { status } = require("./lib/status");
 const { bootstrapScan } = require("./lib/bootstrap");
 const { harnessCommand } = require("./lib/harness");
 const { worktreeCommand } = require("./lib/worktree");
+const { shipCommand } = require("./lib/ship");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
 const { printCommands, printHelp } = require("./lib/commands");
@@ -109,6 +110,8 @@ if (command === "init") {
     force: flags.has("--force"),
     cwd,
   });
+} else if (command === "ship") {
+  shipCommand({ getFlagValue, flags, cwd });
 } else if (command === "commands") {
   printCommands({
     json: flags.has("--json"),
