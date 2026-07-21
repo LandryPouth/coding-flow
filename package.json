@@ -16,6 +16,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "test": "node --test",
     "check": "node bin/ai-flow.js doctor",
     "pack:dry": "npm pack --dry-run"
   },
