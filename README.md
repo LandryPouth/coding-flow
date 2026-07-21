@@ -992,6 +992,7 @@ templates → {doctor, uninstall, skills, commands}` ; `status` s'appuie sur
 
 | Doc | Sujet |
 | --- | --- |
+| [`docs/sdd-vs-plugins.md`](docs/sdd-vs-plugins.md) | De l'ancien SDD au plugin + couche de gouvernance : ce qui a changé, pourquoi, et ce qui reste pour publier |
 | [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md) | Git worktree & bare : concept, partage `node_modules`/`.env`, quand ne pas l'utiliser |
 | [`docs/plans/parallel-mode.md`](docs/plans/parallel-mode.md) | Mode parallèle (`worktree`), lien story, `ship` |
 | [`docs/plans/storage-backends.md`](docs/plans/storage-backends.md) | Seam de stockage, config projet, policy de branche |
