@@ -5,8 +5,7 @@ Ce document décrit le support **optionnel** des worktrees Git ajouté à la CLI
 branche) sans quitter le zéro-dépendance du projet.
 
 Pour comprendre les worktrees et le layout *bare* en profondeur (concept,
-pièges, conversion d'un repo existant), voir la fiche générale
-`~/.claude/docs/git-worktree-bare.md`.
+pièges, conversion d'un repo existant), voir `docs/git-worktree-bare.md`.
 
 ## Pourquoi c'est opt-in, et pas dans `init`
 

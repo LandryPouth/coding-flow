@@ -769,7 +769,8 @@ Quand une stop condition se déclenche, l'agent doit expliquer :
 
 | Commande | Usage |
 | --- | --- |
-| `ai-flow init` | Installer les templates, le manifest et la policy harness dans un projet. |
+| `ai-flow init` | Installer les templates, le manifest, la config projet (`.coding-flow/config.json`) et la policy harness. |
+| `ai-flow init --no-branch-per-epic` | Désactiver la policy « une epic = une branche, jamais main ». |
 | `ai-flow upgrade` | Mettre à jour les fichiers installés sans écraser les modifications locales. |
 | `ai-flow doctor` | Vérifier les fichiers, skills, frontmatter, manifest et miroir `.agents`. |
 | `ai-flow doctor --fix` | Restaurer les fichiers manquants et resynchroniser `.agents/skills`. |
@@ -784,6 +785,7 @@ Quand une stop condition se déclenche, l'agent doit expliquer :
 | `ai-flow harness init` | Créer une policy `.coding-flow/harness.json` explicite. |
 | `ai-flow harness preflight --story <path>` | Estimer le risque d'une story et lister les checks requis. |
 | `ai-flow harness check --story <path>` | Vérifier secrets, fichiers sensibles et preuves minimales de story. |
+| `ai-flow harness verify --story <path>` | Exécuter les commandes de validation déclarées, capturer verbatim le résultat, échouer si ça casse. |
 | `ai-flow harness evidence --story <path>` | Écrire une preuve légère dans `.coding-flow/runs/`. |
 | `ai-flow commands` | Afficher les commandes les plus utiles pour le projet courant. |
 | `ai-flow uninstall` | Retirer Coding Flow du projet en conservant `epics/`. |
@@ -852,6 +854,7 @@ Il répond à trois questions :
 
 - **Est-ce que la story est risquée ?** `preflight` lit les fichiers de story et recommande `FAST`, `STANDARD` ou `STRICT`.
 - **Est-ce que le repo contient des signaux dangereux ?** `check` cherche des secrets évidents, fichiers sensibles et preuves manquantes.
+- **Est-ce que les tests passent vraiment ?** `verify` exécute les commandes de validation déclarées (config `validation.commands`, bloc `## Commands` de `tests.md`, ou scripts `package.json`), capture verbatim leurs codes de sortie dans `.coding-flow/runs/*-verify.json`, et échoue si l'une casse ou si aucune n'a tourné. La preuve est exécutée par la machine, pas affirmée par l'agent.
 - **Qu'est-ce qui prouve que la story a été traitée correctement ?** `evidence` écrit un résumé JSON avec risque, fichiers changés, checks requis, résultat du harness et rollback notes.
 
 Ce que le harness vérifie aujourd'hui :
@@ -884,8 +887,13 @@ Exemples manuels :
 ```bash
 ai-flow harness preflight --story epics/epic-01/story-01-01
 ai-flow harness check --story epics/epic-01/story-01-01
+ai-flow harness verify --story epics/epic-01/story-01-01
 ai-flow harness evidence --story epics/epic-01/story-01-01
 ```
+
+La testabilité niveau production (exécution non-maquillable, preuve négative,
+discipline anti AI-slop) est détaillée dans `docs/plans/testability.md`. Le seam
+de stockage, la config projet et la policy de branche : `docs/plans/storage-backends.md`.
 
 ## Développement Local Du Package
 
@@ -898,19 +906,33 @@ modules cohésifs dans `bin/lib/`. Aucune dépendance runtime.
 | --- | --- |
 | `lib/context.js` | Constantes partagées (racine, templates, cwd, scripts npm) |
 | `lib/util.js` | Helpers génériques (I/O, hash, JSON, chemins, glob, marche de fichiers) |
+| `lib/config.js` | Config projet `.coding-flow/config.json` (storage, branchPerEpic, validation) |
 | `lib/templates.js` | Installation, manifeste, scripts, cheat-sheet, `upgrade` |
-| `lib/harness.js` | Politique de sécurité, scan secrets/fichiers sensibles, preflight/evidence |
+| `lib/harness.js` | Sécurité, scan secrets/fichiers sensibles, preflight/check/`verify`/evidence |
+| `lib/storage/` | Seam de stockage : `local` (défaut) et `github` (différé) |
+| `lib/policy.js` | Policy « une epic = une branche, jamais main » |
 | `lib/doctor.js` | Diagnostic + `--fix` |
 | `lib/skills.js` | `list-skills` |
-| `lib/status.js` | État des epics/stories |
+| `lib/status.js` | État des epics/stories (via le seam) + worktrees + policy |
 | `lib/bootstrap.js` | Scan brownfield |
 | `lib/uninstall.js` | Désinstallation préservant `epics/` |
 | `lib/worktree.js` | Worktrees Git optionnels (travail parallèle) |
+| `lib/ship.js` | `ship` : push de la branche courante + une PR |
 | `lib/commands.js` | `help` et `commands` |
 
-Le graphe de dépendances est acyclique : `context → util → harness → templates →
-{doctor, uninstall, skills, commands}` ; `status`/`bootstrap` n'utilisent que
-`context`/`util`.
+Le graphe de dépendances est acyclique : `context → util → config → harness →
+templates → {doctor, uninstall, skills, commands}` ; `status` s'appuie sur
+`config`/`storage`/`policy`/`worktree`.
+
+### Documentation interne (`docs/`)
+
+| Doc | Sujet |
+| --- | --- |
+| [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md) | Git worktree & bare : concept, partage `node_modules`/`.env`, quand ne pas l'utiliser |
+| [`docs/plans/parallel-mode.md`](docs/plans/parallel-mode.md) | Mode parallèle (`worktree`), lien story, `ship` |
+| [`docs/plans/storage-backends.md`](docs/plans/storage-backends.md) | Seam de stockage, config projet, policy de branche |
+| [`docs/plans/testability.md`](docs/plans/testability.md) | Testabilité niveau production : `verify`, preuve négative, anti-slop |
+| [`docs/plans/testing-and-ci.md`](docs/plans/testing-and-ci.md) | Suite de tests et CI du package |
 
 Depuis ce repository :
 
