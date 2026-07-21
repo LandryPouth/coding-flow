@@ -22,7 +22,7 @@ monde, alors que la plupart des epics sont **séquentiels**. Donc :
 
 | Commande | Effet |
 | --- | --- |
-| `ai-flow worktree add <nom> [--from <ref>] [--deps install\|link\|skip] [--dry-run]` | Crée le worktree + la branche, câble `.env` et les dépendances |
+| `ai-flow worktree add <nom> [--from <ref>] [--deps install\|link\|skip] [--story <dir>] [--dry-run]` | Crée le worktree + la branche, câble `.env` et les dépendances |
 | `ai-flow worktree list` | Liste les worktrees, leur branche et l'état des liens `.env` |
 | `ai-flow worktree remove <nom> [--force] [--dry-run]` | Retire le worktree, **conserve la branche** |
 
@@ -35,6 +35,24 @@ monde, alors que la plupart des epics sont **séquentiels**. Donc :
 - Symlinke `.env` / `.env.local` s'ils existent à la racine (aucune copie).
 - Gère `node_modules` selon la **stratégie de dépendances** (ci-dessous).
 - `--dry-run` affiche le plan sans rien écrire.
+
+### Lien worktree ↔ story (`--story`)
+
+- `add --story epics/<epic>/story-<nn>-<mm>-<slug>` nomme la branche/worktree
+  d'après le **dossier de la story** au lieu d'un nom arbitraire.
+- La correspondance est **sans état** : `ai-flow status` relie une story à son
+  worktree quand le nom de branche est égal au nom du dossier de la story. Aucun
+  fichier de mapping à maintenir, rien à resynchroniser.
+- `--story` valide que le dossier existe dans le dépôt et suggère le
+  `harness preflight --story <dir>` correspondant, ce qui referme la boucle
+  worktree → story → harnais.
+- Conflit `<nom>` + `--story` avec des noms différents ⇒ erreur explicite (on
+  choisit l'un ou l'autre).
+
+`ai-flow status` affiche désormais, en plus des epics/stories, le worktree lié à
+chaque story (`→ wt: ...`) et une section « Worktrees (hors story) » pour les
+branches libres : un tableau de bord du travail parallèle en cours. En JSON, le
+bloc `worktrees` expose `active` (dans un dépôt git ou non) et `loose`.
 
 ### `remove`
 
@@ -68,9 +86,11 @@ veut les mêmes secrets partout.
 
 | Fichier | Rôle |
 | --- | --- |
-| `bin/lib/worktree.js` | Implémentation (zéro-dep, shell-out vers `git`) |
+| `bin/lib/worktree.js` | Implémentation (zéro-dep, shell-out vers `git`) + `collectWorktrees` non-fatal + `--story` |
+| `bin/lib/status.js` | Lit les worktrees et relie chaque story à sa branche |
 | `bin/ai-flow.js` | Branchement du dispatcher + aide |
 | `test/worktree.test.js` | 8 tests de contrat (vrai dépôt git en temp) |
+| `test/status.test.js` | 5 tests du lien worktree ↔ story |
 
 Le module vit sous `bin/` pour rester dans le champ `files` du `package.json`,
 donc embarqué par `npx`. `test/` n'y est pas : les tests protègent le dev sans

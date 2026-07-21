@@ -140,7 +140,7 @@ ai-flow commands
 ai-flow upgrade
 ai-flow status
 ai-flow list-skills
-ai-flow worktree add <name>   # optionnel : travail parallèle (voir Guides Pratiques)
+ai-flow worktree add <name>|--story <dir>   # optionnel : travail parallèle (voir Guides Pratiques)
 ```
 
 Par défaut, les fichiers existants ne sont pas écrasés. Pour réinstaller volontairement les templates :
@@ -590,6 +590,18 @@ ai-flow status --json
 
 Le statut est lu depuis `implementation-notes.md` quand une section `## Status` existe. Sinon, le CLI l'infère depuis les notes.
 
+Quand un worktree travaille sur une story (voir `--story` ci-dessous), `status`
+affiche la correspondance et liste les worktrees actifs — un tableau de bord du
+travail parallèle en cours :
+
+```text
+epic-03-kyc
+- story-03-01-kyc-upload                     in-progress   → wt: ../repo-worktrees/story-03-01-kyc-upload
+
+Worktrees (hors story):
+- feat/spike-cache                           ../repo-worktrees/feat-spike-cache
+```
+
 ### Travail Parallèle Sur Plusieurs Features (Worktrees)
 
 Support **optionnel** pour développer plusieurs features réellement indépendantes
@@ -597,7 +609,8 @@ en parallèle, chacune dans son propre dossier de travail (worktree Git), sans
 quitter le zéro-dépendance :
 
 ```bash
-ai-flow worktree add feat/payments        # crée le worktree + la branche, câble .env / deps
+ai-flow worktree add feat/payments         # crée le worktree + la branche, câble .env / deps
+ai-flow worktree add --story epics/epic-03-kyc/story-03-01-kyc-upload  # branche nommée d'après la story
 ai-flow worktree list                      # liste les worktrees et l'état des liens
 ai-flow worktree remove feat/payments      # retire le worktree, conserve la branche
 ```
@@ -605,7 +618,12 @@ ai-flow worktree remove feat/payments      # retire le worktree, conserve la bra
 `add` place le worktree dans `../<repo>-worktrees/<nom>`, symlinke `.env`/`.env.local`,
 et gère `node_modules` selon le package manager détecté (symlink pour npm simple,
 `install` recommandé pour un monorepo pnpm/yarn). Options : `--from <ref>`,
-`--deps install|link|skip`, `--dry-run`.
+`--deps install|link|skip`, `--story <dir>`, `--dry-run`.
+
+Avec `--story <dir>`, la branche/worktree prend le nom du dossier de la story.
+La correspondance worktree↔story est alors **sans état** : `ai-flow status` la
+retrouve en comparant le nom de branche au dossier de la story — aucun fichier de
+mapping à maintenir. `add --story` suggère aussi le `harness preflight` de la story.
 
 Le worktree n'est utile que pour du travail **parallélisable** (zones de code
 disjointes, socle stable). Pour une liste de changements séquentiels/dépendants,
@@ -730,7 +748,11 @@ Quand une stop condition se déclenche, l'agent doit expliquer :
 | `ai-flow doctor` | Vérifier les fichiers, skills, frontmatter, manifest et miroir `.agents`. |
 | `ai-flow doctor --fix` | Restaurer les fichiers manquants et resynchroniser `.agents/skills`. |
 | `ai-flow doctor --strict` | Ajouter des checks plus stricts sur manifest et docs. |
-| `ai-flow status` | Lister les epics/stories et leur statut inféré. |
+| `ai-flow status` | Lister les epics/stories, leur statut inféré et le worktree lié. |
+| `ai-flow worktree add <name>` | Créer un worktree + branche pour du travail parallèle (câble `.env`/deps). |
+| `ai-flow worktree add --story <dir>` | Idem, en nommant la branche d'après la story (liée dans `status`). |
+| `ai-flow worktree list` | Lister les worktrees et l'état des liens `.env`. |
+| `ai-flow worktree remove <name>` | Retirer un worktree, conserver la branche. |
 | `ai-flow bootstrap --scan` | Scanner un codebase existant et écrire `docs/bootstrap-scan.md`. |
 | `ai-flow harness init` | Créer une policy `.coding-flow/harness.json` explicite. |
 | `ai-flow harness preflight --story <path>` | Estimer le risque d'une story et lister les checks requis. |
@@ -933,7 +955,26 @@ npm install
 npm link
 ```
 
-`npm pack --dry-run` reste utile pour vérifier ce qui serait embarqué dans une archive, mais le projet n'a pas besoin d'être publié sur npm pour être utilisé par les utilisateurs.
+`npm pack --dry-run` reste utile pour vérifier ce qui serait embarqué dans une archive.
+
+## Publication npm (optionnelle)
+
+La distribution GitHub ci-dessus suffit à utiliser l'outil. Pour publier une
+version épinglée et installable via `npx @landrypouth/coding-flow`, le package est
+prêt : nom scopé `@landrypouth/coding-flow`, `publishConfig.access = public`, et un
+garde-fou `prepublishOnly` qui lance la suite de tests avant toute publication.
+
+```bash
+npm login                 # une fois, sur le compte @landrypouth
+npm test                  # doit être vert (aussi exécuté par prepublishOnly)
+npm publish               # publie @landrypouth/coding-flow@<version>
+```
+
+> Le nom court `coding-flow` est déjà pris par un tiers sur npm ; le scope
+> `@landrypouth/*` garantit un nom libre et sans collision future.
+
+Après publication, l'install devient `npx @landrypouth/coding-flow init` (les
+commandes `github:LandryPouth/codin-flow` restent valides en parallèle).
 
 ## Roadmap
 

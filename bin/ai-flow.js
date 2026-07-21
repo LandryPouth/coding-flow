@@ -104,6 +104,7 @@ if (command === "init") {
     commandArgs,
     from: getFlagValue("--from", null),
     deps: getFlagValue("--deps", null),
+    story: getFlagValue("--story", null),
     dryRun: flags.has("--dry-run"),
     force: flags.has("--force"),
     cwd,

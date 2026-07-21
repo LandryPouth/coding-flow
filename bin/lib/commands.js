@@ -72,7 +72,7 @@ Usage:
   ai-flow status [--json]
   ai-flow bootstrap --scan [--dry-run] [--json]
   ai-flow harness init|preflight|check|evidence [--story path] [--json]
-  ai-flow worktree add <name> [--from ref] [--deps install|link|skip] [--dry-run]
+  ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
   ai-flow commands [--json]
@@ -104,6 +104,7 @@ Flags:
   --json     Print machine-readable JSON where supported.
   --from     Base ref for a new worktree branch (default: HEAD).
   --deps     Dependency handling for a worktree: install, link, or skip.
+  --story    Story dir for a worktree; names the branch after it (status links them).
 `);
 }
 

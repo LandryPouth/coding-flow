@@ -73,6 +73,26 @@ function worktreeDest(root, name) {
   return path.join(path.dirname(root), `${base}-worktrees`, name);
 }
 
+// Resout un chemin de story (epics/<epic>/story-...) passe via --story. La
+// branche/worktree prend le nom du dossier de la story, ce qui rend la
+// correspondance worktree<->story deterministe et sans etat (cf. status).
+function resolveStory(root, cwd, story) {
+  const full = path.resolve(cwd, story);
+  const rel = path.relative(root, full);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    fail(`la story doit etre dans le depot : ${story}`);
+  }
+  if (!isDir(full)) {
+    fail(`story introuvable (un dossier est attendu) : ${story}`);
+  }
+  return {
+    fullPath: full,
+    name: path.basename(full),
+    rel: rel.split(path.sep).join("/"),
+    hasStoryFile: fs.existsSync(path.join(full, "story.md")),
+  };
+}
+
 const ENV_FILES = [".env", ".env.local"];
 // Liens que cette commande cree elle-meme dans un worktree. On les exclut du
 // controle "working tree sale" (ce ne sont pas du travail non commite) et on
@@ -157,9 +177,22 @@ function installCommand(pm) {
   return "npm install";
 }
 
-function worktreeAdd(name, { from, deps, dryRun, cwd }) {
-  assertName(name);
+function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
   const root = requireRepo(cwd);
+  let linkedStory = null;
+
+  if (story) {
+    linkedStory = resolveStory(root, cwd, story);
+    if (name && name !== linkedStory.name) {
+      fail(
+        `conflit de nom : "${name}" vs story "${linkedStory.name}". ` +
+          "Donne soit <nom>, soit --story, mais pas les deux avec des noms differents.",
+      );
+    }
+    name = linkedStory.name;
+  }
+
+  assertName(name);
   const dest = worktreeDest(root, name);
 
   if (fs.existsSync(dest)) {
@@ -186,6 +219,7 @@ function worktreeAdd(name, { from, deps, dryRun, cwd }) {
     log("Dry run — rien n'est ecrit.");
     log(`  worktree : git ${addArgs.join(" ")}`);
     log(`  branche  : ${branchExists ? `${name} (existante)` : `${name} (nouvelle, depuis ${from || "HEAD"})`}`);
+    if (linkedStory) log(`  story    : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (pas de story.md)"}`);
     for (const f of envToLink) log(`  lien     : ${f}`);
     log(`  deps     : ${describeStrategy(strategy, pm, hasNodeModules)}`);
     return;
@@ -195,6 +229,9 @@ function worktreeAdd(name, { from, deps, dryRun, cwd }) {
   git(root, addArgs);
   log(`Worktree cree : ${dest}`);
   log(`Branche : ${name}${branchExists ? " (existante)" : ""}`);
+  if (linkedStory) {
+    log(`Story liee : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (pas de story.md)"}`);
+  }
 
   for (const f of envToLink) {
     const status = makeLink(path.join(root, f), path.join(dest, f));
@@ -206,6 +243,9 @@ function worktreeAdd(name, { from, deps, dryRun, cwd }) {
   log("");
   log("Prochaine etape :");
   log(`  cd ${path.relative(cwd, dest) || dest}`);
+  if (linkedStory) {
+    log(`  ai-flow harness preflight --story ${linkedStory.rel}`);
+  }
 }
 
 function describeStrategy(strategy, pm, hasNodeModules) {
@@ -244,7 +284,11 @@ function applyDeps(strategy, { pm, root, dest, hasNodeModules }) {
 }
 
 function parseWorktrees(root) {
-  const out = git(root, ["worktree", "list", "--porcelain"]).stdout;
+  return parseWorktreesFrom(git(root, ["worktree", "list", "--porcelain"]).stdout);
+}
+
+// Parseur pur de la sortie `git worktree list --porcelain` (sans I/O).
+function parseWorktreesFrom(out) {
   const blocks = out.split(/\n\n+/).map((b) => b.trim()).filter(Boolean);
   return blocks.map((block) => {
     const entry = { path: null, head: null, branch: null, detached: false, bare: false };
@@ -347,12 +391,50 @@ function worktreeRemove(name, { force, dryRun, cwd }) {
   }
 }
 
-function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd }) {
+// Liste non-fatale des worktrees, utilisable hors du contexte worktree (ex.
+// `status`). Ne quitte jamais : renvoie { isRepo:false, entries:[] } si git est
+// absent ou si on n'est pas dans un depot, au lieu de tuer le process.
+function collectWorktrees(cwd) {
+  if (git(cwd, ["--version"], { allowFail: true }).code !== 0) {
+    return { isRepo: false, root: null, entries: [] };
+  }
+  const root = git(cwd, ["rev-parse", "--show-toplevel"], { allowFail: true });
+  if (root.code !== 0) {
+    return { isRepo: false, root: null, entries: [] };
+  }
+  const repoRoot = root.stdout.trim();
+  const list = git(repoRoot, ["worktree", "list", "--porcelain"], { allowFail: true });
+  if (list.code !== 0) {
+    return { isRepo: true, root: repoRoot, entries: [] };
+  }
+  return { isRepo: true, root: repoRoot, entries: parseWorktreesFrom(list.stdout) };
+}
+
+// Extrait les arguments positionnels en ignorant les flags et la valeur des
+// flags qui en prennent une (--from/--deps/--story). Sans ca, `add --story x`
+// prendrait "--story" comme nom positionnel.
+function positionalArgs(args) {
+  const valueFlags = new Set(["--from", "--deps", "--story"]);
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+    if (token.startsWith("-")) {
+      if (!token.includes("=") && valueFlags.has(token)) {
+        i += 1;
+      }
+      continue;
+    }
+    out.push(token);
+  }
+  return out;
+}
+
+function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story }) {
   const sub = commandArgs[0];
-  const name = commandArgs[1];
+  const name = positionalArgs(commandArgs.slice(1))[0];
 
   if (sub === "add") {
-    worktreeAdd(name, { from, deps, dryRun, cwd });
+    worktreeAdd(name, { from, deps, dryRun, cwd, story });
   } else if (sub === "list" || sub === "ls") {
     worktreeList({ cwd });
   } else if (sub === "remove" || sub === "rm") {
@@ -362,4 +444,4 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd }) {
   }
 }
 
-module.exports = { worktreeCommand };
+module.exports = { worktreeCommand, collectWorktrees };
