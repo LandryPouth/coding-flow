@@ -140,6 +140,7 @@ ai-flow commands
 ai-flow upgrade
 ai-flow status
 ai-flow list-skills
+ai-flow worktree add <name>   # optionnel : travail parallèle (voir Guides Pratiques)
 ```
 
 Par défaut, les fichiers existants ne sont pas écrasés. Pour réinstaller volontairement les templates :
@@ -589,6 +590,27 @@ ai-flow status --json
 
 Le statut est lu depuis `implementation-notes.md` quand une section `## Status` existe. Sinon, le CLI l'infère depuis les notes.
 
+### Travail Parallèle Sur Plusieurs Features (Worktrees)
+
+Support **optionnel** pour développer plusieurs features réellement indépendantes
+en parallèle, chacune dans son propre dossier de travail (worktree Git), sans
+quitter le zéro-dépendance :
+
+```bash
+ai-flow worktree add feat/payments        # crée le worktree + la branche, câble .env / deps
+ai-flow worktree list                      # liste les worktrees et l'état des liens
+ai-flow worktree remove feat/payments      # retire le worktree, conserve la branche
+```
+
+`add` place le worktree dans `../<repo>-worktrees/<nom>`, symlinke `.env`/`.env.local`,
+et gère `node_modules` selon le package manager détecté (symlink pour npm simple,
+`install` recommandé pour un monorepo pnpm/yarn). Options : `--from <ref>`,
+`--deps install|link|skip`, `--dry-run`.
+
+Le worktree n'est utile que pour du travail **parallélisable** (zones de code
+disjointes, socle stable). Pour une liste de changements séquentiels/dépendants,
+déroulez-les une étape à la fois. Détails et arbitrage : `docs/plans/parallel-mode.md`.
+
 ## Fichiers De Contexte
 
 ### `docs/project-context.md`
@@ -817,6 +839,29 @@ ai-flow harness evidence --story epics/epic-01/story-01-01
 ```
 
 ## Développement Local Du Package
+
+### Architecture Du CLI (`bin/`)
+
+`bin/ai-flow.js` est un dispatcher mince : il parse les arguments et délègue à des
+modules cohésifs dans `bin/lib/`. Aucune dépendance runtime.
+
+| Module | Responsabilité |
+| --- | --- |
+| `lib/context.js` | Constantes partagées (racine, templates, cwd, scripts npm) |
+| `lib/util.js` | Helpers génériques (I/O, hash, JSON, chemins, glob, marche de fichiers) |
+| `lib/templates.js` | Installation, manifeste, scripts, cheat-sheet, `upgrade` |
+| `lib/harness.js` | Politique de sécurité, scan secrets/fichiers sensibles, preflight/evidence |
+| `lib/doctor.js` | Diagnostic + `--fix` |
+| `lib/skills.js` | `list-skills` |
+| `lib/status.js` | État des epics/stories |
+| `lib/bootstrap.js` | Scan brownfield |
+| `lib/uninstall.js` | Désinstallation préservant `epics/` |
+| `lib/worktree.js` | Worktrees Git optionnels (travail parallèle) |
+| `lib/commands.js` | `help` et `commands` |
+
+Le graphe de dépendances est acyclique : `context → util → harness → templates →
+{doctor, uninstall, skills, commands}` ; `status`/`bootstrap` n'utilisent que
+`context`/`util`.
 
 Depuis ce repository :
 
