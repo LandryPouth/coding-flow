@@ -64,6 +64,38 @@ bloc `worktrees` expose `active` (dans un dépôt git ou non) et `loose`.
 - Fait le `git worktree prune` derrière (le piège classique de l'article).
 - Rappelle comment supprimer la branche (`git branch -D <nom>`) si voulu.
 
+### Pourquoi des siblings et pas un `worktrees/` dans le repo
+
+Mettre les worktrees dans un dossier `worktrees/` *à l'intérieur* du repo (même
+gitignoré) semble plus propre mais casse en pratique : `.gitignore` ne masque un
+dossier qu'à **git**, pas à `tsc`/eslint/jest, aux watchers, à `docker build .`,
+ni aux globs de workspace (`packages/*`, `apps/*`, `**`) — qui parcourraient donc
+N copies du code. Et `git clean -fdx` supprimerait le dossier avec tout le travail
+non commité. Le sibling `../<repo>-worktrees/` est hors de portée de tous ces
+outils. La catégorisation `feat/`/`fix/` voulue reste gratuite via le nom de
+branche (`add feat/x` → `../repo-worktrees/feat/x`, car `path.join`).
+
+## `ship` — une feature, une PR
+
+`ai-flow ship` pousse la **branche courante** et ouvre/mets à jour **une** PR vers
+la base. La décision est branchée sur la branche, jamais sur le layout local : le
+push ne transmet que des commits, donc le repo distant reste normal quoi qu'il
+arrive (il n'y a rien à « détecter »). Explicite (commande), jamais un pre-push
+hook — ouvrir une PR est un effet de bord sortant qui n'a rien à faire dans un
+hook (doublons, échecs CI, push bloqué).
+
+| Étape | Comportement |
+| --- | --- |
+| Garde-fous | refuse si HEAD détaché, si on est sur la base, sans remote `origin`, ou sans commit au-dessus de la base |
+| Push | `git push -u origin <branche>` |
+| PR (GitHub + `gh`) | crée la PR si absente, sinon le push l'a déjà mise à jour (idempotent) |
+| PR (GitHub sans `gh`) | affiche l'URL de comparaison à ouvrir à la main |
+| Remote non-GitHub | pousse et s'arrête (pas de PR) |
+
+Options : `--base <ref>`, `--title <texte>`, `--draft`, `--web`, `--dry-run`.
+`gh` est une dépendance **optionnelle** (comme `git` est requis) : sans elle, la
+commande dégrade proprement.
+
 ## Stratégie de dépendances
 
 Symlinker `node_modules` est sûr pour un projet simple mais **casse un monorepo
@@ -88,9 +120,11 @@ veut les mêmes secrets partout.
 | --- | --- |
 | `bin/lib/worktree.js` | Implémentation (zéro-dep, shell-out vers `git`) + `collectWorktrees` non-fatal + `--story` |
 | `bin/lib/status.js` | Lit les worktrees et relie chaque story à sa branche |
+| `bin/lib/ship.js` | `ship` : push de la branche courante + PR (via `gh` optionnel) |
 | `bin/ai-flow.js` | Branchement du dispatcher + aide |
 | `test/worktree.test.js` | 8 tests de contrat (vrai dépôt git en temp) |
 | `test/status.test.js` | 5 tests du lien worktree ↔ story |
+| `test/ship.test.js` | 6 tests (remote bare local, garde-fous + push réel) |
 
 Le module vit sous `bin/` pour rester dans le champ `files` du `package.json`,
 donc embarqué par `npx`. `test/` n'y est pas : les tests protègent le dev sans

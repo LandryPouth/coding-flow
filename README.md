@@ -629,6 +629,32 @@ Le worktree n'est utile que pour du travail **parallélisable** (zones de code
 disjointes, socle stable). Pour une liste de changements séquentiels/dépendants,
 déroulez-les une étape à la fois. Détails et arbitrage : `docs/plans/parallel-mode.md`.
 
+> **Pourquoi les worktrees sont des _siblings_ (`../<repo>-worktrees/`) et pas
+> dans le repo ?** Un `worktrees/` gitignoré *à l'intérieur* du repo resterait
+> parcouru par tous les outils qui ne lisent pas `.gitignore` : `tsc`, eslint,
+> jest, les watchers, `docker build .`, et les globs de workspace (`packages/*`).
+> Pire, `git clean -fdx` le supprimerait avec tout le travail non commité. Le
+> sibling est hors de portée de tout ça. La catégorisation `feat/`/`fix/` reste
+> possible via le nom de branche (`add feat/x` → `../repo-worktrees/feat/x`).
+
+### Ouvrir Une PR Par Feature (`ship`)
+
+Depuis un worktree (ou n'importe quelle branche de feature), `ship` pousse la
+branche et ouvre **une** PR vers la base — idempotent, une feature = une PR :
+
+```bash
+ai-flow ship                       # push + PR vers la branche par défaut du remote
+ai-flow ship --base develop --draft
+ai-flow ship --dry-run             # montre le plan sans rien pousser
+```
+
+`ship` agit sur la **branche courante**, jamais sur le layout local (le push ne
+transmet que des commits, jamais la forme du dossier — le repo distant reste un
+repo normal quoi qu'il arrive). Il utilise `gh` s'il est disponible pour
+créer/mettre à jour la PR ; sinon il pousse et affiche l'URL de comparaison à
+ouvrir à la main. Garde-fous : refuse depuis la base, sans `origin`, ou s'il n'y
+a aucun commit à shipper.
+
 ## Fichiers De Contexte
 
 ### `docs/project-context.md`
@@ -753,6 +779,7 @@ Quand une stop condition se déclenche, l'agent doit expliquer :
 | `ai-flow worktree add --story <dir>` | Idem, en nommant la branche d'après la story (liée dans `status`). |
 | `ai-flow worktree list` | Lister les worktrees et l'état des liens `.env`. |
 | `ai-flow worktree remove <name>` | Retirer un worktree, conserver la branche. |
+| `ai-flow ship` | Pousser la branche courante et ouvrir/mettre à jour une PR vers la base (via `gh`). |
 | `ai-flow bootstrap --scan` | Scanner un codebase existant et écrire `docs/bootstrap-scan.md`. |
 | `ai-flow harness init` | Créer une policy `.coding-flow/harness.json` explicite. |
 | `ai-flow harness preflight --story <path>` | Estimer le risque d'une story et lister les checks requis. |
