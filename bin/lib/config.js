@@ -24,6 +24,11 @@ function defaultConfig() {
     version: 1,
     storage: "local",
     branchPerEpic: true,
+    // Commandes de validation exécutées par `ai-flow harness verify`. Vide par
+    // défaut : la commande retombe alors sur le bloc "## Commands" de tests.md,
+    // puis sur les scripts package.json. Déclarer ici rend la validation
+    // explicite et indépendante du langage.
+    validation: { commands: [] },
   };
 }
 
@@ -39,12 +44,18 @@ function readConfig(cwd) {
 
   const storage = STORAGE_BACKENDS.includes(existing.storage) ? existing.storage : defaults.storage;
 
+  const validation =
+    existing.validation && Array.isArray(existing.validation.commands)
+      ? { commands: existing.validation.commands.filter((c) => typeof c === "string" && c.trim()) }
+      : defaults.validation;
+
   return {
     ...defaults,
     ...existing,
     storage,
     branchPerEpic:
       typeof existing.branchPerEpic === "boolean" ? existing.branchPerEpic : defaults.branchPerEpic,
+    validation,
   };
 }
 

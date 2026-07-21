@@ -55,6 +55,9 @@ The success condition is not "code changed"; it is "acceptance criteria are sati
 ## Validation
 
 - Run typecheck, lint, tests, and E2E where available and relevant.
+- When `ai-flow` is present, run `ai-flow harness verify --story <dir>`; the captured evidence is the pass/fail of record, not a self-report.
+- For each risky criterion, show a red→green: break the behavior, confirm the guarding test fails, restore, confirm it passes.
+- Reject AI-slop tests: tautologies, over-mocking, implementation-mirroring, flaky or order-dependent tests.
 - If a command cannot run, document why.
 - Fix root causes rather than weakening tests.
 - If validation reveals ambiguous requirements, stop and ask one targeted question.
