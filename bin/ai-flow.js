@@ -21,6 +21,7 @@ const { guardCommand } = require("./lib/guard");
 const { auditCommand } = require("./lib/audit");
 const { traceCommand } = require("./lib/trace");
 const { ciCommand } = require("./lib/ci");
+const { pluginCommand } = require("./lib/plugin");
 const { worktreeCommand } = require("./lib/worktree");
 const { shipCommand } = require("./lib/ship");
 const { ensureConfig, STORAGE_BACKENDS } = require("./lib/config");
@@ -159,6 +160,8 @@ if (command === "init") {
   traceCommand({ getFlagValue, flags });
 } else if (command === "ci") {
   ciCommand({ commandArgs, flags });
+} else if (command === "plugin") {
+  pluginCommand({ commandArgs, flags });
 } else if (command === "worktree") {
   worktreeCommand({
     commandArgs,

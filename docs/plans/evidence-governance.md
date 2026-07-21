@@ -312,7 +312,7 @@ manuel. Canal de découverte (marketplace) = distribution quasi-gratuite.
 - [x] M4 audit ledger — append-only + export + --check + tests + commit
 - [x] M5 trace — chaîne story↔commit↔PR↔évidence↔test + tests + commit
 - [x] M6 CI clean-room — template workflow + scaffolder + tests + commit
-- [ ] M7 plugin — manifeste + marketplace + README + commit
+- [x] M7 plugin — manifeste + marketplace + README + commit
 - [ ] Docs/README finaux + bump version + publication npm
 
 > Règle de reprise : ne jamais démarrer un module sans que le précédent soit

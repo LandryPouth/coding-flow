@@ -1,0 +1,25 @@
+{
+  "name": "coding-flow",
+  "version": "0.2.0",
+  "description": "The evidence & governance layer for AI engineering: epics/stories skills, a deterministic secret-blocking guard hook, executed verify evidence, an append-only audit ledger, and end-to-end traceability.",
+  "author": {
+    "name": "Landry Pouth"
+  },
+  "homepage": "https://github.com/LandryPouth/codin-flow#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LandryPouth/codin-flow.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "agents",
+    "claude-code",
+    "workflow",
+    "governance",
+    "evidence",
+    "security",
+    "audit"
+  ],
+  "hooks": "./.claude-plugin/hooks/hooks.json"
+}

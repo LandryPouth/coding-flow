@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "coding-flow",
+  "version": "0.2.0",
+  "description": "Coding Flow — the evidence & governance layer for AI engineering.",
+  "owner": {
+    "name": "Landry Pouth"
+  },
+  "plugins": [
+    {
+      "name": "coding-flow",
+      "description": "Epics/stories skills plus the enforcement layer: a deterministic secret-blocking guard hook, executed verify evidence, an append-only audit ledger, and end-to-end traceability.",
+      "version": "0.2.0",
+      "author": {
+        "name": "Landry Pouth"
+      },
+      "source": ".",
+      "category": "development"
+    }
+  ]
+}
