@@ -6,8 +6,10 @@
 
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const { cwd } = require("./context");
+const { readConfig } = require("./config");
 const {
   fail,
   log,
@@ -648,6 +650,208 @@ function harnessEvidence({ json = false, dryRun = false, story = null } = {}) {
   }
 }
 
+// --- verify : exécution réelle des commandes de validation ---------------
+//
+// `evidence` capture le diff + le scan de sécurité mais NE lance PAS ta suite de
+// tests. `verify` la lance vraiment : il exécute les commandes de validation
+// déclarées, capture verbatim leurs codes de sortie et sorties, et échoue si
+// l'une casse. Preuve exécutée par la machine, pas affirmée par l'agent.
+
+function resolveStoryDir(story) {
+  if (!story) {
+    return null;
+  }
+
+  const resolved = resolveProjectPath(story);
+
+  if (!resolved || !resolved.insideRoot || !resolved.exists) {
+    return null;
+  }
+
+  return fs.statSync(resolved.fullPath).isDirectory()
+    ? resolved.fullPath
+    : path.dirname(resolved.fullPath);
+}
+
+// Extrait les lignes de commande du premier bloc clôturé sous "## Commands".
+function parseTestsCommands(testsMarkdown) {
+  const lines = testsMarkdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim().toLowerCase() === "## commands");
+
+  if (start === -1) {
+    return [];
+  }
+
+  const commands = [];
+  let inFence = false;
+
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+
+    if (line.startsWith("## ")) {
+      break;
+    }
+
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      inFence = !inFence;
+      continue;
+    }
+
+    if (inFence && trimmed && !trimmed.startsWith("#")) {
+      commands.push(trimmed);
+    }
+  }
+
+  return commands;
+}
+
+// Source des commandes, par priorité décroissante : config explicite, puis le
+// contrat tests.md de la story, puis les scripts package.json usuels.
+function resolveValidationCommands({ storyDir = null } = {}) {
+  const config = readConfig(cwd);
+
+  if (config.validation && Array.isArray(config.validation.commands) && config.validation.commands.length > 0) {
+    return { source: "config", commands: [...config.validation.commands] };
+  }
+
+  if (storyDir) {
+    const testsPath = path.join(storyDir, "tests.md");
+
+    if (fs.existsSync(testsPath)) {
+      const commands = parseTestsCommands(fs.readFileSync(testsPath, "utf8"));
+
+      if (commands.length > 0) {
+        return { source: "tests.md", commands };
+      }
+    }
+  }
+
+  const pkg = readJson(path.join(cwd, "package.json"), null);
+
+  if (pkg && pkg.scripts && typeof pkg.scripts === "object") {
+    const commands = ["typecheck", "type-check", "lint", "test"]
+      .filter((name) => pkg.scripts[name])
+      .map((name) => `npm run ${name}`);
+
+    if (commands.length > 0) {
+      return { source: "package.json", commands };
+    }
+  }
+
+  return { source: null, commands: [] };
+}
+
+function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
+  const started = Date.now();
+  const result = spawnSync(command, [], {
+    cwd,
+    shell: true,
+    encoding: "utf8",
+    timeout: timeoutMs,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+
+  const cap = 4000;
+  const timedOut = Boolean(result.error && result.error.code === "ETIMEDOUT");
+  const exitCode = result.status != null ? result.status : timedOut ? 124 : result.error ? 127 : 1;
+
+  return {
+    command,
+    exitCode,
+    ok: exitCode === 0,
+    timedOut,
+    durationMs: Date.now() - started,
+    stdoutTail: (result.stdout || "").slice(-cap),
+    stderrTail: (result.stderr || "").slice(-cap),
+  };
+}
+
+function printVerify(evidence, outputPath) {
+  if (evidence.commandsFound === 0) {
+    log("Harness verify: aucune commande de validation trouvée.");
+    log("Déclare-les dans tests.md sous '## Commands', ou dans config.validation.commands.");
+  } else if (evidence.ok) {
+    log(`Harness verify passed (${evidence.results.length} commande(s)).`);
+  } else {
+    log("Harness verify FAILED.");
+  }
+
+  for (const item of evidence.results) {
+    const status = item.ok ? "ok" : item.timedOut ? "timeout" : `exit ${item.exitCode}`;
+    log(`- [${status}] ${item.command} (${item.durationMs}ms)`);
+
+    if (!item.ok && item.stderrTail.trim()) {
+      const tail = item.stderrTail.trim().split(/\r?\n/).slice(-3).join("\n    ");
+      log(`    ${tail}`);
+    }
+  }
+
+  log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+}
+
+function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
+  const resolvedStory = story ? resolveProjectPath(story) : null;
+  const storyDir = resolveStoryDir(story);
+  const resolution = resolveValidationCommands({ storyDir });
+
+  if (dryRun) {
+    const plan = {
+      root: cwd,
+      story: resolvedStory ? resolvedStory.relativePath : null,
+      commandSource: resolution.source,
+      commands: resolution.commands,
+    };
+
+    if (json) {
+      log(JSON.stringify(plan, null, 2));
+      return;
+    }
+
+    log("Harness verify — dry run (aucune commande exécutée).");
+    log(`Source: ${resolution.source || "aucune"}`);
+
+    if (resolution.commands.length === 0) {
+      log("Aucune commande de validation trouvée.");
+    }
+
+    for (const command of resolution.commands) {
+      log(`- ${command}`);
+    }
+
+    return;
+  }
+
+  const results = resolution.commands.map((command) => runValidationCommand(command));
+  const ok = results.length > 0 && results.every((item) => item.ok);
+  const evidence = {
+    generatedAt: new Date().toISOString(),
+    root: cwd,
+    story: resolvedStory ? resolvedStory.relativePath : null,
+    commandSource: resolution.source,
+    commandsFound: resolution.commands.length,
+    ok,
+    results,
+  };
+
+  fs.mkdirSync(harnessRunsDir(), { recursive: true });
+  const fileName = `${new Date().toISOString().replace(/[:.]/g, "-")}-verify.json`;
+  const outputPath = path.join(harnessRunsDir(), fileName);
+  writeJson(outputPath, evidence);
+
+  if (json) {
+    log(JSON.stringify(evidence, null, 2));
+  } else {
+    printVerify(evidence, outputPath);
+  }
+
+  // "Rien exécuté" n'est pas "vérifié" : on échoue si aucune commande n'a tourné.
+  if (!ok) {
+    process.exitCode = 1;
+  }
+}
+
 function harnessCommand({ commandArgs, getFlagValue, flags }) {
   const subcommand = commandArgs[0] || "check";
   const story = getFlagValue("--story", null);
@@ -677,8 +881,14 @@ function harnessCommand({ commandArgs, getFlagValue, flags }) {
       dryRun: flags.has("--dry-run"),
       story,
     });
+  } else if (subcommand === "verify") {
+    harnessVerify({
+      json: flags.has("--json"),
+      dryRun: flags.has("--dry-run"),
+      story,
+    });
   } else {
-    fail(`unknown harness command "${subcommand}". Use init, preflight, check, or evidence.`);
+    fail(`unknown harness command "${subcommand}". Use init, preflight, check, verify, or evidence.`);
   }
 }
 
@@ -689,5 +899,6 @@ module.exports = {
   readHarnessConfig,
   ensureHarnessConfig,
   collectHarnessReport,
+  parseTestsCommands,
   harnessCommand,
 };

@@ -71,7 +71,7 @@ Usage:
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
   ai-flow bootstrap --scan [--dry-run] [--json]
-  ai-flow harness init|preflight|check|evidence [--story path] [--json]
+  ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
@@ -87,7 +87,7 @@ Commands:
   doctor       Check installed files, skill frontmatter, manifest, and the .agents mirror.
   status       List epics, stories, and inferred story status.
   bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
-  harness      Run security evidence checks and write lightweight run evidence.
+  harness      Run security evidence checks (check), execute declared validation commands (verify), and write run evidence.
   worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
   ship         Push the current branch and open/update one PR to the base (uses gh if available).
   commands     Show the easiest commands for this project.
