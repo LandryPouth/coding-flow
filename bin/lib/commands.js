@@ -66,16 +66,21 @@ function printHelp() {
   log(`Coding Flow
 
 Usage:
-  ai-flow init [--storage local] [--no-branch-per-epic] [--force] [--dry-run]
+  ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--force] [--dry-run]
   ai-flow upgrade [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
   ai-flow bootstrap --scan [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
+  ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
+  ai-flow audit [--export] [--check] [--since iso] [--json] [--dry-run]
+  ai-flow trace [--story path] [--json]
+  ai-flow ci init [--force] [--dry-run]
+  ai-flow plugin sync|check [--json] [--dry-run]
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
-  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--dry-run]
+  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--dry-run]
   ai-flow commands [--json]
   ai-flow uninstall [--dry-run] [--force] [--json]
   ai-flow list-skills [--json]
@@ -88,6 +93,11 @@ Commands:
   status       List epics, stories, and inferred story status.
   bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
   harness      Run security evidence checks (check), execute declared validation commands (verify), and write run evidence.
+  guard        PreToolUse hook: deny writes to blocked paths or secret content at the tool boundary (wired into .claude/settings.json by init).
+  audit        Aggregate evidence runs into an append-only ledger; --export writes docs/AUDIT.md, --check gates on the latest verify.
+  trace        Show the story -> commits -> PR -> evidence -> tests chain and flag missing links.
+  ci           Scaffold a clean-room GitHub Actions workflow that reruns harness verify + audit on every PR.
+  plugin       Sync/check the native Claude Code plugin's skills/ against templates (distribution channel).
   worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
   ship         Push the current branch and open/update one PR to the base (uses gh if available).
   commands     Show the easiest commands for this project.
@@ -111,8 +121,14 @@ Flags:
   --title    Title for the pull request ship opens (default: derived from commits).
   --draft    Open ship's pull request as a draft.
   --web      Open the pull request in the browser after ship.
+  --no-evidence  Do not attach the latest verify evidence to ship's PR body.
+  --export   Write docs/AUDIT.md from the audit ledger.
+  --check    Exit non-zero if the latest verify per story is failing or missing (CI gate).
+  --since    Filter audit entries to those generated at or after an ISO timestamp.
   --storage  Storage backend recorded at init: local (default; github is reserved).
   --no-branch-per-epic  Disable the "one epic = one branch, never main" policy.
+  --no-guard  Skip wiring the PreToolUse guard hook into .claude/settings.json at init.
+  --input    Read the guard hook payload from a file instead of stdin (for testing).
 `);
 }
 

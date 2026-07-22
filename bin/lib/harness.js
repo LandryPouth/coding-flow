@@ -10,6 +10,7 @@ const { spawnSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
+const { captureIdentity } = require("./identity");
 const {
   fail,
   log,
@@ -496,6 +497,7 @@ function buildHarnessEvidence({ story = null } = {}) {
   return {
     generatedAt: new Date().toISOString(),
     root: cwd,
+    provenance: captureIdentity(cwd),
     story: preflight.story,
     risk: preflight.risk,
     recommendedMode: preflight.recommendedMode,
@@ -828,6 +830,7 @@ function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
   const evidence = {
     generatedAt: new Date().toISOString(),
     root: cwd,
+    provenance: captureIdentity(cwd),
     story: resolvedStory ? resolvedStory.relativePath : null,
     commandSource: resolution.source,
     commandsFound: resolution.commands.length,
@@ -900,5 +903,6 @@ module.exports = {
   ensureHarnessConfig,
   collectHarnessReport,
   parseTestsCommands,
+  getSecretPatterns,
   harnessCommand,
 };
