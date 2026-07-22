@@ -1,7 +1,7 @@
 "use strict";
 
-// Diagnostic de l'installation : fichiers requis, frontmatter des skills, miroir
-// .agents, manifeste, et (en strict) un check harness rapide. `--fix` restaure.
+// Installation diagnostic: required files, skill frontmatter, .agents mirror,
+// manifest, and (in strict mode) a quick harness check. `--fix` restores.
 
 const fs = require("fs");
 const path = require("path");

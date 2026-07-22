@@ -1,12 +1,12 @@
 "use strict";
 
-// `ai-flow plugin sync|check` : le canal de distribution "plugin natif Claude Code".
-// Les skills vivent dans templates/.claude/skills (source de vérité, copiée dans
-// les projets par `init`). Un plugin Claude Code auto-découvre ses skills depuis
-// <racine>/skills. Plutôt que de dupliquer 27 dossiers À LA MAIN (le tapis roulant
-// que le plugin est censé éviter), `plugin sync` MATÉRIALISE skills/ depuis les
-// templates par une seule commande, et `plugin check` garantit l'absence de dérive
-// (utilisé en test/CI). Une source, une commande de sync, un garde-fou.
+// `ai-flow plugin sync|check`: the "native Claude Code plugin" distribution channel.
+// Skills live in templates/.claude/skills (source of truth, copied into projects
+// by `init`). A Claude Code plugin auto-discovers its skills from <root>/skills.
+// Rather than duplicating 27 directories BY HAND (the treadmill the plugin is
+// meant to avoid), `plugin sync` MATERIALIZES skills/ from the templates with a
+// single command, and `plugin check` guarantees the absence of drift (used in
+// test/CI). One source, one sync command, one guardrail.
 
 const fs = require("fs");
 const path = require("path");
@@ -22,7 +22,7 @@ function pluginSkillsRoot() {
   return path.join(packageRoot, "skills");
 }
 
-// Compare la source (templates) et la cible (skills/) fichier par fichier.
+// Compares the source (templates) and the target (skills/) file by file.
 function diffSkills() {
   const source = templatesSkillsRoot();
   const target = pluginSkillsRoot();
@@ -37,9 +37,9 @@ function diffSkills() {
     targetFiles.set(toPortable(path.relative(target, file)), file);
   }
 
-  const missing = []; // dans templates, absent de skills/
-  const changed = []; // présent des deux côtés mais contenu différent
-  const extra = []; // dans skills/, absent des templates (obsolète)
+  const missing = []; // in templates, absent from skills/
+  const changed = []; // present on both sides but different content
+  const extra = []; // in skills/, absent from templates (stale)
 
   for (const [rel, srcPath] of sourceFiles) {
     const tgtPath = targetFiles.get(rel);
@@ -64,8 +64,8 @@ function diffSkills() {
   };
 }
 
-// Matérialise skills/ à l'identique des templates : copie les manquants/modifiés,
-// supprime les obsolètes.
+// Materializes skills/ identically to the templates: copies the missing/changed,
+// removes the stale ones.
 function pluginSync({ dryRun = false } = {}) {
   const source = templatesSkillsRoot();
   const target = pluginSkillsRoot();

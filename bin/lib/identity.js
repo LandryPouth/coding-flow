@@ -1,15 +1,15 @@
 "use strict";
 
-// Provenance : qui a produit une évidence, sur quel commit, dans quelle PR. Pur
-// lecture, best-effort, JAMAIS fatal — hors dépôt git on renvoie git:null avec une
-// raison, gh absent → pr:null. La provenance enrichit l'évidence (verify/evidence)
-// pour la rendre auditable : "asserted ≠ proven ; anonymous ≠ auditable".
+// Provenance: who produced an evidence, on which commit, in which PR. Read-only,
+// best-effort, NEVER fatal — outside a git repository we return git:null with a
+// reason, gh absent → pr:null. Provenance enriches the evidence (verify/evidence)
+// to make it auditable: "asserted != proven; anonymous != auditable".
 
 const os = require("os");
 const { execFileSync } = require("child_process");
 
-// Exécute une commande et renvoie stdout trimmé, ou null en cas d'échec. Aucune
-// exception ne remonte : la provenance ne doit jamais casser une évidence.
+// Runs a command and returns trimmed stdout, or null on failure. No exception
+// propagates: provenance must never break an evidence.
 function tryExec(bin, args, cwd) {
   try {
     return execFileSync(bin, args, {
@@ -27,8 +27,8 @@ function gitField(cwd, args) {
   return value && value.length > 0 ? value : null;
 }
 
-// Auteur : d'abord la config locale (user.name/email), sinon l'auteur du dernier
-// commit — un dépôt fraîchement cloné n'a pas toujours de config locale.
+// Author: first the local config (user.name/email), otherwise the author of the
+// last commit — a freshly cloned repo does not always have a local config.
 function captureAuthor(cwd) {
   const name = gitField(cwd, ["config", "user.name"]) || gitField(cwd, ["log", "-1", "--format=%an"]);
   const email = gitField(cwd, ["config", "user.email"]) || gitField(cwd, ["log", "-1", "--format=%ae"]);
@@ -40,7 +40,7 @@ function captureAuthor(cwd) {
   return { name: name || null, email: email || null };
 }
 
-// PR courante, best-effort. gh absent, non authentifié, ou pas de PR → null.
+// Current PR, best-effort. gh absent, not authenticated, or no PR → null.
 function capturePr(cwd) {
   const raw = tryExec("gh", ["pr", "view", "--json", "number,url"], cwd);
 
@@ -73,8 +73,8 @@ function captureHost() {
   return { user, platform: process.platform };
 }
 
-// Snapshot de provenance pour le dépôt courant. Renvoie toujours un objet ; les
-// sous-parties indisponibles sont null (jamais d'exception, jamais d'exit).
+// Provenance snapshot for the current repository. Always returns an object; the
+// unavailable sub-parts are null (never an exception, never an exit).
 function captureIdentity(cwd) {
   const capturedAt = new Date().toISOString();
   const host = captureHost();

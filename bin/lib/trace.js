@@ -1,9 +1,9 @@
 "use strict";
 
-// `ai-flow trace` : la chaîne complète story ↔ commits ↔ PR ↔ évidence ↔ tests.
-// Répond en une commande à « montre-moi que cette exigence est réellement livrée
-// ET vérifiée ». Différenciateur vs les outils de spec (Spec Kit, BMAD) : eux
-// spécifient, trace PROUVE la livraison. Pur lecture, best-effort, non-fatal.
+// `ai-flow trace`: the full chain story <-> commits <-> PR <-> evidence <-> tests.
+// Answers in a single command "show me that this requirement is actually shipped
+// AND verified". Differentiator vs spec tools (Spec Kit, BMAD): they specify,
+// trace PROVES delivery. Read-only, best-effort, non-fatal.
 
 const fs = require("fs");
 const path = require("path");
@@ -26,8 +26,8 @@ function gitLines(args) {
   }
 }
 
-// Table markdown sous "## Acceptance Traceability" : chaque ligne de données mappe
-// un critère d'acceptation à un test (`file::test`).
+// Markdown table under "## Acceptance Traceability": each data row maps an
+// acceptance criterion to a test (`file::test`).
 function parseTraceabilityTable(md) {
   const lines = md.split(/\r?\n/);
   const start = lines.findIndex((line) => /^##\s+Acceptance Traceability/i.test(line.trim()));
@@ -47,7 +47,7 @@ function parseTraceabilityTable(md) {
     }
   }
 
-  // Ligne 0 = en-tête ; on retire aussi les séparateurs (--- / :---:).
+  // Row 0 = header; we also drop the separators (--- / :---:).
   const data = tableRows
     .slice(1)
     .filter((cells) => !cells.every((cell) => /^:?-+:?$/.test(cell) || cell === ""));
@@ -59,8 +59,8 @@ function parseTraceabilityTable(md) {
   });
 }
 
-// PR liée, best-effort : la branche nommée d'après le dossier de la story (même
-// convention sans état que `worktree add --story` / `status`). gh absent → null.
+// Linked PR, best-effort: the branch named after the story directory (same
+// stateless convention as `worktree add --story` / `status`). gh absent → null.
 function prForBranch(branch) {
   if (!branch) {
     return null;
@@ -97,7 +97,7 @@ function buildChain(storyRel, ancestry) {
     return chain;
   }
 
-  // story → tests (traçabilité + commandes)
+  // story → tests (traceability + commands)
   const testsPath = path.join(storyDir, "tests.md");
   if (fs.existsSync(testsPath)) {
     chain.criteria = parseTraceabilityTable(fs.readFileSync(testsPath, "utf8"));
@@ -112,16 +112,16 @@ function buildChain(storyRel, ancestry) {
     chain.gaps.push(`${unmapped.length} criterion/criteria without a mapped test`);
   }
 
-  // story → commits (qui touchent le dossier de la story)
+  // story → commits (that touch the story directory)
   chain.commits = gitLines(["log", "--oneline", "-n", "20", "--", storyRel]);
   if (chain.commits.length === 0) {
     chain.gaps.push("no commits touch this story");
   }
 
-  // story → PR (branche nommée d'après la story)
+  // story → PR (branch named after the story)
   chain.pr = prForBranch(path.basename(storyRel));
 
-  // story → évidence (dernier verify du registre pour cette story)
+  // story → evidence (latest verify in the ledger for this story)
   const verifyEntries = ancestry.filter(
     (entry) => entry.type === "verify" && entry.story === normalizePortable(storyRel),
   );

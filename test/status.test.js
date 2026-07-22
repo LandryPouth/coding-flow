@@ -1,9 +1,9 @@
 'use strict';
 
-// Tests de contrat de l'integration worktree <-> story.
-// `worktree add --story <dir>` nomme la branche d'apres le dossier de la story ;
-// `status` relie alors la story a son worktree (correspondance sans etat). On
-// verifie ce couplage de bout en bout sur un vrai depot git jetable.
+// Contract tests for the worktree <-> story integration.
+// `worktree add --story <dir>` names the branch after the story directory;
+// `status` then links the story to its worktree (stateless mapping). We verify
+// this coupling end-to-end on a real throwaway git repo.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -31,8 +31,8 @@ function run(cwd, args) {
   }
 }
 
-// Depot git jetable dans un sous-dossier repo/ (pour que ../repo-worktrees ait
-// un parent inscriptible), avec une story prete a etre liee.
+// Throwaway git repo in a repo/ subdirectory (so that ../repo-worktrees has a
+// writable parent), with a story ready to be linked.
 function repoWithStory(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-status-'));
   const repo = path.join(base, 'repo');
@@ -50,54 +50,54 @@ function repoWithStory(t) {
 
 function statusJson(cwd) {
   const { code, output } = run(cwd, ['status', '--json']);
-  assert.equal(code, 0, `status --json doit sortir en 0 (${output})`);
+  assert.equal(code, 0, `status --json must exit 0 (${output})`);
   return JSON.parse(output);
 }
 
-test('worktree add --story nomme la branche d\'apres le dossier de la story', (t) => {
+test('worktree add --story names the branch after the story directory', (t) => {
   const { base, repo, storyRel, storyName } = repoWithStory(t);
   const { code } = run(repo, ['worktree', 'add', '--story', storyRel]);
-  assert.equal(code, 0, 'add --story doit reussir');
+  assert.equal(code, 0, 'add --story must succeed');
 
   assert.ok(
     fs.existsSync(path.join(base, 'repo-worktrees', storyName)),
-    'le worktree doit prendre le nom du dossier de la story',
+    'the worktree must take the name of the story directory',
   );
   const branches = sh(repo, 'git', ['branch', '--list', storyName]);
-  assert.ok(branches.includes(storyName), 'la branche doit porter le nom de la story');
+  assert.ok(branches.includes(storyName), 'the branch must carry the story name');
 });
 
-test('status relie la story a son worktree', (t) => {
+test('status links the story to its worktree', (t) => {
   const { repo, storyRel } = repoWithStory(t);
   run(repo, ['worktree', 'add', '--story', storyRel]);
 
   const data = statusJson(repo);
   const story = data.epics[0].stories[0];
-  assert.ok(story.worktree, 'la story doit exposer le chemin de son worktree');
-  assert.ok(story.worktree.includes('story-03-01-kyc-upload'), 'le worktree pointe vers le bon dossier');
+  assert.ok(story.worktree, 'the story must expose its worktree path');
+  assert.ok(story.worktree.includes('story-03-01-kyc-upload'), 'the worktree points to the right directory');
 });
 
-test('status liste les worktrees sans story dans la section "hors story"', (t) => {
+test('status lists the worktrees without a story in the "loose" section', (t) => {
   const { repo } = repoWithStory(t);
-  run(repo, ['worktree', 'add', 'feat-libre']);
+  run(repo, ['worktree', 'add', 'feat-loose']);
 
   const data = statusJson(repo);
   const loose = data.worktrees.loose.map((entry) => entry.branch);
-  assert.ok(loose.includes('feat-libre'), 'une branche libre doit apparaitre en worktree hors story');
+  assert.ok(loose.includes('feat-loose'), 'a loose branch must appear as a story-less worktree');
 });
 
-test('status ne plante pas hors d\'un depot git', (t) => {
+test('status does not crash outside a git repo', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-status-nogit-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, 'epics', 'epic-01-x', 'story-01-01-y'), { recursive: true });
 
   const data = statusJson(dir);
-  assert.equal(data.epics[0].stories[0].worktree, null, 'sans git, aucune story n\'est liee a un worktree');
-  assert.equal(data.worktrees.active, false, 'le bloc worktrees doit indiquer active:false hors depot');
+  assert.equal(data.epics[0].stories[0].worktree, null, 'without git, no story is linked to a worktree');
+  assert.equal(data.worktrees.active, false, 'the worktrees block must report active:false outside a repo');
 });
 
-test('worktree add --story refuse un dossier de story inexistant', (t) => {
+test('worktree add --story refuses a non-existent story directory', (t) => {
   const { repo } = repoWithStory(t);
   const { code } = run(repo, ['worktree', 'add', '--story', 'epics/epic-99/story-99-99-ghost']);
-  assert.notEqual(code, 0, 'une story inexistante doit faire echouer add');
+  assert.notEqual(code, 0, 'a non-existent story must fail add');
 });

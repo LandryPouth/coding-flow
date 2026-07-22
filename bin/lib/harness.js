@@ -1,8 +1,8 @@
 "use strict";
 
-// Harnais de securite : politique (.coding-flow/harness.json), scan de secrets et
-// fichiers sensibles, preflight/evidence par story. Les primitives de config sont
-// ici aussi car copyTemplates (templates.js) doit pouvoir creer la config.
+// Security harness: policy (.coding-flow/harness.json), scan of secrets and
+// sensitive files, per-story preflight/evidence. The config primitives live here
+// too because copyTemplates (templates.js) must be able to create the config.
 
 const fs = require("fs");
 const path = require("path");
@@ -652,12 +652,12 @@ function harnessEvidence({ json = false, dryRun = false, story = null } = {}) {
   }
 }
 
-// --- verify : exécution réelle des commandes de validation ---------------
+// --- verify: actual execution of the validation commands -----------------
 //
-// `evidence` capture le diff + le scan de sécurité mais NE lance PAS ta suite de
-// tests. `verify` la lance vraiment : il exécute les commandes de validation
-// déclarées, capture verbatim leurs codes de sortie et sorties, et échoue si
-// l'une casse. Preuve exécutée par la machine, pas affirmée par l'agent.
+// `evidence` captures the diff + the security scan but does NOT run your test
+// suite. `verify` really runs it: it executes the declared validation commands,
+// captures their exit codes and outputs verbatim, and fails if one of them
+// breaks. Proof executed by the machine, not asserted by the agent.
 
 function resolveStoryDir(story) {
   if (!story) {
@@ -675,7 +675,7 @@ function resolveStoryDir(story) {
     : path.dirname(resolved.fullPath);
 }
 
-// Extrait les lignes de commande du premier bloc clôturé sous "## Commands".
+// Extracts the command lines from the first fenced block under "## Commands".
 function parseTestsCommands(testsMarkdown) {
   const lines = testsMarkdown.split(/\r?\n/);
   const start = lines.findIndex((line) => line.trim().toLowerCase() === "## commands");
@@ -709,8 +709,8 @@ function parseTestsCommands(testsMarkdown) {
   return commands;
 }
 
-// Source des commandes, par priorité décroissante : config explicite, puis le
-// contrat tests.md de la story, puis les scripts package.json usuels.
+// Source of the commands, by decreasing priority: explicit config, then the
+// story's tests.md contract, then the usual package.json scripts.
 function resolveValidationCommands({ storyDir = null } = {}) {
   const config = readConfig(cwd);
 
@@ -772,10 +772,10 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
 
 function printVerify(evidence, outputPath) {
   if (evidence.commandsFound === 0) {
-    log("Harness verify: aucune commande de validation trouvée.");
-    log("Déclare-les dans tests.md sous '## Commands', ou dans config.validation.commands.");
+    log("Harness verify: no validation commands found.");
+    log("Declare them in tests.md under '## Commands', or in config.validation.commands.");
   } else if (evidence.ok) {
-    log(`Harness verify passed (${evidence.results.length} commande(s)).`);
+    log(`Harness verify passed (${evidence.results.length} command(s)).`);
   } else {
     log("Harness verify FAILED.");
   }
@@ -811,11 +811,11 @@ function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
       return;
     }
 
-    log("Harness verify — dry run (aucune commande exécutée).");
-    log(`Source: ${resolution.source || "aucune"}`);
+    log("Harness verify — dry run (no command executed).");
+    log(`Source: ${resolution.source || "none"}`);
 
     if (resolution.commands.length === 0) {
-      log("Aucune commande de validation trouvée.");
+      log("No validation commands found.");
     }
 
     for (const command of resolution.commands) {
@@ -849,7 +849,7 @@ function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
     printVerify(evidence, outputPath);
   }
 
-  // "Rien exécuté" n'est pas "vérifié" : on échoue si aucune commande n'a tourné.
+  // "Nothing executed" is not "verified": we fail if no command ran.
   if (!ok) {
     process.exitCode = 1;
   }

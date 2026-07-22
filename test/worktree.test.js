@@ -1,9 +1,9 @@
 'use strict';
 
-// Tests de contrat de `ai-flow worktree`.
-// On monte un vrai depot git jetable, on lance la CLI, et on verifie le
-// comportement observable : dossiers crees, symlinks poses, branches
-// conservees, codes de sortie. Zero dependance : node:test + git.
+// Contract tests for `ai-flow worktree`.
+// We set up a real throwaway git repo, run the CLI, and verify the observable
+// behavior: directories created, symlinks laid down, branches kept, exit codes.
+// Zero dependency: node:test + git.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -18,9 +18,9 @@ function sh(cwd, cmd, args) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
-// Depot git jetable, avec un premier commit sur main. Le repo vit dans un
-// sous-dossier `repo/` pour que le layout groupe (../repo-worktrees) ait un
-// parent inscriptible.
+// Throwaway git repo, with a first commit on main. The repo lives in a `repo/`
+// subdirectory so that the grouped layout (../repo-worktrees) has a writable
+// parent.
 function freshRepo(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-wt-'));
   const repo = path.join(base, 'repo');
@@ -52,88 +52,88 @@ function worktreePath(base, name) {
   return path.join(base, 'repo-worktrees', name);
 }
 
-test('worktree add cree le dossier et une nouvelle branche', (t) => {
+test('worktree add creates the directory and a new branch', (t) => {
   const { base, repo } = freshRepo(t);
   const { code } = run(repo, ['add', 'feat-x']);
-  assert.equal(code, 0, 'add doit sortir en 0');
+  assert.equal(code, 0, 'add must exit 0');
 
   const dest = worktreePath(base, 'feat-x');
-  assert.ok(fs.existsSync(dest), 'le dossier worktree doit exister');
+  assert.ok(fs.existsSync(dest), 'the worktree directory must exist');
 
   const list = sh(repo, 'git', ['worktree', 'list', '--porcelain']);
-  assert.ok(list.includes('refs/heads/feat-x'), 'la branche feat-x doit etre checkoutee dans un worktree');
+  assert.ok(list.includes('refs/heads/feat-x'), 'the feat-x branch must be checked out in a worktree');
 });
 
-test('worktree add symlink les fichiers .env presents a la racine', (t) => {
+test('worktree add symlinks the .env files present at the root', (t) => {
   const { base, repo } = freshRepo(t);
   fs.writeFileSync(path.join(repo, '.env'), 'SECRET=1\n');
 
   run(repo, ['add', 'feat-env']);
   const link = path.join(worktreePath(base, 'feat-env'), '.env');
-  assert.ok(fs.lstatSync(link).isSymbolicLink(), '.env doit etre un symlink dans le worktree');
-  assert.equal(fs.readFileSync(link, 'utf8'), 'SECRET=1\n', 'le symlink doit pointer vers le .env racine');
+  assert.ok(fs.lstatSync(link).isSymbolicLink(), '.env must be a symlink in the worktree');
+  assert.equal(fs.readFileSync(link, 'utf8'), 'SECRET=1\n', 'the symlink must point to the root .env');
 });
 
-test('worktree add --deps link symlink node_modules', (t) => {
+test('worktree add --deps link symlinks node_modules', (t) => {
   const { base, repo } = freshRepo(t);
   fs.mkdirSync(path.join(repo, 'node_modules', 'left-pad'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'node_modules', 'left-pad', 'index.js'), '');
 
   run(repo, ['add', 'feat-deps', '--deps', 'link']);
   const link = path.join(worktreePath(base, 'feat-deps'), 'node_modules');
-  assert.ok(fs.lstatSync(link).isSymbolicLink(), 'node_modules doit etre un symlink avec --deps link');
+  assert.ok(fs.lstatSync(link).isSymbolicLink(), 'node_modules must be a symlink with --deps link');
   assert.ok(
     fs.existsSync(path.join(link, 'left-pad', 'index.js')),
-    'le symlink node_modules doit exposer le contenu de la racine',
+    'the node_modules symlink must expose the root content',
   );
 });
 
-test('worktree add --dry-run n ecrit rien', (t) => {
+test('worktree add --dry-run writes nothing', (t) => {
   const { base, repo } = freshRepo(t);
   const { code } = run(repo, ['add', 'feat-dry', '--dry-run']);
   assert.equal(code, 0);
-  assert.ok(!fs.existsSync(worktreePath(base, 'feat-dry')), '--dry-run ne doit creer aucun worktree');
+  assert.ok(!fs.existsSync(worktreePath(base, 'feat-dry')), '--dry-run must create no worktree');
 });
 
-test('worktree list montre le worktree ajoute', (t) => {
+test('worktree list shows the added worktree', (t) => {
   const { repo } = freshRepo(t);
   run(repo, ['add', 'feat-list']);
   const { code, output } = run(repo, ['list']);
   assert.equal(code, 0);
-  assert.ok(output.includes('feat-list'), 'list doit mentionner le worktree ajoute');
+  assert.ok(output.includes('feat-list'), 'list must mention the added worktree');
 });
 
-test('worktree remove retire le worktree mais conserve la branche', (t) => {
+test('worktree remove removes the worktree but keeps the branch', (t) => {
   const { base, repo } = freshRepo(t);
   run(repo, ['add', 'feat-rm']);
   const dest = worktreePath(base, 'feat-rm');
   assert.ok(fs.existsSync(dest));
 
   const { code } = run(repo, ['remove', 'feat-rm']);
-  assert.equal(code, 0, 'remove doit sortir en 0');
-  assert.ok(!fs.existsSync(dest), 'le dossier worktree doit etre supprime');
+  assert.equal(code, 0, 'remove must exit 0');
+  assert.ok(!fs.existsSync(dest), 'the worktree directory must be deleted');
 
   const branches = sh(repo, 'git', ['branch', '--list', 'feat-rm']);
-  assert.ok(branches.includes('feat-rm'), 'remove ne doit PAS supprimer la branche');
+  assert.ok(branches.includes('feat-rm'), 'remove must NOT delete the branch');
 });
 
-test('worktree remove reussit malgre nos propres symlinks .env', (t) => {
+test('worktree remove succeeds despite our own .env symlinks', (t) => {
   const { base, repo } = freshRepo(t);
   fs.writeFileSync(path.join(repo, '.env'), 'SECRET=1\n');
   run(repo, ['add', 'feat-envrm']);
-  // Le .env n'est PAS gitignore ici : sans traitement, le symlink pose par add
-  // apparaitrait comme fichier non suivi et bloquerait remove.
+  // The .env is NOT gitignored here: without handling, the symlink laid down by
+  // add would appear as an untracked file and block remove.
   const { code } = run(repo, ['remove', 'feat-envrm']);
-  assert.equal(code, 0, 'nos propres liens ne doivent pas bloquer remove');
-  assert.ok(!fs.existsSync(worktreePath(base, 'feat-envrm')), 'le worktree doit etre supprime');
+  assert.equal(code, 0, 'our own links must not block remove');
+  assert.ok(!fs.existsSync(worktreePath(base, 'feat-envrm')), 'the worktree must be deleted');
 });
 
-test('worktree remove refuse un worktree sale sans --force', (t) => {
+test('worktree remove refuses a dirty worktree without --force', (t) => {
   const { base, repo } = freshRepo(t);
   run(repo, ['add', 'feat-dirty']);
-  fs.writeFileSync(path.join(worktreePath(base, 'feat-dirty'), 'wip.txt'), 'travail non commite');
+  fs.writeFileSync(path.join(worktreePath(base, 'feat-dirty'), 'wip.txt'), 'uncommitted work');
 
   const { code } = run(repo, ['remove', 'feat-dirty']);
-  assert.notEqual(code, 0, 'remove doit refuser tant que le worktree est sale');
-  assert.ok(fs.existsSync(worktreePath(base, 'feat-dirty')), 'le worktree sale doit rester intact');
+  assert.notEqual(code, 0, 'remove must refuse while the worktree is dirty');
+  assert.ok(fs.existsSync(worktreePath(base, 'feat-dirty')), 'the dirty worktree must stay intact');
 });

@@ -1,6 +1,6 @@
 "use strict";
 
-// Listing des skills de template, groupes par categorie.
+// Listing of the template skills, grouped by category.
 
 const fs = require("fs");
 const path = require("path");

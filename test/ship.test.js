@@ -1,10 +1,10 @@
 'use strict';
 
-// Tests de contrat de `ai-flow ship`.
-// On monte un vrai depot git + un remote "origin" bare local. Comme l'origin
-// n'est pas github.com, la branche gh (creation de PR) est volontairement
-// court-circuitee : les tests restent hermetiques, que `gh` soit installe ou
-// non sur la machine. On verifie les garde-fous et le push reel.
+// Contract tests for `ai-flow ship`.
+// We set up a real git repo + a local bare "origin" remote. Since the origin is
+// not github.com, the gh branch (PR creation) is deliberately short-circuited:
+// the tests stay hermetic whether or not `gh` is installed on the machine. We
+// verify the guardrails and the actual push.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -32,8 +32,8 @@ function run(cwd, args) {
   }
 }
 
-// Depot avec un remote bare local nomme origin, un commit initial sur main
-// pousse, et (par defaut) une branche de feature checkoutee avec un commit.
+// Repo with a local bare remote named origin, an initial commit on main pushed,
+// and (by default) a feature branch checked out with a commit.
 function repoWithOrigin(t, { withFeature = true } = {}) {
   const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-ship-'));
   const originDir = path.join(baseDir, 'origin.git');
@@ -66,14 +66,14 @@ function originHasBranch(originDir, branch) {
   return refs.includes(branch);
 }
 
-test('ship refuse quand on est sur la base', (t) => {
+test('ship refuses when on the base', (t) => {
   const { repo } = repoWithOrigin(t, { withFeature: false });
   const { code, output } = run(repo, []);
-  assert.notEqual(code, 0, 'ship doit refuser depuis main');
-  assert.match(output, /base/i, 'le message doit expliquer qu\'on est sur la base');
+  assert.notEqual(code, 0, 'ship must refuse from main');
+  assert.match(output, /base/i, 'the message must explain that we are on the base');
 });
 
-test('ship refuse sans remote origin', (t) => {
+test('ship refuses without an origin remote', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-ship-noorigin-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   sh(dir, 'git', ['-c', 'init.defaultBranch=main', 'init']);
@@ -88,36 +88,36 @@ test('ship refuse sans remote origin', (t) => {
   sh(dir, 'git', ['commit', '-m', 'work']);
 
   const { code, output } = run(dir, []);
-  assert.notEqual(code, 0, 'ship doit refuser sans origin');
-  assert.match(output, /origin/i, 'le message doit mentionner origin');
+  assert.notEqual(code, 0, 'ship must refuse without origin');
+  assert.match(output, /origin/i, 'the message must mention origin');
 });
 
-test('ship refuse quand il n\'y a aucun commit au-dessus de la base', (t) => {
+test('ship refuses when there is no commit above the base', (t) => {
   const { repo } = repoWithOrigin(t, { withFeature: false });
-  // Branche sans commit supplementaire.
+  // Branch without an extra commit.
   sh(repo, 'git', ['checkout', '-b', 'feat/empty']);
   const { code, output } = run(repo, []);
-  assert.notEqual(code, 0, 'ship doit refuser une branche sans commit a shipper');
-  assert.match(output, /commit/i, 'le message doit parler de commits');
+  assert.notEqual(code, 0, 'ship must refuse a branch with nothing to ship');
+  assert.match(output, /commit/i, 'the message must talk about commits');
 });
 
-test('ship --dry-run ne pousse rien', (t) => {
+test('ship --dry-run pushes nothing', (t) => {
   const { originDir, repo } = repoWithOrigin(t);
   const { code } = run(repo, ['--dry-run']);
-  assert.equal(code, 0, 'ship --dry-run doit sortir en 0');
-  assert.ok(!originHasBranch(originDir, 'feat/payments'), '--dry-run ne doit pousser aucune branche');
+  assert.equal(code, 0, 'ship --dry-run must exit 0');
+  assert.ok(!originHasBranch(originDir, 'feat/payments'), '--dry-run must push no branch');
 });
 
-test('ship pousse la branche de feature vers origin', (t) => {
+test('ship pushes the feature branch to origin', (t) => {
   const { originDir, repo } = repoWithOrigin(t);
   const { code, output } = run(repo, []);
-  assert.equal(code, 0, `ship doit reussir (${output})`);
-  assert.ok(originHasBranch(originDir, 'feat/payments'), 'la branche doit exister sur origin apres ship');
+  assert.equal(code, 0, `ship must succeed (${output})`);
+  assert.ok(originHasBranch(originDir, 'feat/payments'), 'the branch must exist on origin after ship');
 });
 
-test('ship sur un remote non-GitHub pousse sans gerer de PR', (t) => {
+test('ship on a non-GitHub remote pushes without managing a PR', (t) => {
   const { repo } = repoWithOrigin(t);
   const { code, output } = run(repo, []);
   assert.equal(code, 0);
-  assert.match(output, /non-GitHub|PR non geree/i, 'sur un remote non-GitHub, aucune PR n\'est tentee');
+  assert.match(output, /non-GitHub/i, 'on a non-GitHub remote, no PR is attempted');
 });

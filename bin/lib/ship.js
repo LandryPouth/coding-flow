@@ -1,25 +1,25 @@
 "use strict";
 
-// `ai-flow ship` : depuis la branche courante (typiquement dans un worktree),
-// pousse la branche et ouvre/mets a jour UNE pull request vers la base. Une
-// feature = une branche = une PR. Idempotent : si la PR existe deja, le push
-// suffit a la mettre a jour, on ne recree rien.
+// `ai-flow ship`: from the current branch (typically inside a worktree), pushes
+// the branch and opens/updates ONE pull request against the base. One feature =
+// one branch = one PR. Idempotent: if the PR already exists, the push is enough
+// to update it, we don't recreate anything.
 //
-// Choix de conception :
-//   - explicite (commande), jamais un pre-push hook : ouvrir une PR est un effet
-//     de bord sortant qui n'a rien a faire dans un hook (doublons, echecs CI...).
-//   - la logique est branchee sur la BRANCHE, pas sur le layout local (worktree
-//     ou non) : le push ne transmet jamais le layout, seulement des commits.
-//   - zero dependance : shell-out vers `git` (requis) et `gh` (optionnel). Sans
-//     `gh`, on pousse et on affiche l'URL de comparaison a ouvrir a la main.
+// Design choices:
+//   - explicit (a command), never a pre-push hook: opening a PR is an outward
+//     side effect that has no business in a hook (duplicates, CI failures...).
+//   - the logic keys off the BRANCH, not the local layout (worktree or not): a
+//     push never carries the layout, only commits.
+//   - zero dependencies: shell-out to `git` (required) and `gh` (optional).
+//     Without `gh`, we push and print the compare URL to open by hand.
 
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-// Marqueurs idempotents : la section évidence est remplacée entre eux, jamais
-// le texte humain autour. Ship peut ainsi rafraîchir la preuve sans écraser la
-// description de la PR.
+// Idempotent markers: the evidence section is replaced between them, never the
+// human text around it. Ship can thus refresh the proof without overwriting the
+// PR description.
 const EVIDENCE_START = "<!-- coding-flow:evidence:start -->";
 const EVIDENCE_END = "<!-- coding-flow:evidence:end -->";
 
@@ -45,7 +45,7 @@ function git(cwd, gitArgs, { allowFail = false } = {}) {
     if (allowFail) {
       return { code: err.status ?? 1, stdout: (err.stdout || "").toString(), stderr };
     }
-    fail(`git ${gitArgs.join(" ")} a echoue : ${stderr.trim()}`);
+    fail(`git ${gitArgs.join(" ")} failed: ${stderr.trim()}`);
     return { code: 1, stdout: "", stderr };
   }
 }
@@ -63,18 +63,18 @@ function gh(ghArgs, cwd, { allowFail = true } = {}) {
     if (allowFail) {
       return { code: err.status ?? 1, stdout: (err.stdout || "").toString(), stderr };
     }
-    fail(`gh ${ghArgs.join(" ")} a echoue : ${stderr.trim()}`);
+    fail(`gh ${ghArgs.join(" ")} failed: ${stderr.trim()}`);
     return { code: 1, stdout: "", stderr };
   }
 }
 
 function requireRepo(cwd) {
   if (git(cwd, ["--version"], { allowFail: true }).code !== 0) {
-    fail("git est introuvable dans le PATH.");
+    fail("git was not found in PATH.");
   }
   const root = git(cwd, ["rev-parse", "--show-toplevel"], { allowFail: true });
   if (root.code !== 0) {
-    fail("ce dossier n'est pas un depot git.");
+    fail("this directory is not a git repository.");
   }
   return root.stdout.trim();
 }
@@ -83,13 +83,13 @@ function currentBranch(root) {
   const res = git(root, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true });
   const branch = res.stdout.trim();
   if (res.code !== 0 || branch === "HEAD") {
-    fail("HEAD est detache : place-toi sur une branche avant de ship.");
+    fail("HEAD is detached: check out a branch before you ship.");
   }
   return branch;
 }
 
-// Base par defaut : la branche par defaut du remote (origin/HEAD), sinon main,
-// sinon master.
+// Default base: the remote's default branch (origin/HEAD), otherwise main,
+// otherwise master.
 function defaultBase(root) {
   const sym = git(root, ["symbolic-ref", "refs/remotes/origin/HEAD"], { allowFail: true });
   if (sym.code === 0 && sym.stdout.trim()) {
@@ -111,7 +111,7 @@ function isGitHubRemote(url) {
   return /github\.com/i.test(url);
 }
 
-// Normalise une URL de remote git en URL web GitHub (sans .git).
+// Normalizes a git remote URL into a GitHub web URL (without .git).
 function remoteToHttps(url) {
   let clean = url.trim().replace(/\.git$/, "");
   const sshMatch = clean.match(/^git@github\.com:(.+)$/i);
@@ -133,7 +133,7 @@ function ghAvailable() {
   })();
 }
 
-// Dernière évidence `harness verify` du dépôt, best-effort. Absente/illisible → null.
+// Latest `harness verify` evidence in the repo, best-effort. Absent/unreadable → null.
 function latestVerifyEvidence(root) {
   const runsDir = path.join(root, ".coding-flow", "runs");
 
@@ -157,7 +157,7 @@ function latestVerifyEvidence(root) {
   }
 }
 
-// Construit la section markdown d'évidence (entre marqueurs) à partir du JSON verify.
+// Builds the markdown evidence section (between markers) from the verify JSON.
 function buildEvidenceBlock(evidence) {
   const lines = [EVIDENCE_START, "### 🔬 Coding Flow — verify evidence", ""];
 
@@ -191,7 +191,7 @@ function buildEvidenceBlock(evidence) {
   return lines.join("\n");
 }
 
-// Insère ou remplace la section évidence dans un corps de PR, sans toucher au reste.
+// Inserts or replaces the evidence section in a PR body, without touching the rest.
 function upsertEvidenceBlock(body, block) {
   const current = body || "";
   const startIndex = current.indexOf(EVIDENCE_START);
@@ -206,7 +206,7 @@ function upsertEvidenceBlock(body, block) {
   return current.trim() ? `${current.trim()}\n\n${block}\n` : `${block}\n`;
 }
 
-// Rafraîchit la section évidence dans le corps de la PR (gh requis).
+// Refreshes the evidence section in the PR body (gh required).
 function syncEvidenceIntoPr(root, branch, block) {
   const view = gh(["pr", "view", branch, "--json", "body"], root);
   let body = "";
@@ -230,16 +230,16 @@ function ship({ base = null, draft = false, title = null, web = false, dryRun = 
   const targetBase = base || defaultBase(root);
 
   if (branch === targetBase) {
-    fail(`tu es sur la base "${targetBase}". Place-toi sur une branche de feature avant de ship.`);
+    fail(`you are on the base "${targetBase}". Check out a feature branch before you ship.`);
   }
 
   const originUrl = git(root, ["remote", "get-url", "origin"], { allowFail: true });
   if (originUrl.code !== 0) {
-    fail("aucun remote 'origin'. Ajoute-le avec : git remote add origin <url>.");
+    fail("no 'origin' remote. Add it with: git remote add origin <url>.");
   }
   const remoteUrl = originUrl.stdout.trim();
 
-  // Commits a shipper : au-dessus de la base (locale si presente, sinon origin).
+  // Commits to ship: above the base (local if present, otherwise origin).
   const baseRef = localRefExists(root, targetBase)
     ? targetBase
     : localRefExists(root, `origin/${targetBase}`)
@@ -247,7 +247,7 @@ function ship({ base = null, draft = false, title = null, web = false, dryRun = 
       : targetBase;
   const ahead = git(root, ["rev-list", "--count", `${baseRef}..HEAD`], { allowFail: true });
   if (ahead.code === 0 && ahead.stdout.trim() === "0") {
-    fail(`aucun commit a shipper : "${branch}" n'a rien au-dessus de "${targetBase}".`);
+    fail(`no commits to ship: "${branch}" has nothing above "${targetBase}".`);
   }
 
   const dirty = git(root, ["status", "--porcelain"], { allowFail: true }).stdout.trim().length > 0;
@@ -256,65 +256,65 @@ function ship({ base = null, draft = false, title = null, web = false, dryRun = 
   const evidence = includeEvidence ? latestVerifyEvidence(root) : null;
 
   if (dryRun) {
-    log("Dry run — rien n'est pousse.");
-    log(`  branche : ${branch}`);
-    log(`  base    : ${targetBase}`);
-    log(`  push    : git push -u origin ${branch}`);
-    if (dirty) log("  note    : working tree sale (les changements non commites ne seront pas pousses).");
+    log("Dry run — nothing is pushed.");
+    log(`  branch : ${branch}`);
+    log(`  base   : ${targetBase}`);
+    log(`  push   : git push -u origin ${branch}`);
+    if (dirty) log("  note   : dirty working tree (uncommitted changes will not be pushed).");
     if (canPr) {
-      log(`  PR      : ${draft ? "brouillon " : ""}${targetBase} <- ${branch} (creee si absente, sinon mise a jour)`);
+      log(`  PR     : ${draft ? "draft " : ""}${targetBase} <- ${branch} (created if absent, otherwise updated)`);
     } else if (github) {
-      log("  PR      : gh absente — l'URL de comparaison sera affichee.");
+      log("  PR     : gh absent — the compare URL will be printed.");
     } else {
-      log("  PR      : remote non-GitHub — PR non geree, push uniquement.");
+      log("  PR     : non-GitHub remote — PR not managed, push only.");
     }
     if (includeEvidence && canPr) {
       if (evidence) {
-        log(`  evidence: dernier verify (${evidence.ok ? "passed" : "FAILED"}) sera attache au corps de la PR.`);
+        log(`  evidence: latest verify (${evidence.ok ? "passed" : "FAILED"}) will be attached to the PR body.`);
       } else {
-        log("  evidence: aucune (lance `ai-flow harness verify` avant de ship pour attacher la preuve).");
+        log("  evidence: none (run `ai-flow harness verify` before you ship to attach the proof).");
       }
     }
     return;
   }
 
   if (dirty) {
-    log("Note : working tree sale — seuls les commits sont pousses, pas les changements non commites.");
+    log("Note: dirty working tree — only commits are pushed, not the uncommitted changes.");
   }
 
   const push = git(root, ["push", "-u", "origin", branch], { allowFail: true });
   if (push.code !== 0) {
-    fail(`echec du push : ${push.stderr.trim()}`);
+    fail(`push failed: ${push.stderr.trim()}`);
   }
-  log(`Pousse : origin/${branch}`);
+  log(`Pushed: origin/${branch}`);
 
   if (!github) {
-    log("Remote non-GitHub : branche poussee, PR non geree.");
+    log("Non-GitHub remote: branch pushed, PR not managed.");
     return;
   }
 
   if (!canPr) {
     const compare = `${remoteToHttps(remoteUrl)}/compare/${targetBase}...${branch}?expand=1`;
-    log("gh CLI absente : ouvre la PR ici :");
+    log("gh CLI absent: open the PR here:");
     log(`  ${compare}`);
     return;
   }
 
-  // Attache/rafraîchit la preuve verify dans le corps de la PR (idempotent).
+  // Attaches/refreshes the verify proof in the PR body (idempotent).
   function attachEvidence() {
     if (!includeEvidence) {
       return;
     }
     if (!evidence) {
-      log("Note : aucune évidence verify — lance `ai-flow harness verify` avant de ship pour attacher la preuve.");
+      log("Note: no verify evidence — run `ai-flow harness verify` before you ship to attach the proof.");
       return;
     }
     if (syncEvidenceIntoPr(root, branch, buildEvidenceBlock(evidence))) {
-      log(`Évidence verify (${evidence.ok ? "passed" : "FAILED"}) attachée au corps de la PR.`);
+      log(`Verify evidence (${evidence.ok ? "passed" : "FAILED"}) attached to the PR body.`);
     }
   }
 
-  // gh present : PR existante ? (idempotent — le push l'a deja mise a jour)
+  // gh present: existing PR? (idempotent — the push already updated it)
   const existing = gh(["pr", "view", branch, "--json", "url,state"], root);
   if (existing.code === 0) {
     let url = "";
@@ -323,7 +323,7 @@ function ship({ base = null, draft = false, title = null, web = false, dryRun = 
     } catch {
       url = "";
     }
-    log(`PR deja ouverte (mise a jour par le push)${url ? ` : ${url}` : "."}`);
+    log(`PR already open (updated by the push)${url ? `: ${url}` : "."}`);
     attachEvidence();
     if (web && url) {
       gh(["pr", "view", branch, "--web"], root);
@@ -331,7 +331,7 @@ function ship({ base = null, draft = false, title = null, web = false, dryRun = 
     return;
   }
 
-  // Creation de la PR.
+  // PR creation.
   const createArgs = ["pr", "create", "--base", targetBase, "--head", branch];
   if (title) {
     createArgs.push("--title", title, "--body", "");
@@ -343,10 +343,10 @@ function ship({ base = null, draft = false, title = null, web = false, dryRun = 
   }
   const created = gh(createArgs, root);
   if (created.code !== 0) {
-    fail(`echec de la creation de PR : ${created.stderr.trim()}`);
+    fail(`PR creation failed: ${created.stderr.trim()}`);
   }
   const url = created.stdout.trim().split(/\s+/).find((token) => token.startsWith("http")) || created.stdout.trim();
-  log(`PR ${draft ? "(brouillon) " : ""}creee : ${url}`);
+  log(`PR ${draft ? "(draft) " : ""}created: ${url}`);
   attachEvidence();
   if (web && url) {
     gh(["pr", "view", branch, "--web"], root);

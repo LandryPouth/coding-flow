@@ -1,7 +1,7 @@
 "use strict";
 
-// Helpers generiques sans logique metier : I/O terminal, hachage, JSON, chemins,
-// glob, marche de fichiers. Reutilises par toutes les commandes.
+// Generic helpers with no business logic: terminal I/O, hashing, JSON, paths,
+// glob, file walking. Reused by every command.
 
 const crypto = require("crypto");
 const fs = require("fs");

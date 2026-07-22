@@ -1,7 +1,7 @@
 'use strict';
 
-// Tests de contrat du seam de stockage, de la config .coding-flow/config.json et
-// de la policy branchPerEpic. On lance la vraie CLI dans des dossiers temporaires.
+// Contract tests for the storage seam, the .coding-flow/config.json config, and
+// the branchPerEpic policy. We run the real CLI in temporary directories.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -64,11 +64,11 @@ test('init --storage github is refused and writes no config', (t) => {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
   const { code, output } = run(dir, ['init', '--storage', 'github']);
-  assert.notEqual(code, 0, 'github storage doit etre refuse');
+  assert.notEqual(code, 0, 'github storage must be refused');
   assert.match(output, /github/i);
   assert.ok(
     !fs.existsSync(path.join(dir, '.coding-flow', 'config.json')),
-    'aucune config ne doit etre ecrite quand init est refuse',
+    'no config must be written when init is refused',
   );
 });
 
@@ -104,7 +104,7 @@ test('status fails cleanly when storage is set to github (seam proven)', (t) => 
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
   const { code, output } = run(dir, ['status', '--json']);
-  assert.notEqual(code, 0, 'le backend github non implemente doit echouer');
+  assert.notEqual(code, 0, 'the unimplemented github backend must fail');
   assert.match(output, /github/i);
 });
 
@@ -125,14 +125,14 @@ test('status flags being on the base branch under branchPerEpic', (t) => {
   assert.equal(data.policy.onBase, true);
 
   const text = run(dir, ['status']);
-  assert.match(text.output, /branchPerEpic/i, 'le rappel de policy doit apparaitre en texte');
+  assert.match(text.output, /branchPerEpic/i, 'the policy reminder must appear in text');
 });
 
 test('upgrade creates config.json for a project installed before the seam', (t) => {
   const dir = tmp('upgrade-migrate');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   run(dir, ['init']);
-  // Simule un vieux projet : on supprime la config mais on garde le reste.
+  // Simulate an old project: we delete the config but keep the rest.
   fs.rmSync(path.join(dir, '.coding-flow', 'config.json'));
 
   const { code } = run(dir, ['upgrade']);

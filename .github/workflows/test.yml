@@ -17,5 +17,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      # Aucune dépendance à installer : la CLI est zéro-dep, on lance direct.
+      # No dependency to install: the CLI is zero-dep, we run it directly.
       - run: npm test

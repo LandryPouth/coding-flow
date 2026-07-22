@@ -1,7 +1,7 @@
 'use strict';
 
-// Tests du registre d'audit : append-only + dédup, préservation de l'historique,
-// export docs/AUDIT.md, gate --check sur la dernière évidence verify, et --since.
+// Tests of the audit ledger: append-only + dedup, history preservation, the
+// docs/AUDIT.md export, the --check gate on the latest verify evidence, and --since.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -36,7 +36,7 @@ function project(t, prefix) {
   return dir;
 }
 
-// Écrit un faux run verify déterministe dans .coding-flow/runs.
+// Writes a deterministic fake verify run into .coding-flow/runs.
 function writeVerifyRun(dir, { ok = true, story = null, when }) {
   const evidence = {
     generatedAt: when,
@@ -58,20 +58,20 @@ function ledgerLines(dir) {
   return fs.readFileSync(p, 'utf8').split('\n').filter(Boolean);
 }
 
-test('audit append les runs au ledger et déduplique à la 2e passe', (t) => {
+test('audit appends the runs to the ledger and deduplicates on the 2nd pass', (t) => {
   const dir = project(t, 'audit-dedup');
   writeVerifyRun(dir, { ok: true, when: '2026-07-21T09:00:00.000Z' });
   writeVerifyRun(dir, { ok: true, when: '2026-07-21T10:00:00.000Z' });
 
   const first = run(dir, ['audit']);
   assert.equal(first.code, 0, first.output);
-  assert.equal(ledgerLines(dir).length, 2, 'deux runs → deux lignes');
+  assert.equal(ledgerLines(dir).length, 2, 'two runs → two lines');
 
   run(dir, ['audit']);
-  assert.equal(ledgerLines(dir).length, 2, 'une 2e passe ne duplique pas');
+  assert.equal(ledgerLines(dir).length, 2, 'a 2nd pass does not duplicate');
 });
 
-test('audit préserve les lignes existantes (append-only)', (t) => {
+test('audit preserves the existing lines (append-only)', (t) => {
   const dir = project(t, 'audit-appendonly');
   const ledger = path.join(dir, '.coding-flow', 'ledger.jsonl');
   fs.writeFileSync(ledger, `${JSON.stringify({ id: 'seed00000000', type: 'verify', ok: true, tag: 'seed' })}\n`);
@@ -80,11 +80,11 @@ test('audit préserve les lignes existantes (append-only)', (t) => {
   run(dir, ['audit']);
 
   const lines = ledgerLines(dir);
-  assert.ok(lines.some((l) => l.includes('seed')), 'la ligne seed doit survivre');
-  assert.equal(lines.length, 2, 'seed + le nouveau run');
+  assert.ok(lines.some((l) => l.includes('seed')), 'the seed line must survive');
+  assert.equal(lines.length, 2, 'seed + the new run');
 });
 
-test('audit --export écrit docs/AUDIT.md avec les colonnes', (t) => {
+test('audit --export writes docs/AUDIT.md with the columns', (t) => {
   const dir = project(t, 'audit-export');
   writeVerifyRun(dir, { ok: true, story: 'epics/e1/story-01-01', when: '2026-07-21T10:00:00.000Z' });
 
@@ -92,45 +92,45 @@ test('audit --export écrit docs/AUDIT.md avec les colonnes', (t) => {
   assert.equal(res.code, 0, res.output);
   const md = fs.readFileSync(path.join(dir, 'docs', 'AUDIT.md'), 'utf8');
   assert.match(md, /# Audit ledger/);
-  assert.match(md, /\| Date \| Type \| Résultat \|/);
+  assert.match(md, /\| Date \| Type \| Result \|/);
   assert.match(md, /story-01-01/);
   assert.match(md, /abc1234/);
 });
 
-test('audit --check échoue quand la dernière verify est rouge', (t) => {
+test('audit --check fails when the latest verify is red', (t) => {
   const dir = project(t, 'audit-check-red');
   writeVerifyRun(dir, { ok: true, story: 's1', when: '2026-07-21T09:00:00.000Z' });
   writeVerifyRun(dir, { ok: false, story: 's1', when: '2026-07-21T10:00:00.000Z' });
 
   const res = run(dir, ['audit', '--check']);
-  assert.equal(res.code, 1, 'la dernière verify rouge doit faire échouer le gate');
+  assert.equal(res.code, 1, 'the latest red verify must fail the gate');
   assert.match(res.output, /FAILED/);
 });
 
-test('audit --check passe quand la dernière verify par story est verte', (t) => {
+test('audit --check passes when the latest verify per story is green', (t) => {
   const dir = project(t, 'audit-check-green');
   writeVerifyRun(dir, { ok: false, story: 's1', when: '2026-07-21T09:00:00.000Z' });
   writeVerifyRun(dir, { ok: true, story: 's1', when: '2026-07-21T10:00:00.000Z' });
 
   const res = run(dir, ['audit', '--check']);
-  assert.equal(res.code, 0, 'la plus récente est verte → gate vert');
+  assert.equal(res.code, 0, 'the most recent one is green → green gate');
   assert.match(res.output, /passed/);
 });
 
-test('audit --check échoue s’il n’y a aucun run', (t) => {
+test('audit --check fails when there is no run', (t) => {
   const dir = project(t, 'audit-check-empty');
   const res = run(dir, ['audit', '--check']);
-  assert.equal(res.code, 1, 'aucune preuve = non vérifié = échec');
+  assert.equal(res.code, 1, 'no proof = not verified = failure');
 });
 
-test('audit --check ne mute pas le ledger', (t) => {
+test('audit --check does not mutate the ledger', (t) => {
   const dir = project(t, 'audit-check-nomutate');
   writeVerifyRun(dir, { ok: true, when: '2026-07-21T10:00:00.000Z' });
   run(dir, ['audit', '--check']);
-  assert.equal(ledgerLines(dir).length, 0, '--check est en lecture seule');
+  assert.equal(ledgerLines(dir).length, 0, '--check is read-only');
 });
 
-test('audit --since filtre les entrées', (t) => {
+test('audit --since filters the entries', (t) => {
   const dir = project(t, 'audit-since');
   writeVerifyRun(dir, { ok: true, when: '2026-07-20T10:00:00.000Z' });
   writeVerifyRun(dir, { ok: true, when: '2026-07-21T10:00:00.000Z' });
@@ -138,6 +138,6 @@ test('audit --since filtre les entrées', (t) => {
   const res = run(dir, ['audit', '--since', '2026-07-21T00:00:00.000Z', '--json']);
   assert.equal(res.code, 0, res.output);
   const entries = JSON.parse(res.output);
-  assert.equal(entries.length, 1, 'une seule entrée après le seuil');
+  assert.equal(entries.length, 1, 'a single entry after the threshold');
   assert.equal(entries[0].generatedAt, '2026-07-21T10:00:00.000Z');
 });

@@ -1,321 +1,323 @@
-# La couche évidence & gouvernance
+# The evidence & governance layer
 
-> Plan d'implémentation des 7 modifs qui font passer coding-flow de « méthodo IA »
-> à **couche de preuve et de gouvernance** — le seul terrain non commoditisé par
-> les plugins natifs / marketplaces, et celui qui débloque l'adoption entreprise
-> (88 % des pilotes IA n'atteignent jamais la prod à cause de gouvernance / audit
-> / compliance, pas de la qualité du code).
+> Implementation plan for the 7 changes that take coding-flow from "AI methodology"
+> to an **evidence and governance layer** — the only ground not commoditized by
+> native plugins / marketplaces, and the one that unblocks enterprise adoption
+> (88% of AI pilots never reach prod because of governance / audit / compliance,
+> not code quality).
 
-## Thèse
+## Thesis
 
-Ce que l'agent affirme (« ça marche », « pas de secret », « scope respecté ») ne
-vaut rien en revue. Ce que **la machine prouve** vaut tout. Les 7 modifs
-transforment chaque garde-fou *conseillé* en garde-fou *exécuté*, attaché à une
-**identité humaine**, agrégé en un **registre exportable**, et vérifié **hors de
-la main de l'agent** (CI clean-room). Le tout distribué comme **plugin natif**
-pour ne pas subir le tapis roulant du re-ship à chaque release.
+What the agent asserts ("it works", "no secret", "scope respected") is worth
+nothing in review. What **the machine proves** is worth everything. The 7 changes
+turn every *advisory* guardrail into an *executed* guardrail, attached to a
+**human identity**, aggregated into an **exportable ledger**, and verified **out
+of the agent's hands** (clean-room CI). All of it distributed as a **native
+plugin** so as not to suffer the re-ship treadmill on every release.
 
-Principe directeur unique : *« nothing executed ≠ verified ; asserted ≠ proven ;
-anonymous ≠ auditable »*.
+Single guiding principle: *"nothing executed ≠ verified; asserted ≠ proven;
+anonymous ≠ auditable"*.
 
-## Contraintes non négociables (héritées du projet)
+## Non-negotiable constraints (inherited from the project)
 
-- **Zéro dépendance runtime.** Tout en `node:*` (`child_process`, `fs`, `crypto`).
-  Aucune lib npm ajoutée. `git`/`gh` restent des dépendances *optionnelles*
-  shell-out (dégradation propre si absentes).
-- **Rien n'est bloquant par surprise.** Un garde-fou dur (le hook) n'est actif que
-  s'il est explicitement câblé dans les settings du projet cible ; par défaut on
-  *signale*, on ne casse pas un repo légitime.
-- **Idempotence + `--dry-run` partout.** Aucune commande n'a d'effet de bord
-  sortant caché (pattern `ship`).
-- **Tests comportementaux** en `node:test` sur de vrais dépôts git jetables
-  (`mktemp -d`), on vérifie l'observable (exit codes, fichiers, contenu), jamais
-  le raisonnement. Suppression de fichiers via `trash`, jamais `rm`.
-- **L'évidence est la vérité, pas le récit.** Capture verbatim, tronquée mais
-  jamais reformulée.
+- **Zero runtime dependencies.** Everything in `node:*` (`child_process`, `fs`,
+  `crypto`). No npm lib added. `git`/`gh` stay *optional* shell-out dependencies
+  (clean degradation if absent).
+- **Nothing blocks by surprise.** A hard guardrail (the hook) is only active if it
+  is explicitly wired into the target project's settings; by default we *flag*, we
+  don't break a legitimate repo.
+- **Idempotence + `--dry-run` everywhere.** No command has a hidden outward side
+  effect (the `ship` pattern).
+- **Behavioral tests** in `node:test` on real throwaway git repos (`mktemp -d`),
+  we verify the observable (exit codes, files, content), never the reasoning.
+  File deletion via `trash`, never `rm`.
+- **The evidence is the truth, not the narrative.** Verbatim capture, truncated
+  but never reworded.
 
-## Ordre d'implémentation (dépendances)
+## Implementation order (dependencies)
 
 ```
-1. identity  ─┬─> 2. guard (hook)         (enforcement dur)
-              ├─> 3. ship attache l'évidence   (dépend de 1)
-              ├─> 4. ledger (registre)          (dépend de 1)
-              │        └─> 5. trace (bout en bout)  (dépend de 1 + 4)
-              ├─> 6. CI clean-room gate          (quasi indépendant)
-              └─> 7. plugin natif                (indépendant, distribution)
+1. identity  ─┬─> 2. guard (hook)         (hard enforcement)
+              ├─> 3. ship attaches the evidence   (depends on 1)
+              ├─> 4. ledger (the register)         (depends on 1)
+              │        └─> 5. trace (end-to-end)       (depends on 1 + 4)
+              ├─> 6. clean-room CI gate           (nearly independent)
+              └─> 7. native plugin                (independent, distribution)
 ```
 
-Chaque module est **validé (tests verts + smoke)** et **committé** avant de passer
-au suivant. On coupe entre deux modules si le contexte est saturé — l'état est
-repris via la checklist en fin de doc.
+Each module is **validated (green tests + smoke)** and **committed** before moving
+to the next. We cut between two modules if the context is saturated — state is
+resumed via the checklist at the end of the doc.
 
 ---
 
-## Module 1 — Provenance : identité git sur chaque évidence
+## Module 1 — Provenance: git identity on every evidence
 
-**Intent.** Aujourd'hui `verify`/`evidence` produisent un JSON anonyme. On ne peut
-pas répondre « qui a produit cette preuve, sur quel commit, dans quelle PR ». Sans
-ça, pas d'audit, pas d'offboarding, pas de conformité (EU AI Act art. 12
-« record-keeping », traçabilité des systèmes IA).
+**Intent.** Today `verify`/`evidence` produce anonymous JSON. We cannot answer
+"who produced this proof, on which commit, in which PR". Without it, no audit, no
+offboarding, no compliance (EU AI Act art. 12 "record-keeping", traceability of
+AI systems).
 
-**Design.** Nouveau module pur-lecture `bin/lib/identity.js` :
+**Design.** New read-only module `bin/lib/identity.js`:
 
 ```js
-// captureIdentity(cwd) -> non-fatal hors git
+// captureIdentity(cwd) -> non-fatal outside git
 {
   capturedAt: "2026-07-21T...Z",
   git: {
     commit: "<sha>",          // git rev-parse HEAD
     shortCommit: "<sha7>",
     branch: "<abbrev-ref>",
-    author: { name, email }, // git config user.name/email (ou log -1)
-    dirty: true|false,        // status --porcelain non vide
-    remote: "<origin url>",   // get-url origin (optionnel)
+    author: { name, email }, // git config user.name/email (or log -1)
+    dirty: true|false,        // status --porcelain non-empty
+    remote: "<origin url>",   // get-url origin (optional)
   },
-  pr: { number, url } | null,  // via gh pr view --json (optionnel, best-effort)
+  pr: { number, url } | null,  // via gh pr view --json (optional, best-effort)
   host: { user, platform },    // os.userInfo().username, process.platform
 }
 ```
 
-- Tout est **best-effort** : hors dépôt git → `git: null` + `reason`. `gh` absent
-  → `pr: null`. Jamais fatal : la provenance enrichit, ne bloque pas.
-- Injecté dans le JSON de `harnessVerify` et `harnessEvidence` sous une clé
-  `provenance`. Rétro-compatible (ajout de clé, aucun retrait).
+- Everything is **best-effort**: outside a git repo → `git: null` + `reason`. `gh`
+  absent → `pr: null`. Never fatal: provenance enriches, it does not block.
+- Injected into the `harnessVerify` and `harnessEvidence` JSON under a
+  `provenance` key. Backward-compatible (key added, nothing removed).
 
-**Fichiers.** `bin/lib/identity.js` (nouveau) ; `bin/lib/harness.js` (import +
-`provenance: captureIdentity(cwd)` dans les deux évidences) ;
-`test/identity.test.js` (nouveau).
+**Files.** `bin/lib/identity.js` (new); `bin/lib/harness.js` (import +
+`provenance: captureIdentity(cwd)` in both evidences); `test/identity.test.js`
+(new).
 
-**Tests.** dépôt git temp avec `user.name/email` configurés → `provenance.git`
-peuplé, `dirty` bascule quand on touche un fichier ; hors git → `git:null`
-non-fatal ; `verify --json` contient désormais `provenance`.
+**Tests.** temp git repo with `user.name/email` configured → `provenance.git`
+populated, `dirty` flips when a file is touched; outside git → `git:null`
+non-fatal; `verify --json` now contains `provenance`.
 
-**Plus-value pour la suite.** Socle de 3, 4, 5. Le ledger agrège la provenance ; la
-PR l'affiche ; le trace la suit. À faire **en premier** : tout le reste en dépend.
-
----
-
-## Module 2 — `ai-flow guard` : le hook PreToolUse déterministe
-
-**Intent.** `harness check` scanne *après coup*. Le seul moment non contournable
-pour empêcher l'écriture d'un `.env`, le commit d'un secret ou l'édition hors
-scope, c'est **avant** que l'outil n'écrive. Claude Code expose un hook
-**PreToolUse** qui reçoit l'appel d'outil sur stdin et peut le **refuser** (exit 2
-/ décision `deny`). C'est le passage de « conseil » à « garde-fou en code » — le
-levier unique le plus fort de tout le plan.
-
-**Design.** Sous-commande `ai-flow guard` (lecteur de hook, pas d'UI humaine) :
-
-1. Lit le JSON du hook sur **stdin** (`{ tool_name, tool_input: { file_path,
-   content, new_string, ... } }`). Format tolérant : si stdin vide ou illisible →
-   `allow` (fail-open pour ne jamais bloquer un usage non-hook).
-2. Ne se déclenche que pour les outils d'écriture (`Write`, `Edit`, `MultiEdit`,
-   `NotebookEdit`). Autres outils → `allow`.
-3. Charge `.coding-flow/harness.json` (via `readHarnessConfig`) et applique
-   **deux** contrôles déterministes :
-   - **chemin bloqué** : `file_path` relatif matche un `blockedPaths` (réutilise
-     `matchesPattern`, exclut `isAllowedEnvExample`) → **deny**.
-   - **secret dans le contenu** : le contenu écrit (`content`/`new_string`) matche
-     un `getSecretPatterns()` → **deny**.
-4. Émet la **décision** au format hook attendu par Claude Code (JSON sur stdout
-   avec `hookSpecificOutput.permissionDecision = "deny"` + `reason`, ou exit code
-   2 + message stderr — on gère les deux voies, la plus portable étant l'exit
-   code). `allow` = exit 0 silencieux.
-5. `--explain` (humain) et `--json` pour debug/tests ; un flag d'entrée
-   `--input <file>` pour tester sans passer par stdin réel.
-
-**Câblage côté projet cible.** Template `templates/.claude/settings.json` (ou
-fusion dans l'existant à l'`init`) avec un bloc `hooks.PreToolUse` matcher
-`Write|Edit|MultiEdit` → `command: "npx @landry_pouth/coding-flow guard"` (ou le
-binaire local détecté). L'`init` **propose** le câblage ; ne l'impose pas si un
-`settings.json` existe déjà (merge non destructif, sinon on affiche l'instruction).
-
-**Fichiers.** `bin/lib/guard.js` (nouveau) ; export `getSecretPatterns` depuis
-`harness.js` (réutilisation) ; `bin/ai-flow.js` (dispatch `guard`) ;
-`bin/lib/commands.js` (aide) ; template settings + wiring dans `templates.js`/`init` ;
-`test/guard.test.js`.
-
-**Tests.** deny sur `.env`/`**/*.pem` ; deny sur contenu avec `sk_live_...` ;
-allow sur fichier normal ; allow si stdin vide (fail-open) ; allow si outil non
-écrivain ; `.env.example` autorisé ; exit code correct (0 allow / 2 deny).
-
-**Plus-value.** C'est *la preuve* qu'un secret ne **peut** pas fuiter, pas qu'on
-espère qu'il ne fuitera pas. Argument de vente entreprise n°1 (« secret isolation
-enforced at the tool boundary »). Réutilisable hors coding-flow (n'importe quel
-projet Claude Code peut câbler le guard).
+**Payoff for the rest.** Foundation of 3, 4, 5. The ledger aggregates provenance;
+the PR displays it; trace follows it. To do **first**: everything else depends on
+it.
 
 ---
 
-## Module 3 — `ship` attache l'évidence à la PR
+## Module 2 — `ai-flow guard`: the deterministic PreToolUse hook
 
-**Intent.** Le reviewer humain doit voir « ça passe, prouvé » sans effort. On
-injecte le résumé du dernier `verify` (+ provenance) dans le corps de la PR.
+**Intent.** `harness check` scans *after the fact*. The only non-circumventable
+moment to prevent writing a `.env`, committing a secret, or editing out of scope
+is **before** the tool writes. Claude Code exposes a **PreToolUse** hook that
+receives the tool call on stdin and can **refuse** it (exit 2 / `deny` decision).
+This is the move from "advice" to "in-code guardrail" — the single strongest lever
+of the whole plan.
 
-**Design.** Dans `ship.js`, avant création/màj de PR :
+**Design.** `ai-flow guard` subcommand (a hook reader, no human UI):
 
-- lire le plus récent `.coding-flow/runs/*-verify.json` (best-effort) ;
-- construire un bloc markdown délimité par des marqueurs idempotents
-  `<!-- coding-flow:evidence:start -->` … `:end -->` :
-  résultat global (✅/❌), source des commandes, liste `command → exit/durée`,
-  provenance (commit court, auteur, dirty), horodatage ;
-- **création** : passer ce bloc en `--body` (au lieu de `--fill` seul : on garde
-  le titre dérivé mais on ajoute le corps ; option `--no-evidence` pour désactiver) ;
-- **PR existante** : `gh pr view --json body`, remplacer la section entre marqueurs
-  (ou l'ajouter), `gh pr edit --body`. Jamais on n'écrase le texte humain hors
-  marqueurs.
-- Sans `verify` disponible → note « aucune évidence : lance `ai-flow harness verify` ».
-- `--dry-run` affiche le bloc sans pousser.
+1. Reads the hook JSON on **stdin** (`{ tool_name, tool_input: { file_path,
+   content, new_string, ... } }`). Tolerant format: if stdin is empty or
+   unreadable → `allow` (fail-open so it never blocks a non-hook use).
+2. Only triggers for write tools (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`).
+   Other tools → `allow`.
+3. Loads `.coding-flow/harness.json` (via `readHarnessConfig`) and applies **two**
+   deterministic checks:
+   - **blocked path**: the relative `file_path` matches a `blockedPaths` (reuses
+     `matchesPattern`, excludes `isAllowedEnvExample`) → **deny**.
+   - **secret in content**: the written content (`content`/`new_string`) matches a
+     `getSecretPatterns()` → **deny**.
+4. Emits the **decision** in the hook format expected by Claude Code (JSON on
+   stdout with `hookSpecificOutput.permissionDecision = "deny"` + `reason`, or
+   exit code 2 + stderr message — we handle both paths, the most portable being
+   the exit code). `allow` = silent exit 0.
+5. `--explain` (human) and `--json` for debug/tests; an input flag `--input
+   <file>` to test without going through real stdin.
 
-**Fichiers.** `bin/lib/ship.js` (lecture évidence + injection section) ;
-`test/ship.test.js` (étendre : bloc présent dans le body ; idempotence du
-remplacement ; `--no-evidence`).
+**Wiring on the target project.** Template `templates/.claude/settings.json` (or
+merge into the existing one at `init`) with a `hooks.PreToolUse` block matcher
+`Write|Edit|MultiEdit` → `command: "npx @landry_pouth/coding-flow guard"` (or the
+detected local binary). `init` **offers** the wiring; it does not impose it if a
+`settings.json` already exists (non-destructive merge, otherwise we print the
+instruction).
 
-**Plus-value.** Zéro friction : la preuve arrive là où la décision se prend (la
-PR). Boucle intention → preuve fermée et visible. Rend le module 4 (ledger)
-« gratuit » côté humain.
+**Files.** `bin/lib/guard.js` (new); export `getSecretPatterns` from `harness.js`
+(reuse); `bin/ai-flow.js` (`guard` dispatch); `bin/lib/commands.js` (help);
+settings template + wiring in `templates.js`/`init`; `test/guard.test.js`.
 
----
+**Tests.** deny on `.env`/`**/*.pem`; deny on content with `sk_live_...`; allow on
+a normal file; allow if stdin empty (fail-open); allow if non-write tool;
+`.env.example` allowed; correct exit code (0 allow / 2 deny).
 
-## Module 4 — `ai-flow audit` : le registre exportable (append-only)
-
-**Intent.** Le document qu'on montre à la compliance : « voici, horodaté et signé
-par identité, tout ce qui a été vérifié sur ce dépôt ». Agrège les runs épars en
-un journal durable.
-
-**Design.** Nouveau `bin/lib/audit.js` + commande `ai-flow audit` :
-
-- **Source** : tous les `.coding-flow/runs/*-verify.json` et `*-evidence.json`.
-- **Ledger append-only** : `.coding-flow/ledger.jsonl` — une ligne JSON par run,
-  jamais réécrite. Chaque entrée : `{ id (hash contenu), type, generatedAt,
-  ok, story, commandSource, provenance, summary }`. `audit` **ajoute** les runs
-  pas encore présents (dédup par `id` = `sha256` du fichier). Append-only =
-  garantie d'intégrité (on n'efface pas l'historique).
-- **Export humain** : `ai-flow audit --export` écrit `docs/AUDIT.md` (tableau
-  chronologique : date, type, résultat, story, commit, auteur). `--json` sort le
-  ledger complet ; `--since <iso>` filtre.
-- **Gate** : `ai-flow audit --check` sort non-zéro si le dernier run par story est
-  en échec ou manquant (utilisable en CI pour « pas de merge sans évidence verte »).
-
-**Fichiers.** `bin/lib/audit.js` (nouveau) ; `bin/ai-flow.js` (dispatch) ;
-`commands.js` (aide) ; `test/audit.test.js`.
-
-**Tests.** ledger créé et dédupliqué (2 passes → pas de doublon) ; append préserve
-les anciennes lignes ; `--export` génère `docs/AUDIT.md` avec les colonnes ;
-`--check` échoue si un run est rouge ; `--since` filtre.
-
-**Plus-value.** Transforme des JSON épars en **artefact de conformité**. C'est la
-brique « facturable » (couche gouvernance) sans rien enlever à l'open-core.
+**Payoff.** It is *the proof* that a secret **cannot** leak, not that we hope it
+won't. Enterprise selling point #1 ("secret isolation enforced at the tool
+boundary"). Reusable outside coding-flow (any Claude Code project can wire the
+guard).
 
 ---
 
-## Module 5 — `ai-flow trace` : la chaîne story ↔ commit ↔ PR ↔ évidence ↔ test
+## Module 3 — `ship` attaches the evidence to the PR
 
-**Intent.** Prouver la chaîne complète : cette story a produit ces commits, dans
-cette PR, dont l'évidence verte cite ces tests. Réponse d'un seul coup à « montre-
-moi que cette exigence est réellement livrée et vérifiée ».
+**Intent.** The human reviewer must see "it passes, proven" without effort. We
+inject the summary of the latest `verify` (+ provenance) into the PR body.
 
-**Design.** Nouveau `bin/lib/trace.js` + `ai-flow trace [--story <dir>] [--json]` :
+**Design.** In `ship.js`, before PR creation/update:
 
-- **story → tests** : parse la table de traçabilité `critère -> file::test` de
-  `tests.md` (déjà générée par blueprint-tests) + le bloc `## Commands`.
-- **story → commits** : `git log` filtré sur le dossier de la story
-  (`-- <storyDir>`) et/ou sur le nom de branche liée (réutilise la correspondance
-  worktree↔story sans état de `status`).
-- **story → PR** : `gh pr view <branch>` (best-effort).
-- **story → évidence** : dernier run du ledger dont `story` matche.
-- **Sortie** : un arbre lisible (texte) + JSON structuré ; signale les **maillons
-  manquants** (pas d'évidence, pas de test pour un critère, commits sans PR).
+- read the most recent `.coding-flow/runs/*-verify.json` (best-effort);
+- build a markdown block delimited by idempotent markers
+  `<!-- coding-flow:evidence:start -->` … `:end -->`:
+  overall result (✅/❌), command source, `command → exit/duration` list,
+  provenance (short commit, author, dirty), timestamp;
+- **creation**: pass this block as `--body` (instead of `--fill` alone: we keep
+  the derived title but add the body; `--no-evidence` option to disable);
+- **existing PR**: `gh pr view --json body`, replace the section between markers
+  (or add it), `gh pr edit --body`. We never overwrite the human text outside the
+  markers.
+- Without `verify` available → note "no evidence: run `ai-flow harness verify`".
+- `--dry-run` prints the block without pushing.
 
-**Fichiers.** `bin/lib/trace.js` (nouveau) ; réutilise `identity`, `audit`,
-`parseTestsCommands`, la table de traçabilité ; `bin/ai-flow.js` + `commands.js` ;
+**Files.** `bin/lib/ship.js` (read evidence + inject section); `test/ship.test.js`
+(extend: block present in the body; idempotence of the replacement;
+`--no-evidence`).
+
+**Payoff.** Zero friction: the proof arrives where the decision is made (the PR).
+Intent → proof loop closed and visible. Makes module 4 (ledger) "free" on the
+human side.
+
+---
+
+## Module 4 — `ai-flow audit`: the exportable ledger (append-only)
+
+**Intent.** The document you show to compliance: "here, timestamped and signed by
+identity, is everything that has been verified on this repo". Aggregates the
+scattered runs into a durable journal.
+
+**Design.** New `bin/lib/audit.js` + `ai-flow audit` command:
+
+- **Source**: all the `.coding-flow/runs/*-verify.json` and `*-evidence.json`.
+- **Append-only ledger**: `.coding-flow/ledger.jsonl` — one JSON line per run,
+  never rewritten. Each entry: `{ id (content hash), type, generatedAt, ok,
+  story, commandSource, provenance, summary }`. `audit` **appends** the runs not
+  yet present (dedup by `id` = `sha256` of the file). Append-only = integrity
+  guarantee (we don't erase the history).
+- **Human export**: `ai-flow audit --export` writes `docs/AUDIT.md` (chronological
+  table: date, type, result, story, commit, author). `--json` outputs the full
+  ledger; `--since <iso>` filters.
+- **Gate**: `ai-flow audit --check` exits non-zero if the latest run per story is
+  failing or missing (usable in CI for "no merge without green evidence").
+
+**Files.** `bin/lib/audit.js` (new); `bin/ai-flow.js` (dispatch); `commands.js`
+(help); `test/audit.test.js`.
+
+**Tests.** ledger created and deduplicated (2 passes → no duplicate); append
+preserves the old lines; `--export` generates `docs/AUDIT.md` with the columns;
+`--check` fails if a run is red; `--since` filters.
+
+**Payoff.** Turns scattered JSON into a **compliance artifact**. It is the
+"billable" brick (governance layer) without taking anything away from the
+open-core.
+
+---
+
+## Module 5 — `ai-flow trace`: the story ↔ commit ↔ PR ↔ evidence ↔ test chain
+
+**Intent.** Prove the complete chain: this story produced these commits, in this
+PR, whose green evidence cites these tests. A one-shot answer to "show me that
+this requirement is actually delivered and verified".
+
+**Design.** New `bin/lib/trace.js` + `ai-flow trace [--story <dir>] [--json]`:
+
+- **story → tests**: parse the `criterion -> file::test` traceability table of
+  `tests.md` (already generated by blueprint-tests) + the `## Commands` block.
+- **story → commits**: `git log` filtered on the story directory (`-- <storyDir>`)
+  and/or on the linked branch name (reuses the stateless worktree↔story mapping
+  from `status`).
+- **story → PR**: `gh pr view <branch>` (best-effort).
+- **story → evidence**: latest ledger run whose `story` matches.
+- **Output**: a readable tree (text) + structured JSON; flags the **missing
+  links** (no evidence, no test for a criterion, commits without a PR).
+
+**Files.** `bin/lib/trace.js` (new); reuses `identity`, `audit`,
+`parseTestsCommands`, the traceability table; `bin/ai-flow.js` + `commands.js`;
 `test/trace.test.js`.
 
-**Tests.** dépôt temp avec une story (tests.md + traçabilité), un commit touchant
-le dossier, un run d'évidence → `trace` relie les 4 ; maillon manquant signalé
-(critère sans test, story sans évidence).
+**Tests.** temp repo with a story (tests.md + traceability), a commit touching the
+directory, an evidence run → `trace` links the 4; missing link flagged (criterion
+without a test, story without evidence).
 
-**Plus-value.** L'« audit d'une exigence » en une commande. Différenciateur fort
-vs Spec Kit / BMAD (eux spécifient, ils ne **prouvent** pas la livraison).
+**Payoff.** The "audit of a requirement" in a single command. Strong
+differentiator vs Spec Kit / BMAD (they specify, they don't **prove** delivery).
 
 ---
 
-## Module 6 — CI clean-room gate + plancher de diff-coverage
+## Module 6 — clean-room CI gate + diff-coverage floor
 
-**Intent.** Le seul signal non-jouable : rejouer `verify` sur un checkout neuf,
-hors de la main de l'agent (compute GitHub gratuit, budget Claude préservé). +
-exiger que le **code changé** soit couvert (diff-coverage), pas la couverture
-globale gonflable.
+**Intent.** The only non-gameable signal: replay `verify` on a fresh checkout, out
+of the agent's hands (free GitHub compute, Claude budget preserved). + require the
+**changed code** to be covered (diff-coverage), not the inflatable global
+coverage.
 
-**Design.** Template de workflow scaffané dans le projet **cible** (pas la CI de
-coding-flow lui-même) via `ai-flow ci init` (ou une étape d'`init --with-ci`) :
+**Design.** Workflow template scaffolded in the **target** project (not
+coding-flow's own CI) via `ai-flow ci init` (or an `init --with-ci` step):
 
-- `templates/.github/workflows/coding-flow-verify.yml` : checkout propre →
+- `templates/.github/workflows/coding-flow-verify.yml`: clean checkout →
   `npx @landry_pouth/coding-flow harness verify` → `harness audit --check` →
-  upload des `.coding-flow/runs/*` en artefact. Job non-bloquant configurable.
-- **Diff-coverage** : optionnel, activé si un rapport de couverture existe ;
-  compare aux lignes du diff (`git diff --name-only origin/base...HEAD`).
-  V1 : plancher simple documenté ; l'outil fournit le hook, pas un runner de
-  couverture maison (hors périmètre, cf. testability.md).
-- `ai-flow ci init` copie le template, non destructif, `--dry-run`.
+  upload the `.coding-flow/runs/*` as an artifact. Configurable non-blocking job.
+- **Diff-coverage**: optional, enabled if a coverage report exists; compares
+  against the diff lines (`git diff --name-only origin/base...HEAD`). V1: simple
+  documented floor; the tool provides the hook, not a home-made coverage runner
+  (out of scope, cf. testability.md).
+- `ai-flow ci init` copies the template, non-destructive, `--dry-run`.
 
-**Fichiers.** `templates/.github/workflows/coding-flow-verify.yml` (nouveau) ;
-`bin/lib/ci.js` (nouveau, scaffolder) ; dispatch + aide ; `test/ci.test.js`
-(le scaffold écrit le fichier, idempotent, `--dry-run` n'écrit rien).
+**Files.** `templates/.github/workflows/coding-flow-verify.yml` (new);
+`bin/lib/ci.js` (new, scaffolder); dispatch + help; `test/ci.test.js` (the
+scaffold writes the file, idempotent, `--dry-run` writes nothing).
 
-**Plus-value.** Le gate lourd porté par la CI (gratuit) au lieu de re-tokens
-Claude : trust ↑, budget ↓. « Preuve reproductible sur machine neutre » =
-l'argument qui fait passer un pilote en prod.
+**Payoff.** The heavy gate carried by the CI (free) instead of re-spending Claude
+tokens: trust ↑, budget ↓. "Reproducible proof on a neutral machine" = the
+argument that moves a pilot to prod.
 
 ---
 
-## Module 7 — Distribution : plugin natif Claude Code + marketplace
+## Module 7 — Distribution: native Claude Code plugin + marketplace
 
-**Intent.** Ne pas subir le tapis roulant « re-ship les skills à chaque release ».
-Les plugins natifs + marketplaces (2026) sont le canal de distribution ; coding-flow
-doit s'y installer en une commande et se mettre à jour tout seul.
+**Intent.** Don't suffer the "re-ship the skills on every release" treadmill.
+Native plugins + marketplaces (2026) are the distribution channel; coding-flow
+must install into it in one command and update itself.
 
 **Design.**
-- `.claude-plugin/plugin.json` : manifeste (name, version, description, author,
-  commands/skills exposés, homepage). Pointant vers `templates/.claude/skills` et
-  les commandes CLI.
-- Manifeste de **marketplace** (`marketplace.json` ou dépôt dédié) listant le
-  plugin, pour `/plugin marketplace add LandryPouth/codin-flow`.
-- Doc d'install plugin dans le README ; la version npm reste (les deux canaux
-  coexistent : npm pour le CLI/CI, plugin pour l'IDE).
-- Vérifier la conformité au schéma plugin courant via `ctx7`/docs Claude Code
-  avant de figer les clés.
+- `.claude-plugin/plugin.json`: manifest (name, version, description, author,
+  exposed commands/skills, homepage). Pointing to `templates/.claude/skills` and
+  the CLI commands.
+- **Marketplace** manifest (`marketplace.json` or a dedicated repo) listing the
+  plugin, for `/plugin marketplace add LandryPouth/codin-flow`.
+- Plugin install doc in the README; the npm version stays (the two channels
+  coexist: npm for the CLI/CI, plugin for the IDE).
+- Verify conformance to the current plugin schema via `ctx7`/Claude Code docs
+  before freezing the keys.
 
-**Fichiers.** `.claude-plugin/plugin.json` (nouveau) ; `marketplace.json` (nouveau) ;
-README section « Installer comme plugin » ; éventuel `test/plugin.test.js` (le
-manifeste est un JSON valide, versions synchronisées avec package.json).
+**Files.** `.claude-plugin/plugin.json` (new); `marketplace.json` (new); README
+"Install as a plugin" section; possible `test/plugin.test.js` (the manifest is
+valid JSON, versions synced with package.json).
 
-**Plus-value.** Adoption sans friction + mises à jour continues sans re-ship
-manuel. Canal de découverte (marketplace) = distribution quasi-gratuite.
+**Payoff.** Frictionless adoption + continuous updates without manual re-ship.
+Discovery channel (marketplace) = near-free distribution.
 
 ---
 
-## Après les 7 modules
+## After the 7 modules
 
-- **README + docs internes** à jour (chaque module met à jour la table CLI, la
-  section correspondante, et son entrée dans l'index `docs/`).
-- **Suite de tests** : cible +30 tests (~86 total), tous verts sur node 18/20/22.
-- **Version** : bump `package.json` (0.1.0 → 0.2.0, changements additifs mais
-  surface CLI élargie) + note de version.
-- **Publication npm** `@landry_pouth/coding-flow` (auth à finaliser côté user :
-  `npm login --auth-type=legacy` ou token `_authToken`).
+- **README + internal docs** up to date (each module updates the CLI table, the
+  matching section, and its entry in the `docs/` index).
+- **Test suite**: target +30 tests (~86 total), all green on node 18/20/22.
+- **Version**: bump `package.json` (0.1.0 → 0.2.0, additive changes but broader
+  CLI surface) + release note.
+- **npm publication** `@landry_pouth/coding-flow` (auth to finalize on the user
+  side: `npm login --auth-type=legacy` or `_authToken` token).
 
-## Checklist de reprise (état vivant)
+## Resume checklist (living state)
 
-- [x] M1 identity — module + provenance dans verify/evidence + tests verts + commit
-- [x] M2 guard — hook + settings merge + wiring init + tests + commit
-- [x] M3 ship évidence — injection PR idempotente + tests + commit
+- [x] M1 identity — module + provenance in verify/evidence + green tests + commit
+- [x] M2 guard — hook + settings merge + init wiring + tests + commit
+- [x] M3 ship evidence — idempotent PR injection + tests + commit
 - [x] M4 audit ledger — append-only + export + --check + tests + commit
-- [x] M5 trace — chaîne story↔commit↔PR↔évidence↔test + tests + commit
-- [x] M6 CI clean-room — template workflow + scaffolder + tests + commit
-- [x] M7 plugin — manifeste + marketplace + README + commit
-- [x] Docs/README finaux + bump version (0.2.0)
-- [ ] Publication npm (bloquée sur l'auth npm côté user)
+- [x] M5 trace — story↔commit↔PR↔evidence↔test chain + tests + commit
+- [x] M6 clean-room CI — workflow template + scaffolder + tests + commit
+- [x] M7 plugin — manifest + marketplace + README + commit
+- [x] Final docs/README + version bump (0.2.0)
+- [ ] npm publication (blocked on the user's npm auth)
 
-> Règle de reprise : ne jamais démarrer un module sans que le précédent soit
-> **vert + committé**. Si le contexte sature, s'arrêter sur un module committé et
-> laisser la checklist indiquer le point de reprise.
+> Resume rule: never start a module without the previous one being **green +
+> committed**. If the context saturates, stop on a committed module and let the
+> checklist indicate the resume point.

@@ -1,18 +1,18 @@
 #!/usr/bin/env sh
-# pre-push — lance la suite de tests avant tout push et bloque si elle casse.
+# pre-push — runs the test suite before any push and blocks if it breaks.
 #
-# Ce hook est versionné (dossier .githooks/) pour être partagé avec l'équipe.
-# Il n'est actif qu'une fois par clone, après :
+# This hook is versioned (.githooks/ directory) so it can be shared with the team.
+# It only becomes active once per clone, after:
 #   git config core.hooksPath .githooks
 #
-# Pour pousser en urgence sans exécuter les tests :
+# To push urgently without running the tests:
 #   git push --no-verify
 
-echo "→ pre-push : npm test"
+echo "→ pre-push: npm test"
 
 if ! npm test; then
-  echo "✗ Tests en échec — push annulé (utilise --no-verify pour forcer)." >&2
+  echo "✗ Tests failing — push cancelled (use --no-verify to force)." >&2
   exit 1
 fi
 
-echo "✓ Tests OK — push autorisé."
+echo "✓ Tests OK — push allowed."

@@ -1,7 +1,7 @@
 'use strict';
 
-// Tests de `ai-flow trace` : parse la table de traçabilité, relie story ↔ commits
-// ↔ évidence ↔ tests, et signale les maillons manquants.
+// Tests of `ai-flow trace`: parses the traceability table, links story <-> commits
+// <-> evidence <-> tests, and flags the missing links.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -77,7 +77,7 @@ function writeVerifyRun(dir, { ok = true, story = STORY_REL, when = '2026-07-21T
   fs.writeFileSync(path.join(runs, `${when.replace(/[:.]/g, '-')}-verify.json`), JSON.stringify(evidence));
 }
 
-test('parseTraceabilityTable extrait les critères et leur test', () => {
+test('parseTraceabilityTable extracts the criteria and their test', () => {
   const rows = parseTraceabilityTable(makeTestsMd({ mapped: true }));
   assert.equal(rows.length, 1);
   assert.equal(rows[0].criterion, 'User can log in');
@@ -85,12 +85,12 @@ test('parseTraceabilityTable extrait les critères et leur test', () => {
   assert.equal(rows[0].mapped, true);
 });
 
-test('parseTraceabilityTable marque un critère sans test comme non mappé', () => {
+test('parseTraceabilityTable marks a criterion without a test as unmapped', () => {
   const rows = parseTraceabilityTable(makeTestsMd({ mapped: false }));
   assert.equal(rows[0].mapped, false);
 });
 
-test('trace relie une story complète sans gap', (t) => {
+test('trace links a complete story with no gap', (t) => {
   const dir = tmp('trace-full');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   git(dir, ['init', '-b', 'main']);
@@ -107,12 +107,12 @@ test('trace relie une story complète sans gap', (t) => {
   assert.equal(stories.length, 1);
   const chain = stories[0];
   assert.equal(chain.criteria[0].mapped, true);
-  assert.ok(chain.commits.length >= 1, 'un commit touche la story');
-  assert.ok(chain.evidence && chain.evidence.ok, 'évidence verify verte reliée');
-  assert.deepEqual(chain.gaps, [], 'aucun maillon manquant');
+  assert.ok(chain.commits.length >= 1, 'a commit touches the story');
+  assert.ok(chain.evidence && chain.evidence.ok, 'green verify evidence linked');
+  assert.deepEqual(chain.gaps, [], 'no missing link');
 });
 
-test('trace signale les maillons manquants (pas d’évidence, critère non mappé)', (t) => {
+test('trace flags the missing links (no evidence, unmapped criterion)', (t) => {
   const dir = tmp('trace-gaps');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   git(dir, ['init', '-b', 'main']);
@@ -121,15 +121,15 @@ test('trace signale les maillons manquants (pas d’évidence, critère non mapp
   scaffoldStory(dir, { mapped: false });
   git(dir, ['add', '.']);
   git(dir, ['commit', '-m', 'wip']);
-  // Pas de run verify écrit.
+  // No verify run written.
 
   const res = run(dir, ['trace', '--story', STORY_REL, '--json']);
   const chain = JSON.parse(res.output).stories[0];
-  assert.ok(chain.gaps.some((g) => /without a mapped test/.test(g)), 'critère non mappé signalé');
-  assert.ok(chain.gaps.some((g) => /no verify evidence/.test(g)), 'évidence manquante signalée');
+  assert.ok(chain.gaps.some((g) => /without a mapped test/.test(g)), 'unmapped criterion flagged');
+  assert.ok(chain.gaps.some((g) => /no verify evidence/.test(g)), 'missing evidence flagged');
 });
 
-test('trace sans --story découvre les stories sous epics/', (t) => {
+test('trace without --story discovers the stories under epics/', (t) => {
   const dir = tmp('trace-discover');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   git(dir, ['init', '-b', 'main']);
@@ -142,6 +142,6 @@ test('trace sans --story découvre les stories sous epics/', (t) => {
 
   const res = run(dir, ['trace', '--json']);
   const { stories } = JSON.parse(res.output);
-  assert.equal(stories.length, 1, 'la story est découverte automatiquement');
+  assert.equal(stories.length, 1, 'the story is discovered automatically');
   assert.equal(stories[0].story, STORY_REL);
 });

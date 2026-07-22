@@ -1,7 +1,7 @@
 "use strict";
 
-// Constantes partagees par toutes les commandes. Un seul endroit qui connait la
-// racine du package, les templates, le cwd et les scripts npm generes.
+// Constants shared by every command. A single place that knows the package root,
+// the templates, the cwd, and the generated npm scripts.
 
 const path = require("path");
 
