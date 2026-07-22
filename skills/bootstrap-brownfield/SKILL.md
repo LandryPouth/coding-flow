@@ -81,5 +81,5 @@ Optionally update:
 
 ## Suggested Next Command
 
-Use $plan-epic to create the safest first vertical-slice epic for this existing project.
+Use /plan-epic to create the safest first vertical-slice epic for this existing project.
 ```

@@ -36,7 +36,7 @@ Use this skill when:
 
 Do not use this skill for:
 
-- small FAST stories or `$quick-story` changes
+- small FAST stories or `/quick-story` changes
 - copy-only or isolated UI changes
 - stories that already name clear edit points and validation commands
 

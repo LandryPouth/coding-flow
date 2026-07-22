@@ -41,7 +41,7 @@ Tasks should guide implementation and validation without turning the story into 
 - [ ] Read epic `index.md` only if scope, dependencies, or sequencing are unclear
 - [ ] Read project docs only when the context level or risk requires them
 - [ ] Run listed search anchors before opening broad directories
-- [ ] Stop and use `$agent-context-scout` if edit points remain unclear after the context budget
+- [ ] Stop and use `/agent-context-scout` if edit points remain unclear after the context budget
 - [ ] Confirm story scope
 
 ## Implementation Tasks

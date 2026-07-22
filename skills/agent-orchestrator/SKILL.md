@@ -53,7 +53,7 @@ It should identify:
 - areas to avoid unless needed
 - context budget for implementation
 
-Use `$agent-context-scout` only when the map cannot stay compact or edit points remain unclear after targeted searches. The scout must not modify files.
+Use `/agent-context-scout` only when the map cannot stay compact or edit points remain unclear after targeted searches. The scout must not modify files.
 
 ## Risk Routing
 

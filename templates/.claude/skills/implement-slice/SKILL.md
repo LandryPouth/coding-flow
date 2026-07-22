@@ -34,9 +34,9 @@ The success condition is not "code changed"; it is "acceptance criteria are sati
 1. Map acceptance criteria to code areas using the Context Map, story technical notes, or targeted search anchors.
 2. Run targeted searches before opening broad directories.
 3. Inspect current patterns before editing.
-4. If business logic is involved, consider `$tdd`.
+4. If business logic is involved, consider `/tdd`.
 5. If UI is involved, preserve existing interaction and visual conventions.
-6. If auth, admin, permissions, external input, or persistence is involved, plan `$security-check`.
+6. If auth, admin, permissions, external input, or persistence is involved, plan `/security-check`.
 7. Make the smallest coherent change.
 8. Validate and repair.
 
@@ -47,7 +47,7 @@ The success condition is not "code changed"; it is "acceptance criteria are sati
 - Prefer existing patterns and helper APIs.
 - Keep implementation one-shot once the edit points are clear: code, tests, validation, and notes should happen in one focused pass.
 - Do not load broad project context when targeted files, search anchors, or a Context Map are enough.
-- If more than 8 files or 5 searches are needed before edit points are clear, stop and switch to `$agent-context-scout` unless the mode is STRICT.
+- If more than 8 files or 5 searches are needed before edit points are clear, stop and switch to `/agent-context-scout` unless the mode is STRICT.
 - Add or update tests according to `tests.md`.
 - Record meaningful architecture choices in `decisions.md`.
 - Update `implementation-notes.md` after execution.

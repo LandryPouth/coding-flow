@@ -1,95 +1,95 @@
 # Coding Flow
 
-Coding Flow est un workflow d'ingénierie AI-native pour les développeurs qui utilisent Claude Code, Codex, ou d'autres agents de code.
+Coding Flow is an AI-native engineering workflow for developers who use Claude Code, Codex, or other coding agents.
 
-Son but est simple : rendre le développement assisté par IA plus prévisible, moins coûteux en tokens, et capable de livrer des features complètes en une seule passe quand le contexte est clair.
+Its goal is simple: make AI-assisted development more predictable, less token-hungry, and able to ship complete features in a single pass when the context is clear.
 
-En pratique, Coding Flow installe un petit système de travail dans votre projet. Ce système donne aux agents :
+In practice, Coding Flow installs a small working system into your project. This system gives agents:
 
-- des skills réutilisables pour planifier, implémenter, tester et reviewer ;
-- des règles projet partagées entre agents ;
-- une structure légère d'epics et de stories verticales ;
-- des modes d'exécution adaptés au risque : `QUICK`, `FAST`, `STANDARD`, `STRICT` ;
-- une stratégie de contexte pour éviter qu'une story simple consomme une demi context window ;
-- des garde-fous de validation, rollback, documentation et preuves de sécurité.
+- reusable skills to plan, implement, test, and review;
+- project rules shared across agents;
+- a lightweight structure of epics and vertical stories;
+- execution modes matched to risk: `QUICK`, `FAST`, `STANDARD`, `STRICT`;
+- a context strategy to keep a simple story from consuming half a context window;
+- guardrails for validation, rollback, documentation, and security evidence.
 
-Coding Flow n'est pas un framework applicatif et ne remplace pas votre stack. Il ajoute une couche de méthode autour de votre repo pour que l'agent sache quoi lire, quoi produire, quand s'arrêter, quoi valider et comment laisser une trace utile.
+Coding Flow is not an application framework and does not replace your stack. It adds a layer of method around your repo so the agent knows what to read, what to produce, when to stop, what to validate, and how to leave a useful trace.
 
-## Vue D'Ensemble
+## Overview
 
-Le projet repose sur quatre blocs simples :
+The project rests on four simple blocks:
 
-1. **Le CLI `ai-flow`**
-   Il installe, met à jour et vérifie les fichiers du workflow. Il peut aussi scanner un projet existant, lister les stories et exécuter le harness de sécurité.
+1. **The `ai-flow` CLI**
+   It installs, updates, and checks the workflow files. It can also scan an existing project, list stories, and run the security harness.
 
-2. **Les fichiers de contexte**
-   `PROJECT_RULES.md`, `AGENT_RULES.md`, `docs/project-context.md`, `docs/architecture.md`, `docs/conventions.md` et `docs/roadmap.md` donnent à l'agent les règles et la carte durable du projet.
+2. **The context files**
+   `PROJECT_RULES.md`, `AGENT_RULES.md`, `docs/project-context.md`, `docs/architecture.md`, `docs/conventions.md`, and `docs/roadmap.md` give the agent the rules and the durable map of the project.
 
-3. **Les skills**
-   Les skills sont des workflows réutilisables. Par exemple `$plan-epic` découpe une capacité produit en stories, `$run-story` exécute une story, et `$run-story-secure` ajoute des validations sécurité.
+3. **The skills**
+   Skills are reusable workflows. For example `/plan-epic` breaks a product capability into stories, `/run-story` runs a story, and `/run-story-secure` adds security validations.
 
-4. **Le harness de sécurité**
-   Le harness rend certains garde-fous vérifiables par le CLI : secrets, fichiers sensibles, niveau de risque d'une story, notes de rollback et preuves JSON dans `.coding-flow/runs/`.
+4. **The security harness**
+   The harness makes certain guardrails checkable by the CLI: secrets, sensitive files, a story's risk level, rollback notes, and JSON evidence in `.coding-flow/runs/`.
 
-## Comment Ça Marche
+## How It Works
 
-Le workflow normal ressemble à ceci :
+The normal workflow looks like this:
 
 ```txt
 1. ai-flow init
-   -> installe les règles, docs, skills, exemples et la policy harness.
+   -> installs the rules, docs, skills, examples, and the harness policy.
 
-2. L'agent lit PROJECT_RULES.md et AGENT_RULES.md
-   -> il comprend les limites, les modes et les stop conditions.
+2. The agent reads PROJECT_RULES.md and AGENT_RULES.md
+   -> it understands the boundaries, modes, and stop conditions.
 
-3. Vous planifiez un epic ou une story
-   -> $plan-epic, $write-story ou $bootstrap-brownfield.
+3. You plan an epic or a story
+   -> /plan-epic, /write-story, or /bootstrap-brownfield.
 
-4. Vous exécutez une story
-   -> $quick-story, $run-story ou $run-story-secure.
+4. You run a story
+   -> /quick-story, /run-story, or /run-story-secure.
 
-5. L'agent implémente, teste, valide et documente
-   -> implementation-notes.md, decisions.md si nécessaire, harness evidence si applicable.
+5. The agent implements, tests, validates, and documents
+   -> implementation-notes.md, decisions.md if needed, harness evidence if applicable.
 
-6. ai-flow doctor / harness check peuvent vérifier l'installation et les preuves
-   -> utile localement, en CI ou avant release.
+6. ai-flow doctor / harness check can verify the install and the evidence
+   -> useful locally, in CI, or before a release.
 ```
 
-Le point important : l'utilisateur ne doit pas enchaîner dix commandes à la main. Les commandes `harness` existent pour le debug et la CI, mais les workflows `$run-story` et `$run-story-secure` demandent à l'agent de les appeler automatiquement quand `ai-flow` est disponible.
+The important point: the user should not have to chain ten commands by hand. The `harness` commands exist for debugging and CI, but the `/run-story` and `/run-story-secure` workflows ask the agent to call them automatically when `ai-flow` is available.
 
-## Table Des Matières
+## Table Of Contents
 
-- [Installation rapide](#installation-rapide)
-- [Vue d'ensemble](#vue-densemble)
-- [Comment ça marche](#comment-ça-marche)
-- [Démarrage en 10 minutes](#démarrage-en-10-minutes)
-- [Quel workflow choisir ?](#quel-workflow-choisir-)
-- [Concepts essentiels](#concepts-essentiels)
-- [Workflow quotidien](#workflow-quotidien)
-- [Efficacité contexte et tokens](#efficacité-contexte-et-tokens)
-- [Structure installée](#structure-installée)
-- [Catalogue des skills](#catalogue-des-skills)
-- [Guides pratiques](#guides-pratiques)
-- [Fichiers de contexte](#fichiers-de-contexte)
+- [Quick install](#quick-install)
+- [Overview](#overview)
+- [How it works](#how-it-works)
+- [10-minute start](#10-minute-start)
+- [Which workflow to choose?](#which-workflow-to-choose)
+- [Essential concepts](#essential-concepts)
+- [Daily workflow](#daily-workflow)
+- [Context and token efficiency](#context-and-token-efficiency)
+- [Installed structure](#installed-structure)
+- [Skills catalog](#skills-catalog)
+- [Practical guides](#practical-guides)
+- [Context files](#context-files)
 - [Stop conditions](#stop-conditions)
-- [Commandes CLI](#commandes-cli)
-- [Désinstaller Coding Flow](#désinstaller-coding-flow)
-- [Développement local du package](#développement-local-du-package)
-- [Distribution GitHub via npx](#distribution-github-via-npx)
+- [CLI commands](#cli-commands)
+- [Uninstall Coding Flow](#uninstall-coding-flow)
+- [Local package development](#local-package-development)
+- [GitHub distribution via npx](#github-distribution-via-npx)
 
-## Installation Rapide
+## Quick Install
 
-Coding Flow est distribué depuis GitHub. Il n'est pas nécessaire de cloner le repository ni de publier le package sur npm pour l'utiliser.
+Coding Flow is distributed from GitHub. You don't need to clone the repository or publish the package to npm to use it.
 
-Dans le projet que vous voulez équiper :
+In the project you want to equip:
 
 ```bash
 npx github:LandryPouth/codin-flow init
 ```
 
-`init` ajoute aussi des scripts locaux `flow:*` dans le `package.json`.
-Si le projet n'a pas encore de `package.json`, Coding Flow en crée un minimal à la racine avec `private: true`.
-Le quotidien devient alors :
+`init` also adds local `flow:*` scripts to `package.json`.
+If the project has no `package.json` yet, Coding Flow creates a minimal one at the root with `private: true`.
+Daily use then becomes:
 
 ```bash
 npm run flow:doctor
@@ -98,40 +98,40 @@ npm run flow:status
 npm run flow:check
 ```
 
-`init` crée aussi un pense-bête local :
+`init` also creates a local cheat sheet:
 
 ```txt
 .coding-flow/COMMANDS.md
 ```
 
-Pour afficher les commandes utiles depuis le projet :
+To show the useful commands from the project:
 
 ```bash
 npm run flow:commands
 ```
 
-Si `doctor` signale des fichiers manquants ou un miroir `.agents` désynchronisé :
+If `doctor` reports missing files or an out-of-sync `.agents` mirror:
 
 ```bash
 npm run flow:fix
 ```
 
-Pour mettre à jour les fichiers Coding Flow installés dans un projet sans écraser les modifications locales :
+To update the Coding Flow files installed in a project without overwriting local changes:
 
 ```bash
 npm run flow:upgrade -- --dry-run
 npm run flow:upgrade
 ```
 
-Pour préparer un projet existant :
+To prepare an existing project:
 
 ```bash
 npx github:LandryPouth/codin-flow bootstrap --scan
 ```
 
-Pour le développement local du package, clonez le repo puis utilisez `npm link` ; voir [Développement local du package](#développement-local-du-package).
+For local package development, clone the repo then use `npm link`; see [Local package development](#local-package-development).
 
-Si le package est lié localement avec `npm link`, les commandes courtes `ai-flow` deviennent disponibles :
+If the package is linked locally with `npm link`, the short `ai-flow` commands become available:
 
 ```bash
 ai-flow init
@@ -140,22 +140,22 @@ ai-flow commands
 ai-flow upgrade
 ai-flow status
 ai-flow list-skills
-ai-flow worktree add <name>|--story <dir>   # optionnel : travail parallèle (voir Guides Pratiques)
+ai-flow worktree add <name>|--story <dir>   # optional: parallel work (see Practical Guides)
 ```
 
-Par défaut, les fichiers existants ne sont pas écrasés. Pour réinstaller volontairement les templates :
+By default, existing files are not overwritten. To deliberately reinstall the templates:
 
 ```bash
 npx github:LandryPouth/codin-flow init --force
 ```
 
-Pour voir ce qui serait installé sans écrire de fichiers :
+To see what would be installed without writing files:
 
 ```bash
 npx github:LandryPouth/codin-flow init --dry-run
 ```
 
-Pour une sortie lisible par CI ou scripts :
+For output readable by CI or scripts:
 
 ```bash
 npm run flow:doctor -- --json
@@ -163,77 +163,77 @@ npm run flow:status -- --json
 npm run flow:skills -- --json
 ```
 
-## Démarrage En 10 Minutes
+## 10-Minute Start
 
-### Projet Existant
+### Existing Project
 
-Demandez d'abord à l'agent d'analyser le projet sans modifier l'application :
+First ask the agent to analyze the project without modifying the application:
 
 ```txt
-Use $agent-planner to analyze this existing codebase and update docs/project-context.md, docs/architecture.md, docs/conventions.md, docs/roadmap.md, PROJECT_RULES.md, and AGENT_RULES.md. Do not modify application code.
+Use /agent-planner to analyze this existing codebase and update docs/project-context.md, docs/architecture.md, docs/conventions.md, docs/roadmap.md, PROJECT_RULES.md, and AGENT_RULES.md. Do not modify application code.
 ```
 
-Option plus économique en contexte pour les codebases existants :
+A more context-efficient option for existing codebases:
 
 ```bash
 ai-flow bootstrap --scan
 ```
 
 ```txt
-Use $bootstrap-brownfield with docs/bootstrap-scan.md to fill project context, architecture, conventions, and roadmap. Do not modify application code.
+Use /bootstrap-brownfield with docs/bootstrap-scan.md to fill project context, architecture, conventions, and roadmap. Do not modify application code.
 ```
 
-Puis créez le premier epic :
+Then create the first epic:
 
 ```txt
-Use $plan-epic to identify the safest first vertical slice and create an implementation-ready epic with stories.
+Use /plan-epic to identify the safest first vertical slice and create an implementation-ready epic with stories.
 ```
 
-Ensuite exécutez les stories une par une :
+Then run the stories one by one:
 
 ```txt
-Use $run-story in STANDARD mode for story-01-01.
+Use /run-story in STANDARD mode for story-01-01.
 ```
 
-### Nouveau Projet
+### New Project
 
-Clarifiez l'idée produit :
+Clarify the product idea:
 
 ```txt
-Use $grill-me to clarify the product idea, users, constraints, and first shippable value.
+Use /grill-me to clarify the product idea, users, constraints, and first shippable value.
 ```
 
-Créez le contexte initial :
+Create the initial context:
 
 ```txt
-Use $agent-planner to define the initial product context, target architecture, conventions, roadmap, and project rules. Do not implement application code yet.
+Use /agent-planner to define the initial product context, target architecture, conventions, roadmap, and project rules. Do not implement application code yet.
 ```
 
-Planifiez le premier epic :
+Plan the first epic:
 
 ```txt
-Use $plan-epic to create epic-01 and its implementation-ready stories.
+Use /plan-epic to create epic-01 and its implementation-ready stories.
 ```
 
-Lancez la première story :
+Launch the first story:
 
 ```txt
-Use $run-story in STANDARD mode for the first story.
+Use /run-story in STANDARD mode for the first story.
 ```
 
-## Quel Workflow Choisir ?
+## Which Workflow To Choose?
 
-| Situation | Skill recommandé | Pourquoi |
+| Situation | Recommended skill | Why |
 | --- | --- | --- |
-| Petite correction isolée, texte, style local | `$quick-story` | Le plus faible coût en contexte. Pas de cérémonie. |
-| Story simple déjà claire | `$run-story FAST` | Garde un minimum de stop conditions et rollback notes. |
-| Feature produit normale | `$run-story STANDARD` | Bon équilibre entre one-shot, validation et coût. |
-| Auth, permissions, admin, paiement, migration | `$run-story STRICT` ou `$run-story-secure` | Validation plus forte et meilleurs garde-fous. |
-| Le point d'édition est flou ou cross-module | `$agent-context-scout` puis `$run-story` | Cartographie le contexte sans polluer l'implémentation. |
-| Besoin de planifier plusieurs stories | `$plan-epic` | Crée un epic vertical et des stories prêtes à implémenter. |
-| Besoin de clarifier le besoin | `$grill-me` | Pose les questions bloquantes avant de coder. |
+| Small isolated fix, text, local styling | `/quick-story` | Lowest context cost. No ceremony. |
+| Simple story, already clear | `/run-story FAST` | Keeps a minimum of stop conditions and rollback notes. |
+| Normal product feature | `/run-story STANDARD` | Good balance between one-shot, validation, and cost. |
+| Auth, permissions, admin, payment, migration | `/run-story STRICT` or `/run-story-secure` | Stronger validation and better guardrails. |
+| The edit point is unclear or cross-module | `/agent-context-scout` then `/run-story` | Maps the context without polluting the implementation. |
+| Need to plan several stories | `/plan-epic` | Creates a vertical epic and implementation-ready stories. |
+| Need to clarify the requirement | `/grill-me` | Asks the blocking questions before coding. |
 
-Règle pratique :
+Rule of thumb:
 
 ```txt
 Small and obvious -> quick-story
@@ -243,13 +243,13 @@ Risky or security-sensitive -> STRICT / run-story-secure
 Unclear edit points -> agent-context-scout
 ```
 
-## Concepts Essentiels
+## Essential Concepts
 
 ### Epic
 
-Un epic regroupe une petite capacité produit livrable. Il doit rester assez court pour commencer à shipper rapidement.
+An epic groups a small shippable product capability. It should stay short enough to start shipping quickly.
 
-Exemple :
+Example:
 
 ```txt
 epics/epic-01-admin-content/
@@ -259,17 +259,17 @@ epics/epic-01-admin-content/
   story-01-03-admin-edit-first-content-type/
 ```
 
-### Story Verticale
+### Vertical Story
 
-Une story doit livrer un résultat utilisateur ou système observable. Elle ne doit pas être découpée par couche technique.
+A story must deliver an observable user or system outcome. It must not be split by technical layer.
 
-Préférez :
+Prefer:
 
 ```txt
 Admin can create and publish the first content type.
 ```
 
-Évitez :
+Avoid:
 
 ```txt
 Create DTOs.
@@ -279,118 +279,118 @@ Build frontend.
 
 ### Execution Packet
 
-L'Execution Packet résume ce qui sera implémenté, ce qui est exclu, les validations à faire, les stop conditions et les notes de rollback.
+The Execution Packet summarizes what will be implemented, what is excluded, the validations to perform, the stop conditions, and the rollback notes.
 
-Il évite que l'agent commence à coder avec une compréhension molle du scope.
+It keeps the agent from starting to code with a fuzzy understanding of the scope.
 
 ### Context Map
 
-La Context Map est l'artefact anti-gaspillage de tokens.
+The Context Map is the anti-token-waste artifact.
 
-Elle indique :
+It indicates:
 
-- les fichiers ou dossiers probablement pertinents ;
-- les recherches à lancer en premier ;
-- les points d'édition probables ;
-- les risques à valider ;
-- les zones à éviter sauf nécessité ;
-- le budget de contexte.
+- the likely relevant files or directories;
+- the searches to run first;
+- the probable edit points;
+- the risks to validate;
+- the zones to avoid unless necessary;
+- the context budget.
 
 ### Implementation Context
 
-Chaque story générée contient un `Implementation Context` court. Il aide Codex à commencer au bon endroit, sans relire tout le projet.
+Each generated story contains a short `Implementation Context`. It helps Codex start in the right place, without re-reading the whole project.
 
-## Workflow Quotidien
+## Daily Workflow
 
-### 1. Planifier
+### 1. Plan
 
 ```txt
-Use $plan-epic to create the next smallest shippable epic and its implementation-ready stories.
+Use /plan-epic to create the next smallest shippable epic and its implementation-ready stories.
 ```
 
-### 2. Choisir le mode
+### 2. Choose The Mode
 
 ```txt
-Use $quick-story to fix the typo in the dashboard empty state.
-```
-
-```txt
-Use $run-story in FAST mode for story-02-01.
+Use /quick-story to fix the typo in the dashboard empty state.
 ```
 
 ```txt
-Use $run-story in STANDARD mode for story-02-03-admin-create-post.
+Use /run-story in FAST mode for story-02-01.
 ```
 
 ```txt
-Use $run-story-secure for story-01-02-register because it touches auth and user data.
+Use /run-story in STANDARD mode for story-02-03-admin-create-post.
 ```
 
-### 3. Implémenter En Une Passe
+```txt
+Use /run-story-secure for story-01-02-register because it touches auth and user data.
+```
 
-Le système cherche à garder le côté one-shot :
+### 3. Implement In One Pass
+
+The system aims to keep the one-shot property:
 
 ```txt
 understand scope -> locate edit points -> implement -> test -> validate -> document
 ```
 
-La différence avec un workflow lourd est que Coding Flow ne charge pas tout le projet par défaut. Il escalade le contexte seulement quand le risque le justifie.
+The difference from a heavy workflow is that Coding Flow does not load the whole project by default. It escalates the context only when the risk justifies it.
 
-### 4. Reviewer
+### 4. Review
 
-Après une feature importante :
+After a significant feature:
 
 ```txt
-Use $review-codebase to review the latest implementation before merge.
+Use /review-codebase to review the latest implementation before merge.
 ```
 
-Pour un risque spécifique :
+For a specific risk:
 
 ```txt
-Use $agent-validator-architecture to review the architecture impact.
-```
-
-```txt
-Use $agent-validator-tests to review the test coverage.
+Use /agent-validator-architecture to review the architecture impact.
 ```
 
 ```txt
-Use $agent-validator-security to review the permission and data visibility model.
+Use /agent-validator-tests to review the test coverage.
 ```
 
-## Efficacité Contexte Et Tokens
+```txt
+Use /agent-validator-security to review the permission and data visibility model.
+```
 
-Coding Flow utilise une échelle de contexte.
+## Context And Token Efficiency
 
-| Mode | À utiliser quand | Contexte attendu |
+Coding Flow uses a context scale.
+
+| Mode | Use when | Expected context |
 | --- | --- | --- |
-| `QUICK` | Changement minuscule et évident | Requête, `story.md` si présent, 1-3 recherches, fichiers ciblés. |
-| `FAST` | Story simple et faible risque | Story folder, fichiers ciblés, stop conditions inline. |
-| `STANDARD` | Feature normale | Execution Packet compact, Context Map, validation normale. |
-| `STRICT` | Changement risqué | Docs nécessaires, Context Map, tests, architecture, sécurité. |
+| `QUICK` | Tiny and obvious change | The request, `story.md` if present, 1-3 searches, targeted files. |
+| `FAST` | Simple, low-risk story | Story folder, targeted files, inline stop conditions. |
+| `STANDARD` | Normal feature | Compact Execution Packet, Context Map, normal validation. |
+| `STRICT` | Risky change | Needed docs, Context Map, tests, architecture, security. |
 
-`SCOUT` n'est pas un mode d'exécution. C'est une pré-étape optionnelle :
+`SCOUT` is not an execution mode. It is an optional pre-step:
 
 ```txt
 edit points unclear -> agent-context-scout -> FAST/STANDARD/STRICT
 ```
 
-Utilisez `$agent-context-scout` quand le point d'édition est flou, cross-module, ou quand l'agent risquerait de lire trop large.
+Use `/agent-context-scout` when the edit point is unclear, cross-module, or when the agent would risk reading too broadly.
 
-Budgets par défaut :
+Default budgets:
 
-- `QUICK` : arrêter après 3 recherches ou 5 fichiers si le point d'édition reste flou.
-- `FAST` : arrêter après 5 recherches ou 8 fichiers si le point d'édition reste flou.
-- `STANDARD` : créer ou réutiliser une Context Map avant l'implémentation.
-- `STRICT` : lire les docs nécessaires, mais chercher les fichiers d'implémentation de façon ciblée.
+- `QUICK`: stop after 3 searches or 5 files if the edit point stays unclear.
+- `FAST`: stop after 5 searches or 8 files if the edit point stays unclear.
+- `STANDARD`: create or reuse a Context Map before implementing.
+- `STRICT`: read the needed docs, but search for the implementation files in a targeted way.
 
-Important :
+Important:
 
-- Le contexte est réduit pour économiser les tokens, pas pour découper la feature.
-- Une fois les points d'édition clairs, l'agent doit implémenter, tester, valider et documenter dans la même passe.
-- `$agent-context-scout` ne code pas. Il prépare seulement une carte compacte.
+- Context is reduced to save tokens, not to split the feature.
+- Once the edit points are clear, the agent must implement, test, validate, and document in the same pass.
+- `/agent-context-scout` does not code. It only prepares a compact map.
 
-## Structure Installée
+## Installed Structure
 
 ```txt
 .claude/
@@ -456,129 +456,129 @@ PROJECT_RULES.md
 CLAUDE.md
 ```
 
-Claude Code découvre les skills dans `.claude/skills/`.
+Claude Code discovers the skills in `.claude/skills/`.
 
-Coding Flow installe aussi les mêmes skills dans `.agents/skills/` pour Codex et les agents qui ne lisent pas automatiquement le dossier Claude.
+Coding Flow also installs the same skills into `.agents/skills/` for Codex and the agents that don't automatically read the Claude directory.
 
-Le miroir est volontairement physique plutôt qu'un symlink pour rester compatible avec Windows, npm, archives zip, CI et agents qui ne suivent pas toujours les liens symboliques. `ai-flow doctor` vérifie que le miroir reste conforme, et `ai-flow doctor --fix` peut le resynchroniser.
+The mirror is deliberately physical rather than a symlink, to stay compatible with Windows, npm, zip archives, CI, and agents that don't always follow symlinks. `ai-flow doctor` checks that the mirror stays in sync, and `ai-flow doctor --fix` can resync it.
 
-`.coding-flow/manifest.json` permet à `ai-flow upgrade` de mettre à jour les fichiers installés sans écraser les modifications locales.
+`.coding-flow/manifest.json` lets `ai-flow upgrade` update the installed files without overwriting local changes.
 
-`.coding-flow/harness.json` contient la policy de sécurité légère installée par défaut : chemins bloqués, patterns de fichiers sensibles, checks attendus et mots-clés qui font monter une story en risque moyen ou élevé.
+`.coding-flow/harness.json` holds the lightweight security policy installed by default: blocked paths, sensitive-file patterns, expected checks, and keywords that raise a story to medium or high risk.
 
-`.coding-flow/COMMANDS.md` est le pense-bête local des commandes quotidiennes. Il évite de retourner sur GitHub pour retrouver la bonne syntaxe.
+`.coding-flow/COMMANDS.md` is the local cheat sheet of daily commands. It saves going back to GitHub to find the right syntax.
 
-`.coding-flow/runs/` reçoit les preuves JSON produites par `ai-flow harness evidence`. Ces fichiers servent surtout aux reviews, à la CI et aux audits légers.
+`.coding-flow/runs/` receives the JSON evidence produced by `ai-flow harness evidence`. These files are mainly used for reviews, CI, and light audits.
 
-`CLAUDE.md` importe les règles projet :
+`CLAUDE.md` imports the project rules:
 
 ```md
 @PROJECT_RULES.md
 @AGENT_RULES.md
 ```
 
-## Catalogue Des Skills
+## Skills Catalog
 
-### Skills Macro
+### Macro Skills
 
-| Skill | Usage |
+| Skill | Use |
 | --- | --- |
-| `$quick-story` | Exécuter un changement minuscule avec le minimum de contexte. |
-| `$plan-epic` | Créer un epic vertical et des stories prêtes à implémenter. |
-| `$run-story` | Exécuter une story en `FAST`, `STANDARD` ou `STRICT`. |
-| `$run-story-secure` | Exécuter une story sensible avec validation sécurité. |
+| `/quick-story` | Run a tiny change with the minimum of context. |
+| `/plan-epic` | Create a vertical epic and implementation-ready stories. |
+| `/run-story` | Run a story in `FAST`, `STANDARD`, or `STRICT`. |
+| `/run-story-secure` | Run a sensitive story with security validation. |
 
-### Planning Et Story Writing
+### Planning And Story Writing
 
-| Skill | Usage |
+| Skill | Use |
 | --- | --- |
-| `$grill-me` | Clarifier un besoin flou avec des questions ciblées. |
-| `$agent-planner` | Transformer une intention produit en plan, epic ou stories. |
-| `$bootstrap-brownfield` | Transformer `docs/bootstrap-scan.md` en docs projet utiles. |
-| `$write-story` | Créer ou raffiner une story verticale. |
-| `$blueprint-epic-index` | Générer `index.md` pour un epic. |
-| `$blueprint-story` | Générer `story.md`. |
-| `$blueprint-tasks` | Générer `tasks.md`. |
-| `$blueprint-tests` | Générer `tests.md`. |
-| `$blueprint-decisions` | Générer `decisions.md`. |
-| `$blueprint-implementation-notes` | Générer ou mettre à jour `implementation-notes.md`. |
+| `/grill-me` | Clarify a fuzzy requirement with targeted questions. |
+| `/agent-planner` | Turn a product intent into a plan, epic, or stories. |
+| `/bootstrap-brownfield` | Turn `docs/bootstrap-scan.md` into useful project docs. |
+| `/write-story` | Create or refine a vertical story. |
+| `/blueprint-epic-index` | Generate `index.md` for an epic. |
+| `/blueprint-story` | Generate `story.md`. |
+| `/blueprint-tasks` | Generate `tasks.md`. |
+| `/blueprint-tests` | Generate `tests.md`. |
+| `/blueprint-decisions` | Generate `decisions.md`. |
+| `/blueprint-implementation-notes` | Generate or update `implementation-notes.md`. |
 
-### Implémentation Et Validation
+### Implementation And Validation
 
-| Skill | Usage |
+| Skill | Use |
 | --- | --- |
-| `$agent-context-scout` | Produire une Context Map courte avant une implémentation large ou floue. |
-| `$implement-slice` | Implémenter une story verticale de bout en bout. |
-| `$agent-worker-fullstack` | Worker d'implémentation fullstack. |
-| `$agent-worker-tests` | Worker dédié aux tests. |
-| `$tdd` | Utiliser un cycle TDD ciblé. |
-| `$tests-check` | Vérifier rapidement la couverture de tests. |
-| `$e2e-check` | Vérifier la nécessité ou l'état des tests E2E. |
-| `$architecture-check` | Vérifier rapidement l'impact architecture. |
-| `$security-check` | Vérifier rapidement les risques sécurité. |
-| `$review-codebase` | Revue finale avant merge. |
+| `/agent-context-scout` | Produce a short Context Map before a broad or fuzzy implementation. |
+| `/implement-slice` | Implement a vertical story end to end. |
+| `/agent-worker-fullstack` | Fullstack implementation worker. |
+| `/agent-worker-tests` | Worker dedicated to tests. |
+| `/tdd` | Use a targeted TDD cycle. |
+| `/tests-check` | Quickly check the test coverage. |
+| `/e2e-check` | Check the need for or state of E2E tests. |
+| `/architecture-check` | Quickly check the architecture impact. |
+| `/security-check` | Quickly check the security risks. |
+| `/review-codebase` | Final review before merge. |
 
-### Validateurs Profonds
+### Deep Validators
 
-| Skill | Usage |
+| Skill | Use |
 | --- | --- |
-| `$agent-validator-architecture` | Revue architecture approfondie. |
-| `$agent-validator-tests` | Revue tests approfondie. |
-| `$agent-validator-security` | Revue sécurité approfondie. |
+| `/agent-validator-architecture` | In-depth architecture review. |
+| `/agent-validator-tests` | In-depth test review. |
+| `/agent-validator-security` | In-depth security review. |
 
-## Guides Pratiques
+## Practical Guides
 
-### Corriger Une Petite Erreur De Texte
-
-```txt
-Use $quick-story to update the dashboard empty state copy.
-```
-
-### Ajouter Une Feature CRUD Normale
+### Fix A Small Text Error
 
 ```txt
-Use $plan-epic to create a small epic for admin-managed posts.
+Use /quick-story to update the dashboard empty state copy.
+```
+
+### Add A Normal CRUD Feature
+
+```txt
+Use /plan-epic to create a small epic for admin-managed posts.
 ```
 
 ```txt
-Use $run-story in STANDARD mode for story-01-01-admin-create-post.
+Use /run-story in STANDARD mode for story-01-01-admin-create-post.
 ```
 
-### Modifier Une Zone Auth
+### Modify An Auth Area
 
 ```txt
-Use $run-story-secure for story-01-02-register because it touches auth, validation, and user data.
+Use /run-story-secure for story-01-02-register because it touches auth, validation, and user data.
 ```
 
-### Quand Le Codebase Est Trop Grand
+### When The Codebase Is Too Large
 
 ```txt
-Use $agent-context-scout for story-02-03 to identify relevant files, search anchors, risks, and validation focus. Do not modify files.
+Use /agent-context-scout for story-02-03 to identify relevant files, search anchors, risks, and validation focus. Do not modify files.
 ```
 
-Puis :
+Then:
 
 ```txt
-Use $run-story in STANDARD mode for story-02-03 using the Context Map.
+Use /run-story in STANDARD mode for story-02-03 using the Context Map.
 ```
 
-### Préparer Un Projet Brownfield
+### Prepare A Brownfield Project
 
 ```bash
 ai-flow bootstrap --scan
 ```
 
 ```txt
-Use $bootstrap-brownfield with docs/bootstrap-scan.md to fill project context, architecture, conventions, and roadmap. Do not modify application code.
+Use /bootstrap-brownfield with docs/bootstrap-scan.md to fill project context, architecture, conventions, and roadmap. Do not modify application code.
 ```
 
-Alternative agent-only :
+Agent-only alternative:
 
 ```txt
-Use $agent-planner to analyze this codebase, identify the stack, architecture, hardcoded data, coupling points, conventions, risks, and recommended first epic. Update only workflow docs. Do not change application code.
+Use /agent-planner to analyze this codebase, identify the stack, architecture, hardcoded data, coupling points, conventions, risks, and recommended first epic. Update only workflow docs. Do not change application code.
 ```
 
-### Voir L'État Des Stories
+### See The State Of The Stories
 
 ```bash
 ai-flow status
@@ -588,230 +588,206 @@ ai-flow status
 ai-flow status --json
 ```
 
-Le statut est lu depuis `implementation-notes.md` quand une section `## Status` existe. Sinon, le CLI l'infère depuis les notes.
+The status is read from `implementation-notes.md` when a `## Status` section exists. Otherwise, the CLI infers it from the notes.
 
-Quand un worktree travaille sur une story (voir `--story` ci-dessous), `status`
-affiche la correspondance et liste les worktrees actifs — un tableau de bord du
-travail parallèle en cours :
+When a worktree is working on a story (see `--story` below), `status` shows the mapping and lists the active worktrees — a dashboard of the parallel work in progress:
 
 ```text
 epic-03-kyc
 - story-03-01-kyc-upload                     in-progress   → wt: ../repo-worktrees/story-03-01-kyc-upload
 
-Worktrees (hors story):
+Worktrees (not linked to a story):
 - feat/spike-cache                           ../repo-worktrees/feat-spike-cache
 ```
 
-### Travail Parallèle Sur Plusieurs Features (Worktrees)
+### Parallel Work On Several Features (Worktrees)
 
-Support **optionnel** pour développer plusieurs features réellement indépendantes
-en parallèle, chacune dans son propre dossier de travail (worktree Git), sans
-quitter le zéro-dépendance :
+**Optional** support to develop several genuinely independent features in parallel, each in its own working directory (Git worktree), without leaving the zero-dependency stance:
 
 ```bash
-ai-flow worktree add feat/payments         # crée le worktree + la branche, câble .env / deps
-ai-flow worktree add --story epics/epic-03-kyc/story-03-01-kyc-upload  # branche nommée d'après la story
-ai-flow worktree list                      # liste les worktrees et l'état des liens
-ai-flow worktree remove feat/payments      # retire le worktree, conserve la branche
+ai-flow worktree add feat/payments         # creates the worktree + branch, wires .env / deps
+ai-flow worktree add --story epics/epic-03-kyc/story-03-01-kyc-upload  # branch named after the story
+ai-flow worktree list                      # lists the worktrees and the state of the links
+ai-flow worktree remove feat/payments      # removes the worktree, keeps the branch
 ```
 
-`add` place le worktree dans `../<repo>-worktrees/<nom>`, symlinke `.env`/`.env.local`,
-et gère `node_modules` selon le package manager détecté (symlink pour npm simple,
-`install` recommandé pour un monorepo pnpm/yarn). Options : `--from <ref>`,
-`--deps install|link|skip`, `--story <dir>`, `--dry-run`.
+`add` places the worktree in `../<repo>-worktrees/<name>`, symlinks `.env`/`.env.local`, and handles `node_modules` per the detected package manager (symlink for plain npm, `install` recommended for a pnpm/yarn monorepo). Options: `--from <ref>`, `--deps install|link|skip`, `--story <dir>`, `--dry-run`.
 
-Avec `--story <dir>`, la branche/worktree prend le nom du dossier de la story.
-La correspondance worktree↔story est alors **sans état** : `ai-flow status` la
-retrouve en comparant le nom de branche au dossier de la story — aucun fichier de
-mapping à maintenir. `add --story` suggère aussi le `harness preflight` de la story.
+With `--story <dir>`, the branch/worktree takes the name of the story directory. The worktree↔story mapping is then **stateless**: `ai-flow status` finds it by comparing the branch name to the story directory — no mapping file to maintain. `add --story` also suggests the story's `harness preflight`.
 
-Le worktree n'est utile que pour du travail **parallélisable** (zones de code
-disjointes, socle stable). Pour une liste de changements séquentiels/dépendants,
-déroulez-les une étape à la fois. Détails et arbitrage : `docs/plans/parallel-mode.md`.
+The worktree is only useful for **parallelizable** work (disjoint code areas, stable foundation). For a list of sequential/dependent changes, roll them out one step at a time. Details and trade-offs: `docs/plans/parallel-mode.md`.
 
-> **Pourquoi les worktrees sont des _siblings_ (`../<repo>-worktrees/`) et pas
-> dans le repo ?** Un `worktrees/` gitignoré *à l'intérieur* du repo resterait
-> parcouru par tous les outils qui ne lisent pas `.gitignore` : `tsc`, eslint,
-> jest, les watchers, `docker build .`, et les globs de workspace (`packages/*`).
-> Pire, `git clean -fdx` le supprimerait avec tout le travail non commité. Le
-> sibling est hors de portée de tout ça. La catégorisation `feat/`/`fix/` reste
-> possible via le nom de branche (`add feat/x` → `../repo-worktrees/feat/x`).
+> **Why are worktrees _siblings_ (`../<repo>-worktrees/`) and not inside the repo?** A gitignored `worktrees/` *inside* the repo would still be traversed by all the tools that don't read `.gitignore`: `tsc`, eslint, jest, watchers, `docker build .`, and workspace globs (`packages/*`). Worse, `git clean -fdx` would delete it along with all uncommitted work. The sibling is out of reach of all that. The `feat/`/`fix/` categorization stays possible via the branch name (`add feat/x` → `../repo-worktrees/feat/x`).
 
-### Ouvrir Une PR Par Feature (`ship`)
+### Open One PR Per Feature (`ship`)
 
-Depuis un worktree (ou n'importe quelle branche de feature), `ship` pousse la
-branche et ouvre **une** PR vers la base — idempotent, une feature = une PR :
+From a worktree (or any feature branch), `ship` pushes the branch and opens **one** PR against the base — idempotent, one feature = one PR:
 
 ```bash
-ai-flow ship                       # push + PR vers la branche par défaut du remote
+ai-flow ship                       # push + PR to the remote's default branch
 ai-flow ship --base develop --draft
-ai-flow ship --dry-run             # montre le plan sans rien pousser
+ai-flow ship --dry-run             # shows the plan without pushing anything
 ```
 
-`ship` agit sur la **branche courante**, jamais sur le layout local (le push ne
-transmet que des commits, jamais la forme du dossier — le repo distant reste un
-repo normal quoi qu'il arrive). Il utilise `gh` s'il est disponible pour
-créer/mettre à jour la PR ; sinon il pousse et affiche l'URL de comparaison à
-ouvrir à la main. Garde-fous : refuse depuis la base, sans `origin`, ou s'il n'y
-a aucun commit à shipper.
+`ship` acts on the **current branch**, never on the local layout (a push only carries commits, never the shape of the directory — the remote repo stays a normal repo no matter what). It uses `gh` if available to create/update the PR; otherwise it pushes and prints the compare URL to open by hand. Guardrails: refuses from the base, without `origin`, or if there is no commit to ship.
 
-## Fichiers De Contexte
+## Context Files
 
 ### `docs/project-context.md`
 
-Carte durable de l'état actuel du projet.
+Durable map of the project's current state.
 
-À inclure :
+To include:
 
-- résumé produit ;
-- état actuel ;
-- architecture cible ;
-- domaines métier ;
-- modèle de données ;
-- rôles utilisateurs ;
-- workflows importants ;
-- contraintes techniques ;
-- risques connus ;
-- roadmap actuelle ;
-- résumé des décisions.
+- product summary;
+- current state;
+- target architecture;
+- business domains;
+- data model;
+- user roles;
+- important workflows;
+- technical constraints;
+- known risks;
+- current roadmap;
+- summary of the decisions.
 
-À éviter :
+To avoid:
 
-- logs d'implémentation ;
-- notes temporaires ;
-- détails d'une seule story ;
-- audit brut du codebase.
+- implementation logs;
+- temporary notes;
+- details of a single story;
+- raw codebase audit.
 
 ### `docs/architecture.md`
 
-Décrit les frontières, modules, data flow, conventions d'architecture et dépendances importantes.
+Describes the boundaries, modules, data flow, architecture conventions, and important dependencies.
 
 ### `docs/conventions.md`
 
-Décrit les conventions de code, tests, UI, API, nommage, fichiers et validation.
+Describes the code, test, UI, API, naming, file, and validation conventions.
 
 ### `docs/roadmap.md`
 
-Garde les prochaines étapes produit et les gros jalons.
+Keeps the next product steps and the big milestones.
 
 ### Story `decisions.md`
 
-Stocke les décisions détaillées d'une story :
+Stores the detailed decisions of a story:
 
-- tradeoffs ;
-- alternatives rejetées ;
-- conséquences ;
-- choix d'architecture ;
-- dette acceptée.
+- tradeoffs;
+- rejected alternatives;
+- consequences;
+- architecture choices;
+- accepted debt.
 
 ### Story `implementation-notes.md`
 
-Stocke ce qui s'est réellement passé :
+Stores what actually happened:
 
-- fichiers modifiés ;
-- tests lancés ;
-- validations ;
-- notes de rollback ;
-- problèmes rencontrés ;
-- follow-ups ;
-- risques restants.
+- modified files;
+- tests run;
+- validations;
+- rollback notes;
+- problems encountered;
+- follow-ups;
+- remaining risks.
 
-Règle :
+Rule:
 
 ```txt
-project-context.md = état durable du projet
-decisions.md = décisions détaillées de story
-implementation-notes.md = historique réel d'implémentation
+project-context.md = durable state of the project
+decisions.md = detailed story decisions
+implementation-notes.md = real implementation history
 ```
 
 ## Stop Conditions
 
-Arrêtez l'implémentation au lieu de deviner quand :
+Stop the implementation instead of guessing when:
 
-- le scope de la story est ambigu ;
-- les critères d'acceptation ne sont pas testables ;
-- le modèle auth, rôle ou permission est flou ;
-- une migration breaking est nécessaire ;
-- un service externe, secret ou contrat API est inconnu ;
-- les commandes de validation ne peuvent pas tourner ;
-- l'architecture existante contredit la demande ;
-- la sécurité dépend d'un contrôle seulement côté client ;
-- le point d'édition reste flou après le budget de contexte.
+- the story scope is ambiguous;
+- the acceptance criteria are not testable;
+- the auth, role, or permission model is unclear;
+- a breaking migration is needed;
+- an external service, secret, or API contract is unknown;
+- the validation commands cannot run;
+- the existing architecture contradicts the request;
+- security depends on a client-side-only control;
+- the edit point stays unclear after the context budget.
 
-Quand une stop condition se déclenche, l'agent doit expliquer :
+When a stop condition triggers, the agent must explain:
 
-- ce qui bloque ;
-- pourquoi continuer serait risqué ;
-- quelle décision ou information manque ;
-- quel skill ou workflow utiliser ensuite.
+- what is blocking;
+- why continuing would be risky;
+- which decision or piece of information is missing;
+- which skill or workflow to use next.
 
-## Bonnes Pratiques Pour Débutants
+## Good Practices For Beginners
 
-- Commencez par `$agent-planner` avant de lancer une grosse feature.
-- Utilisez `$quick-story` pour les petits changements évidents.
-- Utilisez `STANDARD` par défaut pour une vraie feature.
-- Passez en `STRICT` dès que la story touche auth, permissions, admin, paiement, données sensibles ou migration.
-- Ne demandez pas à l'agent de tout lire. Demandez-lui de cibler les fichiers.
-- Gardez les stories verticales et testables.
-- Lisez `implementation-notes.md` après chaque story.
+- Start with `/agent-planner` before launching a big feature.
+- Use `/quick-story` for small obvious changes.
+- Use `STANDARD` by default for a real feature.
+- Switch to `STRICT` as soon as the story touches auth, permissions, admin, payment, sensitive data, or migration.
+- Don't ask the agent to read everything. Ask it to target the files.
+- Keep the stories vertical and testable.
+- Read `implementation-notes.md` after each story.
 
-## Bonnes Pratiques Pour Experts
+## Good Practices For Experts
 
-- Gardez les epics entre 2 et 5 stories.
-- Utilisez `$agent-context-scout` pour les zones cross-module ou les codebases larges.
-- Faites porter les détails de contexte par `Implementation Context`, pas par un énorme prompt utilisateur.
-- Ajoutez des stop conditions spécifiques aux stories risquées.
-- Escaladez vers les validateurs profonds uniquement quand le risque le justifie.
-- Évitez les stories techniques pures si elles ne livrent pas un comportement observable.
-- Préférez une Context Map compacte à une exploration brute du repository.
+- Keep epics between 2 and 5 stories.
+- Use `/agent-context-scout` for cross-module areas or large codebases.
+- Let `Implementation Context` carry the context details, not a huge user prompt.
+- Add specific stop conditions to risky stories.
+- Escalate to the deep validators only when the risk justifies it.
+- Avoid pure technical stories if they don't deliver an observable behavior.
+- Prefer a compact Context Map to a raw exploration of the repository.
 
-## Commandes CLI
+## CLI Commands
 
-| Commande | Usage |
+| Command | Use |
 | --- | --- |
-| `ai-flow init` | Installer les templates, le manifest, la config projet (`.coding-flow/config.json`) et la policy harness. |
-| `ai-flow init --no-branch-per-epic` | Désactiver la policy « une epic = une branche, jamais main ». |
-| `ai-flow upgrade` | Mettre à jour les fichiers installés sans écraser les modifications locales. |
-| `ai-flow doctor` | Vérifier les fichiers, skills, frontmatter, manifest et miroir `.agents`. |
-| `ai-flow doctor --fix` | Restaurer les fichiers manquants et resynchroniser `.agents/skills`. |
-| `ai-flow doctor --strict` | Ajouter des checks plus stricts sur manifest et docs. |
-| `ai-flow status` | Lister les epics/stories, leur statut inféré et le worktree lié. |
-| `ai-flow worktree add <name>` | Créer un worktree + branche pour du travail parallèle (câble `.env`/deps). |
-| `ai-flow worktree add --story <dir>` | Idem, en nommant la branche d'après la story (liée dans `status`). |
-| `ai-flow worktree list` | Lister les worktrees et l'état des liens `.env`. |
-| `ai-flow worktree remove <name>` | Retirer un worktree, conserver la branche. |
-| `ai-flow ship` | Pousser la branche courante et ouvrir/mettre à jour une PR vers la base (via `gh`). |
-| `ai-flow bootstrap --scan` | Scanner un codebase existant et écrire `docs/bootstrap-scan.md`. |
-| `ai-flow harness init` | Créer une policy `.coding-flow/harness.json` explicite. |
-| `ai-flow harness preflight --story <path>` | Estimer le risque d'une story et lister les checks requis. |
-| `ai-flow harness check --story <path>` | Vérifier secrets, fichiers sensibles et preuves minimales de story. |
-| `ai-flow harness verify --story <path>` | Exécuter les commandes de validation déclarées, capturer verbatim le résultat, échouer si ça casse. |
-| `ai-flow harness evidence --story <path>` | Écrire une preuve légère dans `.coding-flow/runs/`. |
-| `ai-flow guard` | Hook PreToolUse : refuse (exit 2) l'écriture d'un chemin bloqué ou d'un secret, **avant** le disque. Câblé dans `.claude/settings.json` par `init` (`--no-guard` pour ignorer). |
-| `ai-flow audit` | Agréger les preuves en un registre append-only (`.coding-flow/ledger.jsonl`). |
-| `ai-flow audit --export` | Écrire `docs/AUDIT.md` (artefact de conformité) depuis le registre. |
-| `ai-flow audit --check` | Gate CI : échoue si la dernière `verify` par story est rouge ou absente. |
-| `ai-flow trace [--story <path>]` | Chaîne story → commits → PR → évidence → tests, avec les maillons manquants. |
-| `ai-flow ci init` | Scaffolder un workflow GitHub Actions clean-room (`verify` + `audit --check`) dans le projet. |
-| `ai-flow plugin sync\|check` | Synchroniser/vérifier les skills du plugin natif vs les templates. |
-| `ai-flow commands` | Afficher les commandes les plus utiles pour le projet courant. |
-| `ai-flow uninstall` | Retirer Coding Flow du projet en conservant `epics/`. |
-| `ai-flow list-skills` | Afficher les skills disponibles. |
+| `ai-flow init` | Install the templates, the manifest, the project config (`.coding-flow/config.json`), and the harness policy. |
+| `ai-flow init --no-branch-per-epic` | Disable the "one epic = one branch, never main" policy. |
+| `ai-flow upgrade` | Update the installed files without overwriting local changes. |
+| `ai-flow doctor` | Check the files, skills, frontmatter, manifest, and `.agents` mirror. |
+| `ai-flow doctor --fix` | Restore missing files and resync `.agents/skills`. |
+| `ai-flow doctor --strict` | Add stricter checks on the manifest and docs. |
+| `ai-flow status` | List the epics/stories, their inferred status, and the linked worktree. |
+| `ai-flow worktree add <name>` | Create a worktree + branch for parallel work (wires `.env`/deps). |
+| `ai-flow worktree add --story <dir>` | Same, naming the branch after the story (linked in `status`). |
+| `ai-flow worktree list` | List the worktrees and the state of the `.env` links. |
+| `ai-flow worktree remove <name>` | Remove a worktree, keep the branch. |
+| `ai-flow ship` | Push the current branch and open/update a PR against the base (via `gh`). |
+| `ai-flow bootstrap --scan` | Scan an existing codebase and write `docs/bootstrap-scan.md`. |
+| `ai-flow harness init` | Create an explicit `.coding-flow/harness.json` policy. |
+| `ai-flow harness preflight --story <path>` | Estimate a story's risk and list the required checks. |
+| `ai-flow harness check --story <path>` | Check for secrets, sensitive files, and the minimal story evidence. |
+| `ai-flow harness verify --story <path>` | Run the declared validation commands, capture the result verbatim, fail if it breaks. |
+| `ai-flow harness evidence --story <path>` | Write lightweight evidence into `.coding-flow/runs/`. |
+| `ai-flow guard` | PreToolUse hook: refuses (exit 2) writing a blocked path or a secret, **before** the disk. Wired into `.claude/settings.json` by `init` (`--no-guard` to skip). |
+| `ai-flow audit` | Aggregate the evidence into an append-only ledger (`.coding-flow/ledger.jsonl`). |
+| `ai-flow audit --export` | Write `docs/AUDIT.md` (compliance artifact) from the ledger. |
+| `ai-flow audit --check` | CI gate: fails if the latest `verify` per story is red or missing. |
+| `ai-flow trace [--story <path>]` | Story → commits → PR → evidence → tests chain, with the missing links. |
+| `ai-flow ci init` | Scaffold a clean-room GitHub Actions workflow (`verify` + `audit --check`) into the project. |
+| `ai-flow plugin sync\|check` | Sync/check the native plugin's skills against the templates. |
+| `ai-flow commands` | Show the most useful commands for the current project. |
+| `ai-flow uninstall` | Remove Coding Flow from the project while keeping `epics/`. |
+| `ai-flow list-skills` | Show the available skills. |
 
-Après `init`, le projet a des scripts plus faciles à retenir.
-Si aucun `package.json` n'existait, Coding Flow en crée un minimal à la racine :
+After `init`, the project has easier-to-remember scripts.
+If no `package.json` existed, Coding Flow creates a minimal one at the root:
 
-| Script local | Usage |
+| Local script | Use |
 | --- | --- |
-| `npm run flow:doctor` | Vérifier l'installation. |
-| `npm run flow:check` | Lancer `doctor --strict` avec les checks harness rapides. |
-| `npm run flow:skills` | Afficher les skills disponibles. |
-| `npm run flow:status` | Lister les epics/stories. |
-| `npm run flow:harness` | Lancer le check harness rapide. |
-| `npm run flow:commands` | Afficher le pense-bête des commandes. |
-| `npm run flow:uninstall` | Retirer Coding Flow du projet. |
+| `npm run flow:doctor` | Check the install. |
+| `npm run flow:check` | Run `doctor --strict` with the quick harness checks. |
+| `npm run flow:skills` | Show the available skills. |
+| `npm run flow:status` | List the epics/stories. |
+| `npm run flow:harness` | Run the quick harness check. |
+| `npm run flow:commands` | Show the commands cheat sheet. |
+| `npm run flow:uninstall` | Remove Coding Flow from the project. |
 
-Commandes utiles en CI :
+Useful commands in CI:
 
 ```bash
 npm run flow:doctor -- --json
@@ -820,76 +796,76 @@ npm run flow:status -- --json
 npm run flow:skills -- --json
 ```
 
-## Désinstaller Coding Flow
+## Uninstall Coding Flow
 
-Pour retirer Coding Flow d'un projet sans supprimer les epics et stories déjà créés :
+To remove Coding Flow from a project without deleting the already-created epics and stories:
 
 ```bash
 npx github:LandryPouth/codin-flow uninstall
 ```
 
-La commande supprime :
+The command removes:
 
-- les fichiers installés par Coding Flow (`AGENT_RULES.md`, `PROJECT_RULES.md`, `CLAUDE.md`, `docs/`, `.claude/skills/`, `.agents/skills/`, etc.) ;
-- `.coding-flow/manifest.json`, `.coding-flow/harness.json`, `.coding-flow/COMMANDS.md` et les preuves harness dans `.coding-flow/runs/` ;
-- les scripts `flow:*` ajoutés au `package.json` quand ils correspondent aux commandes générées par Coding Flow.
-- le `package.json` minimal créé par Coding Flow, uniquement s'il n'a pas été enrichi par le projet.
+- the files installed by Coding Flow (`AGENT_RULES.md`, `PROJECT_RULES.md`, `CLAUDE.md`, `docs/`, `.claude/skills/`, `.agents/skills/`, etc.);
+- `.coding-flow/manifest.json`, `.coding-flow/harness.json`, `.coding-flow/COMMANDS.md`, and the harness evidence in `.coding-flow/runs/`;
+- the `flow:*` scripts added to `package.json` when they match the commands generated by Coding Flow;
+- the minimal `package.json` created by Coding Flow, only if it has not been enriched by the project.
 
-La commande conserve toujours :
+The command always keeps:
 
-- `epics/` ;
-- toutes les stories, tâches, décisions et notes générées dans les epics ;
-- les scripts `flow:*` qui ont été modifiés manuellement.
+- `epics/`;
+- all the stories, tasks, decisions, and notes generated in the epics;
+- the `flow:*` scripts that were modified manually.
 
-Pour prévisualiser avant suppression :
+To preview before deleting:
 
 ```bash
 npx github:LandryPouth/codin-flow uninstall --dry-run
 ```
 
-Si certains fichiers Coding Flow ont été modifiés localement, ils sont conservés par défaut. Pour forcer leur suppression :
+If some Coding Flow files were modified locally, they are kept by default. To force their removal:
 
 ```bash
 npx github:LandryPouth/codin-flow uninstall --force
 ```
 
-## Harness De Sécurité
+## Security Harness
 
-Le harness est une couche de preuves légère. Il ne remplace pas les skills de validation, mais il rend certains garde-fous vérifiables par le CLI.
+The harness is a lightweight evidence layer. It does not replace the validation skills, but it makes certain guardrails checkable by the CLI.
 
-Il répond à trois questions :
+It answers three questions:
 
-- **Est-ce que la story est risquée ?** `preflight` lit les fichiers de story et recommande `FAST`, `STANDARD` ou `STRICT`.
-- **Est-ce que le repo contient des signaux dangereux ?** `check` cherche des secrets évidents, fichiers sensibles et preuves manquantes.
-- **Est-ce que les tests passent vraiment ?** `verify` exécute les commandes de validation déclarées (config `validation.commands`, bloc `## Commands` de `tests.md`, ou scripts `package.json`), capture verbatim leurs codes de sortie dans `.coding-flow/runs/*-verify.json`, et échoue si l'une casse ou si aucune n'a tourné. La preuve est exécutée par la machine, pas affirmée par l'agent.
-- **Qu'est-ce qui prouve que la story a été traitée correctement ?** `evidence` écrit un résumé JSON avec risque, fichiers changés, checks requis, résultat du harness et rollback notes.
+- **Is the story risky?** `preflight` reads the story files and recommends `FAST`, `STANDARD`, or `STRICT`.
+- **Does the repo contain dangerous signals?** `check` looks for obvious secrets, sensitive files, and missing evidence.
+- **Do the tests really pass?** `verify` runs the declared validation commands (config `validation.commands`, the `## Commands` block of `tests.md`, or `package.json` scripts), captures their exit codes verbatim into `.coding-flow/runs/*-verify.json`, and fails if one breaks or if none ran. The proof is executed by the machine, not asserted by the agent.
+- **What proves the story was handled correctly?** `evidence` writes a JSON summary with the risk, changed files, required checks, harness result, and rollback notes.
 
-Ce que le harness vérifie aujourd'hui :
+What the harness checks today:
 
-- détection de secrets évidents ;
-- détection de fichiers sensibles comme `.env`, clés privées ou credentials ;
-- préflight de story pour choisir le bon niveau de rigueur ;
-- vérification des notes de rollback et des preuves de validation sur les stories risquées ;
-- journal JSON dans `.coding-flow/runs/` pour garder une trace exploitable en CI ou en review.
+- detection of obvious secrets;
+- detection of sensitive files like `.env`, private keys, or credentials;
+- story preflight to choose the right level of rigor;
+- verification of the rollback notes and validation evidence on risky stories;
+- JSON journal in `.coding-flow/runs/` to keep a usable trace in CI or in review.
 
-Ce que le harness ne fait pas :
+What the harness does not do:
 
-- il ne sandboxe pas l'agent ;
-- il n'intercepte pas toutes les commandes shell ;
-- il ne remplace pas les tests, lint, typecheck ou reviews ;
-- il ne garantit pas qu'une application est sécurisée.
+- it does not sandbox the agent;
+- it does not intercept every shell command;
+- it does not replace tests, lint, typecheck, or reviews;
+- it does not guarantee that an application is secure.
 
-Son rôle est plus modeste et plus utile : détecter les erreurs évidentes, rendre les workflows sensibles plus explicites, et laisser une preuve exploitable sans alourdir le quotidien.
+Its role is more modest and more useful: catch obvious mistakes, make sensitive workflows more explicit, and leave a usable proof without weighing down the daily flow.
 
-Le workflow quotidien reste simple. `ai-flow init` crée la policy harness par défaut si elle n'existe pas, puis les skills `$run-story` et `$run-story-secure` appellent le harness automatiquement quand `ai-flow` est disponible. Les commandes `ai-flow harness ...` servent surtout au debug, à la CI ou aux vérifications ponctuelles.
+The daily workflow stays simple. `ai-flow init` creates the default harness policy if it doesn't exist, then the `/run-story` and `/run-story-secure` skills call the harness automatically when `ai-flow` is available. The `ai-flow harness ...` commands are mainly for debugging, CI, or one-off checks.
 
-Réinitialisation optionnelle dans un projet cible déjà installé :
+Optional reset in an already-installed target project:
 
 ```bash
 ai-flow harness init
 ```
 
-Exemples manuels :
+Manual examples:
 
 ```bash
 ai-flow harness preflight --story epics/epic-01/story-01-01
@@ -898,118 +874,92 @@ ai-flow harness verify --story epics/epic-01/story-01-01
 ai-flow harness evidence --story epics/epic-01/story-01-01
 ```
 
-La testabilité niveau production (exécution non-maquillable, preuve négative,
-discipline anti AI-slop) est détaillée dans `docs/plans/testability.md`. Le seam
-de stockage, la config projet et la policy de branche : `docs/plans/storage-backends.md`.
+Production-grade testability (non-fakeable execution, negative proof, anti AI-slop discipline) is detailed in `docs/plans/testability.md`. The storage seam, project config, and branch policy: `docs/plans/storage-backends.md`.
 
-## Couche Évidence & Gouvernance
+## Evidence & Governance Layer
 
-Au-delà du scan, coding-flow transforme chaque garde-fou *conseillé* en garde-fou
-*exécuté*, attaché à une **identité**, agrégé en un **registre exportable**, et
-vérifié **hors de la main de l'agent**. C'est la réponse au vrai blocage de
-l'adoption entreprise : la gouvernance, l'audit et la conformité — pas la qualité
-du code. Détails et conception : `docs/plans/evidence-governance.md`.
+Beyond scanning, coding-flow turns every *advisory* guardrail into an *executed* guardrail, attached to an **identity**, aggregated into an **exportable ledger**, and verified **out of the agent's hands**. This is the answer to the real blocker of enterprise adoption: governance, audit, and compliance — not code quality. Details and design: `docs/plans/evidence-governance.md`.
 
-- **`guard` — enforcement déterministe.** Un hook PreToolUse refuse l'écriture
-  d'un `.env`, d'une clé, ou d'un contenu contenant un secret **avant** que ça
-  n'atteigne le disque (exit 2). Un secret ne *peut* pas fuiter, on n'espère plus
-  qu'il ne fuie pas. Câblé dans `.claude/settings.json` par `init`, il voyage
-  aussi avec le plugin natif.
-- **Provenance.** Chaque preuve `verify`/`evidence` embarque `provenance` : commit,
-  branche, auteur git, état *dirty* — « asserted ≠ proven ; anonymous ≠ auditable ».
-- **`audit` — registre append-only.** Agrège `.coding-flow/runs/*` en
-  `.coding-flow/ledger.jsonl` (jamais réécrit). `--export` produit `docs/AUDIT.md`
-  (l'artefact de conformité) ; `--check` est le gate « pas de merge sans dernière
-  `verify` verte ».
-- **`ship` attache la preuve.** Le résumé du dernier `verify` (résultat +
-  provenance + table par commande) est injecté dans le corps de la PR, entre
-  marqueurs idempotents — le reviewer voit « ça passe, prouvé » sans effort.
-- **`trace` — bout en bout.** story → commits → PR → évidence → tests, en signalant
-  chaque maillon manquant. « Prouve que cette exigence est livrée *et* vérifiée. »
-- **`ci init` — gate clean-room.** Un workflow GitHub Actions rejoue `verify` +
-  `audit --check` sur un checkout neuf : le signal non-jouable, sur compute gratuit.
+- **`guard` — deterministic enforcement.** A PreToolUse hook refuses writing a `.env`, a key, or content containing a secret **before** it reaches the disk (exit 2). A secret *cannot* leak, we no longer merely hope it won't. Wired into `.claude/settings.json` by `init`, it also travels with the native plugin.
+- **Provenance.** Every `verify`/`evidence` proof carries `provenance`: commit, branch, git author, *dirty* state — "asserted ≠ proven; anonymous ≠ auditable".
+- **`audit` — append-only ledger.** Aggregates `.coding-flow/runs/*` into `.coding-flow/ledger.jsonl` (never rewritten). `--export` produces `docs/AUDIT.md` (the compliance artifact); `--check` is the gate "no merge without the latest `verify` green".
+- **`ship` attaches the proof.** The summary of the latest `verify` (result + provenance + per-command table) is injected into the PR body, between idempotent markers — the reviewer sees "it passes, proven" without effort.
+- **`trace` — end to end.** story → commits → PR → evidence → tests, flagging each missing link. "Prove that this requirement is delivered *and* verified."
+- **`ci init` — clean-room gate.** A GitHub Actions workflow replays `verify` + `audit --check` on a fresh checkout: the non-gameable signal, on free compute.
 
 ```bash
-ai-flow audit --export          # docs/AUDIT.md depuis le registre
-ai-flow audit --check           # gate CI : dernière verify verte par story
+ai-flow audit --export          # docs/AUDIT.md from the ledger
+ai-flow audit --check           # CI gate: latest verify green per story
 ai-flow trace --story epics/epic-01/story-01-01
-ai-flow ci init                 # workflow clean-room dans le projet
+ai-flow ci init                 # clean-room workflow in the project
 ```
 
-## Installer Comme Plugin Natif Claude Code
+## Install As A Native Claude Code Plugin
 
-En plus du canal npm/`npx` (CLI + CI), coding-flow s'installe comme **plugin natif**
-Claude Code — les skills et le hook `guard` arrivent sans `ai-flow init`, et se
-mettent à jour via le marketplace (fin du re-ship manuel à chaque release) :
+In addition to the npm/`npx` channel (CLI + CI), coding-flow installs as a **native Claude Code plugin** — the skills and the `guard` hook arrive without `ai-flow init`, and update via the marketplace (end of manual re-shipping on every release):
 
 ```text
 /plugin marketplace add LandryPouth/codin-flow
 /plugin install coding-flow
 ```
 
-Les deux canaux coexistent : npm pour le CLI et la CI, le plugin pour l'intégration
-IDE. Les skills du plugin (`skills/`) sont matérialisés depuis les templates par
-`ai-flow plugin sync` et gardés sans dérive par `ai-flow plugin check` (vérifié en
-test/CI).
+The two channels coexist: npm for the CLI and CI, the plugin for the IDE integration. The plugin's skills (`skills/`) are materialized from the templates by `ai-flow plugin sync` and kept drift-free by `ai-flow plugin check` (checked in test/CI).
 
-## Développement Local Du Package
+## Local Package Development
 
-### Architecture Du CLI (`bin/`)
+### CLI Architecture (`bin/`)
 
-`bin/ai-flow.js` est un dispatcher mince : il parse les arguments et délègue à des
-modules cohésifs dans `bin/lib/`. Aucune dépendance runtime.
+`bin/ai-flow.js` is a thin dispatcher: it parses the arguments and delegates to cohesive modules in `bin/lib/`. No runtime dependencies.
 
-| Module | Responsabilité |
+| Module | Responsibility |
 | --- | --- |
-| `lib/context.js` | Constantes partagées (racine, templates, cwd, scripts npm) |
-| `lib/util.js` | Helpers génériques (I/O, hash, JSON, chemins, glob, marche de fichiers) |
-| `lib/config.js` | Config projet `.coding-flow/config.json` (storage, branchPerEpic, validation) |
-| `lib/templates.js` | Installation, manifeste, scripts, cheat-sheet, `upgrade` |
-| `lib/harness.js` | Sécurité, scan secrets/fichiers sensibles, preflight/check/`verify`/evidence |
-| `lib/identity.js` | Provenance git (commit, branche, auteur, dirty, PR) injectée dans chaque preuve |
-| `lib/guard.js` | Hook PreToolUse déterministe (refus chemins bloqués / secrets avant écriture) |
-| `lib/settings.js` | Fusion idempotente du hook `guard` dans `.claude/settings.json` |
-| `lib/audit.js` | Registre append-only, export `docs/AUDIT.md`, gate `--check` |
-| `lib/trace.js` | Chaîne story → commits → PR → évidence → tests |
-| `lib/ci.js` | Scaffolder du workflow CI clean-room (`verify` + `audit`) |
-| `lib/plugin.js` | Canal plugin natif : sync/check des skills vs templates |
-| `lib/storage/` | Seam de stockage : `local` (défaut) et `github` (différé) |
-| `lib/policy.js` | Policy « une epic = une branche, jamais main » |
+| `lib/context.js` | Shared constants (root, templates, cwd, npm scripts) |
+| `lib/util.js` | Generic helpers (I/O, hash, JSON, paths, glob, file walking) |
+| `lib/config.js` | Project config `.coding-flow/config.json` (storage, branchPerEpic, validation) |
+| `lib/templates.js` | Installation, manifest, scripts, cheat-sheet, `upgrade` |
+| `lib/harness.js` | Security, scan of secrets/sensitive files, preflight/check/`verify`/evidence |
+| `lib/identity.js` | Git provenance (commit, branch, author, dirty, PR) injected into every proof |
+| `lib/guard.js` | Deterministic PreToolUse hook (refusal of blocked paths / secrets before write) |
+| `lib/settings.js` | Idempotent merge of the `guard` hook into `.claude/settings.json` |
+| `lib/audit.js` | Append-only ledger, `docs/AUDIT.md` export, `--check` gate |
+| `lib/trace.js` | Story → commits → PR → evidence → tests chain |
+| `lib/ci.js` | Scaffolder of the clean-room CI workflow (`verify` + `audit`) |
+| `lib/plugin.js` | Native plugin channel: sync/check of the skills vs templates |
+| `lib/storage/` | Storage seam: `local` (default) and `github` (deferred) |
+| `lib/policy.js` | "One epic = one branch, never main" policy |
 | `lib/doctor.js` | Diagnostic + `--fix` |
 | `lib/skills.js` | `list-skills` |
-| `lib/status.js` | État des epics/stories (via le seam) + worktrees + policy |
-| `lib/bootstrap.js` | Scan brownfield |
-| `lib/uninstall.js` | Désinstallation préservant `epics/` |
-| `lib/worktree.js` | Worktrees Git optionnels (travail parallèle) |
-| `lib/ship.js` | `ship` : push de la branche courante + une PR, avec la preuve `verify` attachée |
-| `lib/commands.js` | `help` et `commands` |
+| `lib/status.js` | State of the epics/stories (via the seam) + worktrees + policy |
+| `lib/bootstrap.js` | Brownfield scan |
+| `lib/uninstall.js` | Uninstall preserving `epics/` |
+| `lib/worktree.js` | Optional Git worktrees (parallel work) |
+| `lib/ship.js` | `ship`: push of the current branch + one PR, with the `verify` proof attached |
+| `lib/commands.js` | `help` and `commands` |
 
-Le graphe de dépendances est acyclique : `context → util → config → harness →
-templates → {doctor, uninstall, skills, commands}` ; `status` s'appuie sur
-`config`/`storage`/`policy`/`worktree`.
+The dependency graph is acyclic: `context → util → config → harness → templates → {doctor, uninstall, skills, commands}`; `status` builds on `config`/`storage`/`policy`/`worktree`.
 
-### Documentation interne (`docs/`)
+### Internal Documentation (`docs/`)
 
-| Doc | Sujet |
+| Doc | Subject |
 | --- | --- |
-| [`docs/sdd-vs-plugins.md`](docs/sdd-vs-plugins.md) | De l'ancien SDD au plugin + couche de gouvernance : ce qui a changé, pourquoi, et ce qui reste pour publier |
-| [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md) | Git worktree & bare : concept, partage `node_modules`/`.env`, quand ne pas l'utiliser |
-| [`docs/plans/parallel-mode.md`](docs/plans/parallel-mode.md) | Mode parallèle (`worktree`), lien story, `ship` |
-| [`docs/plans/storage-backends.md`](docs/plans/storage-backends.md) | Seam de stockage, config projet, policy de branche |
-| [`docs/plans/evidence-governance.md`](docs/plans/evidence-governance.md) | Couche évidence & gouvernance : guard, provenance, audit, trace, CI, plugin |
-| [`docs/plans/testability.md`](docs/plans/testability.md) | Testabilité niveau production : `verify`, preuve négative, anti-slop |
-| [`docs/plans/testing-and-ci.md`](docs/plans/testing-and-ci.md) | Suite de tests et CI du package |
+| [`docs/sdd-vs-plugins.md`](docs/sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed, why, and what's left to publish |
+| [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |
+| [`docs/plans/parallel-mode.md`](docs/plans/parallel-mode.md) | Parallel mode (`worktree`), story link, `ship` |
+| [`docs/plans/storage-backends.md`](docs/plans/storage-backends.md) | Storage seam, project config, branch policy |
+| [`docs/plans/evidence-governance.md`](docs/plans/evidence-governance.md) | Evidence & governance layer: guard, provenance, audit, trace, CI, plugin |
+| [`docs/plans/testability.md`](docs/plans/testability.md) | Production-grade testability: `verify`, negative proof, anti-slop |
+| [`docs/plans/testing-and-ci.md`](docs/plans/testing-and-ci.md) | The package's test suite and CI |
 
-Depuis ce repository :
+From this repository:
 
 ```bash
 node bin/ai-flow.js init --dry-run
 node bin/ai-flow.js list-skills
 ```
 
-`doctor` vérifie une installation dans un projet cible. Pour tester `doctor`, utilisez plutôt un dossier temporaire.
+`doctor` checks an install in a target project. To test `doctor`, use a temporary directory instead.
 
-Tester l'installation dans un dossier temporaire :
+Test the install in a temporary directory:
 
 ```bash
 mkdir /tmp/coding-flow-test
@@ -1023,7 +973,7 @@ node /path/to/codin-flow/bin/ai-flow.js status
 node /path/to/codin-flow/bin/ai-flow.js bootstrap --scan
 ```
 
-Tester comme commande globale :
+Test as a global command:
 
 ```bash
 npm link
@@ -1038,22 +988,22 @@ ai-flow bootstrap --scan
 ai-flow list-skills
 ```
 
-## Distribution GitHub Via `npx`
+## GitHub Distribution Via `npx`
 
-La distribution officielle passe par GitHub via `npx`. L'utilisateur final n'a pas besoin de cloner ce repository :
+The official distribution goes through GitHub via `npx`. The end user does not need to clone this repository:
 
 ```bash
 npx github:LandryPouth/codin-flow init
 npx github:LandryPouth/codin-flow doctor
 ```
 
-Chaque appel `npx github:LandryPouth/codin-flow ...` récupère le package depuis GitHub et exécute le binaire déclaré dans `package.json`.
+Each `npx github:LandryPouth/codin-flow ...` call fetches the package from GitHub and runs the binary declared in `package.json`.
 
-Après `init`, le projet peut utiliser les scripts locaux `npm run flow:*`.
-Si le projet n'avait pas de `package.json`, Coding Flow en crée un minimal pour garder les commandes simples.
-L'utilisateur n'a donc plus besoin de mémoriser la commande GitHub complète pour les actions courantes.
+After `init`, the project can use the local `npm run flow:*` scripts.
+If the project had no `package.json`, Coding Flow creates a minimal one to keep the commands simple.
+The user therefore no longer needs to memorize the full GitHub command for common actions.
 
-Pour travailler sur le package lui-même, clonez le repo et liez la commande localement :
+To work on the package itself, clone the repo and link the command locally:
 
 ```bash
 gh repo clone LandryPouth/codin-flow
@@ -1062,7 +1012,7 @@ npm install
 npm link
 ```
 
-Pour mettre à jour cette installation locale de développement :
+To update this local development install:
 
 ```bash
 git pull
@@ -1070,31 +1020,26 @@ npm install
 npm link
 ```
 
-`npm pack --dry-run` reste utile pour vérifier ce qui serait embarqué dans une archive.
+`npm pack --dry-run` stays useful to check what would be shipped in an archive.
 
-## Publication npm (optionnelle)
+## npm Publication (optional)
 
-La distribution GitHub ci-dessus suffit à utiliser l'outil. Pour publier une
-version épinglée et installable via `npx @landry_pouth/coding-flow`, le package est
-prêt : nom scopé `@landry_pouth/coding-flow`, `publishConfig.access = public`, et un
-garde-fou `prepublishOnly` qui lance la suite de tests avant toute publication.
+The GitHub distribution above is enough to use the tool. To publish a pinned version installable via `npx @landry_pouth/coding-flow`, the package is ready: scoped name `@landry_pouth/coding-flow`, `publishConfig.access = public`, and a `prepublishOnly` guardrail that runs the test suite before any publication.
 
 ```bash
-npm login                 # une fois, sur le compte @landry_pouth
-npm test                  # doit être vert (aussi exécuté par prepublishOnly)
-npm publish               # publie @landry_pouth/coding-flow@<version>
+npm login                 # once, on the @landry_pouth account
+npm test                  # must be green (also run by prepublishOnly)
+npm publish               # publishes @landry_pouth/coding-flow@<version>
 ```
 
-> Le nom court `coding-flow` est déjà pris par un tiers sur npm ; le scope
-> `@landry_pouth/*` garantit un nom libre et sans collision future.
+> The short name `coding-flow` is already taken by a third party on npm; the `@landry_pouth/*` scope guarantees a free name with no future collision.
 
-Après publication, l'install devient `npx @landry_pouth/coding-flow init` (les
-commandes `github:LandryPouth/codin-flow` restent valides en parallèle).
+After publication, the install becomes `npx @landry_pouth/coding-flow init` (the `github:LandryPouth/codin-flow` commands stay valid in parallel).
 
 ## Roadmap
 
 - `ai-flow add-epic`
 - `ai-flow add-story`
-- meilleure fusion avec des docs existantes
-- checks doctor plus stricts pour les références croisées entre skills
-- support optionnel d'un format status plus strict dans les story files
+- better merge with existing docs
+- stricter doctor checks for cross-references between skills
+- optional support for a stricter status format in the story files

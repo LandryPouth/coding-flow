@@ -24,16 +24,16 @@ This is the macro planning workflow. It keeps the planning path short while stil
 
 ## Pipeline
 
-1. Use `$agent-planner` to analyze the request and choose the smallest valuable epic.
-2. Use `$grill-me` only if critical requirements are ambiguous.
-3. Use `$blueprint-epic-index` to create or update the epic `index.md`.
-4. Use `$write-story` to define the story sequence with concise Implementation Context for each story.
+1. Use `/agent-planner` to analyze the request and choose the smallest valuable epic.
+2. Use `/grill-me` only if critical requirements are ambiguous.
+3. Use `/blueprint-epic-index` to create or update the epic `index.md`.
+4. Use `/write-story` to define the story sequence with concise Implementation Context for each story.
 5. For each selected story, use:
-   - `$blueprint-story`
-   - `$blueprint-tasks`
-   - `$blueprint-tests`
-   - `$blueprint-decisions`
-   - `$blueprint-implementation-notes`
+   - `/blueprint-story`
+   - `/blueprint-tasks`
+   - `/blueprint-tests`
+   - `/blueprint-decisions`
+   - `/blueprint-implementation-notes`
 6. Recommend the first story to run.
 
 ## Context Efficiency
@@ -49,7 +49,7 @@ For each story, include:
 - areas to avoid unless needed
 - validation focus
 
-Use `$agent-context-scout` only for broad, ambiguous, cross-module, or high-risk stories. Do not use it for small isolated stories.
+Use `/agent-context-scout` only for broad, ambiguous, cross-module, or high-risk stories. Do not use it for small isolated stories.
 
 ## Brownfield Additions
 
@@ -121,5 +121,5 @@ Before creating stories, define:
 
 ## Recommended Next Command
 
-Use $run-story for ...
+Use /run-story for ...
 ```

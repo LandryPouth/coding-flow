@@ -7,7 +7,7 @@ description: Minimal workflow for small, isolated changes. No orchestration, no 
 
 ## When To Use
 
-Use instead of `$run-story FAST` when:
+Use instead of `/run-story FAST` when:
 
 - the change is isolated to a single file or a clearly bounded area
 - no architecture review is needed
@@ -33,7 +33,7 @@ Do not use when:
 - Start from the named file, component, route, command, or error message.
 - Run at most 3 targeted searches before editing.
 - Read at most 5 files before deciding whether this is still quick.
-- If the edit point is still unclear, stop and switch to `$run-story FAST` or `$agent-context-scout`.
+- If the edit point is still unclear, stop and switch to `/run-story FAST` or `/agent-context-scout`.
 
 ## Pipeline
 
@@ -45,7 +45,7 @@ Do not use when:
 
 ## Stop Conditions
 
-Stop and switch to `$run-story FAST` or `$run-story STANDARD` when:
+Stop and switch to `/run-story FAST` or `/run-story STANDARD` when:
 
 - the scope is larger than expected
 - multiple modules need changes
