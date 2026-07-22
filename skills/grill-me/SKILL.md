@@ -73,7 +73,7 @@ Use this skill to convert uncertainty into implementation readiness. Do not inte
 
 ## Recommended Next Skill
 
-- `$write-story`, `$agent-planner`, or `$implement-slice`
+- `/write-story`, `/agent-planner`, or `/implement-slice`
 
 ## Readiness
 

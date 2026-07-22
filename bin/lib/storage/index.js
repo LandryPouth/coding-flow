@@ -1,8 +1,8 @@
 "use strict";
 
-// Point d'entree du seam de stockage : choisit le backend selon la config du
-// projet. Un seul backend actif a la fois (local OU github), jamais les deux —
-// pas de synchro bidirectionnelle, pas de source de verite ambigue.
+// Entry point of the storage seam: picks the backend from the project config.
+// Only one backend active at a time (local OR github), never both — no
+// two-way sync, no ambiguous source of truth.
 
 const { readConfig } = require("../config");
 const { createLocalStorage } = require("./local");

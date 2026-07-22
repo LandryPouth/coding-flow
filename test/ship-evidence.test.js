@@ -1,8 +1,8 @@
 'use strict';
 
-// Tests des helpers d'évidence de `ship` : le bloc markdown est bien formé, son
-// insertion dans un corps de PR est idempotente (remplace entre marqueurs, jamais
-// le texte humain), et latestVerifyEvidence retient le run le plus récent.
+// Tests of the `ship` evidence helpers: the markdown block is well-formed, its
+// insertion into a PR body is idempotent (replaces between markers, never the
+// human text), and latestVerifyEvidence keeps the most recent run.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -32,7 +32,7 @@ function sampleEvidence(ok = true) {
   };
 }
 
-test('buildEvidenceBlock enveloppe la preuve entre les marqueurs', () => {
+test('buildEvidenceBlock wraps the proof between the markers', () => {
   const block = buildEvidenceBlock(sampleEvidence(true));
   assert.ok(block.startsWith(START));
   assert.ok(block.trim().endsWith(END));
@@ -42,47 +42,47 @@ test('buildEvidenceBlock enveloppe la preuve entre les marqueurs', () => {
   assert.match(block, /npm test/);
 });
 
-test('buildEvidenceBlock marque un échec', () => {
+test('buildEvidenceBlock marks a failure', () => {
   const block = buildEvidenceBlock(sampleEvidence(false));
   assert.match(block, /❌ FAILED/);
   assert.match(block, /exit 1/);
 });
 
-test('upsertEvidenceBlock ajoute le bloc à un corps humain sans l’écraser', () => {
-  const body = 'Résout #42.\n\nDétails de la PR écrits par un humain.';
+test('upsertEvidenceBlock appends the block to a human body without overwriting it', () => {
+  const body = 'Resolves #42.\n\nPR details written by a human.';
   const block = buildEvidenceBlock(sampleEvidence(true));
   const next = upsertEvidenceBlock(body, block);
-  assert.match(next, /Résout #42/);
-  assert.match(next, /écrits par un humain/);
+  assert.match(next, /Resolves #42/);
+  assert.match(next, /written by a human/);
   assert.ok(next.includes(START) && next.includes(END));
 });
 
-test('upsertEvidenceBlock est idempotent (remplace, ne duplique pas)', () => {
-  const body = 'Texte humain.';
+test('upsertEvidenceBlock is idempotent (replaces, does not duplicate)', () => {
+  const body = 'Human text.';
   const first = upsertEvidenceBlock(body, buildEvidenceBlock(sampleEvidence(true)));
   const second = upsertEvidenceBlock(first, buildEvidenceBlock(sampleEvidence(false)));
 
-  // Un seul bloc, et c'est le plus récent (FAILED) qui a remplacé l'ancien.
+  // A single block, and it is the most recent one (FAILED) that replaced the old.
   assert.equal(second.match(new RegExp(START, 'g')).length, 1);
   assert.equal(second.match(new RegExp(END, 'g')).length, 1);
   assert.match(second, /❌ FAILED/);
   assert.doesNotMatch(second, /✅ passed/);
-  assert.match(second, /Texte humain/);
+  assert.match(second, /Human text/);
 });
 
-test('latestVerifyEvidence retient le run le plus récent, null si aucun', (t) => {
+test('latestVerifyEvidence keeps the most recent run, null if none', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-shipev-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  assert.equal(latestVerifyEvidence(dir), null, 'aucun run → null');
+  assert.equal(latestVerifyEvidence(dir), null, 'no run → null');
 
   const runs = path.join(dir, '.coding-flow', 'runs');
   fs.mkdirSync(runs, { recursive: true });
   fs.writeFileSync(path.join(runs, '2026-07-21T09-00-00-000Z-verify.json'), JSON.stringify({ ok: true, tag: 'old' }));
   fs.writeFileSync(path.join(runs, '2026-07-21T10-00-00-000Z-verify.json'), JSON.stringify({ ok: false, tag: 'new' }));
-  // Un fichier evidence ne doit pas être confondu avec un verify.
+  // An evidence file must not be confused with a verify.
   fs.writeFileSync(path.join(runs, '2026-07-21T11-00-00-000Z-evidence.json'), JSON.stringify({ tag: 'evidence' }));
 
   const latest = latestVerifyEvidence(dir);
-  assert.equal(latest.tag, 'new', 'le run verify le plus récent est retenu');
+  assert.equal(latest.tag, 'new', 'the most recent verify run is kept');
 });

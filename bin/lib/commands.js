@@ -1,6 +1,6 @@
 "use strict";
 
-// Aide (`help`) et raccourcis de commandes (`commands`).
+// Help (`help`) and command shortcuts (`commands`).
 
 const path = require("path");
 

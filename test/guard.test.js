@@ -1,8 +1,8 @@
 'use strict';
 
-// Tests du hook PreToolUse `guard` : refus déterministe (exit 2) sur chemin
-// bloqué ou secret dans le contenu, allow (exit 0) sinon, fail-open sur entrée
-// vide / outil non-écrivain, et câblage idempotent dans .claude/settings.json.
+// Tests of the `guard` PreToolUse hook: deterministic refusal (exit 2) on a
+// blocked path or a secret in the content, allow (exit 0) otherwise, fail-open on
+// empty input / non-write tool, and idempotent wiring into .claude/settings.json.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -23,7 +23,7 @@ function project(t, prefix) {
   return dir;
 }
 
-// Passe le payload hook sur stdin ; renvoie { code, stdout, stderr }.
+// Pass the hook payload on stdin; returns { code, stdout, stderr }.
 function guard(cwd, payload, args = []) {
   const input = payload === null ? '' : JSON.stringify(payload);
   try {
@@ -55,7 +55,7 @@ function runCli(cwd, args) {
 test('guard denies writing a .env file (exit 2, deny decision)', (t) => {
   const dir = project(t, 'guard-env');
   const res = guard(dir, { tool_name: 'Write', tool_input: { file_path: '.env', content: 'X=1' } });
-  assert.equal(res.code, 2, 'un chemin bloqué doit être refusé avec exit 2');
+  assert.equal(res.code, 2, 'a blocked path must be refused with exit 2');
   const decision = JSON.parse(res.stdout);
   assert.equal(decision.hookSpecificOutput.permissionDecision, 'deny');
   assert.match(res.stderr, /guard/);
@@ -76,7 +76,7 @@ test('guard denies content that contains a secret', (t) => {
     tool_name: 'Write',
     tool_input: { file_path: 'src/config.ts', content: 'const k = "sk_live_0123456789abcdefghijkl";' },
   });
-  assert.equal(res.code, 2, 'un secret dans le contenu doit être refusé');
+  assert.equal(res.code, 2, 'a secret in the content must be refused');
   assert.match(JSON.parse(res.stdout).systemMessage, /secret/i);
 });
 
@@ -103,13 +103,13 @@ test('guard allows .env.example (safe example)', (t) => {
 test('guard is fail-open on empty stdin', (t) => {
   const dir = project(t, 'guard-empty');
   const res = guard(dir, null);
-  assert.equal(res.code, 0, 'stdin vide ne doit jamais bloquer');
+  assert.equal(res.code, 0, 'empty stdin must never block');
 });
 
 test('guard ignores non-write tools', (t) => {
   const dir = project(t, 'guard-read');
   const res = guard(dir, { tool_name: 'Read', tool_input: { file_path: '.env' } });
-  assert.equal(res.code, 0, 'lire .env n’est pas notre affaire — allow');
+  assert.equal(res.code, 0, 'reading .env is not our business — allow');
 });
 
 test('guard denies a secret inside a MultiEdit new_string', (t) => {
@@ -131,18 +131,18 @@ test('init wires the guard hook into .claude/settings.json, idempotently', (t) =
   const dir = project(t, 'guard-init');
   runCli(dir, ['init']);
   const settingsPath = path.join(dir, '.claude', 'settings.json');
-  assert.ok(fs.existsSync(settingsPath), 'settings.json doit être créé');
+  assert.ok(fs.existsSync(settingsPath), 'settings.json must be created');
 
   const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
   const pre = settings.hooks.PreToolUse;
-  assert.ok(Array.isArray(pre) && pre.length === 1, 'un hook PreToolUse est câblé');
+  assert.ok(Array.isArray(pre) && pre.length === 1, 'one PreToolUse hook is wired');
   assert.match(pre[0].hooks[0].command, /guard/);
 
-  // Deuxième init : pas de duplication.
+  // Second init: no duplication.
   const second = runCli(dir, ['init']);
   assert.match(second.output, /already wired/);
   const after = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-  assert.equal(after.hooks.PreToolUse.length, 1, 'le hook ne doit pas être dupliqué');
+  assert.equal(after.hooks.PreToolUse.length, 1, 'the hook must not be duplicated');
 });
 
 test('init --no-guard skips wiring the hook', (t) => {
@@ -150,7 +150,7 @@ test('init --no-guard skips wiring the hook', (t) => {
   runCli(dir, ['init', '--no-guard']);
   assert.ok(
     !fs.existsSync(path.join(dir, '.claude', 'settings.json')),
-    '--no-guard ne doit pas créer settings.json',
+    '--no-guard must not create settings.json',
   );
 });
 
@@ -165,7 +165,7 @@ test('init merges the guard hook into an existing settings.json without clobberi
 
   runCli(dir, ['init']);
   const settings = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
-  assert.deepEqual(settings.permissions.allow, ['Bash(ls:*)'], 'les réglages existants sont préservés');
-  assert.equal(settings.hooks.PreToolUse.length, 2, 'notre hook est ajouté à côté de l’existant');
+  assert.deepEqual(settings.permissions.allow, ['Bash(ls:*)'], 'the existing settings are preserved');
+  assert.equal(settings.hooks.PreToolUse.length, 2, 'our hook is added alongside the existing one');
   assert.ok(settings.hooks.PreToolUse.some((e) => /guard/.test(e.hooks[0].command)));
 });

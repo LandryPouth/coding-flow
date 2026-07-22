@@ -1,90 +1,92 @@
-# Testabilité niveau production (anti AI-slop)
+# Production-grade testability (anti AI-slop)
 
-Objectif : que « ça marche » ne soit plus une **affirmation de l'agent** mais une
-**évidence reproductible, prouvée négativement, et exécutée hors de sa main**. Ce
-document décrit les trois leviers ajoutés et pourquoi.
+Goal: make "it works" no longer an **agent claim** but **reproducible evidence,
+proven negatively, and executed out of its hands**. This document describes the
+three levers added and why.
 
-## Le problème spécifique aux workflows IA
+## The problem specific to AI workflows
 
-Dans un projet classique, la CI verte est fiable parce que les tests sont une
-spécification **indépendante** de l'intention, écrite par un humain. Ici, la même
-IA écrit le code **et** les tests. Un vert sur des tests écrits par l'agent qui a
-écrit le code ne prouve presque rien : tests tautologiques, sur-mockés, qui
-recopient l'implémentation, ou « teach to the test ». « Auto-run + gate sur le
-vert » **amplifie** ce biais au lieu de le corriger.
+In a classic project, a green CI is trustworthy because the tests are a
+specification **independent** of intent, written by a human. Here, the same AI
+writes the code **and** the tests. A green on tests written by the agent that
+wrote the code proves almost nothing: tautological tests, over-mocked, that
+mirror the implementation, or "teach to the test". "Auto-run + gate on green"
+**amplifies** this bias instead of correcting it.
 
-## Levier 1 — Exécution non-maquillable : `ai-flow harness verify`
+## Lever 1 — Non-fakeable execution: `ai-flow harness verify`
 
-`harness evidence` capture le diff + le scan de sécurité mais **ne lance pas** la
-suite de tests. `harness verify` l'exécute réellement :
+`harness evidence` captures the diff + the security scan but **does not run** the
+test suite. `harness verify` actually executes it:
 
-- **Source des commandes** (priorité décroissante) : `config.validation.commands`,
-  puis le bloc `## Commands` de `tests.md` de la story, puis les scripts
-  `package.json` usuels (`typecheck`, `type-check`, `lint`, `test`).
-- **Exécute** chaque commande (`spawnSync`, shell, timeout 10 min), **capture
-  verbatim** code de sortie + sorties (tronquées) dans `.coding-flow/runs/*-verify.json`.
-- **Échoue (exit 1)** si une commande casse **ou si aucune commande n'a tourné** :
-  « rien exécuté » n'est pas « vérifié ».
-- `--dry-run` affiche le plan sans rien exécuter ; `--json` sort l'évidence brute.
+- **Source of the commands** (decreasing priority): `config.validation.commands`,
+  then the `## Commands` block of the story's `tests.md`, then the usual
+  `package.json` scripts (`typecheck`, `type-check`, `lint`, `test`).
+- **Runs** each command (`spawnSync`, shell, 10 min timeout), **captures
+  verbatim** exit code + outputs (truncated) into `.coding-flow/runs/*-verify.json`.
+- **Fails (exit 1)** if a command breaks **or if no command ran**: "nothing
+  executed" is not "verified".
+- `--dry-run` prints the plan without executing anything; `--json` outputs the
+  raw evidence.
 
-Le JSON d'évidence est la vérité, pas le récit de l'agent. Pour que ce soit
-totalement hors de sa main, la CI clean-room reste le gate ultime (voir plus bas).
+The evidence JSON is the truth, not the agent's narrative. To make it fully out
+of its hands, the clean-room CI remains the ultimate gate (see below).
 
-Commandes déclaratives, indépendantes du langage :
+Declarative, language-independent commands:
 
 ```json
 { "validation": { "commands": ["pnpm typecheck", "pnpm test", "pnpm e2e"] } }
 ```
 
-## Levier 2 — Preuve négative (dans les skills)
+## Lever 2 — Negative proof (in the skills)
 
-Un test qui ne peut jamais échouer ne prouve rien. Les skills exigent désormais,
-pour chaque critère d'acceptation **critique**, un **red→green démontré** : casser
-le comportement (revert/faute injectée) → le test guardien vire au rouge pour la
-bonne raison → restaurer → vert. Consigné dans `implementation-notes.md`.
+A test that can never fail proves nothing. The skills now require, for each
+**critical** acceptance criterion, a **demonstrated red→green**: break the
+behavior (revert/injected fault) → the guard test turns red for the right reason
+→ restore → green. Recorded in `implementation-notes.md`.
 
-Le mutation testing est la version « plafond » (mutation score) : réservé aux
-**modules** critiques, en reco opt-in, à cause de son coût — pas un défaut.
+Mutation testing is the "ceiling" version (mutation score): reserved for
+critical **modules**, as an opt-in recommendation, because of its cost — not a
+default.
 
-## Levier 3 — Discipline anti-slop + vérificateur indépendant (dans les skills)
+## Lever 3 — Anti-slop discipline + independent verifier (in the skills)
 
-- `blueprint-tests` : « Production-Grade Bar » (rejette tautologies, sur-mock,
-  tests qui recopient l'implémentation, snapshots-fourre-tout, flaky/order-dependent,
-  coverage padding) + traçabilité `critère -> file::test` + preuve négative. Le
-  template `tests.md` généré porte une table de traçabilité et une checklist de
-  preuve négative.
-- `tests-check` : « Anti-Slop Quick Flags » + renvoi à `harness verify`.
-- `agent-validator-tests` : conditions bloquantes anti-slop, **exécution
-  indépendante** (relance lui-même, juge depuis story + diff, pas depuis le
-  raisonnement de l'implémenteur), preuve négative exigée.
-- `implement-slice` / `run-story` / `run-story-secure` : appellent `harness verify`
-  après implémentation ; un échec est un blocage, pas quelque chose à contourner.
+- `blueprint-tests`: "Production-Grade Bar" (rejects tautologies, over-mock,
+  tests that mirror the implementation, catch-all snapshots, flaky/order-dependent,
+  coverage padding) + `criterion -> file::test` traceability + negative proof. The
+  generated `tests.md` template carries a traceability table and a negative-proof
+  checklist.
+- `tests-check`: "Anti-Slop Quick Flags" + pointer to `harness verify`.
+- `agent-validator-tests`: blocking anti-slop conditions, **independent
+  execution** (reruns itself, judges from story + diff, not from the
+  implementer's reasoning), negative proof required.
+- `implement-slice` / `run-story` / `run-story-secure`: call `harness verify`
+  after implementation; a failure is a blocker, not something to work around.
 
-## Coût & budget (plan à 20 $)
+## Cost & budget ($20 plan)
 
-- **Espace disque : négligeable** (évidences = petits JSON).
-- **Le coût réel = tokens/passes d'agents.** Donc : preuve négative sur les
-  critères *critiques*, mutation sur les *modules* critiques, vérificateur
-  indépendant pour le *release-sensitive* — jamais par-story.
-- **Faire porter le gate lourd par la CI** (compute GitHub gratuit) : trust ↑ et
-  budget Claude ↓, puisque l'agent n'a plus à tout ré-exécuter lui-même.
+- **Disk space: negligible** (evidences = small JSON files).
+- **The real cost = tokens/agent passes.** So: negative proof on the *critical*
+  criteria, mutation on the *critical* modules, independent verifier for the
+  *release-sensitive* — never per-story.
+- **Let the CI carry the heavy gate** (free GitHub compute): trust ↑ and Claude
+  budget ↓, since the agent no longer has to re-run everything itself.
 
-## Fichiers
+## Files
 
-| Fichier | Rôle |
+| File | Role |
 | --- | --- |
-| `bin/lib/harness.js` | `verify` : résolution des commandes, exécution, capture verbatim, évidence, gate |
-| `bin/lib/config.js` | Champ déclaratif `validation.commands` |
-| `bin/lib/commands.js` | Aide : sous-commande `verify` |
-| `templates/.claude/skills/blueprint-tests` | Barre production, preuve négative, traçabilité, template `tests.md` |
-| `templates/.claude/skills/agent-validator-tests` | Anti-slop, exécution indépendante, preuve négative |
-| `templates/.claude/skills/tests-check` | Anti-slop quick flags + renvoi verify |
-| `templates/.claude/skills/{implement-slice,run-story,run-story-secure}` | Câblage de `harness verify` |
-| `test/harness-verify.test.js` | 6 tests de contrat (exécution réelle, échec, aucune commande, dry-run, tests.md, parse) |
+| `bin/lib/harness.js` | `verify`: command resolution, execution, verbatim capture, evidence, gate |
+| `bin/lib/config.js` | Declarative `validation.commands` field |
+| `bin/lib/commands.js` | Help: `verify` subcommand |
+| `templates/.claude/skills/blueprint-tests` | Production bar, negative proof, traceability, `tests.md` template |
+| `templates/.claude/skills/agent-validator-tests` | Anti-slop, independent execution, negative proof |
+| `templates/.claude/skills/tests-check` | Anti-slop quick flags + verify pointer |
+| `templates/.claude/skills/{implement-slice,run-story,run-story-secure}` | Wiring of `harness verify` |
+| `test/harness-verify.test.js` | 6 contract tests (real execution, failure, no command, dry-run, tests.md, parse) |
 
-## Hors périmètre (volontaire)
+## Out of scope (deliberate)
 
-- **Être le test-runner universel** : l'outil exécute les commandes *déclarées* par
-  le projet, il n'invente pas de framework ni ne réimplémente le mutation testing.
-- **Scaffolder la CI dans les apps cibles** : possible ensuite (template Actions +
-  diff-coverage floor), mais pas dans cette tranche.
+- **Being the universal test-runner**: the tool runs the commands *declared* by
+  the project, it does not invent a framework nor reimplement mutation testing.
+- **Scaffolding the CI into the target apps**: possible later (Actions template +
+  diff-coverage floor), but not in this slice.

@@ -1,8 +1,8 @@
 'use strict';
 
-// Tests de contrat de `ai-flow harness verify` : il exécute vraiment les
-// commandes de validation déclarées, capture leur code de sortie, écrit une
-// évidence, et échoue si une commande casse ou si rien n'a tourné.
+// Contract tests for `ai-flow harness verify`: it really runs the declared
+// validation commands, captures their exit code, writes an evidence, and fails if
+// a command breaks or if nothing ran.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -52,7 +52,7 @@ function runsDir(dir) {
 
 function latestVerify(dir) {
   const files = fs.readdirSync(runsDir(dir)).filter((f) => f.endsWith('-verify.json'));
-  assert.ok(files.length > 0, 'un fichier -verify.json doit exister');
+  assert.ok(files.length > 0, 'a -verify.json file must exist');
   return JSON.parse(fs.readFileSync(path.join(runsDir(dir), files.sort().pop()), 'utf8'));
 }
 
@@ -75,7 +75,7 @@ test('verify fails and exits 1 when a command fails, capturing the exit code', (
   setValidationCommands(dir, ['node -e "process.exit(0)"', 'node -e "process.exit(3)"']);
 
   const { code, output } = run(dir, ['harness', 'verify']);
-  assert.equal(code, 1, 'une commande qui casse doit faire echouer verify');
+  assert.equal(code, 1, 'a breaking command must fail verify');
   assert.match(output, /FAILED/);
 
   const evidence = latestVerify(dir);
@@ -85,11 +85,11 @@ test('verify fails and exits 1 when a command fails, capturing the exit code', (
 
 test('verify exits 1 when no validation commands are found', (t) => {
   const dir = initProject(t, 'verify-none');
-  // Config par defaut : validation.commands vide, pas de tests.md, et les
-  // scripts flow:* de package.json ne matchent aucun candidat de verify.
+  // Default config: validation.commands empty, no tests.md, and the flow:*
+  // package.json scripts match no verify candidate.
   const { code, output } = run(dir, ['harness', 'verify']);
-  assert.equal(code, 1, 'aucune commande = non verifie = echec');
-  assert.match(output, /aucune commande/i);
+  assert.equal(code, 1, 'no command = not verified = failure');
+  assert.match(output, /no validation commands/i);
 });
 
 test('verify --dry-run runs nothing', (t) => {
@@ -99,10 +99,10 @@ test('verify --dry-run runs nothing', (t) => {
 
   const { code } = run(dir, ['harness', 'verify', '--dry-run']);
   assert.equal(code, 0);
-  assert.ok(!fs.existsSync(marker), '--dry-run ne doit executer aucune commande');
+  assert.ok(!fs.existsSync(marker), '--dry-run must execute no command');
   assert.ok(
     !fs.existsSync(runsDir(dir)) || fs.readdirSync(runsDir(dir)).every((f) => !f.endsWith('-verify.json')),
-    '--dry-run ne doit ecrire aucune evidence verify',
+    '--dry-run must write no verify evidence',
   );
 });
 

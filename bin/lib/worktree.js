@@ -1,15 +1,15 @@
 "use strict";
 
-// Support optionnel des worktrees Git pour le travail parallèle.
+// Optional Git worktree support for parallel work.
 //
-// Trois sous-commandes, toutes non destructives par defaut :
-//   ai-flow worktree add <nom> [--from <ref>] [--deps install|link|skip] [--dry-run]
+// Three subcommands, all non-destructive by default:
+//   ai-flow worktree add <name> [--from <ref>] [--deps install|link|skip] [--dry-run]
 //   ai-flow worktree list
-//   ai-flow worktree remove <nom> [--force] [--dry-run]
+//   ai-flow worktree remove <name> [--force] [--dry-run]
 //
-// Contraintes du projet : zero dependance (uniquement les modules Node integres
-// et le binaire `git`), Node >= 18. On sort (shell out) vers git plutot que de
-// reimplementer sa plomberie ; git est de toute facon un prerequis.
+// Project constraints: zero dependencies (only Node's built-in modules and the
+// `git` binary), Node >= 18. We shell out to git rather than reimplementing its
+// plumbing; git is a prerequisite anyway.
 
 const { execFileSync } = require("child_process");
 const fs = require("fs");
@@ -24,9 +24,9 @@ function fail(message) {
   process.exit(1);
 }
 
-// Lance git dans `cwd`. Par defaut capture stdout/stderr et echoue proprement.
-// allowFail: renvoie { code, stdout, stderr } sans quitter.
-// inherit: laisse git ecrire directement sur le terminal (installs, progression).
+// Run git in `cwd`. By default captures stdout/stderr and fails cleanly.
+// allowFail: returns { code, stdout, stderr } without exiting.
+// inherit: lets git write directly to the terminal (installs, progress).
 function git(cwd, gitArgs, { allowFail = false, inherit = false } = {}) {
   try {
     const stdout = execFileSync("git", gitArgs, {
@@ -40,50 +40,50 @@ function git(cwd, gitArgs, { allowFail = false, inherit = false } = {}) {
     if (allowFail) {
       return { code: err.status ?? 1, stdout: (err.stdout || "").toString(), stderr };
     }
-    fail(`git ${gitArgs.join(" ")} a echoue : ${stderr.trim()}`);
+    fail(`git ${gitArgs.join(" ")} failed: ${stderr.trim()}`);
     return { code: 1, stdout: "", stderr };
   }
 }
 
-// git present + on est bien dans un depot. Renvoie la racine du working tree.
+// git present + we are actually inside a repository. Returns the working tree root.
 function requireRepo(cwd) {
   if (git(cwd, ["--version"], { allowFail: true }).code !== 0) {
-    fail("git est introuvable dans le PATH.");
+    fail("git was not found in PATH.");
   }
   const root = git(cwd, ["rev-parse", "--show-toplevel"], { allowFail: true });
   if (root.code !== 0) {
-    fail("ce dossier n'est pas un depot git (git rev-parse a echoue).");
+    fail("this directory is not a git repository (git rev-parse failed).");
   }
   return root.stdout.trim();
 }
 
 function assertName(name) {
   if (!name) {
-    fail('nom manquant. Exemple : ai-flow worktree add feat/payments');
+    fail('missing name. Example: ai-flow worktree add feat/payments');
   }
   if (name.startsWith("-") || name.includes("..") || !/^[A-Za-z0-9._/-]+$/.test(name)) {
-    fail(`nom invalide : "${name}". Caracteres autorises : lettres, chiffres, . _ / -`);
+    fail(`invalid name: "${name}". Allowed characters: letters, digits, . _ / -`);
   }
 }
 
-// Emplacement groupe : ../<repo>-worktrees/<nom>, pour garder le dossier parent
-// propre au lieu d'eparpiller des siblings.
+// Grouped location: ../<repo>-worktrees/<name>, to keep the parent directory
+// clean instead of scattering siblings.
 function worktreeDest(root, name) {
   const base = path.basename(root);
   return path.join(path.dirname(root), `${base}-worktrees`, name);
 }
 
-// Resout un chemin de story (epics/<epic>/story-...) passe via --story. La
-// branche/worktree prend le nom du dossier de la story, ce qui rend la
-// correspondance worktree<->story deterministe et sans etat (cf. status).
+// Resolves a story path (epics/<epic>/story-...) passed via --story. The
+// branch/worktree takes the name of the story directory, which makes the
+// worktree<->story mapping deterministic and stateless (see status).
 function resolveStory(root, cwd, story) {
   const full = path.resolve(cwd, story);
   const rel = path.relative(root, full);
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    fail(`la story doit etre dans le depot : ${story}`);
+    fail(`the story must be inside the repository: ${story}`);
   }
   if (!isDir(full)) {
-    fail(`story introuvable (un dossier est attendu) : ${story}`);
+    fail(`story not found (a directory is expected): ${story}`);
   }
   return {
     fullPath: full,
@@ -94,10 +94,10 @@ function resolveStory(root, cwd, story) {
 }
 
 const ENV_FILES = [".env", ".env.local"];
-// Liens que cette commande cree elle-meme dans un worktree. On les exclut du
-// controle "working tree sale" (ce ne sont pas du travail non commite) et on
-// les retire avant `git worktree remove` pour ne pas bloquer la suppression
-// quand ces chemins ne sont pas gitignores.
+// Links this command creates itself in a worktree. We exclude them from the
+// "dirty working tree" check (they are not uncommitted work) and we remove them
+// before `git worktree remove` so the deletion is not blocked when those paths
+// are not gitignored.
 const MANAGED_LINKS = [...ENV_FILES, "node_modules"];
 
 function isDir(p) {
@@ -108,7 +108,7 @@ function isDir(p) {
   }
 }
 
-// lstatSync qui ne jette pas (detecte aussi les liens casses).
+// lstatSync that does not throw (also detects broken links).
 function lstatSafe(p) {
   try {
     return fs.lstatSync(p);
@@ -117,13 +117,13 @@ function lstatSafe(p) {
   }
 }
 
-// Cree un lien idempotent de srcAbs vers linkAbs (aucune copie).
-// - existe deja : on ne touche a rien.
-// - dossier sous Windows : jonction (plus fiable que le symlink prive).
-// - sinon : symlink relatif, qui survit a un deplacement du parent.
+// Creates an idempotent link from srcAbs to linkAbs (no copy).
+// - already exists: we touch nothing.
+// - directory on Windows: junction (more reliable than a private symlink).
+// - otherwise: relative symlink, which survives a move of the parent.
 function makeLink(srcAbs, linkAbs) {
   if (fs.existsSync(linkAbs) || lstatSafe(linkAbs)) {
-    return "garde";
+    return "kept";
   }
   fs.mkdirSync(path.dirname(linkAbs), { recursive: true });
   const directory = isDir(srcAbs);
@@ -133,7 +133,7 @@ function makeLink(srcAbs, linkAbs) {
     const target = path.relative(path.dirname(linkAbs), srcAbs);
     fs.symlinkSync(target, linkAbs, directory ? "dir" : "file");
   }
-  return "lie";
+  return "linked";
 }
 
 function detectPackageManager(root) {
@@ -150,19 +150,19 @@ function detectPackageManager(root) {
       const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
       workspace = Boolean(pkg.workspaces);
     } catch {
-      // package.json illisible : on ignore, workspace reste false.
+      // unreadable package.json: ignore, workspace stays false.
     }
   }
   return { pm, workspace };
 }
 
-// Choisit quoi faire de node_modules. Symlinker node_modules est sur pour un
-// projet simple (npm) mais CASSE un monorepo pnpm/yarn (virtual store lie a la
-// racine du workspace) : dans ce cas on installe plutot.
+// Decides what to do with node_modules. Symlinking node_modules is safe for a
+// simple project (npm) but BREAKS a pnpm/yarn monorepo (virtual store tied to
+// the workspace root): in that case we install instead.
 function resolveDepsStrategy(explicit, { pm, workspace }, hasNodeModules) {
   if (explicit) {
     if (!["install", "link", "skip"].includes(explicit)) {
-      fail(`--deps invalide : "${explicit}". Valeurs : install, link, skip.`);
+      fail(`invalid --deps: "${explicit}". Values: install, link, skip.`);
     }
     return explicit;
   }
@@ -185,8 +185,8 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
     linkedStory = resolveStory(root, cwd, story);
     if (name && name !== linkedStory.name) {
       fail(
-        `conflit de nom : "${name}" vs story "${linkedStory.name}". ` +
-          "Donne soit <nom>, soit --story, mais pas les deux avec des noms differents.",
+        `name conflict: "${name}" vs story "${linkedStory.name}". ` +
+          "Give either <name> or --story, but not both with different names.",
       );
     }
     name = linkedStory.name;
@@ -196,7 +196,7 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
   const dest = worktreeDest(root, name);
 
   if (fs.existsSync(dest)) {
-    fail(`la cible existe deja : ${dest}`);
+    fail(`target already exists: ${dest}`);
   }
 
   const branchExists =
@@ -216,21 +216,21 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
   const envToLink = ENV_FILES.filter((f) => fs.existsSync(path.join(root, f)));
 
   if (dryRun) {
-    log("Dry run — rien n'est ecrit.");
+    log("Dry run — nothing is written.");
     log(`  worktree : git ${addArgs.join(" ")}`);
-    log(`  branche  : ${branchExists ? `${name} (existante)` : `${name} (nouvelle, depuis ${from || "HEAD"})`}`);
-    if (linkedStory) log(`  story    : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (pas de story.md)"}`);
-    for (const f of envToLink) log(`  lien     : ${f}`);
+    log(`  branch   : ${branchExists ? `${name} (existing)` : `${name} (new, from ${from || "HEAD"})`}`);
+    if (linkedStory) log(`  story    : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no story.md)"}`);
+    for (const f of envToLink) log(`  link     : ${f}`);
     log(`  deps     : ${describeStrategy(strategy, pm, hasNodeModules)}`);
     return;
   }
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   git(root, addArgs);
-  log(`Worktree cree : ${dest}`);
-  log(`Branche : ${name}${branchExists ? " (existante)" : ""}`);
+  log(`Worktree created: ${dest}`);
+  log(`Branch: ${name}${branchExists ? " (existing)" : ""}`);
   if (linkedStory) {
-    log(`Story liee : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (pas de story.md)"}`);
+    log(`Story linked: ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no story.md)"}`);
   }
 
   for (const f of envToLink) {
@@ -241,7 +241,7 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
   applyDeps(strategy, { pm, root, dest, hasNodeModules });
 
   log("");
-  log("Prochaine etape :");
+  log("Next step:");
   log(`  cd ${path.relative(cwd, dest) || dest}`);
   if (linkedStory) {
     log(`  ai-flow harness preflight --story ${linkedStory.rel}`);
@@ -249,10 +249,10 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
 }
 
 function describeStrategy(strategy, pm, hasNodeModules) {
-  if (strategy === "link") return "symlink de node_modules";
-  if (strategy === "install") return `${installCommand(pm)} dans le worktree`;
-  if (strategy === "skip") return "ignore (--deps skip)";
-  return `a installer (${installCommand(pm)}) — monorepo/pnpm, symlink deconseille`;
+  if (strategy === "link") return "symlink node_modules";
+  if (strategy === "install") return `${installCommand(pm)} in the worktree`;
+  if (strategy === "skip") return "skipped (--deps skip)";
+  return `to install (${installCommand(pm)}) — monorepo/pnpm, symlink not advised`;
 }
 
 function applyDeps(strategy, { pm, root, dest, hasNodeModules }) {
@@ -260,7 +260,7 @@ function applyDeps(strategy, { pm, root, dest, hasNodeModules }) {
 
   if (strategy === "link") {
     if (!hasNodeModules) {
-      log(`  node_modules absent a la racine — rien a lier, lance : ${installCommand(pm)}`);
+      log(`  node_modules absent at the root — nothing to link, run: ${installCommand(pm)}`);
       return;
     }
     const status = makeLink(path.join(root, "node_modules"), path.join(dest, "node_modules"));
@@ -274,20 +274,20 @@ function applyDeps(strategy, { pm, root, dest, hasNodeModules }) {
     try {
       execFileSync(bin, ["install"], { cwd: dest, stdio: "inherit" });
     } catch {
-      log(`  echec de "${installCommand(pm)}" — a relancer manuellement dans le worktree.`);
+      log(`  "${installCommand(pm)}" failed — rerun it manually in the worktree.`);
     }
     return;
   }
 
   // recommend-install
-  log(`  deps : lance "${installCommand(pm)}" dans le worktree (symlink deconseille pour ce projet).`);
+  log(`  deps : run "${installCommand(pm)}" in the worktree (symlink not advised for this project).`);
 }
 
 function parseWorktrees(root) {
   return parseWorktreesFrom(git(root, ["worktree", "list", "--porcelain"]).stdout);
 }
 
-// Parseur pur de la sortie `git worktree list --porcelain` (sans I/O).
+// Pure parser of `git worktree list --porcelain` output (no I/O).
 function parseWorktreesFrom(out) {
   const blocks = out.split(/\n\n+/).map((b) => b.trim()).filter(Boolean);
   return blocks.map((block) => {
@@ -307,19 +307,19 @@ function worktreeList({ cwd }) {
   const root = requireRepo(cwd);
   const entries = parseWorktrees(root);
   if (entries.length === 0) {
-    log("Aucun worktree.");
+    log("No worktrees.");
     return;
   }
   for (const e of entries) {
-    const label = e.bare ? "(bare)" : e.detached ? `(detache @${e.head})` : e.branch || "(?)";
+    const label = e.bare ? "(bare)" : e.detached ? `(detached @${e.head})` : e.branch || "(?)";
     const links = ENV_FILES.filter((f) => lstatSafe(path.join(e.path, f))).join(", ");
-    const suffix = links ? `  liens: ${links}` : "";
+    const suffix = links ? `  links: ${links}` : "";
     log(`${label.padEnd(24)} ${e.path}${suffix}`);
   }
 }
 
-// Lignes `git status --porcelain` en excluant nos liens geres : ce qui reste
-// est du vrai travail (fichiers suivis modifies, ou fichiers non geres).
+// `git status --porcelain` lines excluding our managed links: what remains is
+// real work (modified tracked files, or unmanaged files).
 function realDirtyLines(wtPath) {
   return git(wtPath, ["status", "--porcelain"], { allowFail: true })
     .stdout.split("\n")
@@ -330,7 +330,7 @@ function realDirtyLines(wtPath) {
     });
 }
 
-// Retire uniquement les symlinks que l'on a poses (jamais un vrai fichier).
+// Removes only the symlinks we laid down ourselves (never a real file).
 function removeManagedLinks(wtPath) {
   for (const name of MANAGED_LINKS) {
     const p = path.join(wtPath, name);
@@ -353,30 +353,30 @@ function worktreeRemove(name, { force, dryRun, cwd }) {
     entries.find((e) => e.branch === name);
 
   if (!match) {
-    fail(`worktree introuvable pour "${name}". Voir : ai-flow worktree list`);
+    fail(`worktree not found for "${name}". See: ai-flow worktree list`);
   }
 
-  // git worktree remove CONSERVE la branche : aucun commit n'est perdu. Le seul
-  // risque reel est le travail non commite (working tree sale) — hors nos liens.
+  // git worktree remove KEEPS the branch: no commit is lost. The only real risk
+  // is uncommitted work (dirty working tree) — excluding our own links.
   const dirty = realDirtyLines(match.path);
   if (dirty.length && !force) {
     fail(
-      `le worktree "${name}" a des modifications non commitees. ` +
-        "Commit/stash d'abord, ou force avec --force (perte des changements non commites).",
+      `worktree "${name}" has uncommitted changes. ` +
+        "Commit/stash first, or force with --force (uncommitted changes will be lost).",
     );
   }
 
   if (dryRun) {
-    log("Dry run — rien n'est supprime.");
-    log(`  liens geres retires : ${MANAGED_LINKS.join(", ")}`);
+    log("Dry run — nothing is removed.");
+    log(`  managed links removed: ${MANAGED_LINKS.join(", ")}`);
     log(`  git worktree remove ${force ? "--force " : ""}${match.path}`);
     log("  git worktree prune");
-    log(`  branche ${match.branch || name} : conservee`);
+    log(`  branch ${match.branch || name}: kept`);
     return;
   }
 
-  // On retire nos symlinks avant, sinon git worktree remove peut refuser a cause
-  // de fichiers non suivis quand ces chemins ne sont pas gitignores.
+  // We remove our symlinks first, otherwise git worktree remove may refuse
+  // because of untracked files when those paths are not gitignored.
   removeManagedLinks(match.path);
 
   const removeArgs = ["worktree", "remove"];
@@ -385,15 +385,15 @@ function worktreeRemove(name, { force, dryRun, cwd }) {
   git(root, removeArgs);
   git(root, ["worktree", "prune"]);
 
-  log(`Worktree retire : ${match.path}`);
+  log(`Worktree removed: ${match.path}`);
   if (match.branch) {
-    log(`Branche conservee : ${match.branch} (git branch -D ${match.branch} pour la supprimer).`);
+    log(`Branch kept: ${match.branch} (git branch -D ${match.branch} to delete it).`);
   }
 }
 
-// Liste non-fatale des worktrees, utilisable hors du contexte worktree (ex.
-// `status`). Ne quitte jamais : renvoie { isRepo:false, entries:[] } si git est
-// absent ou si on n'est pas dans un depot, au lieu de tuer le process.
+// Non-fatal worktree listing, usable outside the worktree context (e.g.
+// `status`). Never exits: returns { isRepo:false, entries:[] } if git is absent
+// or we are not inside a repository, instead of killing the process.
 function collectWorktrees(cwd) {
   if (git(cwd, ["--version"], { allowFail: true }).code !== 0) {
     return { isRepo: false, root: null, entries: [] };
@@ -410,9 +410,9 @@ function collectWorktrees(cwd) {
   return { isRepo: true, root: repoRoot, entries: parseWorktreesFrom(list.stdout) };
 }
 
-// Extrait les arguments positionnels en ignorant les flags et la valeur des
-// flags qui en prennent une (--from/--deps/--story). Sans ca, `add --story x`
-// prendrait "--story" comme nom positionnel.
+// Extracts positional arguments, ignoring flags and the value of flags that take
+// one (--from/--deps/--story). Without this, `add --story x` would take
+// "--story" as the positional name.
 function positionalArgs(args) {
   const valueFlags = new Set(["--from", "--deps", "--story"]);
   const out = [];
@@ -440,7 +440,7 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
   } else if (sub === "remove" || sub === "rm") {
     worktreeRemove(name, { force, dryRun, cwd });
   } else {
-    fail(`sous-commande worktree inconnue : "${sub || ""}". Utilise add, list ou remove.`);
+    fail(`unknown worktree subcommand: "${sub || ""}". Use add, list or remove.`);
   }
 }
 

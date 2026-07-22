@@ -31,25 +31,25 @@ When `ai-flow` is available in the project, use the Security Evidence Harness au
 
 ## Pipeline
 
-1. Use `$agent-planner` or `$grill-me` if requirements, permissions, or data visibility are unclear.
-2. Use `$agent-context-scout` if trust boundaries or edit points are spread across modules.
-3. Use `$agent-orchestrator` to create the Execution Packet, Context Map, Validation Gates, Stop Conditions, and Rollback Notes.
-4. Use `$tdd` for critical permission, validation, or workflow logic.
-5. Use `$implement-slice` to implement the story end-to-end.
-6. Use `$tests-check` to validate test adequacy.
-7. Use `$e2e-check` for critical auth/admin/user journeys.
-8. Use `$architecture-check` to validate architecture quickly.
-9. Use `$security-check` to validate trust boundaries and common security risks.
-10. Use `$review-codebase` for the final pre-merge review.
-11. If blocking issues exist, use `$implement-slice` to fix them and repeat the failed checks.
-12. Use `$blueprint-implementation-notes` to update `implementation-notes.md`.
+1. Use `/agent-planner` or `/grill-me` if requirements, permissions, or data visibility are unclear.
+2. Use `/agent-context-scout` if trust boundaries or edit points are spread across modules.
+3. Use `/agent-orchestrator` to create the Execution Packet, Context Map, Validation Gates, Stop Conditions, and Rollback Notes.
+4. Use `/tdd` for critical permission, validation, or workflow logic.
+5. Use `/implement-slice` to implement the story end-to-end.
+6. Use `/tests-check` to validate test adequacy.
+7. Use `/e2e-check` for critical auth/admin/user journeys.
+8. Use `/architecture-check` to validate architecture quickly.
+9. Use `/security-check` to validate trust boundaries and common security risks.
+10. Use `/review-codebase` for the final pre-merge review.
+11. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
+12. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
 
 ## Deep Validator Escalation
 
-- Use `$agent-validator-security` for auth systems, permission models, payments, uploads, secrets, external integrations, or sensitive data.
-- Use `$agent-validator-architecture` for security changes that alter boundaries, data flow, or module ownership.
-- Use `$agent-validator-tests` when security behavior lacks strong test evidence.
-- Use `$agent-context-scout` when secure implementation would otherwise require broad codebase exploration. The scout maps context only and does not modify files.
+- Use `/agent-validator-security` for auth systems, permission models, payments, uploads, secrets, external integrations, or sensitive data.
+- Use `/agent-validator-architecture` for security changes that alter boundaries, data flow, or module ownership.
+- Use `/agent-validator-tests` when security behavior lacks strong test evidence.
+- Use `/agent-context-scout` when secure implementation would otherwise require broad codebase exploration. The scout maps context only and does not modify files.
 
 ## Required Security Questions
 

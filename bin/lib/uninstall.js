@@ -1,7 +1,7 @@
 "use strict";
 
-// Desinstallation : retire les fichiers geres (selon le manifeste, en preservant
-// les edits locaux sauf --force) tout en conservant epics/stories.
+// Uninstall: removes the managed files (per the manifest, preserving local edits
+// unless --force) while keeping epics/stories.
 
 const fs = require("fs");
 const path = require("path");

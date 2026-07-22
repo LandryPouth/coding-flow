@@ -1,8 +1,8 @@
 "use strict";
 
-// Etat des epics/stories (via le backend de stockage configure), enrichi du
-// worktree lie a chaque story et de la policy de branche. Le contenu des stories
-// vient du storage ; le lien worktree et la policy sont la couche git, orthogonale.
+// State of the epics/stories (via the configured storage backend), enriched with
+// the worktree linked to each story and the branch policy. The story content
+// comes from storage; the worktree link and the policy are the git layer, orthogonal.
 
 const path = require("path");
 
@@ -13,9 +13,9 @@ const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
 const { evaluateBranchPolicy } = require("./policy");
 
-// Indexe les worktrees par nom de branche. La correspondance worktree<->story
-// est sans etat : `worktree add --story` nomme la branche d'apres le dossier de
-// la story, donc on relie une story a un worktree quand branch === basename.
+// Indexes the worktrees by branch name. The worktree<->story mapping is
+// stateless: `worktree add --story` names the branch after the story directory,
+// so we link a story to a worktree when branch === basename.
 function buildWorktreeIndex() {
   const { isRepo, entries } = collectWorktrees(cwd);
   const byBranch = new Map();
@@ -49,8 +49,8 @@ function status({ json = false } = {}) {
     }),
   }));
 
-  // Worktrees actifs qui ne correspondent a aucune story (branches libres,
-  // main/master, etc.). Utile pour voir tout le travail parallele en cours.
+  // Active worktrees that don't match any story (loose branches, main/master,
+  // etc.). Useful to see all the parallel work in progress.
   const looseWorktrees = wt.entries
     .filter((entry) => !entry.bare && entry.branch && !mappedBranches.has(entry.branch))
     .map((entry) => ({
@@ -101,18 +101,18 @@ function status({ json = false } = {}) {
   }
 
   if (looseWorktrees.length > 0) {
-    log("Worktrees (hors story):");
+    log("Worktrees (not linked to a story):");
     for (const entry of looseWorktrees) {
       log(`- ${entry.branch.padEnd(42)} ${entry.path}`);
     }
     log("");
   }
 
-  // Rappel de policy : jamais bloquant depuis status, juste un signal.
+  // Policy reminder: never blocking from status, just a signal.
   if (policy.enforced && policy.onBase) {
     log(
-      `Policy branchPerEpic : tu es sur "${policy.branch}" (branche de base). ` +
-        "Crée une branche par epic (ex. `ai-flow worktree add --story <dir>`) avant de coder.",
+      `Policy branchPerEpic: you are on "${policy.branch}" (base branch). ` +
+        "Create one branch per epic (e.g. `ai-flow worktree add --story <dir>`) before coding.",
     );
     log("");
   }

@@ -1,7 +1,7 @@
 "use strict";
 
-// Scan brownfield : detecte frameworks, scripts, dossiers, tests, et ecrit
-// docs/bootstrap-scan.md pour amorcer le contexte projet.
+// Brownfield scan: detects frameworks, scripts, directories, tests, and writes
+// docs/bootstrap-scan.md to seed the project context.
 
 const fs = require("fs");
 const path = require("path");
@@ -67,7 +67,7 @@ function bootstrapScan({ json = false, dryRun = false } = {}) {
     configFiles,
     testDirectories: testDirs,
     recommendedNextPrompt:
-      "Use $bootstrap-brownfield with docs/bootstrap-scan.md to fill project context, architecture, conventions, and roadmap. Do not modify application code.",
+      "Use /bootstrap-brownfield with docs/bootstrap-scan.md to fill project context, architecture, conventions, and roadmap. Do not modify application code.",
   };
 
   if (json) {

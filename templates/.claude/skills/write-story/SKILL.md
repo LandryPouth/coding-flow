@@ -81,6 +81,6 @@ Create or update:
 
 ## Ready For
 
-- `$agent-orchestrator`
-- `$implement-slice`
+- `/agent-orchestrator`
+- `/implement-slice`
 ```

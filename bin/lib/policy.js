@@ -1,9 +1,9 @@
 "use strict";
 
-// Policy "une epic = une branche, jamais sur main". C'est une decision retenue
-// dans .coding-flow/config.json (branchPerEpic), pas un mur code en dur : les
-// commandes la font remonter (ex. status), elles ne bloquent pas un repo qui
-// committe legitimement sur main. Meme esprit que le garde-fou de ship.
+// Policy "one epic = one branch, never on main". It is a decision recorded in
+// .coding-flow/config.json (branchPerEpic), not a hard-coded wall: commands
+// surface it (e.g. status), they don't block a repo that legitimately commits on
+// main. Same spirit as the ship guardrail.
 
 const { execFileSync } = require("child_process");
 
@@ -34,9 +34,9 @@ function defaultBranch(cwd) {
   return "main";
 }
 
-// Evalue la policy branchPerEpic pour le repo courant. Ne touche jamais au repo,
-// pure lecture. Renvoie de quoi afficher un avertissement sans decider a la
-// place de l'utilisateur.
+// Evaluates the branchPerEpic policy for the current repo. Never touches the
+// repo, pure read. Returns enough to show a warning without deciding on the
+// user's behalf.
 function evaluateBranchPolicy(cwd, config = null) {
   const cfg = config || readConfig(cwd);
 

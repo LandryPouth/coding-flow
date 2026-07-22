@@ -65,7 +65,7 @@ You optimize for correctness, small diffs, existing conventions, and a clean val
 - Do not introduce new patterns without documenting a decision.
 - Prefer existing conventions.
 - Do not silently modify unrelated features.
-- Stop and request `$agent-context-scout` when edit points remain unclear after targeted discovery.
+- Stop and request `/agent-context-scout` when edit points remain unclear after targeted discovery.
 - Do not weaken types, tests, validation, auth, or error handling to pass quickly.
 - Do not leave implementation notes stale.
 

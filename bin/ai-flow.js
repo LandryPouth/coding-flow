@@ -2,8 +2,8 @@
 
 "use strict";
 
-// Point d'entree mince : parse les arguments et dispatche vers les modules de
-// bin/lib. La logique de chaque commande vit dans son propre module.
+// Thin entry point: parses the arguments and dispatches to the bin/lib modules.
+// The logic of each command lives in its own module.
 
 const { cwd } = require("./lib/context");
 const { log, fail } = require("./lib/util");
@@ -60,8 +60,8 @@ if (command === "init") {
 
   if (storage !== "local") {
     fail(
-      `storage backend "${storage}" n'est pas encore disponible. ` +
-        "Seul \"local\" est supporté pour l'instant (voir docs/plans/storage-backends.md).",
+      `storage backend "${storage}" is not available yet. ` +
+        "Only \"local\" is supported for now (see docs/plans/storage-backends.md).",
     );
   }
 
@@ -99,8 +99,8 @@ if (command === "init") {
     log("Config: unchanged");
   }
 
-  // Câble le hook PreToolUse `guard` : garde-fou déterministe (secrets/chemins
-  // bloqués refusés AVANT écriture). Fusion non destructive dans settings.json.
+  // Wires the `guard` PreToolUse hook: deterministic guardrail (secrets/blocked
+  // paths refused BEFORE the write). Non-destructive merge into settings.json.
   if (!flags.has("--no-guard")) {
     const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
     const dry = flags.has("--dry-run");
@@ -123,8 +123,8 @@ if (command === "init") {
     log("Use --force to overwrite them.");
   }
 } else if (command === "upgrade") {
-  // Migration : les projets installes avant le seam de stockage n'ont pas de
-  // config.json. On la cree avec les defauts sans jamais ecraser un choix existant.
+  // Migration: projects installed before the storage seam have no config.json.
+  // We create it with the defaults without ever overwriting an existing choice.
   ensureConfig(cwd, { dryRun: flags.has("--dry-run") });
   upgrade({
     force: flags.has("--force"),

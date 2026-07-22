@@ -1,15 +1,16 @@
 "use strict";
 
-// `ai-flow guard` : le hook PreToolUse déterministe. Claude Code passe l'appel
-// d'outil sur stdin AVANT l'écriture ; guard le refuse (exit 2 + décision "deny")
-// si le fichier ciblé matche un chemin bloqué de la policy harnais, ou si le
-// contenu écrit contient un secret. C'est le passage du garde-fou *conseillé*
-// (harness check, après coup) au garde-fou *en code* (au bord de l'outil, avant
-// l'écriture) : un secret ne PEUT pas fuiter, on n'espère plus qu'il ne fuie pas.
+// `ai-flow guard`: the deterministic PreToolUse hook. Claude Code passes the tool
+// call on stdin BEFORE the write; guard refuses it (exit 2 + "deny" decision) if
+// the targeted file matches a blocked path in the harness policy, or if the
+// written content contains a secret. This is the move from the *advisory*
+// guardrail (harness check, after the fact) to the *in-code* guardrail (at the
+// tool boundary, before the write): a secret CANNOT leak, we no longer merely
+// hope it won't.
 //
-// Fail-open par conception : stdin vide/illisible, outil non-écrivain, ou config
-// absente ⇒ allow. Un hook ne doit jamais casser un usage légitime ; il ne bloque
-// que sur une correspondance déterministe et explicite.
+// Fail-open by design: empty/unreadable stdin, non-write tool, or missing config
+// ⇒ allow. A hook must never break a legitimate use; it only blocks on a
+// deterministic and explicit match.
 
 const fs = require("fs");
 const path = require("path");
@@ -17,8 +18,8 @@ const path = require("path");
 const { defaultHarnessConfig, getSecretPatterns } = require("./harness");
 const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./util");
 
-// Outils qui écrivent sur le disque. Les autres (Read, Bash, Grep…) ne sont pas
-// notre affaire ici : allow immédiat.
+// Tools that write to disk. The others (Read, Bash, Grep…) are not our business
+// here: immediate allow.
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 function readHookInput({ inputFile = null } = {}) {
@@ -26,7 +27,7 @@ function readHookInput({ inputFile = null } = {}) {
     if (inputFile) {
       return fs.readFileSync(inputFile, "utf8");
     }
-    // fd 0 = stdin. En contexte hook, l'entrée est toujours pipée.
+    // fd 0 = stdin. In a hook context, the input is always piped.
     return fs.readFileSync(0, "utf8");
   } catch {
     return "";
@@ -44,7 +45,7 @@ function parseHookInput(raw) {
   }
 }
 
-// Chemin ciblé par l'appel d'outil, selon la forme de tool_input.
+// Path targeted by the tool call, depending on the shape of tool_input.
 function targetPath(toolInput) {
   if (!toolInput || typeof toolInput !== "object") {
     return null;
@@ -52,7 +53,7 @@ function targetPath(toolInput) {
   return toolInput.notebook_path || toolInput.file_path || null;
 }
 
-// Contenu qui serait écrit, agrégé selon l'outil (pour le scan de secret).
+// Content that would be written, aggregated per tool (for the secret scan).
 function writtenContent(toolName, toolInput) {
   if (!toolInput || typeof toolInput !== "object") {
     return "";
@@ -75,8 +76,8 @@ function writtenContent(toolName, toolInput) {
   return "";
 }
 
-// Charge la policy harnais depuis la racine résolue, sans dépendre du cwd du
-// module (le hook fournit son propre cwd). Config absente/corrompue ⇒ défauts.
+// Loads the harness policy from the resolved root, without depending on the
+// module's cwd (the hook provides its own cwd). Missing/corrupt config ⇒ defaults.
 function loadPolicy(root) {
   const defaults = defaultHarnessConfig();
   const configFile = path.join(root, ".coding-flow", "harness.json");
@@ -96,7 +97,7 @@ function loadPolicy(root) {
   return { blockedPaths };
 }
 
-// Décision pure : à partir de l'input hook + racine, renvoie allow/deny + raison.
+// Pure decision: from the hook input + root, returns allow/deny + reason.
 function decide(hook, root) {
   if (!hook || typeof hook !== "object") {
     return { decision: "allow", reason: "no parseable hook input" };
@@ -111,7 +112,7 @@ function decide(hook, root) {
   const toolInput = hook.tool_input;
   const filePath = targetPath(toolInput);
 
-  // Contrôle 1 — chemin bloqué par la policy.
+  // Check 1 — path blocked by the policy.
   if (filePath) {
     const relative = normalizePortable(path.relative(root, path.resolve(root, filePath)));
 
@@ -129,7 +130,7 @@ function decide(hook, root) {
     }
   }
 
-  // Contrôle 2 — secret dans le contenu écrit.
+  // Check 2 — secret in the written content.
   const content = writtenContent(toolName, toolInput);
 
   if (content) {
@@ -153,14 +154,14 @@ function guardCommand({ getFlagValue, flags }) {
   const inputFile = getFlagValue("--input", null);
   const raw = readHookInput({ inputFile });
   const hook = parseHookInput(raw);
-  // Racine : cwd fourni par le hook s'il est présent, sinon le cwd du process.
+  // Root: cwd provided by the hook if present, otherwise the process cwd.
   const root = hook && typeof hook.cwd === "string" && hook.cwd ? hook.cwd : process.cwd();
 
   const result = decide(hook, root);
 
   if (result.decision === "deny") {
-    // Décision hook (stdout) + message bloquant (stderr) + exit 2 : on couvre les
-    // deux voies documentées pour être robuste aux versions de Claude Code.
+    // Hook decision (stdout) + blocking message (stderr) + exit 2: we cover both
+    // documented paths to stay robust across Claude Code versions.
     process.stdout.write(
       `${JSON.stringify({
         hookSpecificOutput: {

@@ -1,56 +1,53 @@
-# Seam de stockage, config projet et policy de branche
+# Storage seam, project config, and branch policy
 
-Ce document décrit trois ajouts liés à `ai-flow` :
+This document describes three related additions to `ai-flow`:
 
-1. un **seam de stockage** (les epics/stories passent par un backend pluggable) ;
-2. une **config projet** `.coding-flow/config.json` qui retient les décisions ;
-3. une **policy** « une epic = une branche, jamais sur main ».
+1. a **storage seam** (epics/stories go through a pluggable backend);
+2. a **project config** `.coding-flow/config.json` that records the decisions;
+3. a **policy** "one epic = one branch, never on main".
 
-## Pourquoi un seam, et pourquoi pas (encore) le backend GitHub
+## Why a seam, and why not (yet) the GitHub backend
 
-L'idée déclencheuse : stocker les epics/stories comme **issues / sub-issues
-GitHub** au lieu de dossiers locaux, pour les équipes qui vivent dans GitHub. Le
-choix se fait à l'install, **un seul backend actif à la fois** (local **ou**
-github), jamais les deux — pas de synchro bidirectionnelle, pas de source de
-vérité ambiguë.
+The triggering idea: store epics/stories as **GitHub issues / sub-issues**
+instead of local directories, for teams that live in GitHub. The choice is made
+at install time, **only one backend active at a time** (local **or** github),
+never both — no two-way sync, no ambiguous source of truth.
 
-Mais construire le backend GitHub **maintenant** serait un investissement
-prématuré :
+But building the GitHub backend **now** would be a premature investment:
 
-- il rend `gh` + réseau **obligatoires** à chaque `status`/`harness`/lecture de
-  story (aujourd'hui offline et instantané) ;
-- il fait perdre les propriétés qui font la valeur de l'outil : la story **dans
-  le diff** de la PR, le `grep`, le versionnement de la spec avec le commit qui
-  l'implémente ;
-- les sub-issues passent par `gh api graphql` (pas de commande first-class),
-  donc du code fragile à maintenir pour toujours ;
-- le projet n'a pas encore d'utilisateurs : on paierait le coût sur une
-  hypothèse de besoin, pas un besoin observé.
+- it makes `gh` + network **mandatory** on every `status`/`harness`/story read
+  (today offline and instantaneous);
+- it loses the properties that make the tool valuable: the story **in the diff**
+  of the PR, `grep`, versioning the spec alongside the commit that implements it;
+- sub-issues go through `gh api graphql` (no first-class command), hence fragile
+  code to maintain forever;
+- the project has no users yet: we would pay the cost on a hypothetical need,
+  not an observed one.
 
-**Décision : on pose le seam maintenant (coût quasi nul), on diffère le backend
-GitHub** jusqu'à ce qu'un vrai utilisateur le réclame. Le jour venu, il se
-branche dans `bin/lib/storage/github.js` sans réécrire le reste de l'outil.
+**Decision: we lay the seam now (near-zero cost), we defer the GitHub backend**
+until a real user asks for it. When the time comes, it plugs into
+`bin/lib/storage/github.js` without rewriting the rest of the tool.
 
 ## Architecture
 
-| Fichier | Rôle |
+| File | Role |
 | --- | --- |
-| `bin/lib/config.js` | Lit/écrit `.coding-flow/config.json` (defaults, validation, migration) |
-| `bin/lib/storage/index.js` | `getStorage(cwd)` : choisit le backend selon la config |
-| `bin/lib/storage/local.js` | Backend local (dossiers `epics/`), défaut — seule chose qui connaît le layout des stories |
-| `bin/lib/storage/github.js` | Backend GitHub : **seam en place, `fail()` clair, implémentation différée** |
-| `bin/lib/policy.js` | Évalue la policy `branchPerEpic` (pure lecture git, jamais bloquante) |
+| `bin/lib/config.js` | Reads/writes `.coding-flow/config.json` (defaults, validation, migration) |
+| `bin/lib/storage/index.js` | `getStorage(cwd)`: picks the backend from the config |
+| `bin/lib/storage/local.js` | Local backend (`epics/` directories), default — the only thing that knows the story layout |
+| `bin/lib/storage/github.js` | GitHub backend: **seam in place, clear `fail()`, implementation deferred** |
+| `bin/lib/policy.js` | Evaluates the `branchPerEpic` policy (pure git read, never blocking) |
 
-L'interface d'un backend est minimale et volontairement extensible :
+A backend's interface is minimal and deliberately extensible:
 
 ```js
 storage.listEpics() // -> [{ name, path, stories: [{ name, title, status, path }] }]
 ```
 
-`status.js` consomme le backend pour le contenu des stories ; le **lien
-worktree** et la **policy** restent la couche git, orthogonale au stockage.
+`status.js` consumes the backend for the story content; the **worktree link** and
+the **policy** remain the git layer, orthogonal to storage.
 
-## Config projet — `.coding-flow/config.json`
+## Project config — `.coding-flow/config.json`
 
 ```json
 {
@@ -60,26 +57,25 @@ worktree** et la **policy** restent la couche git, orthogonale au stockage.
 }
 ```
 
-- Écrite par `init` (honore `--storage` et `--no-branch-per-epic`).
-- `upgrade` la **crée si absente** (migration des projets installés avant le
-  seam) sans jamais écraser un choix existant.
-- JSON, pas YAML : le projet reste zéro-dépendance.
-- Une config corrompue ou une valeur `storage` inconnue retombe proprement sur
-  les défauts.
+- Written by `init` (honors `--storage` and `--no-branch-per-epic`).
+- `upgrade` **creates it if absent** (migration of projects installed before the
+  seam) without ever overwriting an existing choice.
+- JSON, not YAML: the project stays zero-dependency.
+- A corrupt config or an unknown `storage` value falls back cleanly to the
+  defaults.
 
-`init --storage github` est **refusé** aujourd'hui (message clair, aucune config
-écrite) : on n'autorise pas un choix qui casserait `status`. Si on force
-`storage: "github"` à la main, `status` échoue proprement — le seam est prouvé,
-rien ne plante.
+`init --storage github` is **refused** today (clear message, no config written):
+we don't allow a choice that would break `status`. If we force `storage:
+"github"` by hand, `status` fails cleanly — the seam is proven, nothing crashes.
 
-## Policy « une epic = une branche, jamais main »
+## Policy "one epic = one branch, never main"
 
-`branchPerEpic` (défaut `true`) est une **décision retenue**, pas un mur codé en
-dur : `status` la fait remonter (avertissement quand on est sur la branche de
-base), elle ne bloque pas un repo qui committe légitimement sur main. Même esprit
-que le garde-fou de `ship`. Désactivable via `init --no-branch-per-epic`.
+`branchPerEpic` (default `true`) is a **recorded decision**, not a hard-coded
+wall: `status` surfaces it (warning when on the base branch), it does not block a
+repo that legitimately commits on main. Same spirit as the `ship` guardrail.
+Can be disabled via `init --no-branch-per-epic`.
 
-En JSON, `status` expose :
+In JSON, `status` exposes:
 
 ```json
 "policy": { "branchPerEpic": true, "branch": "main", "onBase": true }
@@ -87,19 +83,19 @@ En JSON, `status` expose :
 
 ## Tests
 
-`test/config-storage.test.js` (8 tests, vraie CLI en dossiers temp) :
+`test/config-storage.test.js` (8 tests, real CLI in temp directories):
 
-- `init` écrit la config (storage local, branchPerEpic true) ;
-- `--no-branch-per-epic` désactive la policy ;
-- `--storage github` est refusé et **n'écrit aucune config** ;
-- `--storage <inconnu>` est refusé ;
-- `status --json` expose `storage` et `policy` ;
-- `storage: "github"` fait échouer `status` proprement (seam prouvé) ;
-- sur la branche de base, `status` signale la policy (`onBase: true` + texte) ;
-- `upgrade` crée la config pour un projet installé avant le seam.
+- `init` writes the config (storage local, branchPerEpic true);
+- `--no-branch-per-epic` disables the policy;
+- `--storage github` is refused and **writes no config**;
+- `--storage <unknown>` is refused;
+- `status --json` exposes `storage` and `policy`;
+- `storage: "github"` fails `status` cleanly (seam proven);
+- on the base branch, `status` flags the policy (`onBase: true` + text);
+- `upgrade` creates the config for a project installed before the seam.
 
-## Ce qui est volontairement hors périmètre
+## What is deliberately out of scope
 
-- **Le backend GitHub lui-même** : mapping epic↔issue / story↔sub-issue via
-  `gh api graphql`, à faire quand un vrai besoin existe.
-- **Toute synchro local↔github** : exclue par conception (un seul backend actif).
+- **The GitHub backend itself**: epic↔issue / story↔sub-issue mapping via
+  `gh api graphql`, to be done when a real need exists.
+- **Any local↔github sync**: excluded by design (only one active backend).

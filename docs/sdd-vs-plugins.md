@@ -1,182 +1,179 @@
-# De l'ancien SDD au plugin + couche de gouvernance
+# From the old SDD to a plugin + governance layer
 
-> Pourquoi coding-flow a changé de nature, ce qui reste identique, et ce qu'il
-> reste à faire pour que le paquet soit **totalement utilisable et en ligne**.
-> Conception détaillée des ajouts : [`docs/plans/evidence-governance.md`](plans/evidence-governance.md).
+> Why coding-flow changed nature, what stays the same, and what is left to do for
+> the package to be **fully usable and online**.
+> Detailed design of the additions: [`docs/plans/evidence-governance.md`](plans/evidence-governance.md).
 
 ## TL;DR
 
-- **Avant** : coding-flow était un outil de **SDD** (Spec-Driven Development) —
-  une méthodologie (epics → stories verticales → skills qui planifient, écrivent,
-  implémentent, valident) livrée comme un **bundle de skills** installé par
-  `npx`. Sa valeur = la structure et la discipline.
-- **Maintenant** : la méthodologie SDD **reste le socle**, mais l'outil se
-  positionne comme une **couche d'évidence & de gouvernance** (enforcement,
-  provenance, preuve exécutée, registre d'audit, traçabilité, gate CI), et se
-  **distribue aussi comme plugin natif** Claude Code.
-- **Pourquoi** : la distribution de skills est devenue une commodité (plugins
-  natifs + marketplaces), et le vrai frein en entreprise n'est pas la
-  méthodologie mais la **gouvernance** (audit, conformité, preuve).
-- Ce n'est pas une réécriture : c'est **additif**. Les skills SDD existent
-  toujours ; on a construit la couche de preuve **par-dessus**.
+- **Before**: coding-flow was an **SDD** (Spec-Driven Development) tool — a
+  methodology (epics → vertical stories → skills that plan, write, implement,
+  validate) shipped as a **bundle of skills** installed via `npx`. Its value =
+  the structure and the discipline.
+- **Now**: the SDD methodology **remains the foundation**, but the tool positions
+  itself as an **evidence & governance layer** (enforcement, provenance, executed
+  proof, audit ledger, traceability, CI gate), and is also **distributed as a
+  native Claude Code plugin**.
+- **Why**: skill distribution became a commodity (native plugins + marketplaces),
+  and the real enterprise blocker is not the methodology but **governance**
+  (audit, compliance, proof).
+- This is not a rewrite: it is **additive**. The SDD skills still exist; we built
+  the proof layer **on top**.
 
-## 1. L'ancien modèle : SDD (Spec-Driven Development)
+## 1. The old model: SDD (Spec-Driven Development)
 
-Le SDD est la catégorie d'outils où l'on **décrit l'intention** (specs, plans,
-stories) et où un agent **implémente** à partir de cette description. Exemples de
-la même famille : GitHub **Spec Kit**, **BMAD**, **Kiro**, **OpenSpec**.
+SDD is the category of tools where you **describe the intent** (specs, plans,
+stories) and an agent **implements** from that description. Examples from the
+same family: GitHub **Spec Kit**, **BMAD**, **Kiro**, **OpenSpec**.
 
-coding-flow, dans cette logique, apportait :
+coding-flow, in that logic, provided:
 
-- un **format** : epic → story verticale → `story.md` / `tasks.md` / `tests.md` /
-  `decisions.md` / `implementation-notes.md` ;
-- des **skills** (planificateur, rédacteur de story, implémenteur, validateurs) ;
-- des **règles** et un **harnais de sécurité** qui *scanne* (secrets, fichiers
-  sensibles) et *estime* le risque d'une story ;
-- une **distribution** par `npx github:LandryPouth/codin-flow`.
+- a **format**: epic → vertical story → `story.md` / `tasks.md` / `tests.md` /
+  `decisions.md` / `implementation-notes.md`;
+- **skills** (planner, story writer, implementer, validators);
+- **rules** and a **security harness** that *scans* (secrets, sensitive files)
+  and *estimates* a story's risk;
+- a **distribution** via `npx github:LandryPouth/codin-flow`.
 
-**Sa valeur réelle** : imposer une structure et une discipline à un agent, pour
-éviter le code « au fil de l'eau ». C'est utile — mais c'est ce que fait *toute*
-la catégorie SDD.
+**Its real value**: imposing structure and discipline on an agent, to avoid
+"go-with-the-flow" code. That is useful — but it is what the *whole* SDD category
+does.
 
-**Ses limites** (ce qui a déclenché le virage) :
+**Its limits** (what triggered the pivot):
 
-1. **La preuve reposait sur l'affirmation de l'agent.** « C'est fait », « les
-   tests passent » : rien ne l'*exécutait* ni ne le *signait*. Or c'est la même
-   IA qui écrit le code **et** les tests — un « vert » ne prouve presque rien.
-2. **Le harnais était consultatif.** Il scannait *après coup* et *signalait* ; il
-   n'*empêchait* rien. Un secret pouvait encore atteindre le disque.
-3. **La distribution était un tapis roulant.** Chaque release = re-livrer le
-   bundle de skills. Peu différenciant, coûteux à maintenir.
+1. **Proof relied on the agent's assertion.** "It's done", "the tests pass":
+   nothing *executed* it nor *signed* it. Yet the same AI writes the code **and**
+   the tests — a "green" proves almost nothing.
+2. **The harness was advisory.** It scanned *after the fact* and *flagged*; it
+   *prevented* nothing. A secret could still reach the disk.
+3. **Distribution was a treadmill.** Every release = re-ship the skills bundle.
+   Barely differentiating, costly to maintain.
 
-## 2. Ce qui a changé dans l'écosystème (le « pourquoi »)
+## 2. What changed in the ecosystem (the "why")
 
-Trois basculements, tous en 2026 :
+Three shifts, all in 2026:
 
-- **Les plugins natifs + marketplaces commoditisent les bundles de skills.**
-  Claude Code installe désormais des plugins en une commande
-  (`/plugin marketplace add …`, `/plugin install …`), et des marketplaces
-  publient des packs de skills à la pelle. Être « un pack de skills de plus »
-  n'est plus un avantage.
-- **La catégorie SDD est saturée.** Rivaliser sur *l'étendue des skills* ou « être
-  un autre Spec Kit », c'est une course perdue d'avance.
-- **Le vrai blocage entreprise est la gouvernance, pas la qualité du code.**
-  ~88 % des pilotes d'IA n'atteignent jamais la production — à cause de l'audit,
-  de la conformité et du contrôle, pas parce que le code est mauvais. Le besoin
-  non couvert, c'est **la preuve** : qui a fait quoi, est-ce *réellement* vérifié,
-  peut-on le montrer à un auditeur.
+- **Native plugins + marketplaces commoditize skill bundles.** Claude Code now
+  installs plugins in one command (`/plugin marketplace add …`, `/plugin install
+  …`), and marketplaces publish skill packs by the dozen. Being "one more skill
+  pack" is no longer an advantage.
+- **The SDD category is saturated.** Competing on *skill breadth* or "being
+  another Spec Kit" is a lost race from the start.
+- **The real enterprise blocker is governance, not code quality.** ~88% of AI
+  pilots never reach production — because of audit, compliance, and control, not
+  because the code is bad. The uncovered need is **proof**: who did what, is it
+  *really* verified, can you show it to an auditor.
 
-Conclusion stratégique : ne pas concurrencer sur les skills (commoditisés), mais
-**posséder la couche que personne ne tient** — l'évidence et la gouvernance — et
-**utiliser le canal plugin** pour que la distribution cesse d'être un fardeau.
+Strategic conclusion: don't compete on skills (commoditized), but **own the layer
+nobody holds** — evidence and governance — and **use the plugin channel** so that
+distribution stops being a burden.
 
-## 3. Le nouveau modèle : couche d'évidence & de gouvernance
+## 3. The new model: evidence & governance layer
 
-Le principe directeur unique :
-*« nothing executed ≠ verified ; asserted ≠ proven ; anonymous ≠ auditable »*.
+The single guiding principle:
+*"nothing executed ≠ verified; asserted ≠ proven; anonymous ≠ auditable"*.
 
-Chaque garde-fou *conseillé* devient un garde-fou *exécuté*, attaché à une
-**identité**, agrégé dans un **registre exportable**, et vérifié **hors de la main
-de l'agent**. Concrètement (voir le plan pour le détail) :
+Every *advisory* guardrail becomes an *executed* guardrail, attached to an
+**identity**, aggregated into an **exportable ledger**, and verified **out of the
+agent's hands**. Concretely (see the plan for the detail):
 
-- **`guard`** — enforcement **déterministe** : un hook PreToolUse refuse
-  l'écriture d'un chemin bloqué ou d'un secret **avant** le disque. On passe du
-  *conseil* au *garde-fou en code*.
-- **Provenance** — chaque preuve embarque commit / branche / auteur / état dirty.
-- **`verify`** — exécute *vraiment* les commandes de validation déclarées et
-  capture le résultat verbatim ; « rien exécuté ≠ vérifié ».
-- **`audit`** — registre **append-only** + export `docs/AUDIT.md` (artefact de
-  conformité) + gate `--check` « pas de merge sans preuve verte ».
-- **`ship`** — attache la preuve `verify` au corps de la PR.
-- **`trace`** — chaîne story → commits → PR → évidence → tests, maillons manquants
-  signalés. *« Prouve que l'exigence est livrée ET vérifiée. »*
-- **`ci init`** — rejoue `verify` + `audit --check` sur un checkout neuf : le
-  signal non-jouable, sur compute gratuit.
+- **`guard`** — **deterministic** enforcement: a PreToolUse hook refuses writing
+  a blocked path or a secret **before** the disk. We move from *advice* to an
+  *in-code guardrail*.
+- **Provenance** — every proof carries commit / branch / author / dirty state.
+- **`verify`** — *actually* runs the declared validation commands and captures
+  the result verbatim; "nothing executed ≠ verified".
+- **`audit`** — **append-only** ledger + `docs/AUDIT.md` export (compliance
+  artifact) + `--check` gate "no merge without green proof".
+- **`ship`** — attaches the `verify` proof to the PR body.
+- **`trace`** — story → commits → PR → evidence → tests chain, missing links
+  flagged. *"Prove that the requirement is delivered AND verified."*
+- **`ci init`** — replays `verify` + `audit --check` on a fresh checkout: the
+  non-gameable signal, on free compute.
 
-Et la **distribution redevient un atout** :
+And **distribution becomes an asset again**:
 
-- **Plugin natif** (`.claude-plugin/`) : skills + hook `guard` installés sans
-  `ai-flow init`, mis à jour via marketplace — fin du re-ship manuel.
-- **npm** (`@landry_pouth/coding-flow`) : le CLI et la CI.
-- Les deux canaux **coexistent** : npm pour CLI/CI, plugin pour l'IDE.
+- **Native plugin** (`.claude-plugin/`): skills + `guard` hook installed without
+  `ai-flow init`, updated via marketplace — end of manual re-shipping.
+- **npm** (`@landry_pouth/coding-flow`): the CLI and the CI.
+- The two channels **coexist**: npm for CLI/CI, plugin for the IDE.
 
-## 4. SDD (avant) vs couche de gouvernance (maintenant)
+## 4. SDD (before) vs governance layer (now)
 
-| Axe | Ancien SDD | Maintenant |
+| Axis | Old SDD | Now |
 | --- | --- | --- |
-| Ce qui est prouvé | l'intention est **spécifiée** | la livraison est **vérifiée** |
-| Source de vérité | l'**affirmation** de l'agent | la **machine** (exécution + capture verbatim) |
-| Sécurité | scan **après coup**, *consultatif* | refus **avant écriture**, *déterministe* (`guard`) |
-| Identité | anonyme | provenance git signée sur chaque preuve |
-| Historique | fichiers de run épars | registre **append-only** + export conformité |
-| Traçabilité | implicite | explicite, bout en bout (`trace`) |
-| Gate | l'agent se relit lui-même | CI clean-room, **hors de sa main** |
-| Distribution | bundle `npx` (tapis roulant) | plugin natif + marketplace + npm |
-| Différenciation | « un SDD de plus » | la couche que la catégorie ne tient pas |
+| What is proven | intent is **specified** | delivery is **verified** |
+| Source of truth | the agent's **assertion** | the **machine** (execution + verbatim capture) |
+| Security | scan **after the fact**, *advisory* | refusal **before write**, *deterministic* (`guard`) |
+| Identity | anonymous | signed git provenance on every proof |
+| History | scattered run files | **append-only** ledger + compliance export |
+| Traceability | implicit | explicit, end-to-end (`trace`) |
+| Gate | the agent re-reads itself | clean-room CI, **out of its hands** |
+| Distribution | `npx` bundle (treadmill) | native plugin + marketplace + npm |
+| Differentiation | "one more SDD" | the layer the category does not hold |
 
-Ce que le SDD **garde** : les epics/stories, les skills, le format de story, la
-discipline de tests. C'est le **socle**, pas ce qui a disparu.
+What SDD **keeps**: the epics/stories, the skills, the story format, the test
+discipline. That is the **foundation**, not what disappeared.
 
-## 5. Ce qu'il reste à faire pour publier et rendre l'outil utilisable en ligne
+## 5. What is left to do to publish and make the tool usable online
 
-État actuel : 97 tests verts, version **0.2.0**, PR **#7** ouverte vers `main`
-(https://github.com/LandryPouth/codin-flow/pull/7). Reste, dans l'ordre :
+Current state: 97 green tests, version **0.2.0**, PR **#7** open against `main`
+(https://github.com/LandryPouth/codin-flow/pull/7). Remaining, in order:
 
-### A. Fusionner et publier (prérequis à tout le reste)
+### A. Merge and publish (prerequisite to everything else)
 
-1. **Merger la PR #7 dans `main`** une fois la CI verte.
-2. **S'authentifier sur npm** (bloquant actuel : `ENEEDAUTH`). En interactif :
+1. **Merge PR #7 into `main`** once the CI is green.
+2. **Authenticate to npm** (current blocker: `ENEEDAUTH`). Interactively:
    ```bash
-   npm login --auth-type=legacy      # compte @landry_pouth
+   npm login --auth-type=legacy      # @landry_pouth account
    ```
-3. **Publier** depuis `~/dev/tools/coding-flow` :
+3. **Publish** from `~/dev/tools/coding-flow`:
    ```bash
-   npm test                          # aussi lancé par prepublishOnly
-   npm publish                       # publie @landry_pouth/coding-flow@0.2.0
+   npm test                          # also run by prepublishOnly
+   npm publish                       # publishes @landry_pouth/coding-flow@0.2.0
    ```
 
-> ⚠️ **Dépendance critique — le `guard` ne fonctionne qu'une fois publié.**
-> Le hook câblé (dans `.claude/settings.json` et dans `.claude-plugin/hooks/hooks.json`)
-> invoque `npx --yes @landry_pouth/coding-flow guard`. Tant que le paquet n'est
-> **pas** publié sur npm, `npx` ne peut pas le résoudre et le hook ne bloque rien.
-> **La publication npm est donc un prérequis** pour que l'enforcement (l'argument
-> phare) soit réellement actif chez l'utilisateur. À faire en premier.
+> ⚠️ **Critical dependency — `guard` only works once published.**
+> The wired hook (in `.claude/settings.json` and in `.claude-plugin/hooks/hooks.json`)
+> invokes `npx --yes @landry_pouth/coding-flow guard`. As long as the package is
+> **not** published on npm, `npx` cannot resolve it and the hook blocks nothing.
+> **npm publication is therefore a prerequisite** for the enforcement (the
+> flagship argument) to actually be active for the user. Do it first.
 
-### B. Valider le canal plugin de bout en bout
+### B. Validate the plugin channel end-to-end
 
-4. **Tester l'installation plugin réelle** dans une session Claude Code :
+4. **Test the real plugin install** in a Claude Code session:
    ```text
    /plugin marketplace add LandryPouth/codin-flow
    /plugin install coding-flow
    ```
-   Vérifier que les skills apparaissent et que le hook `guard` se déclenche.
-5. **Confirmer que `guard` refuse bien en conditions réelles** : tenter d'écrire
-   un `.env` ou un contenu avec un faux secret, et vérifier le refus (exit 2).
+   Verify that the skills appear and that the `guard` hook fires.
+5. **Confirm that `guard` actually refuses in real conditions**: try to write a
+   `.env` or content with a fake secret, and verify the refusal (exit 2).
 
-### C. Cohérence & finition
+### C. Consistency & finishing
 
-6. **Nom du dépôt vs paquet** : le repo est `codin-flow` (sans « g ») alors que le
-   paquet est `@landry_pouth/coding-flow`. Décider si on renomme le repo pour la
-   découvrabilité, ou si on assume l'écart (documenté).
-7. **CHANGELOG** : ajouter une entrée 0.2.0 listant la couche évidence &
-   gouvernance (utile pour les futurs utilisateurs et le marketplace).
-8. **Smoke test d'install propre** : `npx @landry_pouth/coding-flow init` dans un
-   projet jetable après publication, puis `ai-flow doctor`, `harness verify`,
-   `audit --export`, `trace` — vérifier le parcours complet en conditions réelles.
-9. (Optionnel) **README** : badges npm/CI, section « Installer comme plugin » déjà
-   présente à revérifier une fois l'install plugin validée.
+6. **Repo name vs package**: the repo is `codin-flow` (without the "g") while the
+   package is `@landry_pouth/coding-flow`. Decide whether to rename the repo for
+   discoverability, or to accept the gap (documented).
+7. **CHANGELOG**: add a 0.2.0 entry listing the evidence & governance layer
+   (useful for future users and the marketplace).
+8. **Clean-install smoke test**: `npx @landry_pouth/coding-flow init` in a
+   throwaway project after publication, then `ai-flow doctor`, `harness verify`,
+   `audit --export`, `trace` — verify the full path in real conditions.
+9. (Optional) **README**: npm/CI badges, "Install as a plugin" section already
+   present, to re-check once the plugin install is validated.
 
-### Hors périmètre (volontairement différé)
+### Out of scope (deliberately deferred)
 
-- **Backend de stockage GitHub** (issues/sub-issues) : le seam existe, l'implé
-  reste différée tant qu'un besoin réel n'apparaît pas.
-- **Runner de diff-coverage maison** : `ci init` fournit le crochet documenté, pas
-  un runner ; on branche un outil tiers si besoin.
+- **GitHub storage backend** (issues/sub-issues): the seam exists, the
+  implementation stays deferred until a real need appears.
+- **Home-made diff-coverage runner**: `ci init` provides the documented hook, not
+  a runner; you wire a third-party tool if needed.
 
-## En une phrase
+## In one sentence
 
-L'ancien coding-flow **décrivait** le travail (SDD) ; le nouveau **le prouve et le
-gouverne**, et se distribue par le canal (plugin) qui a rendu les simples bundles
-de skills obsolètes. Il ne manque, pour être pleinement en ligne, que la
-**publication npm** (qui débloque aussi le `guard`) et la **validation du canal
-plugin**.
+The old coding-flow **described** the work (SDD); the new one **proves and governs
+it**, and distributes through the channel (plugin) that made plain skill bundles
+obsolete. To be fully online, all that is missing is the **npm publication**
+(which also unblocks `guard`) and the **validation of the plugin channel**.

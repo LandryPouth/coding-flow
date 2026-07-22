@@ -25,7 +25,7 @@ Use `run-story-secure` instead when the story touches auth, permissions, admin s
 When `ai-flow` is available in the project, use the Security Evidence Harness automatically. The user should not need to ask for these commands.
 
 - Before choosing or finalizing the mode, run `ai-flow harness preflight --story <story-dir>` when a story directory exists.
-- Use the preflight risk and required checks to confirm FAST, STANDARD, STRICT, or escalation to `$run-story-secure`.
+- Use the preflight risk and required checks to confirm FAST, STANDARD, STRICT, or escalation to `/run-story-secure`.
 - After implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail; fix real failures rather than weakening tests.
 - After implementation, validation, and notes, run `ai-flow harness check --story <story-dir>` for story work.
 - At the end of STANDARD or STRICT story work, run `ai-flow harness evidence --story <story-dir>` to write `.coding-flow/runs/*-evidence.json`.
@@ -36,11 +36,11 @@ When `ai-flow` is available in the project, use the Security Evidence Harness au
 
 Use the lightest context path that still lets the story ship in one focused implementation pass.
 
-- Prefer `$quick-story` for isolated changes that can be solved from the request, `story.md`, and direct target files.
+- Prefer `/quick-story` for isolated changes that can be solved from the request, `story.md`, and direct target files.
 - Use FAST when a story folder exists but orchestration would be heavier than the change.
 - Use STANDARD for normal feature work; create a compact Context Map instead of reading the whole project.
-- Use STRICT or `$run-story-secure` for trust boundaries, migrations, permissions, or high-regression-risk changes.
-- Use `$agent-context-scout` only when edit points are unclear, the story crosses modules, or broad exploration would otherwise be needed.
+- Use STRICT or `/run-story-secure` for trust boundaries, migrations, permissions, or high-regression-risk changes.
+- Use `/agent-context-scout` only when edit points are unclear, the story crosses modules, or broad exploration would otherwise be needed.
 
 Context reduction must not fragment delivery. After the edit points are clear, implement code, tests, validation, and notes together.
 
@@ -61,9 +61,9 @@ Use for:
 Pipeline:
 
 1. Create a lightweight inline packet with scope, stop conditions, rollback notes, and likely files.
-2. Use `$implement-slice`.
-3. Use lightweight `$tests-check`.
-4. Use `$blueprint-implementation-notes` only when notes are useful.
+2. Use `/implement-slice`.
+3. Use lightweight `/tests-check`.
+4. Use `/blueprint-implementation-notes` only when notes are useful.
 
 FAST mode may use a lightweight inline Execution Packet, but it still needs explicit Stop Conditions and Rollback Notes before editing.
 
@@ -78,13 +78,13 @@ Use for:
 
 Pipeline:
 
-1. Use `$agent-orchestrator` to create a compact Execution Packet, Context Map, Validation Gates, Stop Conditions, and Rollback Notes.
-2. Use `$implement-slice` to implement the story end-to-end.
-3. Use `$tests-check` to validate test adequacy.
-4. Use `$architecture-check` to validate architecture quickly.
-5. Use `$review-codebase` for the final pre-merge review.
-6. If blocking issues exist, use `$implement-slice` to fix them and repeat the failed checks.
-7. Use `$blueprint-implementation-notes` to update `implementation-notes.md`.
+1. Use `/agent-orchestrator` to create a compact Execution Packet, Context Map, Validation Gates, Stop Conditions, and Rollback Notes.
+2. Use `/implement-slice` to implement the story end-to-end.
+3. Use `/tests-check` to validate test adequacy.
+4. Use `/architecture-check` to validate architecture quickly.
+5. Use `/review-codebase` for the final pre-merge review.
+6. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
+7. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
 
 ### STRICT
 
@@ -102,25 +102,25 @@ Use for:
 
 Pipeline:
 
-1. Use `$agent-planner` or `$grill-me` if requirements are unclear.
-2. Use `$agent-context-scout` first if broad discovery would be needed.
-3. Use `$agent-orchestrator` to create the Execution Packet, Context Map, Validation Gates, Stop Conditions, and Rollback Notes.
-4. Use `$tdd` for critical logic.
-5. Use `$implement-slice`.
-6. Use `$tests-check`.
-7. Use `$e2e-check`.
-8. Use `$architecture-check`.
-9. Use `$security-check`.
-10. Use `$review-codebase`.
-11. If blocking issues exist, use `$implement-slice` to fix them and repeat failed checks.
-12. Use `$blueprint-implementation-notes`.
+1. Use `/agent-planner` or `/grill-me` if requirements are unclear.
+2. Use `/agent-context-scout` first if broad discovery would be needed.
+3. Use `/agent-orchestrator` to create the Execution Packet, Context Map, Validation Gates, Stop Conditions, and Rollback Notes.
+4. Use `/tdd` for critical logic.
+5. Use `/implement-slice`.
+6. Use `/tests-check`.
+7. Use `/e2e-check`.
+8. Use `/architecture-check`.
+9. Use `/security-check`.
+10. Use `/review-codebase`.
+11. If blocking issues exist, use `/implement-slice` to fix them and repeat failed checks.
+12. Use `/blueprint-implementation-notes`.
 
 ## Escalation Rules
 
-- Escalate from `$architecture-check` to `$agent-validator-architecture` when the story introduces new patterns, crosses modules, or includes a refactor.
-- Escalate from `$tests-check` to `$agent-validator-tests` when tests are complex, flaky, missing for risky logic, or release-sensitive.
-- Escalate to `$agent-context-scout` when targeted discovery exceeds the mode budget before edit points are clear.
-- Switch to `$run-story-secure` when security-sensitive behavior appears during implementation.
+- Escalate from `/architecture-check` to `/agent-validator-architecture` when the story introduces new patterns, crosses modules, or includes a refactor.
+- Escalate from `/tests-check` to `/agent-validator-tests` when tests are complex, flaky, missing for risky logic, or release-sensitive.
+- Escalate to `/agent-context-scout` when targeted discovery exceeds the mode budget before edit points are clear.
+- Switch to `/run-story-secure` when security-sensitive behavior appears during implementation.
 
 ## Stop Conditions
 

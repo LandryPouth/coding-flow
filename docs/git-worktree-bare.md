@@ -1,262 +1,259 @@
 # Git worktree & bare clone
 
-> Travailler sur plusieurs branches en parallèle dans des dossiers séparés qui partagent un seul historique Git
+> Work on several branches in parallel, in separate directories that share a single Git history
 
-Cette fiche reprend et **enrichit** l'excellent article de Metal3d,
-*« Git worktree like a boss »* (dev.to), pour ne pas dépendre de sa survie en
-ligne. Elle ajoute ce que l'article ne couvre pas : convertir un dépôt existant,
-partager `node_modules`/`.env` entre worktrees, le piège des monorepos pnpm, et
-**quand ne PAS utiliser les worktrees**.
+This reference reuses and **enriches** the excellent article by Metal3d,
+*"Git worktree like a boss"* (dev.to), so as not to depend on its survival
+online. It adds what the article does not cover: converting an existing repo,
+sharing `node_modules`/`.env` between worktrees, the pnpm monorepo pitfall, and
+**when NOT to use worktrees**.
 
-## Quand l'utiliser
+## When to use it
 
-Dès que tu dois avoir **plusieurs branches ouvertes en même temps**, chacune dans
-son propre dossier de travail :
+As soon as you need to have **several branches open at the same time**, each in
+its own working directory:
 
-- un hotfix urgent pendant que tu es en plein milieu d'une grosse feature ;
-- lancer une suite de tests longue dans un dossier pendant que tu codes dans un
-  autre ;
-- faire tourner **plusieurs agents IA en parallèle**, un par feature, sans qu'ils
-  se marchent dessus.
+- an urgent hotfix while you are in the middle of a big feature;
+- running a long test suite in one directory while you code in another;
+- running **several AI agents in parallel**, one per feature, without them
+  stepping on each other.
 
-Ne l'utilise **pas** pour du travail séquentiel/dépendant (voir la section finale).
+Do **not** use it for sequential/dependent work (see the final section).
 
-## Le concept en une phrase
+## The concept in one sentence
 
-Un *worktree* = un dossier de travail supplémentaire rattaché au **même** dépôt
-Git. Au lieu d'un seul checkout à la fois, tu as plusieurs branches checkoutées
-simultanément dans des dossiers différents, qui partagent **un seul** `.git`
-(historique, objets, hooks, config). Introduit dans Git 2.5.
+A *worktree* = an additional working directory attached to the **same** Git repo.
+Instead of a single checkout at a time, you have several branches checked out
+simultaneously in different directories, sharing **one** `.git` (history,
+objects, hooks, config). Introduced in Git 2.5.
 
-### Worktree vs branche vs clone
+### Worktree vs branch vs clone
 
-| | Branche | Worktree | Clone multiple |
+| | Branch | Worktree | Multiple clones |
 |---|---|---|---|
-| Fichiers isolés sur le disque | ❌ (un seul working tree) | ✅ (un dossier par branche) | ✅ |
-| Historique `.git` partagé | ✅ | ✅ (un seul) | ❌ (dupliqué) |
-| Coût disque d'un 2ᵉ workspace | — | poids des fichiers seuls | tout le `.git` en double |
-| `fetch` dans A visible dans B | — | ✅ instantané | ❌ |
-| Hooks/config partagés | — | ✅ | ❌ (à reconfigurer) |
-| Garde-fou anti double-checkout | — | ✅ Git refuse | ❌ |
+| Files isolated on disk | ❌ (single working tree) | ✅ (one directory per branch) | ✅ |
+| Shared `.git` history | ✅ | ✅ (a single one) | ❌ (duplicated) |
+| Disk cost of a 2nd workspace | — | weight of the files only | the whole `.git` again |
+| `fetch` in A visible in B | — | ✅ instantly | ❌ |
+| Shared hooks/config | — | ✅ | ❌ (to reconfigure) |
+| Anti double-checkout guardrail | — | ✅ Git refuses | ❌ |
 
-Le worktree, c'est « un cerveau, plusieurs corps ». Le multi-clone, ce sont des
-silos isolés.
+The worktree is "one brain, several bodies". Multi-clone is isolated silos.
 
-## La mauvaise façon (courante)
+## The wrong way (common)
 
 ```bash
-# depuis un dépôt déjà cloné
-git worktree add ../ma-feature
+# from an already cloned repo
+git worktree add ../my-feature
 ```
 
-Ça marche, et c'est acceptable pour un besoin ponctuel. Mais ça éparpille des
-dossiers frères et le dossier « principal » reste un checkout privilégié. Pour un
-usage régulier, préfère le layout *bare* ci-dessous.
+It works, and it is acceptable for a one-off need. But it scatters sibling
+directories and the "main" directory stays a privileged checkout. For regular
+use, prefer the *bare* layout below.
 
-## La bonne façon : le layout « bare »
+## The right way: the "bare" layout
 
-L'idée : le dossier racine ne contient **pas** de code, seulement l'historique
-caché dans `.bare`, et chaque branche est un sous-dossier (worktree).
+The idea: the root directory contains **no** code, only the history hidden in
+`.bare`, and each branch is a subdirectory (worktree).
 
 ```bash
-mkdir mon-projet && cd mon-projet
+mkdir my-project && cd my-project
 
-# 1. Cloner l'historique seul (pas de working tree) dans un dossier caché
+# 1. Clone the history only (no working tree) into a hidden directory
 git clone --bare git@github.com:user/repo.git .bare
 
-# 2. Dire au dossier racine où se trouve l'historique
+# 2. Tell the root directory where the history is
 echo "gitdir: ./.bare" > .git
 
-# 3. Corriger le refspec : sans ça, un bare clone ne "voit" que la branche par défaut
+# 3. Fix the refspec: without this, a bare clone only "sees" the default branch
 git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
 
-# 4. Récupérer toutes les branches distantes
+# 4. Fetch all the remote branches
 git fetch --all
 
-# 5. Créer les worktrees
+# 5. Create the worktrees
 git worktree add main
-git worktree add feature/paiement
+git worktree add feature/payment
 ```
 
-Résultat :
+Result:
 
 ```
-mon-projet/
-├── .bare/            # l'unique historique Git (objects, refs, hooks, config)
-├── .git             # fichier texte : "gitdir: ./.bare"
-├── main/            # worktree de la branche main
+my-project/
+├── .bare/            # the single Git history (objects, refs, hooks, config)
+├── .git             # text file: "gitdir: ./.bare"
+├── main/            # worktree of the main branch
 └── feature/
-    └── paiement/    # worktree de la branche feature/paiement
+    └── payment/     # worktree of the feature/payment branch
 ```
 
-Le fichier `.git` d'une ligne est la « colle » : il fait croire au terminal que
-la racine est un dépôt, sans y mettre de working tree. Tu peux ainsi lancer les
-commandes `git worktree` depuis la racine.
+The one-line `.git` file is the "glue": it makes the terminal believe the root
+is a repo, without putting a working tree in it. You can thus run the `git
+worktree` commands from the root.
 
-### Le piège du « bare clone aveugle »
+### The "blind bare clone" pitfall
 
-Après un `git clone --bare`, Git suppose que tu veux un miroir/backup, pas un
-espace de travail. Il **ne configure pas le suivi des branches distantes** : un
-`git fetch` ne ramène que la branche par défaut. Symptôme :
+After a `git clone --bare`, Git assumes you want a mirror/backup, not a
+workspace. It **does not configure remote-branch tracking**: a `git fetch` only
+brings back the default branch. Symptom:
 
 ```
 $ git fetch
- * branch            HEAD       -> FETCH_HEAD      # et rien d'autre
+ * branch            HEAD       -> FETCH_HEAD      # and nothing else
 ```
 
-Le correctif est l'étape 3 ci-dessus (le refspec `+refs/heads/*:...`). Après ça,
-`git fetch --all` voit toutes les branches de l'équipe.
+The fix is step 3 above (the `+refs/heads/*:...` refspec). After that,
+`git fetch --all` sees all the team's branches.
 
-## Syntaxe complète de `worktree add`
+## Full syntax of `worktree add`
 
 ```bash
-git worktree add <dossier> [-b <nouvelle-branche>] [<ref-de-depart>]
+git worktree add <directory> [-b <new-branch>] [<start-ref>]
 ```
 
-Exemples :
+Examples:
 
 ```bash
-# nouvelle branche feat/fix-db partant de feature/improve-db
+# new branch feat/fix-db starting from feature/improve-db
 git worktree add improve-db -b feat/fix-db feature/improve-db
 
-# les slashs créent des sous-dossiers : features/A -> dossier features/A + branche features/A
+# slashes create subdirectories: features/A -> directory features/A + branch features/A
 git worktree add features/A
 ```
 
-## Les pièges à connaître
+## The pitfalls to know
 
-- **`rm -rf` ne suffit pas** à supprimer un worktree : Git garde la référence.
-  Un futur `git worktree add` échouera (« already exists »). Correctif :
+- **`rm -rf` is not enough** to remove a worktree: Git keeps the reference. A
+  future `git worktree add` will fail ("already exists"). Fix:
   ```bash
-  git worktree list      # repère les entrées "prunable"
-  git worktree prune     # nettoie les références orphelines
+  git worktree list      # spot the "prunable" entries
+  git worktree prune     # clean up the orphan references
   ```
-  (Aucun risque : `prune` ne touche jamais aux branches distantes.)
-- **Protéger un worktree** contre le prune : `git worktree lock` / `unlock`.
-- **Double checkout interdit** : Git refuse de checkouter la même branche dans
-  deux worktrees. C'est une protection, pas un bug.
+  (No risk: `prune` never touches the remote branches.)
+- **Protect a worktree** against prune: `git worktree lock` / `unlock`.
+- **Double checkout forbidden**: Git refuses to check out the same branch in two
+  worktrees. It is a protection, not a bug.
 
 ---
 
-## Enrichissements (hors article)
+## Enrichments (beyond the article)
 
-### Convertir un dépôt NORMAL existant en layout bare
+### Convert an existing NORMAL repo to the bare layout
 
-L'article part d'un dossier vide. Mais on peut convertir un clone classique en
-layout worktree **sans re-cloner** — c'est de la plomberie Git, **O(1),
-indépendante de la taille du code** (10 Mo ou 10 Go : même durée) :
+The article starts from an empty directory. But you can convert a classic clone
+to the worktree layout **without re-cloning** — it is Git plumbing, **O(1),
+independent of the code size** (10 MB or 10 GB: same duration):
 
 ```bash
-cd mon-repo-normal          # contient un .git/ classique
-mv .git .bare               # l'historique devient le bare
+cd my-normal-repo           # contains a classic .git/
+mv .git .bare               # the history becomes the bare
 git --git-dir=.bare config core.bare true
 echo "gitdir: ./.bare" > .git
 git --git-dir=.bare config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
-# déplace éventuellement ton code courant dans un worktree main/
-git worktree add main <branche-courante>
+# optionally move your current code into a main/ worktree
+git worktree add main <current-branch>
 ```
 
-**Conséquence importante** : puisque la conversion est instantanée à la demande,
-l'argument « fais-le tôt pour être future-proof » est faible. Tu peux basculer
-n'importe quel repo en mode worktree le jour où tu en as besoin. Par défaut,
-garde un repo standard : le layout bare a un coût quotidien (voir plus bas).
+**Important consequence**: since the conversion is instantaneous on demand, the
+"do it early to be future-proof" argument is weak. You can switch any repo to
+worktree mode the day you need it. By default, keep a standard repo: the bare
+layout has a daily cost (see below).
 
-### Partager `node_modules` et `.env` entre worktrees
+### Share `node_modules` and `.env` between worktrees
 
-**L'article n'en parle pas, et c'est le vrai point de friction.** Chaque worktree
-est un working tree neuf. Les fichiers **versionnés** (code, `CLAUDE.md`, configs
-commitées) apparaissent tout seuls. Mais les fichiers **non versionnés**
-(`node_modules`, `.env`, `.env.local`) sont **absents** de chaque nouveau
-worktree.
+**The article does not mention it, and it is the real friction point.** Each
+worktree is a fresh working tree. **Versioned** files (code, `CLAUDE.md`,
+committed configs) appear on their own. But **unversioned** files
+(`node_modules`, `.env`, `.env.local`) are **absent** from each new worktree.
 
-Deux stratégies selon le fichier :
+Two strategies depending on the file:
 
-- **`.env` / `.env.local`** → symlink. Petits, non versionnés, on veut les mêmes
-  secrets partout.
+- **`.env` / `.env.local`** → symlink. Small, unversioned, we want the same
+  secrets everywhere.
   ```bash
-  ln -s ../../mon-repo/.env feature/paiement/.env
+  ln -s ../../my-repo/.env feature/payment/.env
   ```
-- **`node_modules`** → **dépend du gestionnaire de paquets** :
-  - **projet simple (npm)** : un symlink de `node_modules` suffit et évite une
-    réinstallation.
-  - **monorepo pnpm / yarn workspaces** : **NE PAS symlinker**. pnpm range un
-    virtual store `.pnpm` lié à la racine du workspace ; un symlink global le
-    corrompt. Lance plutôt `pnpm install` dans le worktree — c'est rapide
-    (hard-links depuis le store global, zéro re-téléchargement).
+- **`node_modules`** → **depends on the package manager**:
+  - **simple project (npm)**: a symlink of `node_modules` is enough and avoids a
+    reinstall.
+  - **pnpm / yarn workspaces monorepo**: **DO NOT symlink**. pnpm stores a
+    `.pnpm` virtual store tied to the workspace root; a global symlink corrupts
+    it. Run `pnpm install` in the worktree instead — it is fast (hard-links from
+    the global store, zero re-download).
 
-> ⚠️ Les fichiers partagés doivent être **gitignorés** (`.env`, `node_modules`
-> le sont presque toujours). Sinon les symlinks apparaissent comme fichiers non
-> suivis et polluent `git status`.
+> ⚠️ The shared files must be **gitignored** (`.env`, `node_modules` almost
+> always are). Otherwise the symlinks show up as untracked files and pollute
+> `git status`.
 
-### Quand NE PAS utiliser les worktrees
+### When NOT to use worktrees
 
-Le worktree résout l'**isolation mécanique**, jamais la **parallélisabilité du
-travail**. Il n'aide pas si :
+The worktree solves **mechanical isolation**, never the **parallelizability of
+the work**. It does not help if:
 
-- **Tes changements sont séquentiels / dépendants** (une « liste de changements
-  successifs » : chaque étape dépend de la précédente). Les brancher en parallèle
-  = rebases et conflits permanents. Déroule-les une étape à la fois.
-- **Les features touchent les mêmes fichiers.** Trois branches sur le même
-  `service.ts` = merge hell.
-- **La revue est le goulot.** Avec des agents IA qui produisent vite, le plafond
-  n'est plus le clavier mais **tes yeux**. Paralléliser du code critique
-  (paiement, KYC) que tu ne peux pas relire à temps est dangereux. Le worktree
-  protège l'état Git, pas la cohérence sémantique entre branches.
+- **Your changes are sequential / dependent** (a "list of successive changes":
+  each step depends on the previous one). Branching them in parallel = constant
+  rebases and conflicts. Roll them out one step at a time.
+- **The features touch the same files.** Three branches on the same `service.ts`
+  = merge hell.
+- **Review is the bottleneck.** With AI agents that produce fast, the ceiling is
+  no longer the keyboard but **your eyes**. Parallelizing critical code
+  (payment, KYC) that you cannot review in time is dangerous. The worktree
+  protects the Git state, not the semantic consistency between branches.
 
-Bon cas d'usage : des features **réellement indépendantes** (zones de code
-disjointes), sur un **socle stable**, avec une **capacité de revue** suffisante.
+Good use case: **genuinely independent** features (disjoint code areas), on a
+**stable foundation**, with **enough review capacity**.
 
-### Le coût quotidien du bare-par-défaut
+### The daily cost of bare-by-default
 
-Ne mets pas *tous* tes repos en bare « au cas où ». Tu paierais 100 % du temps
-pour un besoin qui arrive rarement :
+Do not put *all* your repos in bare "just in case". You would pay 100% of the
+time for a need that rarely arises:
 
-- ton code n'est plus dans `repo/` mais dans `repo/main/` → chemins en dur,
-  volumes `docker-compose`, workspaces IDE, CI à ajuster ;
-- `node_modules`/`.env` non partagés → rituel symlink permanent, même en solo ;
-- friction d'onboarding : un collègue découvre un `.bare` et un `.git` bizarre.
+- your code is no longer in `repo/` but in `repo/main/` → hard-coded paths,
+  `docker-compose` volumes, IDE workspaces, CI to adjust;
+- unshared `node_modules`/`.env` → permanent symlink ritual, even solo;
+- onboarding friction: a colleague discovers a `.bare` and a weird `.git`.
 
 ## Cheat-sheet
 
 ```bash
-# Setup pro (dossier vide)
+# Pro setup (empty directory)
 git clone --bare <url> .bare
 echo "gitdir: ./.bare" > .git
 git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
 git fetch --all
 git worktree add main
 
-# Vie quotidienne
-git worktree add ../hotfix -b hotfix/bug main   # nouveau worktree + branche
-git worktree list                               # lister (repérer les prunable)
-git worktree remove <dossier>                   # retirer (garde la branche !)
-git worktree prune                              # nettoyer les refs orphelines
-git worktree lock/unlock <dossier>              # protéger du prune
+# Daily life
+git worktree add ../hotfix -b hotfix/bug main   # new worktree + branch
+git worktree list                               # list (spot the prunable ones)
+git worktree remove <directory>                 # remove (keeps the branch!)
+git worktree prune                              # clean the orphan refs
+git worktree lock/unlock <directory>            # protect from prune
 ```
 
-## Automatisation
+## Automation
 
-L'outil [`coding-flow`](https://github.com/LandryPouth/codin-flow) fournit
-`ai-flow worktree add|list|remove` : il crée le worktree, symlinke `.env`,
-détecte pnpm/npm pour choisir install vs symlink de `node_modules`, et conserve
-la branche au `remove`. Voir la doc projet `docs/plans/parallel-mode.md`.
+The [`coding-flow`](https://github.com/LandryPouth/codin-flow) tool provides
+`ai-flow worktree add|list|remove`: it creates the worktree, symlinks `.env`,
+detects pnpm/npm to choose install vs symlink of `node_modules`, and keeps the
+branch on `remove`. See the project doc `docs/plans/parallel-mode.md`.
 
-## Script d'init (à mettre dans `~/.local/bin/wtree`, `chmod +x`)
+## Init script (put it in `~/.local/bin/wtree`, `chmod +x`)
 
 ```bash
 #!/bin/bash
-# Usage: wtree <git url>  (dans un dossier VIDE)
+# Usage: wtree <git url>  (in an EMPTY directory)
 set -euo pipefail
 REPO_URL="${1:?Usage: wtree <repo-url>}"
-[ -z "$(ls -A | grep -v "$(basename "$0")")" ] || { echo "❌ Dossier non vide"; exit 1; }
+[ -z "$(ls -A | grep -v "$(basename "$0")")" ] || { echo "❌ Directory not empty"; exit 1; }
 git clone --bare "$REPO_URL" .bare
 echo "gitdir: ./.bare" > .git
 git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
 git fetch --all
-echo "✅ Prêt. Étape suivante : git worktree add main"
+echo "✅ Ready. Next step: git worktree add main"
 ```
 
 ---
 
-*Source d'origine : Metal3d, « Git worktree like a boss », dev.to. Sections
-« Enrichissements » ajoutées ici.*
+*Original source: Metal3d, "Git worktree like a boss", dev.to. "Enrichments"
+sections added here.*

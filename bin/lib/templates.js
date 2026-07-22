@@ -1,8 +1,8 @@
 "use strict";
 
-// Installation et mise a jour des fichiers de template : copie, manifeste
-// (empreintes pour detecter les edits locaux), scripts npm de commodite,
-// cheat-sheet, et miroir .agents/skills.
+// Installation and update of the template files: copy, manifest (fingerprints to
+// detect local edits), convenience npm scripts, cheat-sheet, and .agents/skills
+// mirror.
 
 const fs = require("fs");
 const path = require("path");
@@ -207,9 +207,9 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     "## Agent Workflow Prompts",
     "",
     "```txt",
-    "Use $quick-story for a tiny isolated change.",
-    "Use $run-story in STANDARD mode for story-01-01.",
-    "Use $run-story-secure for auth, permissions, admin, secrets, payments, uploads, or sensitive data.",
+    "Use /quick-story for a tiny isolated change.",
+    "Use /run-story in STANDARD mode for story-01-01.",
+    "Use /run-story-secure for auth, permissions, admin, secrets, payments, uploads, or sensitive data.",
     "```",
     "",
   ].join("\n");

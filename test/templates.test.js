@@ -1,10 +1,10 @@
 'use strict';
 
-// Tests de contrat de l'installation / mise a jour des templates.
-// init/upgrade/uninstall ecrivent et suppriment des fichiers dans le repo de
-// l'utilisateur : ce sont les operations les plus destructrices du CLI. On
-// verifie le manifeste, les scripts npm, le respect d'un package.json existant
-// et l'innocuite de --dry-run. Zero dependance : node:test.
+// Contract tests for template installation / update.
+// init/upgrade/uninstall write and delete files in the user's repo: they are the
+// most destructive operations of the CLI. We verify the manifest, the npm
+// scripts, respect for an existing package.json, and the harmlessness of
+// --dry-run. Zero dependency: node:test.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -38,68 +38,68 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-test('init ecrit le manifeste et la cheat sheet', (t) => {
+test('init writes the manifest and the cheat sheet', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
-  assert.ok(fs.existsSync(path.join(dir, '.coding-flow', 'manifest.json')), 'manifest.json doit exister');
-  assert.ok(fs.existsSync(path.join(dir, '.coding-flow', 'COMMANDS.md')), 'COMMANDS.md doit exister');
+  assert.ok(fs.existsSync(path.join(dir, '.coding-flow', 'manifest.json')), 'manifest.json must exist');
+  assert.ok(fs.existsSync(path.join(dir, '.coding-flow', 'COMMANDS.md')), 'COMMANDS.md must exist');
 
   const manifest = readJson(path.join(dir, '.coding-flow', 'manifest.json'));
-  assert.ok(manifest.files && Object.keys(manifest.files).length > 0, 'le manifeste doit indexer des fichiers');
+  assert.ok(manifest.files && Object.keys(manifest.files).length > 0, 'the manifest must index files');
 });
 
-test('init ajoute les scripts flow:* dans package.json', (t) => {
+test('init adds the flow:* scripts to package.json', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
   const pkg = readJson(path.join(dir, 'package.json'));
-  assert.ok(pkg.scripts, 'package.json doit avoir des scripts');
-  assert.ok(pkg.scripts['flow:doctor'], 'flow:doctor doit etre ajoute');
-  assert.ok(pkg.scripts['flow:status'], 'flow:status doit etre ajoute');
+  assert.ok(pkg.scripts, 'package.json must have scripts');
+  assert.ok(pkg.scripts['flow:doctor'], 'flow:doctor must be added');
+  assert.ok(pkg.scripts['flow:status'], 'flow:status must be added');
 });
 
-test('init preserve un package.json existant et ses scripts', (t) => {
+test('init preserves an existing package.json and its scripts', (t) => {
   const dir = freshProject(t);
   fs.writeFileSync(
     path.join(dir, 'package.json'),
-    JSON.stringify({ name: 'mon-app', scripts: { dev: 'vite' } }, null, 2),
+    JSON.stringify({ name: 'my-app', scripts: { dev: 'vite' } }, null, 2),
   );
 
   run(dir, ['init']);
   const pkg = readJson(path.join(dir, 'package.json'));
-  assert.equal(pkg.name, 'mon-app', 'le nom existant doit etre preserve');
-  assert.equal(pkg.scripts.dev, 'vite', 'un script existant ne doit jamais etre ecrase');
-  assert.ok(pkg.scripts['flow:doctor'], 'les scripts flow:* doivent quand meme etre ajoutes');
+  assert.equal(pkg.name, 'my-app', 'the existing name must be preserved');
+  assert.equal(pkg.scripts.dev, 'vite', 'an existing script must never be overwritten');
+  assert.ok(pkg.scripts['flow:doctor'], 'the flow:* scripts must still be added');
 });
 
-test('upgrade --json renvoie un rapport exploitable', (t) => {
+test('upgrade --json returns an actionable report', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
   const { code, output } = run(dir, ['upgrade', '--json']);
-  assert.equal(code, 0, 'upgrade doit sortir en 0');
+  assert.equal(code, 0, 'upgrade must exit 0');
 
   const report = JSON.parse(output);
   for (const key of ['copied', 'updated', 'skippedModified', 'unchanged']) {
-    assert.ok(Array.isArray(report[key]), `le rapport upgrade doit exposer ${key} comme tableau`);
+    assert.ok(Array.isArray(report[key]), `the upgrade report must expose ${key} as an array`);
   }
 });
 
-test('upgrade restaure un fichier gere supprime', (t) => {
+test('upgrade restores a deleted managed file', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
   const target = path.join(dir, 'AGENT_RULES.md');
   fs.unlinkSync(target);
 
   run(dir, ['upgrade']);
-  assert.ok(fs.existsSync(target), 'upgrade doit recopier un fichier gere manquant');
+  assert.ok(fs.existsSync(target), 'upgrade must re-copy a missing managed file');
 });
 
-test('uninstall --dry-run ne supprime aucun fichier', (t) => {
+test('uninstall --dry-run deletes no file', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
   const marker = path.join(dir, 'AGENT_RULES.md');
-  assert.ok(fs.existsSync(marker), 'pre-condition : le fichier existe apres init');
+  assert.ok(fs.existsSync(marker), 'pre-condition: the file exists after init');
 
   const { code } = run(dir, ['uninstall', '--dry-run']);
-  assert.equal(code, 0, 'uninstall --dry-run doit sortir en 0');
-  assert.ok(fs.existsSync(marker), '--dry-run ne doit rien supprimer');
+  assert.equal(code, 0, 'uninstall --dry-run must exit 0');
+  assert.ok(fs.existsSync(marker), '--dry-run must delete nothing');
 });

@@ -1,7 +1,7 @@
 'use strict';
 
-// Tests de `ai-flow ci init` : scaffolde le workflow clean-room, non destructif,
-// idempotent, --force réécrit, --dry-run n'écrit rien.
+// Tests of `ai-flow ci init`: scaffolds the clean-room workflow, non-destructive,
+// idempotent, --force rewrites, --dry-run writes nothing.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -36,7 +36,7 @@ function project(t, prefix) {
   return dir;
 }
 
-test('ci init écrit le workflow clean-room avec verify + audit', (t) => {
+test('ci init writes the clean-room workflow with verify + audit', (t) => {
   const dir = project(t, 'ci-init');
   const res = run(dir, ['ci', 'init']);
   assert.equal(res.code, 0, res.output);
@@ -45,11 +45,11 @@ test('ci init écrit le workflow clean-room avec verify + audit', (t) => {
   assert.match(wf, /name: coding-flow verify/);
   assert.match(wf, /harness verify/);
   assert.match(wf, /audit --check/);
-  assert.match(wf, /@landry_pouth\/coding-flow/, 'le workflow cible le paquet publié');
-  assert.match(wf, /upload-artifact/, 'l’évidence est uploadée');
+  assert.match(wf, /@landry_pouth\/coding-flow/, 'the workflow targets the published package');
+  assert.match(wf, /upload-artifact/, 'the evidence is uploaded');
 });
 
-test('ci init est non destructif sans --force', (t) => {
+test('ci init is non-destructive without --force', (t) => {
   const dir = project(t, 'ci-noforce');
   fs.mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
   fs.writeFileSync(path.join(dir, WF), 'custom: true\n');
@@ -57,22 +57,22 @@ test('ci init est non destructif sans --force', (t) => {
   const res = run(dir, ['ci', 'init']);
   assert.equal(res.code, 0);
   assert.match(res.output, /already present/);
-  assert.equal(fs.readFileSync(path.join(dir, WF), 'utf8'), 'custom: true\n', 'le fichier existant est préservé');
+  assert.equal(fs.readFileSync(path.join(dir, WF), 'utf8'), 'custom: true\n', 'the existing file is preserved');
 });
 
-test('ci init --force réécrit le workflow', (t) => {
+test('ci init --force rewrites the workflow', (t) => {
   const dir = project(t, 'ci-force');
   fs.mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
   fs.writeFileSync(path.join(dir, WF), 'custom: true\n');
 
   run(dir, ['ci', 'init', '--force']);
-  assert.match(fs.readFileSync(path.join(dir, WF), 'utf8'), /coding-flow verify/, '--force remplace le contenu');
+  assert.match(fs.readFileSync(path.join(dir, WF), 'utf8'), /coding-flow verify/, '--force replaces the content');
 });
 
-test('ci init --dry-run n’écrit rien', (t) => {
+test('ci init --dry-run writes nothing', (t) => {
   const dir = project(t, 'ci-dry');
   const res = run(dir, ['ci', 'init', '--dry-run']);
   assert.equal(res.code, 0);
   assert.match(res.output, /Would write/);
-  assert.ok(!fs.existsSync(path.join(dir, WF)), '--dry-run ne doit écrire aucun fichier');
+  assert.ok(!fs.existsSync(path.join(dir, WF)), '--dry-run must not write any file');
 });

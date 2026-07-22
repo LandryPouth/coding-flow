@@ -58,7 +58,7 @@ Excluded:
 ## Context Strategy
 
 - Default context level:
-- Stories that need `$agent-context-scout`:
+- Stories that need `/agent-context-scout`:
 - Shared search anchors:
 - Areas to avoid unless a story explicitly needs them:
 

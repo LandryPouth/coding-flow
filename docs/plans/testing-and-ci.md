@@ -1,119 +1,118 @@
-# Tests, CI et Hook Pre-Push
+# Tests, CI, and Pre-Push Hook
 
-Ce document décrit le harnais de fiabilité ajouté à la CLI `ai-flow` : tests
-automatisés, intégration continue et hook Git local. Il sert de référence pour
-comprendre ce qui protège désormais le repo des utilisateurs contre une
-régression des commandes qui écrivent sur le disque.
+This document describes the reliability harness added to the `ai-flow` CLI:
+automated tests, continuous integration, and a local Git hook. It serves as a
+reference for understanding what now protects the users' repos against a
+regression in the commands that write to disk.
 
-## Contexte
+## Context
 
-La CLI (`bin/ai-flow.js`, ~2400 lignes) modifie les fichiers du projet cible :
-`init`, `upgrade`, `uninstall` et `doctor --fix` créent, mettent à jour ou
-suppriment des fichiers. Avant ces ajouts, il n'existait **aucun test** ni
-**aucune CI**. Un bug dans `upgrade` ou `uninstall` pouvait donc abîmer le repo
-d'un utilisateur sans filet.
+The CLI (`bin/ai-flow.js`, ~2400 lines) modifies the target project's files:
+`init`, `upgrade`, `uninstall`, and `doctor --fix` create, update, or delete
+files. Before these additions, there were **no tests** and **no CI**. A bug in
+`upgrade` or `uninstall` could therefore damage a user's repo without a safety
+net.
 
-La contrainte de conception est restée la même que le reste du projet :
-**zéro dépendance**. Tout repose sur des outils intégrés à Node (>= 18) et Git.
+The design constraint stayed the same as the rest of the project: **zero
+dependencies**. Everything relies on tools built into Node (>= 18) and Git.
 
-## Ce Qui A Été Ajouté
+## What Was Added
 
-| Fichier | Rôle |
+| File | Role |
 | --- | --- |
-| `test/cli.test.js` | 10 tests de contrat de la CLI, via le runner `node:test`. |
-| `package.json` (script `test`) | `npm test` lance `node --test`. |
-| `.github/workflows/test.yml` | CI : lance `npm test` sur push `main` et PR, Node 18/20/22. |
-| `.githooks/pre-push` | Hook Git : lance `npm test` avant chaque push, bloque si échec. |
+| `test/cli.test.js` | 10 CLI contract tests, via the `node:test` runner. |
+| `package.json` (`test` script) | `npm test` runs `node --test`. |
+| `.github/workflows/test.yml` | CI: runs `npm test` on push to `main` and on PRs, Node 18/20/22. |
+| `.githooks/pre-push` | Git hook: runs `npm test` before every push, blocks on failure. |
 
-Le dossier `test/` n'est pas dans le champ `files` du `package.json`, donc il
-**n'est pas embarqué** dans le package distribué via `npx`. Les tests protègent
-le développement sans alourdir l'installation côté utilisateur.
+The `test/` directory is not in the `files` field of `package.json`, so it is
+**not shipped** in the package distributed via `npx`. The tests protect
+development without bloating the user-side install.
 
 ## Tests
 
-Les tests sont behavioraux : ils lancent la vraie CLI dans un dossier temporaire
-et vérifient le comportement observable (fichiers écrits, code de sortie), pas
-les détails internes. C'est ce qui protège réellement le contrat des commandes.
+The tests are behavioral: they run the real CLI in a temporary directory and
+verify the observable behavior (files written, exit code), not the internal
+details. That is what actually protects the commands' contract.
 
-Couverture actuelle :
+Current coverage:
 
-- `init` installe la structure attendue et crée un `package.json` privé ;
-- `init --dry-run` n'écrit aucun fichier ;
-- `doctor` réussit sur une installation saine et échoue si un fichier requis
-  manque ;
-- `doctor --fix` restaure un fichier manquant ;
-- `upgrade` est idempotent et **préserve les modifications locales** ;
-- `init --force` réinstalle par-dessus les modifications locales ;
-- `uninstall` retire les fichiers gérés mais **conserve `epics/`** ;
-- `list-skills` liste les skills disponibles.
+- `init` installs the expected structure and creates a private `package.json`;
+- `init --dry-run` writes no file;
+- `doctor` succeeds on a healthy install and fails if a required file is
+  missing;
+- `doctor --fix` restores a missing file;
+- `upgrade` is idempotent and **preserves local edits**;
+- `init --force` reinstalls over local edits;
+- `uninstall` removes the managed files but **keeps `epics/`**;
+- `list-skills` lists the available skills.
 
-Lancer la suite :
+Run the suite:
 
 ```bash
 npm test
 ```
 
-## CI GitHub Actions
+## GitHub Actions CI
 
-Le workflow `.github/workflows/test.yml` lance `npm test` :
+The `.github/workflows/test.yml` workflow runs `npm test`:
 
-- sur chaque `push` vers `main` ;
-- sur chaque pull request ;
-- en matrice Node `18.x`, `20.x`, `22.x`.
+- on every `push` to `main`;
+- on every pull request;
+- across the Node `18.x`, `20.x`, `22.x` matrix.
 
-Aucune étape d'installation de dépendances n'est nécessaire (CLI zéro-dep).
+No dependency-install step is needed (zero-dep CLI).
 
-Cette CI est importante parce que la distribution se fait via
-`npx github:LandryPouth/codin-flow` : les utilisateurs tirent directement
-`main`. Un push cassé casserait l'outil pour tout le monde. La CI est le filet
-qui empêche cela.
+This CI matters because distribution happens via
+`npx github:LandryPouth/codin-flow`: users pull `main` directly. A broken push
+would break the tool for everyone. The CI is the net that prevents that.
 
-> **Statut de mise en ligne** : la CI ne s'active qu'une fois le workflow
-> **poussé sur GitHub**. Tant que les fichiers ne sont pas commités et poussés,
-> elle n'existe pas côté serveur.
+> **Go-live status**: the CI only activates once the workflow is **pushed to
+> GitHub**. As long as the files are not committed and pushed, it does not exist
+> on the server side.
 
-## Hook Pre-Push
+## Pre-Push Hook
 
-`.githooks/pre-push` lance `npm test` avant chaque push et **annule le push** si
-un test échoue. C'est le filet local, complémentaire de la CI.
+`.githooks/pre-push` runs `npm test` before every push and **cancels the push**
+if a test fails. It is the local net, complementary to the CI.
 
-Le hook est versionné (dossier `.githooks/`) pour être partageable avec
-l'équipe, mais Git n'active pas ce dossier automatiquement. Chaque clone doit
-l'activer **une fois** :
+The hook is versioned (`.githooks/` directory) so it can be shared with the team,
+but Git does not activate this directory automatically. Each clone must activate
+it **once**:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-Pour pousser en urgence en sautant les tests :
+To push urgently while skipping the tests:
 
 ```bash
 git push --no-verify
 ```
 
-## Activation Pour Un Nouveau Clone
+## Enabling It For A New Clone
 
-Après avoir cloné le repo, un contributeur active le hook local avec :
+After cloning the repo, a contributor enables the local hook with:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-La CI, elle, ne demande aucune activation : elle tourne dès que le workflow est
-présent sur GitHub.
+The CI, for its part, requires no activation: it runs as soon as the workflow is
+present on GitHub.
 
-## Vérifications Effectuées
+## Checks Performed
 
-| Vérification | Résultat |
+| Check | Result |
 | --- | --- |
-| Suite de tests complète | 10/10 pass |
-| Hook quand les tests passent | exit 0, push autorisé |
-| Hook quand un test échoue | exit 1, push bloqué |
-| YAML de la CI | valide, matrice Node 18/20/22 |
+| Full test suite | 10/10 pass |
+| Hook when the tests pass | exit 0, push allowed |
+| Hook when a test fails | exit 1, push blocked |
+| CI YAML | valid, Node 18/20/22 matrix |
 
-## Prochaines Étapes Possibles
+## Possible Next Steps
 
-- Ajouter un badge de statut CI dans le `README.md`.
-- Étendre la couverture aux commandes `bootstrap` et `harness`.
-- Introduire des tags/releases pour permettre d'épingler une version stable
-  (`npx github:LandryPouth/codin-flow#vX.Y.Z`) plutôt que de tirer `main`.
+- Add a CI status badge to `README.md`.
+- Extend coverage to the `bootstrap` and `harness` commands.
+- Introduce tags/releases to allow pinning a stable version
+  (`npx github:LandryPouth/codin-flow#vX.Y.Z`) rather than pulling `main`.

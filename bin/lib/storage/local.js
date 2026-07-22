@@ -1,9 +1,9 @@
 "use strict";
 
-// Backend de stockage "local" : les epics/stories vivent en dossiers versionnes
-// sous epics/. C'est le comportement historique et le defaut. Ce module est la
-// seule chose qui connait le layout des fichiers de story ; le reste de l'outil
-// passe par l'interface renvoyee par createLocalStorage.
+// "local" storage backend: epics/stories live as versioned directories under
+// epics/. This is the historical behavior and the default. This module is the
+// only thing that knows the layout of the story files; the rest of the tool
+// goes through the interface returned by createLocalStorage.
 
 const fs = require("fs");
 const path = require("path");

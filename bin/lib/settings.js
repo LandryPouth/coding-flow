@@ -1,10 +1,10 @@
 "use strict";
 
-// Câblage du hook PreToolUse `guard` dans .claude/settings.json du projet cible.
-// Un settings.json est un fichier de config utilisateur : on le FUSIONNE, jamais
-// on ne l'écrase (contrairement aux templates copiés verbatim). Idempotent : si
-// notre hook est déjà là, on ne le duplique pas. Non destructif : on ne touche à
-// aucun autre hook ni réglage existant.
+// Wiring of the `guard` PreToolUse hook into the target project's .claude/settings.json.
+// A settings.json is a user config file: we MERGE it, we never overwrite it
+// (unlike the templates copied verbatim). Idempotent: if our hook is already
+// there, we don't duplicate it. Non-destructive: we don't touch any other
+// existing hook or setting.
 
 const fs = require("fs");
 const path = require("path");
@@ -12,12 +12,12 @@ const path = require("path");
 const { cwd, packageJson } = require("./context");
 const { readJson, writeJson } = require("./util");
 
-// Outils d'écriture que le guard doit intercepter (regex de matcher Claude Code).
+// Write tools the guard must intercept (Claude Code matcher regex).
 const GUARD_MATCHER = "Write|Edit|MultiEdit|NotebookEdit";
 
-// Commande exécutée par le hook : le paquet npm publié, résolu par npx et mis en
-// cache après le premier appel. Construite depuis packageJson.name pour rester
-// synchronisée avec le scope publié.
+// Command run by the hook: the published npm package, resolved by npx and cached
+// after the first call. Built from packageJson.name to stay in sync with the
+// published scope.
 function guardCommandString() {
   return `npx --yes ${packageJson.name} guard`;
 }
@@ -33,8 +33,8 @@ function guardHookEntry() {
   };
 }
 
-// Notre hook est-il déjà câblé ? On reconnaît toute entrée PreToolUse dont une
-// commande invoque `guard` sur notre paquet — tolérant aux variantes de matcher.
+// Is our hook already wired? We recognize any PreToolUse entry whose command
+// invokes `guard` on our package — tolerant of matcher variants.
 function hasGuardHook(settings) {
   const pre = settings && settings.hooks && Array.isArray(settings.hooks.PreToolUse)
     ? settings.hooks.PreToolUse
@@ -54,14 +54,14 @@ function hasGuardHook(settings) {
   );
 }
 
-// Fusionne le hook guard dans settings.json. Crée le fichier s'il manque. Ne
-// modifie rien d'autre. Renvoie l'état pour l'affichage de l'init.
+// Merges the guard hook into settings.json. Creates the file if it's missing.
+// Modifies nothing else. Returns the status for the init output.
 function ensureHookSettings({ dryRun = false } = {}) {
   const target = settingsPath();
   const existed = fs.existsSync(target);
   const settings = readJson(target, null);
 
-  // Fichier présent mais illisible : on n'y touche pas, on le signale.
+  // File present but unreadable: we don't touch it, we report it.
   if (existed && (!settings || typeof settings !== "object" || Array.isArray(settings))) {
     return { status: "unparseable", path: target };
   }
