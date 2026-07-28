@@ -1,7 +1,7 @@
 {
   "name": "@landry_pouth/coding-flow",
-  "version": "0.2.0",
-  "description": "AI-native engineering workflow templates for Claude Code and Codex.",
+  "version": "0.3.0",
+  "description": "AI-native engineering workflow for Claude Code: plan, implement, test, and review with evidence and governance guardrails. (Codex support planned.)",
   "license": "MIT",
   "author": "Landry Pouth",
   "type": "commonjs",
@@ -40,8 +40,8 @@
     "ai",
     "agents",
     "claude-code",
-    "codex",
     "workflow",
-    "templates"
+    "governance",
+    "evidence"
   ]
 }

@@ -1,6 +1,6 @@
 {
   "name": "coding-flow",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The evidence & governance layer for AI engineering: epics/stories skills, a deterministic secret-blocking guard hook, executed verify evidence, an append-only audit ledger, and end-to-end traceability.",
   "author": {
     "name": "Landry Pouth"
