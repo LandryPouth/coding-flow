@@ -233,7 +233,7 @@ git worktree lock/unlock <directory>            # protect from prune
 
 ## Automation
 
-The [`coding-flow`](https://github.com/LandryPouth/codin-flow) tool provides
+The [`coding-flow`](https://github.com/LandryPouth/coding-flow) tool provides
 `ai-flow worktree add|list|remove`: it creates the worktree, symlinks `.env`,
 detects pnpm/npm to choose install vs symlink of `node_modules`, and keeps the
 branch on `remove`. See the project doc `docs/plans/parallel-mode.md`.

@@ -281,7 +281,7 @@ must install into it in one command and update itself.
   exposed commands/skills, homepage). Pointing to `templates/.claude/skills` and
   the CLI commands.
 - **Marketplace** manifest (`marketplace.json` or a dedicated repo) listing the
-  plugin, for `/plugin marketplace add LandryPouth/codin-flow`.
+  plugin, for `/plugin marketplace add LandryPouth/coding-flow`.
 - Plugin install doc in the README; the npm version stays (the two channels
   coexist: npm for the CLI/CI, plugin for the IDE).
 - Verify conformance to the current plugin schema via `ctx7`/Claude Code docs

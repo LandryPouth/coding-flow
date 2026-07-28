@@ -64,7 +64,7 @@ The `.github/workflows/test.yml` workflow runs `npm test`:
 No dependency-install step is needed (zero-dep CLI).
 
 This CI matters because distribution happens via
-`npx github:LandryPouth/codin-flow`: users pull `main` directly. A broken push
+`npx github:LandryPouth/coding-flow`: users pull `main` directly. A broken push
 would break the tool for everyone. The CI is the net that prevents that.
 
 > **Go-live status**: the CI only activates once the workflow is **pushed to
@@ -115,4 +115,4 @@ present on GitHub.
 - Add a CI status badge to `README.md`.
 - Extend coverage to the `bootstrap` and `harness` commands.
 - Introduce tags/releases to allow pinning a stable version
-  (`npx github:LandryPouth/codin-flow#vX.Y.Z`) rather than pulling `main`.
+  (`npx github:LandryPouth/coding-flow#vX.Y.Z`) rather than pulling `main`.

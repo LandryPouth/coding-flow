@@ -7,12 +7,12 @@
   "type": "commonjs",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LandryPouth/codin-flow.git"
+    "url": "git+https://github.com/LandryPouth/coding-flow.git"
   },
   "bugs": {
-    "url": "https://github.com/LandryPouth/codin-flow/issues"
+    "url": "https://github.com/LandryPouth/coding-flow/issues"
   },
-  "homepage": "https://github.com/LandryPouth/codin-flow#readme",
+  "homepage": "https://github.com/LandryPouth/coding-flow#readme",
   "bin": {
     "coding-flow": "./bin/ai-flow.js",
     "ai-flow": "./bin/ai-flow.js"
@@ -21,6 +21,7 @@
     "bin",
     "templates",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "publishConfig": {
