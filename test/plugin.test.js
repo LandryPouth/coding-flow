@@ -42,8 +42,10 @@ test('plugin.json is a valid manifest, version-synced', () => {
 
 test('hooks.json wires the guard PreToolUse on the write tools', () => {
   const hooks = readJson('.claude-plugin/hooks/hooks.json');
-  assert.ok(Array.isArray(hooks.PreToolUse) && hooks.PreToolUse.length >= 1);
-  const entry = hooks.PreToolUse[0];
+  // Plugin hooks nest the event map under a required top-level "hooks" key.
+  assert.ok(hooks.hooks && typeof hooks.hooks === 'object', 'events are nested under "hooks"');
+  assert.ok(Array.isArray(hooks.hooks.PreToolUse) && hooks.hooks.PreToolUse.length >= 1);
+  const entry = hooks.hooks.PreToolUse[0];
   assert.match(entry.matcher, /Write/);
   assert.match(entry.hooks[0].command, /guard/);
 });
