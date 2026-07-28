@@ -7,13 +7,9 @@ Before implementation work, read:
 - `PROJECT_RULES.md`
 - `AGENT_RULES.md`
 
-Claude Code project skills live in:
+Project skills live in:
 
 - `.claude/skills/`
-
-Portable agent skills live in:
-
-- `.agents/skills/`
 
 Use the lightest workflow that protects the change:
 

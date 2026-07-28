@@ -1,20 +1,19 @@
 "use strict";
 
-// Installation diagnostic: required files, skill frontmatter, .agents mirror,
-// manifest, and (in strict mode) a quick harness check. `--fix` restores.
+// Installation diagnostic: required files, skill frontmatter, manifest, and (in
+// strict mode) a quick harness check. `--fix` restores.
 
 const fs = require("fs");
 const path = require("path");
 
 const { cwd, packageJson } = require("./context");
-const { log, toPortable, parseFrontmatter, readJson, hashFile } = require("./util");
+const { log, toPortable, parseFrontmatter, readJson } = require("./util");
 const {
   ensureTemplatesExist,
   listTemplateSkillNames,
   getTemplateSpecs,
   manifestPath,
   copyTemplates,
-  syncAgentsMirror,
   writeManifest,
   readManifest,
   ensureConvenienceFiles,
@@ -29,7 +28,6 @@ function collectDoctorReport({ strict = false } = {}) {
     "PROJECT_RULES.md",
     "AGENT_RULES.md",
     "AGENTS.md",
-    ".agents/README.md",
     "docs/project-context.md",
     "docs/architecture.md",
     "docs/conventions.md",
@@ -56,7 +54,6 @@ function collectDoctorReport({ strict = false } = {}) {
 
   for (const name of skillNames) {
     const claudeSkill = path.join(cwd, ".claude", "skills", name, "SKILL.md");
-    const agentsSkill = path.join(cwd, ".agents", "skills", name, "SKILL.md");
 
     if (!fs.existsSync(claudeSkill)) {
       continue;
@@ -102,28 +99,6 @@ function collectDoctorReport({ strict = false } = {}) {
         file: toPortable(path.relative(cwd, claudeSkill)),
         message: `${toPortable(path.relative(cwd, claudeSkill))} looks unusually small`,
       });
-    }
-
-    if (fs.existsSync(agentsSkill) && hashFile(claudeSkill) !== hashFile(agentsSkill)) {
-      errors.push({
-        code: "mirror_mismatch",
-        file: toPortable(path.relative(cwd, agentsSkill)),
-        message: `${toPortable(path.relative(cwd, agentsSkill))} does not match ${toPortable(path.relative(cwd, claudeSkill))}`,
-      });
-    }
-  }
-
-  const agentsRoot = path.join(cwd, ".agents", "skills");
-
-  if (fs.existsSync(agentsRoot)) {
-    for (const entry of fs.readdirSync(agentsRoot, { withFileTypes: true })) {
-      if (entry.isDirectory() && !skillNames.includes(entry.name)) {
-        warnings.push({
-          code: "extra_mirror_skill",
-          file: `.agents/skills/${entry.name}`,
-          message: `.agents/skills/${entry.name} is not part of the installed template skill set`,
-        });
-      }
     }
   }
 
@@ -183,7 +158,6 @@ function collectDoctorReport({ strict = false } = {}) {
 function doctor({ fix = false, json = false, strict = false } = {}) {
   if (fix) {
     copyTemplates({ force: false, dryRun: false });
-    syncAgentsMirror({ dryRun: false });
     writeManifest(readManifest());
     ensureConvenienceFiles({ dryRun: false, force: false });
   }
@@ -217,7 +191,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     }
 
     log("");
-    log("Run `ai-flow doctor --fix` to restore missing files and resync the .agents mirror.");
+    log("Run `ai-flow doctor --fix` to restore missing files.");
   }
 
   if (!report.ok) {

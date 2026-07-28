@@ -89,7 +89,7 @@ Usage:
 Commands:
   init         Install workflow files and the default harness policy into the current project.
   upgrade      Update installed workflow files without overwriting local edits.
-  doctor       Check installed files, skill frontmatter, manifest, and the .agents mirror.
+  doctor       Check installed files, skill frontmatter, and manifest.
   status       List epics, stories, and inferred story status.
   bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
   harness      Run security evidence checks (check), execute declared validation commands (verify), and write run evidence.
@@ -108,7 +108,7 @@ Commands:
 Flags:
   --force    Overwrite local edits for init or upgrade.
   --dry-run  Show what would happen without writing files.
-  --fix      Restore missing files and resync .agents/skills from .claude/skills.
+  --fix      Restore missing template files.
   --strict   Enable stricter doctor checks for docs and manifest.
   --scan     Run brownfield bootstrap scan.
   --story    Scope harness preflight/check/evidence to one story directory.
