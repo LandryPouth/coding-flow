@@ -63,6 +63,7 @@ The important point: the user should not have to chain ten commands by hand. The
 
 ## Table Of Contents
 
+- [Getting started](#getting-started)
 - [Quick install](#quick-install)
 - [Overview](#overview)
 - [How it works](#how-it-works)
@@ -81,9 +82,67 @@ The important point: the user should not have to chain ten commands by hand. The
 - [Local package development](#local-package-development)
 - [GitHub distribution via npx](#github-distribution-via-npx)
 
+## Getting Started
+
+Coding Flow has **two layers**, installed in **two different places**. Understanding this split is the key to using the tool correctly — and the source of most early confusion.
+
+| Layer | What it is | Where it lives | Scope | How often |
+| --- | --- | --- | --- | --- |
+| **Tooling** | The skills (`/plan-epic`, `/run-story`, …) and the `guard` hook | Your Claude Code configuration | **Global** — available in every project | **Once**, ever |
+| **Project scaffold** | `PROJECT_RULES.md`, `docs/`, `epics/`, `.coding-flow/`, the harness policy, CI | The project's own Git repository | **Per project** | **Once per repo** |
+
+The **tooling** is *how you work*, so it follows you across every project. The **scaffold** *describes one specific project*, so it is committed to that repository, reviewed in pull requests, and shared with your teammates and CI — including people who never open Claude Code. A global scaffold would make no sense: each project has its own rules, architecture, and backlog.
+
+### Step 1 — Install the tooling (global, once)
+
+Type these in the **Claude Code prompt**. They are **Claude Code slash commands** entered by you — not terminal commands, and not something the agent runs for you:
+
+```text
+/plugin marketplace add LandryPouth/coding-flow
+/plugin install coding-flow
+```
+
+- `marketplace add` **registers this repository as a plugin source** on your machine (the repository is the "marketplace" — the model is decentralized, there is nothing to submit to a central store). It does not install anything on its own.
+- `install` then **activates the Coding Flow plugin** from that source.
+
+The skills and the `guard` hook become available in **every** project you open, and updates are delivered through the marketplace — no manual re-install on each release.
+
+> The npm package that powers the `guard` hook (`@landry_pouth/coding-flow`) is fetched automatically by `npx` the first time the hook runs. **You never install it by hand.**
+
+### Step 2 — Scaffold each project (per repo, once)
+
+From the project directory, in a **terminal**:
+
+```bash
+npx @landry_pouth/coding-flow init
+```
+
+This writes the project structure — `PROJECT_RULES.md`, `docs/`, `epics/`, `.coding-flow/config.json`, the harness policy, and the `flow:*` scripts — **into the repository**, ready to commit and share.
+
+### Step 3 — Work
+
+Use the skills from Step 1 on the structure from Step 2:
+
+```text
+/plan-epic     break a capability into vertical stories
+/run-story     implement a story; the guard blocks secrets automatically
+```
+
+### Which steps do I need?
+
+| Situation | Step 1 — plugin (global) | Step 2 — `init` (per repo) |
+| --- | --- | --- |
+| You use Claude Code | ✅ once | ✅ once per repo |
+| You only use the CLI / CI (no Claude Code) | skip | ✅ once per repo |
+
+Two common misconceptions:
+
+- **"I installed the plugin, so my project is ready."** No. The plugin gives you the *commands* globally, but a fresh repository has no rules, epics, or configuration for those commands to act on until you run `init` inside it.
+- **"I need to install the npm package myself."** No. It is fetched automatically by `npx` (Step 2 and the `guard` hook). Conversely, `init` alone works without the plugin — the skills are copied into the repo and the hook is wired into `.claude/settings.json`.
+
 ## Quick Install
 
-Coding Flow is distributed from GitHub. You don't need to clone the repository or publish the package to npm to use it.
+Coding Flow is available on npm (`@landry_pouth/coding-flow`) and directly from GitHub — you don't need to clone the repository to use it. This section covers the per-project CLI channel in detail; for the recommended first-time setup, see [Getting started](#getting-started).
 
 In the project you want to equip:
 
@@ -900,14 +959,16 @@ ai-flow ci init                 # clean-room workflow in the project
 
 ## Install As A Native Claude Code Plugin
 
-In addition to the npm/`npx` channel (CLI + CI), coding-flow installs as a **native Claude Code plugin** — the skills and the `guard` hook arrive without `ai-flow init`, and update via the marketplace (end of manual re-shipping on every release):
+Coding Flow ships as a **native Claude Code plugin** — the recommended way to get the tooling globally. See [Getting started](#getting-started) for the full first-time flow; in short:
 
 ```text
 /plugin marketplace add LandryPouth/coding-flow
 /plugin install coding-flow
 ```
 
-The two channels coexist: npm for the CLI and CI, the plugin for the IDE integration. The plugin's skills (`skills/`) are materialized from the templates by `ai-flow plugin sync` and kept drift-free by `ai-flow plugin check` (checked in test/CI).
+The plugin distributes the **tooling only** — the skills and the `guard` hook, available across all your projects and updated through the marketplace. It does **not** scaffold a repository: each project still runs `init` once to lay down its own rules, docs, epics, and configuration, which are versioned in that project's Git and shared with teammates and CI.
+
+The two channels are complementary — npm powers the CLI and CI, the plugin delivers the IDE integration. The plugin's skills (`skills/`) are materialized from the templates by `ai-flow plugin sync` and kept drift-free by `ai-flow plugin check` (enforced in tests/CI).
 
 ## Local Package Development
 
