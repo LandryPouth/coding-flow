@@ -6,10 +6,7 @@
     "name": "Landry Pouth"
   },
   "homepage": "https://github.com/LandryPouth/coding-flow#readme",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/LandryPouth/coding-flow.git"
-  },
+  "repository": "https://github.com/LandryPouth/coding-flow.git",
   "license": "MIT",
   "keywords": [
     "ai",
