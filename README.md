@@ -4,7 +4,9 @@
 [![CI](https://github.com/LandryPouth/coding-flow/actions/workflows/test.yml/badge.svg)](https://github.com/LandryPouth/coding-flow/actions/workflows/test.yml)
 [![license](https://img.shields.io/npm/l/@landry_pouth/coding-flow)](LICENSE)
 
-Coding Flow is an AI-native engineering workflow for developers who use Claude Code, Codex, or other coding agents.
+Coding Flow is an AI-native engineering workflow for developers who use **Claude Code**.
+
+> **Claude Code first.** Coding Flow currently targets Claude Code — the skills, the plugin, and the `guard` hook are wired for it. Support for Codex and other agents is planned (per-agent targeting; see `docs/plans/multi-agent-install.md`), but not shipped yet.
 
 Its goal is simple: make AI-assisted development more predictable, less token-hungry, and able to ship complete features in a single pass when the context is clear.
 

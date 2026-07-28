@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-07-28
+
+Coding Flow is now explicitly a **Claude Code** tool. Support for Codex and other
+agents is planned through per-agent targeting, but is not shipped yet.
+
+### Removed
+
+- **The legacy `.agents/` shared skill mirror.** The neutral physical copy of the
+  skills (meant for Codex and non-Claude agents) is gone: it was a source of
+  confusion and is superseded by the planned per-agent targeting
+  (`docs/plans/multi-agent-install.md`). `init`/`upgrade` no longer create
+  `.agents/`, and `doctor` no longer requires or checks it. Existing projects keep
+  working — `uninstall` still removes any `.agents/` entries recorded in their
+  manifest, and a leftover `.agents/` directory is simply ignored.
+
+### Changed
+
+- Repositioned as a Claude Code-first tool: package description, keywords, README
+  intro, and the marketplace description now state Claude Code explicitly, with
+  Codex flagged as planned.
+
 ## [0.2.0] - 2026-07-28
 
 The release that turns Coding Flow from an *AI methodology* into an **evidence &
