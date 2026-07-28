@@ -1,8 +1,7 @@
 "use strict";
 
 // Installation and update of the template files: copy, manifest (fingerprints to
-// detect local edits), convenience npm scripts, cheat-sheet, and .agents/skills
-// mirror.
+// detect local edits), convenience npm scripts, and cheat-sheet.
 
 const fs = require("fs");
 const path = require("path");
@@ -50,18 +49,6 @@ function getTemplateSpecs() {
       sourceRel: relativePath,
       targetRel: relativePath,
       kind: "template",
-    });
-  }
-
-  const skillsRoot = path.join(templatesRoot, ".claude", "skills");
-
-  for (const source of walkFiles(skillsRoot)) {
-    const relativeSkillPath = toPortable(path.relative(skillsRoot, source));
-    specs.push({
-      source,
-      sourceRel: `.claude/skills/${relativeSkillPath}`,
-      targetRel: `.agents/skills/${relativeSkillPath}`,
-      kind: "mirror",
     });
   }
 
@@ -446,38 +433,6 @@ function copyTemplates({ force = false, dryRun = false } = {}) {
   return { copied, updated, skipped, harnessCreated };
 }
 
-function syncAgentsMirror({ dryRun = false } = {}) {
-  const copied = [];
-  const updated = [];
-  const sourceRoot = path.join(cwd, ".claude", "skills");
-
-  if (!fs.existsSync(sourceRoot)) {
-    return { copied, updated };
-  }
-
-  for (const source of walkFiles(sourceRoot)) {
-    const relativeSkillPath = toPortable(path.relative(sourceRoot, source));
-    const targetRel = `.agents/skills/${relativeSkillPath}`;
-    const target = path.join(cwd, targetRel);
-    const targetExists = fs.existsSync(target);
-
-    if (!targetExists || hashFile(source) !== hashFile(target)) {
-      if (targetExists) {
-        updated.push(targetRel);
-      } else {
-        copied.push(targetRel);
-      }
-
-      if (!dryRun) {
-        fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.copyFileSync(source, target);
-      }
-    }
-  }
-
-  return { copied, updated };
-}
-
 function upgrade({ force = false, dryRun = false, json = false } = {}) {
   const previous = readManifest();
   const copied = [];
@@ -522,10 +477,6 @@ function upgrade({ force = false, dryRun = false, json = false } = {}) {
     }
   }
 
-  const mirror = dryRun
-    ? { copied: [], updated: [] }
-    : syncAgentsMirror({ dryRun: false });
-
   if (!dryRun) {
     writeManifest(previous);
   }
@@ -534,10 +485,9 @@ function upgrade({ force = false, dryRun = false, json = false } = {}) {
 
   const result = {
     copied,
-    updated: [...updated, ...mirror.updated],
+    updated,
     skippedModified,
     unchanged,
-    mirrorCopied: mirror.copied,
     convenience,
   };
 
@@ -576,7 +526,6 @@ module.exports = {
   writeManifest,
   detectProjectPackageJson,
   copyTemplates,
-  syncAgentsMirror,
   ensureConvenienceFiles,
   printConvenienceSummary,
   ensurePackageScripts,

@@ -39,7 +39,7 @@ function run(cwd, args) {
 }
 
 const REQUIRED_FILES = ['PROJECT_RULES.md', 'AGENT_RULES.md', 'CLAUDE.md', 'AGENTS.md', 'package.json'];
-const REQUIRED_DIRS = ['.claude/skills', '.agents/skills', 'docs', 'epics', '.coding-flow'];
+const REQUIRED_DIRS = ['.claude/skills', 'docs', 'epics', '.coding-flow'];
 
 test('init installs the base structure and succeeds', (t) => {
   const dir = freshProject(t);
