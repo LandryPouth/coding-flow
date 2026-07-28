@@ -1000,6 +1000,7 @@ The dependency graph is acyclic: `context → util → config → harness → te
 
 | Doc | Subject |
 | --- | --- |
+| [`docs/migration.md`](docs/migration.md) | Migrating an existing project to a new version: `upgrade` vs re-install, what is protected, and the gotchas |
 | [`docs/sdd-vs-plugins.md`](docs/sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed, why, and what's left to publish |
 | [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |
 | [`docs/plans/parallel-mode.md`](docs/plans/parallel-mode.md) | Parallel mode (`worktree`), story link, `ship` |
