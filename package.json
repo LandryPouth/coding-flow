@@ -1,6 +1,6 @@
 {
   "name": "@landry_pouth/coding-flow",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "AI-native engineering workflow for Claude Code: plan, implement, test, and review with evidence and governance guardrails. (Codex support planned.)",
   "license": "MIT",
   "author": "Landry Pouth",
