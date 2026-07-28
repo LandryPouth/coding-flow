@@ -1,5 +1,9 @@
 # Coding Flow
 
+[![npm](https://img.shields.io/npm/v/@landry_pouth/coding-flow?logo=npm)](https://www.npmjs.com/package/@landry_pouth/coding-flow)
+[![CI](https://github.com/LandryPouth/coding-flow/actions/workflows/test.yml/badge.svg)](https://github.com/LandryPouth/coding-flow/actions/workflows/test.yml)
+[![license](https://img.shields.io/npm/l/@landry_pouth/coding-flow)](LICENSE)
+
 Coding Flow is an AI-native engineering workflow for developers who use Claude Code, Codex, or other coding agents.
 
 Its goal is simple: make AI-assisted development more predictable, less token-hungry, and able to ship complete features in a single pass when the context is clear.
@@ -84,7 +88,7 @@ Coding Flow is distributed from GitHub. You don't need to clone the repository o
 In the project you want to equip:
 
 ```bash
-npx github:LandryPouth/codin-flow init
+npx github:LandryPouth/coding-flow init
 ```
 
 `init` also adds local `flow:*` scripts to `package.json`.
@@ -126,7 +130,7 @@ npm run flow:upgrade
 To prepare an existing project:
 
 ```bash
-npx github:LandryPouth/codin-flow bootstrap --scan
+npx github:LandryPouth/coding-flow bootstrap --scan
 ```
 
 For local package development, clone the repo then use `npm link`; see [Local package development](#local-package-development).
@@ -146,13 +150,13 @@ ai-flow worktree add <name>|--story <dir>   # optional: parallel work (see Pract
 By default, existing files are not overwritten. To deliberately reinstall the templates:
 
 ```bash
-npx github:LandryPouth/codin-flow init --force
+npx github:LandryPouth/coding-flow init --force
 ```
 
 To see what would be installed without writing files:
 
 ```bash
-npx github:LandryPouth/codin-flow init --dry-run
+npx github:LandryPouth/coding-flow init --dry-run
 ```
 
 For output readable by CI or scripts:
@@ -801,7 +805,7 @@ npm run flow:skills -- --json
 To remove Coding Flow from a project without deleting the already-created epics and stories:
 
 ```bash
-npx github:LandryPouth/codin-flow uninstall
+npx github:LandryPouth/coding-flow uninstall
 ```
 
 The command removes:
@@ -820,13 +824,13 @@ The command always keeps:
 To preview before deleting:
 
 ```bash
-npx github:LandryPouth/codin-flow uninstall --dry-run
+npx github:LandryPouth/coding-flow uninstall --dry-run
 ```
 
 If some Coding Flow files were modified locally, they are kept by default. To force their removal:
 
 ```bash
-npx github:LandryPouth/codin-flow uninstall --force
+npx github:LandryPouth/coding-flow uninstall --force
 ```
 
 ## Security Harness
@@ -899,7 +903,7 @@ ai-flow ci init                 # clean-room workflow in the project
 In addition to the npm/`npx` channel (CLI + CI), coding-flow installs as a **native Claude Code plugin** — the skills and the `guard` hook arrive without `ai-flow init`, and update via the marketplace (end of manual re-shipping on every release):
 
 ```text
-/plugin marketplace add LandryPouth/codin-flow
+/plugin marketplace add LandryPouth/coding-flow
 /plugin install coding-flow
 ```
 
@@ -964,13 +968,13 @@ Test the install in a temporary directory:
 ```bash
 mkdir /tmp/coding-flow-test
 cd /tmp/coding-flow-test
-node /path/to/codin-flow/bin/ai-flow.js init --force
-node /path/to/codin-flow/bin/ai-flow.js doctor
-node /path/to/codin-flow/bin/ai-flow.js doctor --json
-node /path/to/codin-flow/bin/ai-flow.js commands
-node /path/to/codin-flow/bin/ai-flow.js harness check --quick
-node /path/to/codin-flow/bin/ai-flow.js status
-node /path/to/codin-flow/bin/ai-flow.js bootstrap --scan
+node /path/to/coding-flow/bin/ai-flow.js init --force
+node /path/to/coding-flow/bin/ai-flow.js doctor
+node /path/to/coding-flow/bin/ai-flow.js doctor --json
+node /path/to/coding-flow/bin/ai-flow.js commands
+node /path/to/coding-flow/bin/ai-flow.js harness check --quick
+node /path/to/coding-flow/bin/ai-flow.js status
+node /path/to/coding-flow/bin/ai-flow.js bootstrap --scan
 ```
 
 Test as a global command:
@@ -993,11 +997,11 @@ ai-flow list-skills
 The official distribution goes through GitHub via `npx`. The end user does not need to clone this repository:
 
 ```bash
-npx github:LandryPouth/codin-flow init
-npx github:LandryPouth/codin-flow doctor
+npx github:LandryPouth/coding-flow init
+npx github:LandryPouth/coding-flow doctor
 ```
 
-Each `npx github:LandryPouth/codin-flow ...` call fetches the package from GitHub and runs the binary declared in `package.json`.
+Each `npx github:LandryPouth/coding-flow ...` call fetches the package from GitHub and runs the binary declared in `package.json`.
 
 After `init`, the project can use the local `npm run flow:*` scripts.
 If the project had no `package.json`, Coding Flow creates a minimal one to keep the commands simple.
@@ -1006,8 +1010,8 @@ The user therefore no longer needs to memorize the full GitHub command for commo
 To work on the package itself, clone the repo and link the command locally:
 
 ```bash
-gh repo clone LandryPouth/codin-flow
-cd codin-flow
+gh repo clone LandryPouth/coding-flow
+cd coding-flow
 npm install
 npm link
 ```
@@ -1034,7 +1038,7 @@ npm publish               # publishes @landry_pouth/coding-flow@<version>
 
 > The short name `coding-flow` is already taken by a third party on npm; the `@landry_pouth/*` scope guarantees a free name with no future collision.
 
-After publication, the install becomes `npx @landry_pouth/coding-flow init` (the `github:LandryPouth/codin-flow` commands stay valid in parallel).
+After publication, the install becomes `npx @landry_pouth/coding-flow init` (the `github:LandryPouth/coding-flow` commands stay valid in parallel).
 
 ## Roadmap
 

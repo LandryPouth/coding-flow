@@ -33,7 +33,7 @@ coding-flow, in that logic, provided:
 - **skills** (planner, story writer, implementer, validators);
 - **rules** and a **security harness** that *scans* (secrets, sensitive files)
   and *estimates* a story's risk;
-- a **distribution** via `npx github:LandryPouth/codin-flow`.
+- a **distribution** via `npx github:LandryPouth/coding-flow`.
 
 **Its real value**: imposing structure and discipline on an agent, to avoid
 "go-with-the-flow" code. That is useful — but it is what the *whole* SDD category
@@ -118,7 +118,7 @@ discipline. That is the **foundation**, not what disappeared.
 ## 5. What is left to do to publish and make the tool usable online
 
 Current state: 97 green tests, version **0.2.0**, PR **#7** open against `main`
-(https://github.com/LandryPouth/codin-flow/pull/7). Remaining, in order:
+(https://github.com/LandryPouth/coding-flow/pull/7). Remaining, in order:
 
 ### A. Merge and publish (prerequisite to everything else)
 
@@ -144,7 +144,7 @@ Current state: 97 green tests, version **0.2.0**, PR **#7** open against `main`
 
 4. **Test the real plugin install** in a Claude Code session:
    ```text
-   /plugin marketplace add LandryPouth/codin-flow
+   /plugin marketplace add LandryPouth/coding-flow
    /plugin install coding-flow
    ```
    Verify that the skills appear and that the `guard` hook fires.
@@ -153,7 +153,7 @@ Current state: 97 green tests, version **0.2.0**, PR **#7** open against `main`
 
 ### C. Consistency & finishing
 
-6. **Repo name vs package**: the repo is `codin-flow` (without the "g") while the
+6. **Repo name vs package**: the repo is `coding-flow` (without the "g") while the
    package is `@landry_pouth/coding-flow`. Decide whether to rename the repo for
    discoverability, or to accept the gap (documented).
 7. **CHANGELOG**: add a 0.2.0 entry listing the evidence & governance layer

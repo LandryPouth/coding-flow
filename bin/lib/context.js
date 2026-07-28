@@ -9,7 +9,7 @@ const packageRoot = path.resolve(__dirname, "..", "..");
 const templatesRoot = path.join(packageRoot, "templates");
 const cwd = process.cwd();
 const packageJson = require(path.join(packageRoot, "package.json"));
-const githubNpxCommand = "npx github:LandryPouth/codin-flow";
+const githubNpxCommand = "npx github:LandryPouth/coding-flow";
 
 const flowScripts = {
   flow: githubNpxCommand,
