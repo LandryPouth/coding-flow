@@ -9,22 +9,44 @@ const fs = require("fs");
 const path = require("path");
 
 const { toPortable } = require("../util");
+const { latestVerifyByStoryDir } = require("../audit");
 
-function inferStoryStatus(storyDir) {
+// Derives a story's status. Resolution order, from most to least authoritative:
+//   1. an explicit `## Status <x>` in implementation-notes.md (human/author override);
+//   2. the latest captured `verify` evidence for this story — green -> "verified",
+//      red -> "blocked". This is the anti-drift point: a proven status beats prose,
+//      so the agent can no longer claim "done" without an executed check behind it;
+//   3. the legacy prose heuristic, only when no evidence exists at all.
+//
+// `verify` is "pass" | "fail" | null, resolved by the caller from the run files
+// (kept out of this function so it stays pure and directly unit-testable).
+function inferStoryStatus(storyDir, { verify = null } = {}) {
   const notesPath = path.join(storyDir, "implementation-notes.md");
+  const notes = fs.existsSync(notesPath) ? fs.readFileSync(notesPath, "utf8") : "";
 
-  if (!fs.existsSync(notesPath)) {
-    return "planned";
-  }
-
-  const content = fs.readFileSync(notesPath, "utf8");
-  const statusMatch = content.match(/## Status\s+([a-zA-Z -]+)/i);
+  // 1. Explicit status wins: a person can mark a story blocked/wontfix/done
+  //    regardless of the machine signal.
+  const statusMatch = notes.match(/## Status\s+([a-zA-Z -]+)/i);
 
   if (statusMatch) {
     return statusMatch[1].trim().toLowerCase().replace(/\s+/g, "-");
   }
 
-  const lower = content.toLowerCase();
+  // 2. Evidence-backed: a captured verify is proof, prose is not.
+  if (verify === "pass") {
+    return "verified";
+  }
+
+  if (verify === "fail") {
+    return "blocked";
+  }
+
+  // 3. Legacy prose heuristic (fallback only).
+  if (!notes) {
+    return "planned";
+  }
+
+  const lower = notes.toLowerCase();
 
   if (lower.includes("blocked") || lower.includes("stop condition")) {
     return "blocked";
@@ -34,7 +56,7 @@ function inferStoryStatus(storyDir) {
     return "done";
   }
 
-  if (content.trim().length > 160) {
+  if (notes.trim().length > 160) {
     return "in-progress";
   }
 
@@ -67,6 +89,9 @@ function createLocalStorage(cwd) {
         return epics;
       }
 
+      // Latest verify per story dir, read once for the whole listing.
+      const verifyByDir = latestVerifyByStoryDir(cwd);
+
       for (const epicEntry of fs.readdirSync(epicsRoot, { withFileTypes: true })) {
         if (!epicEntry.isDirectory()) {
           continue;
@@ -78,11 +103,15 @@ function createLocalStorage(cwd) {
         for (const storyEntry of fs.readdirSync(epicDir, { withFileTypes: true })) {
           if (storyEntry.isDirectory() && storyEntry.name.startsWith("story-")) {
             const storyDir = path.join(epicDir, storyEntry.name);
+            const storyPath = toPortable(path.relative(cwd, storyDir));
+            const verifyEntry = verifyByDir.get(storyPath);
+            const verify = verifyEntry ? (verifyEntry.ok ? "pass" : "fail") : null;
+
             stories.push({
               name: storyEntry.name,
               title: storyTitle(storyDir),
-              status: inferStoryStatus(storyDir),
-              path: toPortable(path.relative(cwd, storyDir)),
+              status: inferStoryStatus(storyDir, { verify }),
+              path: storyPath,
             });
           }
         }

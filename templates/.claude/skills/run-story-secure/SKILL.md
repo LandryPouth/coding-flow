@@ -23,11 +23,19 @@ This workflow includes the normal story pipeline plus security validation. Use i
 When `ai-flow` is available in the project, use the Security Evidence Harness automatically. This is part of the secure workflow, not an optional manual step.
 
 - Before orchestration, run `ai-flow harness preflight --story <story-dir>` and use the output to confirm risk, stop conditions, and required checks.
-- After implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail; a failed command is a blocker, not something to work around.
+- **Required, non-skippable:** after implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail; a failed command is a blocker, not something to work around. A secure story is not finished until a green verify is captured.
 - After implementation, validators, and `implementation-notes.md`, run `ai-flow harness check --story <story-dir>`.
 - If the harness check fails, fix the issue or report a blocking security risk before finalizing.
 - At the end, run `ai-flow harness evidence --story <story-dir>` to write `.coding-flow/runs/*-evidence.json`.
-- If the harness command is unavailable, record that harness validation could not run and keep the normal secure validators.
+- If the harness command is unavailable, record that harness validation could not run and keep the normal secure validators — and do not write `## Status: done`, since no proof exists.
+
+## Status From Proof
+
+`ai-flow status` derives a story's state from executed proof: a green `verify` shows as `verified`, a red one as `blocked`. An explicit `## Status` line in `implementation-notes.md` overrides that signal, so keep it honest:
+
+- Write `## Status: done` **only after** a green `ai-flow harness verify` for this story is captured — for a secure story this is mandatory, never assert it.
+- On a red or partial verify, write `## Status: blocked` and record what failed.
+- Before implementation is finished, or when verify could not run, leave `## Status: in-progress` — never `done`.
 
 ## Pipeline
 

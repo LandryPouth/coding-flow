@@ -164,6 +164,32 @@ function gate(entries) {
   return { ok: failing.length === 0, reason: null, failing, latest };
 }
 
+// Latest VERIFY result per story DIRECTORY, keyed by the portable relative path
+// of the story dir. `status` uses it to back a story's state on executed proof
+// (a captured verify) instead of prose. Same grouping as `gate`, but normalizes a
+// file-path `--story` (e.g. `.../story.md`) down to its directory so the key
+// matches the story dir that `status`/`listEpics` iterate. Read-only.
+function latestVerifyByStoryDir(root) {
+  const byDir = new Map(); // dirPath -> { ok, generatedAt }
+
+  for (const entry of collectAll(root)) {
+    if (entry.type !== "verify" || !entry.story) {
+      continue;
+    }
+
+    const dir = entry.story.endsWith(".md")
+      ? entry.story.split("/").slice(0, -1).join("/")
+      : entry.story;
+    const prev = byDir.get(dir);
+
+    if (!prev || (entry.generatedAt || "") > (prev.generatedAt || "")) {
+      byDir.set(dir, { ok: entry.ok, generatedAt: entry.generatedAt || "" });
+    }
+  }
+
+  return byDir;
+}
+
 function buildAuditMarkdown(entries) {
   const lines = [
     "# Audit ledger",
@@ -271,6 +297,7 @@ module.exports = {
   collectAll,
   syncLedger,
   gate,
+  latestVerifyByStoryDir,
   buildAuditMarkdown,
   entryFromRunFile,
 };
