@@ -23,11 +23,19 @@ This workflow includes the normal story pipeline plus security validation. Use i
 When `ai-flow` is available in the project, use the Security Evidence Harness automatically. This is part of the secure workflow, not an optional manual step.
 
 - Before orchestration, run `ai-flow harness preflight --story <story-dir>` and use the output to confirm risk, stop conditions, and required checks.
-- After implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail; a failed command is a blocker, not something to work around.
+- **Required, non-skippable:** after implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail; a failed command is a blocker, not something to work around. A secure story is not finished until a green verify is captured.
 - After implementation, validators, and `implementation-notes.md`, run `ai-flow harness check --story <story-dir>`.
 - If the harness check fails, fix the issue or report a blocking security risk before finalizing.
 - At the end, run `ai-flow harness evidence --story <story-dir>` to write `.coding-flow/runs/*-evidence.json`.
-- If the harness command is unavailable, record that harness validation could not run and keep the normal secure validators.
+- If the harness command is unavailable, record that harness validation could not run and keep the normal secure validators — and do not write `## Status: done`, since no proof exists.
+
+## Status From Proof
+
+`ai-flow status` derives a story's state from executed proof: a green `verify` shows as `verified`, a red one as `blocked`. An explicit `## Status` line in `implementation-notes.md` overrides that signal, so keep it honest:
+
+- Write `## Status: done` **only after** a green `ai-flow harness verify` for this story is captured — for a secure story this is mandatory, never assert it.
+- On a red or partial verify, write `## Status: blocked` and record what failed.
+- Before implementation is finished, or when verify could not run, leave `## Status: in-progress` — never `done`.
 
 ## Pipeline
 
@@ -40,14 +48,16 @@ When `ai-flow` is available in the project, use the Security Evidence Harness au
 7. Use `/e2e-check` for critical auth/admin/user journeys.
 8. Use `/architecture-check` to validate architecture quickly.
 9. Use `/security-check` to validate trust boundaries and common security risks.
-10. Use `/review-codebase` for the final pre-merge review.
-11. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
-12. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
+10. Use `/quality-check` for duplication, complexity, and convention drift (escalate to `/agent-validator-quality` for refactors or wide duplication).
+11. Use `/review-codebase` for the final pre-merge review.
+12. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
+13. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
 
 ## Deep Validator Escalation
 
 - Use `/agent-validator-security` for auth systems, permission models, payments, uploads, secrets, external integrations, or sensitive data.
 - Use `/agent-validator-architecture` for security changes that alter boundaries, data flow, or module ownership.
+- Use `/agent-validator-quality` when a secure change is also a refactor or spreads duplication across modules.
 - Use `/agent-validator-tests` when security behavior lacks strong test evidence.
 - Use `/agent-context-scout` when secure implementation would otherwise require broad codebase exploration. The scout maps context only and does not modify files.
 

@@ -6,6 +6,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 
 const { cwd } = require("./context");
@@ -714,8 +715,18 @@ function parseTestsCommands(testsMarkdown) {
 function resolveValidationCommands({ storyDir = null } = {}) {
   const config = readConfig(cwd);
 
-  if (config.validation && Array.isArray(config.validation.commands) && config.validation.commands.length > 0) {
-    return { source: "config", commands: [...config.validation.commands] };
+  if (config.validation) {
+    // Correctness (`commands`) and deterministic quality (`quality`) both flow
+    // through the same executed-and-captured proof; a red quality command blocks
+    // exactly like a red test. Tests run first, then quality.
+    const declared = [
+      ...(Array.isArray(config.validation.commands) ? config.validation.commands : []),
+      ...(Array.isArray(config.validation.quality) ? config.validation.quality : []),
+    ];
+
+    if (declared.length > 0) {
+      return { source: "config", commands: declared };
+    }
   }
 
   if (storyDir) {
@@ -733,7 +744,10 @@ function resolveValidationCommands({ storyDir = null } = {}) {
   const pkg = readJson(path.join(cwd, "package.json"), null);
 
   if (pkg && pkg.scripts && typeof pkg.scripts === "object") {
-    const commands = ["typecheck", "type-check", "lint", "test"]
+    // Correctness first, then deterministic quality (lint/format). These are the
+    // conventional script names; a project with other tools declares them in
+    // config.validation.quality instead.
+    const commands = ["typecheck", "type-check", "lint", "test", "format:check", "format-check"]
       .filter((name) => pkg.scripts[name])
       .map((name) => `npm run ${name}`);
 
@@ -793,6 +807,43 @@ function printVerify(evidence, outputPath) {
   log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
 }
 
+// Reproducibility fingerprint: a green verify is only auditable if we know the
+// toolchain it ran on. We record the Node runtime, the OS/arch, and the hash of
+// the dependency lockfile (the first one found). Cheap, no new dependency, and it
+// turns "green here" into "green on this exact environment" for the ledger.
+function captureEnvironment() {
+  const lockfiles = [
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lockb",
+  ];
+
+  let lockfile = null;
+
+  for (const name of lockfiles) {
+    const lockPath = path.join(cwd, name);
+
+    if (fs.existsSync(lockPath)) {
+      try {
+        const sha256 = crypto.createHash("sha256").update(fs.readFileSync(lockPath)).digest("hex");
+        lockfile = { name, sha256 };
+      } catch {
+        lockfile = { name, sha256: null };
+      }
+      break;
+    }
+  }
+
+  return {
+    node: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    lockfile,
+  };
+}
+
 function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
@@ -834,6 +885,7 @@ function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
     story: resolvedStory ? resolvedStory.relativePath : null,
     commandSource: resolution.source,
     commandsFound: resolution.commands.length,
+    environment: captureEnvironment(),
     ok,
     results,
   };

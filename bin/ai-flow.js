@@ -24,6 +24,7 @@ const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
 const { worktreeCommand } = require("./lib/worktree");
 const { shipCommand } = require("./lib/ship");
+const { hookCommand } = require("./lib/hook");
 const { ensureConfig, STORAGE_BACKENDS } = require("./lib/config");
 const { ensureHookSettings } = require("./lib/settings");
 const { listSkills } = require("./lib/skills");
@@ -174,6 +175,8 @@ if (command === "init") {
   });
 } else if (command === "ship") {
   shipCommand({ getFlagValue, flags, cwd });
+} else if (command === "hook") {
+  hookCommand({ commandArgs, flags, cwd });
 } else if (command === "commands") {
   printCommands({
     json: flags.has("--json"),
@@ -188,8 +191,10 @@ if (command === "init") {
   listSkills({
     json: flags.has("--json"),
   });
+} else if (command === "version" || command === "--version" || command === "-v") {
+  log(require("../package.json").version);
 } else if (command === "help" || command === "--help" || command === "-h") {
-  printHelp();
+  printHelp({ all: flags.has("--all") });
 } else {
   fail(`unknown command "${command}". Run "ai-flow help".`);
 }

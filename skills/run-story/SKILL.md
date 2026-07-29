@@ -26,11 +26,21 @@ When `ai-flow` is available in the project, use the Security Evidence Harness au
 
 - Before choosing or finalizing the mode, run `ai-flow harness preflight --story <story-dir>` when a story directory exists.
 - Use the preflight risk and required checks to confirm FAST, STANDARD, STRICT, or escalation to `/run-story-secure`.
-- After implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail; fix real failures rather than weakening tests.
+- **Required, non-skippable:** after implementation, run `ai-flow harness verify --story <story-dir>` to execute the declared validation commands and capture verbatim pass/fail. This is a phase of the workflow, not an optional extra — do not consider the story finished until it has run. Fix real failures rather than weakening tests.
 - After implementation, validation, and notes, run `ai-flow harness check --story <story-dir>` for story work.
 - At the end of STANDARD or STRICT story work, run `ai-flow harness evidence --story <story-dir>` to write `.coding-flow/runs/*-evidence.json`.
 - If no story directory exists, use `ai-flow harness check --quick` after the change for a lightweight secret/sensitive-file pass.
-- If the harness command is unavailable, continue the workflow and record that harness validation could not run.
+- If the harness command is unavailable, continue the workflow and record that harness validation could not run — and do not write `## Status: done` (see below), since no proof exists.
+
+## Status From Proof
+
+`ai-flow status` derives a story's state from executed proof: a green `verify` shows as `verified`, a red one as `blocked`. An explicit `## Status` line in `implementation-notes.md` overrides that signal, so keep it honest:
+
+- Write `## Status: done` **only after** a green `ai-flow harness verify` for this story is captured. A passing verify is the precondition, not the agent's assertion.
+- On a red or partial verify, write `## Status: blocked` and record what failed.
+- Before implementation is finished, or when verify could not run, leave `## Status: in-progress` (or `planned`) — never `done`.
+
+The rule is simple: the user should never have to ask "did you check this?". `done` means the machine already proved it.
 
 ## Context Policy
 
@@ -82,9 +92,10 @@ Pipeline:
 2. Use `/implement-slice` to implement the story end-to-end.
 3. Use `/tests-check` to validate test adequacy.
 4. Use `/architecture-check` to validate architecture quickly.
-5. Use `/review-codebase` for the final pre-merge review.
-6. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
-7. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
+5. Use `/quality-check` when the change adds non-trivial logic, duplication, or complexity (advisory; skip for tiny changes).
+6. Use `/review-codebase` for the final pre-merge review.
+7. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
+8. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
 
 ### STRICT
 
@@ -110,14 +121,16 @@ Pipeline:
 6. Use `/tests-check`.
 7. Use `/e2e-check`.
 8. Use `/architecture-check`.
-9. Use `/security-check`.
-10. Use `/review-codebase`.
-11. If blocking issues exist, use `/implement-slice` to fix them and repeat failed checks.
-12. Use `/blueprint-implementation-notes`.
+9. Use `/quality-check` (escalate to `/agent-validator-quality` for refactors or wide duplication).
+10. Use `/security-check`.
+11. Use `/review-codebase`.
+12. If blocking issues exist, use `/implement-slice` to fix them and repeat failed checks.
+13. Use `/blueprint-implementation-notes`.
 
 ## Escalation Rules
 
 - Escalate from `/architecture-check` to `/agent-validator-architecture` when the story introduces new patterns, crosses modules, or includes a refactor.
+- Escalate from `/quality-check` to `/agent-validator-quality` when the story is a refactor, spreads duplication across modules, or needs a deeper quality pass.
 - Escalate from `/tests-check` to `/agent-validator-tests` when tests are complex, flaky, missing for risky logic, or release-sensitive.
 - Escalate to `/agent-context-scout` when targeted discovery exceeds the mode budget before edit points are clear.
 - Switch to `/run-story-secure` when security-sensitive behavior appears during implementation.

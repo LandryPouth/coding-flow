@@ -23,6 +23,32 @@ Keep it short, concrete, and easy to scan.
 - Logging:
 - Comments:
 
+## Code Quality And DRY
+
+Quality here means **context efficiency**, not style policing. Duplication of one
+concept, tangled coupling, and runaway complexity make every future story more
+expensive to find and change safely. That is why quality is worth enforcing — for
+the agent as much as for humans.
+
+Two kinds of quality, routed differently:
+
+- **Deterministic quality** — lint, format-check, typecheck, duplication detectors
+  (jscpd/similarity). Executable and reproducible. Declare it in
+  `.coding-flow/config.json` under `validation.quality` so `ai-flow harness verify`
+  runs it and captures the result as proof. A red quality command blocks like a red
+  test.
+- **Judgment quality** — the right abstraction level, naming intent, justified
+  coupling. Subjective and contextual. It stays advisory via `/quality-check` and
+  `/agent-validator-quality`; it never becomes a fake-precise merge gate.
+
+On DRY, the most misapplied principle (and worse with an agent):
+
+- Apply the **rule of three** — two similar blocks are not yet a pattern.
+- **"Duplication is cheaper than the wrong abstraction"** (Sandi Metz). Coupling
+  things that merely look alike raises the blast radius of every future change.
+- Duplication is a **signal to review**, never a rule to eliminate on sight. Only
+  unify cases that are the same concept and will change together.
+
 ## Project Organization
 
 - Prefer:

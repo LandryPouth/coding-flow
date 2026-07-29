@@ -62,8 +62,44 @@ function printCommands({ json = false } = {}) {
   }
 }
 
-function printHelp() {
-  log(`Coding Flow
+// Golden-path help: the 95% front door. Machinery is one command away, not in
+// your face. `ai-flow help --all` prints the full reference below.
+function printGoldenPath() {
+  log(`Coding Flow — AI-native engineering workflow for Claude Code
+
+START HERE
+
+  In Claude Code (daily):
+    /plan-epic     turn an objective into implementation-ready stories
+    /run-story     execute one story end-to-end (plan -> code -> verify)
+    /quick-story   a small isolated change, no ceremony
+
+  In the terminal:
+    ai-flow init     install into the current project (once)
+    ai-flow status   where each story stands
+    ai-flow ship     push the branch and open/update the PR
+
+That is almost all daily use. Everything else is machinery the skills run for
+you (verification, evidence, audit, guard) — you rarely type it yourself.
+
+More
+  ai-flow help --all     every command, grouped by role
+  ai-flow commands       the easiest commands for THIS project
+  ai-flow list-skills    all skills (the macros above, and the ones they call)
+
+Quickstart: docs/QUICKSTART.md`);
+}
+
+function printHelp({ all = false } = {}) {
+  if (!all) {
+    printGoldenPath();
+    return;
+  }
+
+  log(`Coding Flow — full command reference
+
+Most of these are invoked automatically by the skills, CI, or the git hook. As a
+user you mainly need: init, status, ship (and the /plan-epic, /run-story skills).
 
 Usage:
   ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--force] [--dry-run]
@@ -81,29 +117,39 @@ Usage:
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
   ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--dry-run]
+  ai-flow hook install|uninstall|status [--dry-run] [--json]
   ai-flow commands [--json]
   ai-flow uninstall [--dry-run] [--force] [--json]
   ai-flow list-skills [--json]
-  ai-flow help
+  ai-flow version
+  ai-flow help [--all]
 
-Commands:
+Setup (you run these):
   init         Install workflow files and the default harness policy into the current project.
   upgrade      Update installed workflow files without overwriting local edits.
-  doctor       Check installed files, skill frontmatter, and manifest.
-  status       List epics, stories, and inferred story status.
-  bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
-  harness      Run security evidence checks (check), execute declared validation commands (verify), and write run evidence.
-  guard        PreToolUse hook: deny writes to blocked paths or secret content at the tool boundary (wired into .claude/settings.json by init).
-  audit        Aggregate evidence runs into an append-only ledger; --export writes docs/AUDIT.md, --check gates on the latest verify.
-  trace        Show the story -> commits -> PR -> evidence -> tests chain and flag missing links.
-  ci           Scaffold a clean-room GitHub Actions workflow that reruns harness verify + audit on every PR.
-  plugin       Sync/check the native Claude Code plugin's skills/ against templates (distribution channel).
-  worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
-  ship         Push the current branch and open/update one PR to the base (uses gh if available).
-  commands     Show the easiest commands for this project.
   uninstall    Remove Coding Flow files and scripts while preserving epics/stories.
+  doctor       Check installed files, skill frontmatter, and manifest.
+
+Daily (you run these):
+  status       List epics, stories, and inferred story status (verified / stale / blocked).
+  ship         Push the current branch and open/update one PR to the base (uses gh if available).
+  bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
+
+Machinery (usually run FOR you by the skills, CI, or the git hook):
+  harness      Run security checks (check), execute declared validation commands (verify), write evidence.
+  audit        Aggregate evidence into an append-only ledger; --export writes docs/AUDIT.md, --check is the CI gate.
+  trace        Show the story -> commits -> PR -> evidence -> tests chain and flag missing links.
+  guard        PreToolUse hook: deny writes to blocked paths or secret content (wired into settings.json by init).
+  hook         Install/remove an opt-in pre-push gate that runs audit --check before each push.
+  ci           Scaffold a clean-room GitHub Actions workflow that reruns harness verify + audit on every PR.
+  worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
+
+Meta:
+  commands     Show the easiest commands for this project.
   list-skills  List available workflow skills.
-  help         Show this help message.
+  plugin       (maintainer) Sync/check the native plugin's skills/ against templates.
+  version      Print the installed CLI version.
+  help         Show the golden-path help; add --all for this full reference.
 
 Flags:
   --force    Overwrite local edits for init or upgrade.

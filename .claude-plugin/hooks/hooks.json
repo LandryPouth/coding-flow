@@ -1,14 +1,16 @@
 {
-  "PreToolUse": [
-    {
-      "matcher": "Write|Edit|MultiEdit|NotebookEdit",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "npx --yes @landry_pouth/coding-flow guard",
-          "timeout": 30
-        }
-      ]
-    }
-  ]
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx --yes @landry_pouth/coding-flow guard",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
 }

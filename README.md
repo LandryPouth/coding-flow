@@ -21,6 +21,11 @@ In practice, Coding Flow installs a small working system into your project. This
 
 Coding Flow is not an application framework and does not replace your stack. It adds a layer of method around your repo so the agent knows what to read, what to produce, when to stop, what to validate, and how to leave a useful trace.
 
+> **In a hurry?** You only need a small front door: `ai-flow init` once, then
+> `/plan-epic` and `/run-story` in Claude Code, and `ai-flow status` / `ai-flow ship`
+> from the terminal. Everything else is machinery the skills run for you. See
+> **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — the whole loop on one screen.
+
 ## Overview
 
 The project rests on four simple blocks:
@@ -467,6 +472,7 @@ Important:
     agent-worker-tests/
 
     agent-validator-architecture/
+    agent-validator-quality/
     agent-validator-security/
     agent-validator-tests/
 
@@ -489,6 +495,7 @@ Important:
     e2e-check/
     architecture-check/
     tests-check/
+    quality-check/
     security-check/
     review-codebase/
     write-story/
@@ -571,6 +578,7 @@ Claude Code discovers the skills in `.claude/skills/`.
 | `/tests-check` | Quickly check the test coverage. |
 | `/e2e-check` | Check the need for or state of E2E tests. |
 | `/architecture-check` | Quickly check the architecture impact. |
+| `/quality-check` | Advisory check for duplication, complexity, and convention drift. |
 | `/security-check` | Quickly check the security risks. |
 | `/review-codebase` | Final review before merge. |
 
@@ -579,6 +587,7 @@ Claude Code discovers the skills in `.claude/skills/`.
 | Skill | Use |
 | --- | --- |
 | `/agent-validator-architecture` | In-depth architecture review. |
+| `/agent-validator-quality` | In-depth code-quality review (refactors, wide duplication). |
 | `/agent-validator-tests` | In-depth test review. |
 | `/agent-validator-security` | In-depth security review. |
 
@@ -644,7 +653,15 @@ ai-flow status
 ai-flow status --json
 ```
 
-The status is read from `implementation-notes.md` when a `## Status` section exists. Otherwise, the CLI infers it from the notes.
+The status is backed by executed proof, not prose. The CLI resolves it in this order:
+
+1. an explicit `## Status <x>` section in `implementation-notes.md` (a human/author override);
+2. the latest captured `ai-flow harness verify` for the story — a green run shows as `verified`, a red one as `blocked`;
+3. only if no evidence exists, a fallback heuristic on the notes.
+
+So `verified` means the machine actually ran the story's validation commands and they passed — the agent can no longer report a story as done without a captured green verify behind it. See `docs/plans/status-and-check-enforcement.md`.
+
+**A proof only counts for the code it proved.** Each `verify` records a content token of the working tree (ignoring the `.coding-flow/` evidence dir). If the code changes after a green run, the story flips to `stale` — the proof no longer describes the current code, so a re-verify is required. The token is content-addressed, so committing exactly what you verified keeps the story `verified` (no false `stale` on commit). Outside git, or on older evidence without a token, the check stays lenient. `ai-flow audit --check` enforces the same rule: a stale latest verify fails the gate. See `docs/plans/evidence-hardening.md`.
 
 When a worktree is working on a story (see `--story` below), `status` shows the mapping and lists the active worktrees — a dashboard of the parallel work in progress:
 
@@ -822,13 +839,15 @@ When a stop condition triggers, the agent must explain:
 | `ai-flow guard` | PreToolUse hook: refuses (exit 2) writing a blocked path or a secret, **before** the disk. Wired into `.claude/settings.json` by `init` (`--no-guard` to skip). |
 | `ai-flow audit` | Aggregate the evidence into an append-only ledger (`.coding-flow/ledger.jsonl`). |
 | `ai-flow audit --export` | Write `docs/AUDIT.md` (compliance artifact) from the ledger. |
-| `ai-flow audit --check` | CI gate: fails if the latest `verify` per story is red or missing. |
+| `ai-flow audit --check` | CI gate: fails if the latest `verify` per story is red, missing, or **stale** (code changed since the proof). |
 | `ai-flow trace [--story <path>]` | Story → commits → PR → evidence → tests chain, with the missing links. |
 | `ai-flow ci init` | Scaffold a clean-room GitHub Actions workflow (`verify` + `audit --check`) into the project. |
+| `ai-flow hook install\|uninstall\|status` | Opt-in local pre-push gate that runs `audit --check` before each push (idempotent, preserves your own hook). |
 | `ai-flow plugin sync\|check` | Sync/check the native plugin's skills against the templates. |
 | `ai-flow commands` | Show the most useful commands for the current project. |
 | `ai-flow uninstall` | Remove Coding Flow from the project while keeping `epics/`. |
 | `ai-flow list-skills` | Show the available skills. |
+| `ai-flow version` | Print the installed CLI version. |
 
 After `init`, the project has easier-to-remember scripts.
 If no `package.json` existed, Coding Flow creates a minimal one at the root:
@@ -894,6 +913,8 @@ It answers three questions:
 - **Is the story risky?** `preflight` reads the story files and recommends `FAST`, `STANDARD`, or `STRICT`.
 - **Does the repo contain dangerous signals?** `check` looks for obvious secrets, sensitive files, and missing evidence.
 - **Do the tests really pass?** `verify` runs the declared validation commands (config `validation.commands`, the `## Commands` block of `tests.md`, or `package.json` scripts), captures their exit codes verbatim into `.coding-flow/runs/*-verify.json`, and fails if one breaks or if none ran. The proof is executed by the machine, not asserted by the agent.
+- **Does the code meet the deterministic quality bar?** Declare `validation.quality` in `.coding-flow/config.json` (lint, format-check, a duplication detector like `jscpd`) and `verify` runs it in the same pass — a red quality command blocks exactly like a red test, so `audit --check` and `ship` cover quality for free. The tool never *judges* quality; it executes what the project declared and captures the proof. Judgment-level quality stays advisory via `/quality-check` and `/agent-validator-quality`.
+- **Is the proof current and reproducible?** Each `verify` binds to a content token of the working tree, so a green run that no longer matches the code reads as `stale` (in `status` and `audit --check`) until re-verified. It also records a toolchain fingerprint (Node version, platform/arch, dependency-lockfile hash), turning "green here" into "green on this exact environment" for the ledger.
 - **What proves the story was handled correctly?** `evidence` writes a JSON summary with the risk, changed files, required checks, harness result, and rollback notes.
 
 What the harness checks today:
@@ -1000,6 +1021,7 @@ The dependency graph is acyclic: `context → util → config → harness → te
 
 | Doc | Subject |
 | --- | --- |
+| [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | The whole loop on one screen: the front door you actually use day to day |
 | [`docs/migration.md`](docs/migration.md) | Migrating an existing project to a new version: `upgrade` vs re-install, what is protected, and the gotchas |
 | [`docs/sdd-vs-plugins.md`](docs/sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed, why, and what's left to publish |
 | [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |
@@ -1008,6 +1030,9 @@ The dependency graph is acyclic: `context → util → config → harness → te
 | [`docs/plans/evidence-governance.md`](docs/plans/evidence-governance.md) | Evidence & governance layer: guard, provenance, audit, trace, CI, plugin |
 | [`docs/plans/testability.md`](docs/plans/testability.md) | Production-grade testability: `verify`, negative proof, anti-slop |
 | [`docs/plans/testing-and-ci.md`](docs/plans/testing-and-ci.md) | The package's test suite and CI |
+| [`docs/plans/code-quality.md`](docs/plans/code-quality.md) | Code quality & DRY: the deterministic-vs-judgment split, the DRY-as-signal decision, and the 3 tiers |
+| [`docs/plans/status-and-check-enforcement.md`](docs/plans/status-and-check-enforcement.md) | Evidence-backed story status and machine-enforced post-implementation checks (no more asking the agent to verify) |
+| [`docs/plans/evidence-hardening.md`](docs/plans/evidence-hardening.md) | Evidence freshness (anti-stale proof), reproducibility fingerprint, and the opt-in local pre-push gate |
 
 From this repository:
 
