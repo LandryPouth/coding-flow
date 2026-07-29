@@ -131,10 +131,27 @@ thresholds parsed by `lib/harness.js` and only *raise the recommended mode*.
 
 ## Resume checklist
 
-- [ ] Tier 1: quality commands flow through `verify` and are captured verbatim.
-- [ ] Tier 1: `audit --check` fails on red quality command; `ship` surfaces it.
-- [ ] Tier 2: `/quality-check` + `/agent-validator-quality` skills, wired into
-      `run-story` + escalation rules, review-only.
-- [ ] Tier 3: `conventions.md` DRY framing; optional `harness.json` thresholds as
-      risk signals.
-- [ ] Behavioral tests on throwaway repos for Tier 1 (green/red toggling).
+- [x] **Tier 1 — shipped.** `config.validation.quality` bucket added
+      (`lib/config.js`, cleaned like `commands`) and concatenated into the executed
+      set by `resolveValidationCommands` (`lib/harness.js`); the package.json
+      fallback also auto-detects `format:check`/`format-check`. Quality commands
+      flow through `verify` and are captured verbatim — no new pipeline.
+- [x] **Tier 1 — shipped.** A red quality command makes `verify` red, so
+      `audit --check` fails and `ship`'s per-command table surfaces it (both
+      unchanged — they inherit it for free). Proven end-to-end in
+      `test/quality-gate.test.js` (green/red toggle, quality-only, audit gate,
+      package.json auto-detect).
+- [x] **Tier 2 — shipped.** `quality-check` + `agent-validator-quality` skills
+      (advisory, review-only), wired into `run-story` STANDARD/STRICT and
+      `run-story-secure` pipelines, the escalation rules, and `AGENT_RULES.md`
+      skill selection. Synced to `skills/` via `plugin sync`; `doctor` passes.
+- [x] **Tier 3 (rules) — shipped.** `conventions.md` "Code Quality And DRY"
+      framing (deterministic vs judgment, rule of three, Metz); `AGENT_RULES.md`
+      and `PROJECT_RULES.md` frame quality as context efficiency and "prefer
+      duplication over the wrong abstraction".
+- [ ] **Tier 3 (signals) — follow-up (not shipped here).** Optional
+      `harness.json` `maxDuplication`/`maxComplexity` thresholds that only *raise
+      the recommended mode* are deferred: unlike the keyword→risk heuristic, code
+      metrics cannot be read from story text without executing a tool, which would
+      blur the "the tool executes, it does not judge" line. Left as its own change
+      if a real need appears.
