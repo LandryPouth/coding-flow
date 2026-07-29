@@ -62,6 +62,21 @@ function listSkills({ json = false } = {}) {
     groups.get(group).push(skill);
   }
 
+  // Make the hierarchy obvious: you pick a handful of macro skills; the rest are
+  // run for you by /plan-epic and /run-story when a story needs them. This is the
+  // whole point — you should not have to chain the atomic skills by hand.
+  const groupHint = {
+    Macro: "Macro — you pick these",
+    Planning: "Planning — used while planning an epic",
+    Implementation: "Implementation — run for you by run-story",
+    Validation: "Validation — run for you by run-story",
+    Other: "Other",
+  };
+
+  log("You pick the Macro skills below. Everything else is run for you by");
+  log("/plan-epic and /run-story — you don't chain the atomic skills by hand.");
+  log("");
+
   for (const group of ["Macro", "Planning", "Implementation", "Validation", "Other"]) {
     const items = groups.get(group) || [];
 
@@ -69,7 +84,7 @@ function listSkills({ json = false } = {}) {
       continue;
     }
 
-    log(`${group}:`);
+    log(`${groupHint[group] || group}:`);
     for (const skill of items) {
       log(`- ${skill.name}: ${skill.description}`);
     }
