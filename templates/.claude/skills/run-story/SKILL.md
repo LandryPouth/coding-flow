@@ -92,9 +92,10 @@ Pipeline:
 2. Use `/implement-slice` to implement the story end-to-end.
 3. Use `/tests-check` to validate test adequacy.
 4. Use `/architecture-check` to validate architecture quickly.
-5. Use `/review-codebase` for the final pre-merge review.
-6. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
-7. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
+5. Use `/quality-check` when the change adds non-trivial logic, duplication, or complexity (advisory; skip for tiny changes).
+6. Use `/review-codebase` for the final pre-merge review.
+7. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
+8. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
 
 ### STRICT
 
@@ -120,14 +121,16 @@ Pipeline:
 6. Use `/tests-check`.
 7. Use `/e2e-check`.
 8. Use `/architecture-check`.
-9. Use `/security-check`.
-10. Use `/review-codebase`.
-11. If blocking issues exist, use `/implement-slice` to fix them and repeat failed checks.
-12. Use `/blueprint-implementation-notes`.
+9. Use `/quality-check` (escalate to `/agent-validator-quality` for refactors or wide duplication).
+10. Use `/security-check`.
+11. Use `/review-codebase`.
+12. If blocking issues exist, use `/implement-slice` to fix them and repeat failed checks.
+13. Use `/blueprint-implementation-notes`.
 
 ## Escalation Rules
 
 - Escalate from `/architecture-check` to `/agent-validator-architecture` when the story introduces new patterns, crosses modules, or includes a refactor.
+- Escalate from `/quality-check` to `/agent-validator-quality` when the story is a refactor, spreads duplication across modules, or needs a deeper quality pass.
 - Escalate from `/tests-check` to `/agent-validator-tests` when tests are complex, flaky, missing for risky logic, or release-sensitive.
 - Escalate to `/agent-context-scout` when targeted discovery exceeds the mode budget before edit points are clear.
 - Switch to `/run-story-secure` when security-sensitive behavior appears during implementation.

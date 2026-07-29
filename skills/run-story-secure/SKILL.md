@@ -48,14 +48,16 @@ When `ai-flow` is available in the project, use the Security Evidence Harness au
 7. Use `/e2e-check` for critical auth/admin/user journeys.
 8. Use `/architecture-check` to validate architecture quickly.
 9. Use `/security-check` to validate trust boundaries and common security risks.
-10. Use `/review-codebase` for the final pre-merge review.
-11. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
-12. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
+10. Use `/quality-check` for duplication, complexity, and convention drift (escalate to `/agent-validator-quality` for refactors or wide duplication).
+11. Use `/review-codebase` for the final pre-merge review.
+12. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
+13. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
 
 ## Deep Validator Escalation
 
 - Use `/agent-validator-security` for auth systems, permission models, payments, uploads, secrets, external integrations, or sensitive data.
 - Use `/agent-validator-architecture` for security changes that alter boundaries, data flow, or module ownership.
+- Use `/agent-validator-quality` when a secure change is also a refactor or spreads duplication across modules.
 - Use `/agent-validator-tests` when security behavior lacks strong test evidence.
 - Use `/agent-context-scout` when secure implementation would otherwise require broad codebase exploration. The scout maps context only and does not modify files.
 
