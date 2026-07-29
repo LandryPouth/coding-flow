@@ -644,7 +644,13 @@ ai-flow status
 ai-flow status --json
 ```
 
-The status is read from `implementation-notes.md` when a `## Status` section exists. Otherwise, the CLI infers it from the notes.
+The status is backed by executed proof, not prose. The CLI resolves it in this order:
+
+1. an explicit `## Status <x>` section in `implementation-notes.md` (a human/author override);
+2. the latest captured `ai-flow harness verify` for the story — a green run shows as `verified`, a red one as `blocked`;
+3. only if no evidence exists, a fallback heuristic on the notes.
+
+So `verified` means the machine actually ran the story's validation commands and they passed — the agent can no longer report a story as done without a captured green verify behind it. See `docs/plans/status-and-check-enforcement.md`.
 
 When a worktree is working on a story (see `--story` below), `status` shows the mapping and lists the active worktrees — a dashboard of the parallel work in progress:
 
@@ -1007,6 +1013,8 @@ The dependency graph is acyclic: `context → util → config → harness → te
 | [`docs/plans/evidence-governance.md`](docs/plans/evidence-governance.md) | Evidence & governance layer: guard, provenance, audit, trace, CI, plugin |
 | [`docs/plans/testability.md`](docs/plans/testability.md) | Production-grade testability: `verify`, negative proof, anti-slop |
 | [`docs/plans/testing-and-ci.md`](docs/plans/testing-and-ci.md) | The package's test suite and CI |
+| [`docs/plans/code-quality.md`](docs/plans/code-quality.md) | Code quality & DRY: the deterministic-vs-judgment split, the DRY-as-signal decision, and the 3 tiers |
+| [`docs/plans/status-and-check-enforcement.md`](docs/plans/status-and-check-enforcement.md) | Evidence-backed story status and machine-enforced post-implementation checks (no more asking the agent to verify) |
 
 From this repository:
 
