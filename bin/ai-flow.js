@@ -194,7 +194,7 @@ if (command === "init") {
 } else if (command === "version" || command === "--version" || command === "-v") {
   log(require("../package.json").version);
 } else if (command === "help" || command === "--help" || command === "-h") {
-  printHelp();
+  printHelp({ all: flags.has("--all") });
 } else {
   fail(`unknown command "${command}". Run "ai-flow help".`);
 }

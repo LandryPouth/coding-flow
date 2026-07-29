@@ -21,6 +21,11 @@ In practice, Coding Flow installs a small working system into your project. This
 
 Coding Flow is not an application framework and does not replace your stack. It adds a layer of method around your repo so the agent knows what to read, what to produce, when to stop, what to validate, and how to leave a useful trace.
 
+> **In a hurry?** You only need a small front door: `ai-flow init` once, then
+> `/plan-epic` and `/run-story` in Claude Code, and `ai-flow status` / `ai-flow ship`
+> from the terminal. Everything else is machinery the skills run for you. See
+> **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — the whole loop on one screen.
+
 ## Overview
 
 The project rests on four simple blocks:
@@ -1016,6 +1021,7 @@ The dependency graph is acyclic: `context → util → config → harness → te
 
 | Doc | Subject |
 | --- | --- |
+| [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | The whole loop on one screen: the front door you actually use day to day |
 | [`docs/sdd-vs-plugins.md`](docs/sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed, why, and what's left to publish |
 | [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |
 | [`docs/plans/parallel-mode.md`](docs/plans/parallel-mode.md) | Parallel mode (`worktree`), story link, `ship` |
