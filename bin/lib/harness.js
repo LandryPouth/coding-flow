@@ -714,8 +714,18 @@ function parseTestsCommands(testsMarkdown) {
 function resolveValidationCommands({ storyDir = null } = {}) {
   const config = readConfig(cwd);
 
-  if (config.validation && Array.isArray(config.validation.commands) && config.validation.commands.length > 0) {
-    return { source: "config", commands: [...config.validation.commands] };
+  if (config.validation) {
+    // Correctness (`commands`) and deterministic quality (`quality`) both flow
+    // through the same executed-and-captured proof; a red quality command blocks
+    // exactly like a red test. Tests run first, then quality.
+    const declared = [
+      ...(Array.isArray(config.validation.commands) ? config.validation.commands : []),
+      ...(Array.isArray(config.validation.quality) ? config.validation.quality : []),
+    ];
+
+    if (declared.length > 0) {
+      return { source: "config", commands: declared };
+    }
   }
 
   if (storyDir) {
@@ -733,7 +743,10 @@ function resolveValidationCommands({ storyDir = null } = {}) {
   const pkg = readJson(path.join(cwd, "package.json"), null);
 
   if (pkg && pkg.scripts && typeof pkg.scripts === "object") {
-    const commands = ["typecheck", "type-check", "lint", "test"]
+    // Correctness first, then deterministic quality (lint/format). These are the
+    // conventional script names; a project with other tools declares them in
+    // config.validation.quality instead.
+    const commands = ["typecheck", "type-check", "lint", "test", "format:check", "format-check"]
       .filter((name) => pkg.scripts[name])
       .map((name) => `npm run ${name}`);
 
