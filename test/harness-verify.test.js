@@ -129,6 +129,37 @@ test('verify falls back to the tests.md Commands block for a story', (t) => {
   assert.equal(evidence.ok, true);
 });
 
+test('verify records a reproducibility fingerprint (node, platform, arch)', (t) => {
+  const dir = initProject(t, 'verify-env');
+  setValidationCommands(dir, ['node -e "process.exit(0)"']);
+  run(dir, ['harness', 'verify']);
+
+  const env = latestVerify(dir).environment;
+  assert.ok(env, 'evidence carries an environment fingerprint');
+  assert.equal(env.node, process.version, 'the Node version is captured verbatim');
+  assert.equal(env.platform, process.platform);
+  assert.equal(env.arch, process.arch);
+});
+
+test('verify hashes the dependency lockfile when one is present', (t) => {
+  const dir = initProject(t, 'verify-lock');
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), '{"lockfileVersion":3}\n');
+  setValidationCommands(dir, ['node -e "process.exit(0)"']);
+  run(dir, ['harness', 'verify']);
+
+  const { lockfile } = latestVerify(dir).environment;
+  assert.ok(lockfile, 'a present lockfile is fingerprinted');
+  assert.equal(lockfile.name, 'package-lock.json');
+  assert.match(lockfile.sha256, /^[a-f0-9]{64}$/, 'a full sha256 is recorded');
+});
+
+test('verify records a null lockfile when none exists', (t) => {
+  const dir = initProject(t, 'verify-nolock');
+  setValidationCommands(dir, ['node -e "process.exit(0)"']);
+  run(dir, ['harness', 'verify']);
+  assert.equal(latestVerify(dir).environment.lockfile, null);
+});
+
 test('parseTestsCommands extracts only the fenced command lines', () => {
   const md = [
     '# Tests',
