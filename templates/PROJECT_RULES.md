@@ -14,11 +14,13 @@ These rules constrain all agent work in this repository.
 
 ## Code Quality
 
+- Treat quality as context efficiency: duplication and complexity make every future story more expensive, so keeping the code clean serves the agent too.
 - Follow existing project conventions before introducing new ones.
 - Prefer strong typing and explicit boundaries.
 - Avoid `any` unless it is justified in code or story notes.
 - Keep functions small and intention-revealing.
-- Avoid duplication, but do not abstract prematurely.
+- Prefer duplication over the wrong abstraction: apply the rule of three, and only unify cases that are the same concept and will change together.
+- Run deterministic quality checks (lint, format, duplication) as validation; declare them in `.coding-flow/config.json` under `validation.quality` so they are executed and captured, not asserted.
 - Do not silently modify unrelated files.
 
 ## Validation

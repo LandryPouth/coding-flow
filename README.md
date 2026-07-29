@@ -467,6 +467,7 @@ Important:
     agent-worker-tests/
 
     agent-validator-architecture/
+    agent-validator-quality/
     agent-validator-security/
     agent-validator-tests/
 
@@ -489,6 +490,7 @@ Important:
     e2e-check/
     architecture-check/
     tests-check/
+    quality-check/
     security-check/
     review-codebase/
     write-story/
@@ -571,6 +573,7 @@ Claude Code discovers the skills in `.claude/skills/`.
 | `/tests-check` | Quickly check the test coverage. |
 | `/e2e-check` | Check the need for or state of E2E tests. |
 | `/architecture-check` | Quickly check the architecture impact. |
+| `/quality-check` | Advisory check for duplication, complexity, and convention drift. |
 | `/security-check` | Quickly check the security risks. |
 | `/review-codebase` | Final review before merge. |
 
@@ -579,6 +582,7 @@ Claude Code discovers the skills in `.claude/skills/`.
 | Skill | Use |
 | --- | --- |
 | `/agent-validator-architecture` | In-depth architecture review. |
+| `/agent-validator-quality` | In-depth code-quality review (refactors, wide duplication). |
 | `/agent-validator-tests` | In-depth test review. |
 | `/agent-validator-security` | In-depth security review. |
 
@@ -644,7 +648,13 @@ ai-flow status
 ai-flow status --json
 ```
 
-The status is read from `implementation-notes.md` when a `## Status` section exists. Otherwise, the CLI infers it from the notes.
+The status is backed by executed proof, not prose. The CLI resolves it in this order:
+
+1. an explicit `## Status <x>` section in `implementation-notes.md` (a human/author override);
+2. the latest captured `ai-flow harness verify` for the story — a green run shows as `verified`, a red one as `blocked`;
+3. only if no evidence exists, a fallback heuristic on the notes.
+
+So `verified` means the machine actually ran the story's validation commands and they passed — the agent can no longer report a story as done without a captured green verify behind it. See `docs/plans/status-and-check-enforcement.md`.
 
 When a worktree is working on a story (see `--story` below), `status` shows the mapping and lists the active worktrees — a dashboard of the parallel work in progress:
 
@@ -894,6 +904,7 @@ It answers three questions:
 - **Is the story risky?** `preflight` reads the story files and recommends `FAST`, `STANDARD`, or `STRICT`.
 - **Does the repo contain dangerous signals?** `check` looks for obvious secrets, sensitive files, and missing evidence.
 - **Do the tests really pass?** `verify` runs the declared validation commands (config `validation.commands`, the `## Commands` block of `tests.md`, or `package.json` scripts), captures their exit codes verbatim into `.coding-flow/runs/*-verify.json`, and fails if one breaks or if none ran. The proof is executed by the machine, not asserted by the agent.
+- **Does the code meet the deterministic quality bar?** Declare `validation.quality` in `.coding-flow/config.json` (lint, format-check, a duplication detector like `jscpd`) and `verify` runs it in the same pass — a red quality command blocks exactly like a red test, so `audit --check` and `ship` cover quality for free. The tool never *judges* quality; it executes what the project declared and captures the proof. Judgment-level quality stays advisory via `/quality-check` and `/agent-validator-quality`.
 - **What proves the story was handled correctly?** `evidence` writes a JSON summary with the risk, changed files, required checks, harness result, and rollback notes.
 
 What the harness checks today:
@@ -1007,6 +1018,8 @@ The dependency graph is acyclic: `context → util → config → harness → te
 | [`docs/plans/evidence-governance.md`](docs/plans/evidence-governance.md) | Evidence & governance layer: guard, provenance, audit, trace, CI, plugin |
 | [`docs/plans/testability.md`](docs/plans/testability.md) | Production-grade testability: `verify`, negative proof, anti-slop |
 | [`docs/plans/testing-and-ci.md`](docs/plans/testing-and-ci.md) | The package's test suite and CI |
+| [`docs/plans/code-quality.md`](docs/plans/code-quality.md) | Code quality & DRY: the deterministic-vs-judgment split, the DRY-as-signal decision, and the 3 tiers |
+| [`docs/plans/status-and-check-enforcement.md`](docs/plans/status-and-check-enforcement.md) | Evidence-backed story status and machine-enforced post-implementation checks (no more asking the agent to verify) |
 
 From this repository:
 

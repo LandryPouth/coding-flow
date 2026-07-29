@@ -93,8 +93,9 @@ Pipeline:
 2. `implement-slice`
 3. `tests-check`
 4. `architecture-check`
-5. `review-codebase`
-6. `blueprint-implementation-notes`
+5. `quality-check` (advisory; skip for tiny changes)
+6. `review-codebase`
+7. `blueprint-implementation-notes`
 
 ### STRICT
 
@@ -113,16 +114,19 @@ Pipeline:
 5. `tests-check`
 6. `e2e-check`
 7. `architecture-check`
-8. `security-check`
-9. `review-codebase`
-10. fix loop
-11. `blueprint-implementation-notes`
+8. `quality-check` (escalate to `agent-validator-quality` for refactors or wide duplication)
+9. `security-check`
+10. `review-codebase`
+11. fix loop
+12. `blueprint-implementation-notes`
 
 ## Quality Gates
 
 - When `ai-flow harness` is available, use it automatically for story work: `preflight` before orchestration, `check` after validation, and `evidence` at the end of STANDARD, STRICT, or secure stories.
 - Run relevant tests.
 - Run lint and typecheck when available.
+- Deterministic quality (lint, format-check, duplication detectors like jscpd) belongs in `validation.quality`, so `verify` executes and captures it as proof — a red quality command blocks like a red test. Judgment quality (`quality-check`) stays advisory.
+- Treat code quality as context efficiency, not style: duplication and complexity make every future story more expensive. Prefer duplication over the wrong abstraction — apply the rule of three, and only unify cases that are the same concept and will change together.
 - If validation fails, fix the root cause when feasible.
 - If validation cannot be completed, document the reason clearly.
 - Stop instead of guessing when a stop condition is triggered.
@@ -158,6 +162,8 @@ When stopped, report:
 - `agent-validator-architecture`: deep architecture review for refactors, cross-module changes, new patterns, or architecture-critical work.
 - `tests-check`: quick test adequacy checklist after implementation.
 - `agent-validator-tests`: deep test review for complex logic, critical flows, flaky suites, or release-sensitive work.
+- `quality-check`: quick advisory code-quality checklist (duplication, complexity, naming, convention drift). Reviews only; never edits.
+- `agent-validator-quality`: deep advisory quality review for refactors, wide duplication, or quality-critical work.
 - `security-check`: quick security checklist for stories touching auth, admin, inputs, persistence, or data visibility.
 - `agent-validator-security`: deep security review for auth, permissions, payments, uploads, secrets, external integrations, or sensitive data.
 

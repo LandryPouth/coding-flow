@@ -28,7 +28,15 @@ function defaultConfig() {
     // command then falls back to the "## Commands" block of tests.md, then to the
     // package.json scripts. Declaring them here makes validation explicit and
     // language-independent.
-    validation: { commands: [] },
+    //
+    // `commands` are the correctness checks (tests, typecheck). `quality` is the
+    // deterministic code-quality bucket (lint, format:check, duplication like
+    // jscpd). Both run through the same `verify` proof pipeline and are captured
+    // verbatim — a red quality command blocks exactly like a red test. Splitting
+    // them is documentation, not behavior: it says "these gate quality" without
+    // inventing a second pipeline. The tool never judges quality; it executes what
+    // the project declared and captures the proof.
+    validation: { commands: [], quality: [] },
   };
 }
 
@@ -44,9 +52,15 @@ function readConfig(cwd) {
 
   const storage = STORAGE_BACKENDS.includes(existing.storage) ? existing.storage : defaults.storage;
 
+  const cleanCommandList = (value) =>
+    Array.isArray(value) ? value.filter((c) => typeof c === "string" && c.trim()) : [];
+
   const validation =
-    existing.validation && Array.isArray(existing.validation.commands)
-      ? { commands: existing.validation.commands.filter((c) => typeof c === "string" && c.trim()) }
+    existing.validation && typeof existing.validation === "object" && !Array.isArray(existing.validation)
+      ? {
+          commands: cleanCommandList(existing.validation.commands),
+          quality: cleanCommandList(existing.validation.quality),
+        }
       : defaults.validation;
 
   return {
