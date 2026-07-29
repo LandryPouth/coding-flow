@@ -81,6 +81,7 @@ Usage:
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
   ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--dry-run]
+  ai-flow hook install|uninstall|status [--dry-run] [--json]
   ai-flow commands [--json]
   ai-flow uninstall [--dry-run] [--force] [--json]
   ai-flow list-skills [--json]
@@ -100,6 +101,7 @@ Commands:
   plugin       Sync/check the native Claude Code plugin's skills/ against templates (distribution channel).
   worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
   ship         Push the current branch and open/update one PR to the base (uses gh if available).
+  hook         Install/remove an opt-in pre-push gate that runs audit --check before each push.
   commands     Show the easiest commands for this project.
   uninstall    Remove Coding Flow files and scripts while preserving epics/stories.
   list-skills  List available workflow skills.

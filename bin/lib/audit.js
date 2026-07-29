@@ -13,6 +13,7 @@ const crypto = require("crypto");
 
 const { cwd } = require("./context");
 const { log, normalizePortable } = require("./util");
+const { currentTreeToken } = require("./identity");
 
 function runsDir(root) {
   return path.join(root, ".coding-flow", "runs");
@@ -59,6 +60,10 @@ function entryFromRunFile(file, root) {
     commit: git ? git.shortCommit || git.commit || null : null,
     branch: git ? git.branch || null : null,
     author: git && git.author ? git.author.name || null : null,
+    // Working-tree content token captured with the run. Lets the gate tell a
+    // proof that still describes the current code from a stale one. Absent on
+    // pre-freshness or non-git evidence -> treated leniently (never stale).
+    treeToken: git ? git.treeToken || null : null,
     summary,
   };
 }
@@ -142,11 +147,18 @@ function syncLedger(root, { dryRun = false } = {}) {
 
 // Gate: the latest VERIFY evidence per story must be green. No run = not
 // verified = failure. Usable in CI for "no merge without green proof".
-function gate(entries) {
+// A green verify is "stale" when its captured working-tree token no longer
+// matches the current one: the code changed after the proof was produced. Only
+// decidable when both tokens exist — otherwise (old/non-git evidence) lenient.
+function isStale(entry, currentToken) {
+  return Boolean(entry.ok && entry.treeToken && currentToken && entry.treeToken !== currentToken);
+}
+
+function gate(entries, { currentToken = null } = {}) {
   const verify = entries.filter((entry) => entry.type === "verify");
 
   if (verify.length === 0) {
-    return { ok: false, reason: "no verify runs recorded", failing: [], latest: [] };
+    return { ok: false, reason: "no verify runs recorded", failing: [], stale: [], latest: [] };
   }
 
   const byStory = new Map();
@@ -160,8 +172,11 @@ function gate(entries) {
 
   const latest = [...byStory.values()];
   const failing = latest.filter((entry) => !entry.ok);
+  // A stale proof is not a passing proof: the latest green run no longer
+  // describes the code being pushed, so re-verification is required.
+  const stale = latest.filter((entry) => isStale(entry, currentToken));
 
-  return { ok: failing.length === 0, reason: null, failing, latest };
+  return { ok: failing.length === 0 && stale.length === 0, reason: null, failing, stale, latest };
 }
 
 // Latest VERIFY result per story DIRECTORY, keyed by the portable relative path
@@ -183,7 +198,7 @@ function latestVerifyByStoryDir(root) {
     const prev = byDir.get(dir);
 
     if (!prev || (entry.generatedAt || "") > (prev.generatedAt || "")) {
-      byDir.set(dir, { ok: entry.ok, generatedAt: entry.generatedAt || "" });
+      byDir.set(dir, { ok: entry.ok, generatedAt: entry.generatedAt || "", treeToken: entry.treeToken || null });
     }
   }
 
@@ -233,18 +248,26 @@ function audit({ json = false, exportMd = false, check = false, since = null, dr
     if (since) {
       entries = entries.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
     }
-    const result = gate(entries);
+    const result = gate(entries, { currentToken: currentTreeToken(root) });
 
     if (json) {
       log(JSON.stringify(result, null, 2));
     } else if (result.ok) {
-      log(`Audit check passed — ${result.latest.length} story/scope(s), latest verify green.`);
+      log(`Audit check passed — ${result.latest.length} story/scope(s), latest verify green and fresh.`);
     } else if (result.reason) {
       log(`Audit check FAILED — ${result.reason}.`);
     } else {
-      log("Audit check FAILED — latest verify is red for:");
-      for (const entry of result.failing) {
-        log(`- ${entry.story || "(repo)"}: ${entry.summary}`);
+      if (result.failing.length > 0) {
+        log("Audit check FAILED — latest verify is red for:");
+        for (const entry of result.failing) {
+          log(`- ${entry.story || "(repo)"}: ${entry.summary}`);
+        }
+      }
+      if (result.stale.length > 0) {
+        log("Audit check FAILED — latest verify is stale (code changed since the proof); re-run `ai-flow harness verify` for:");
+        for (const entry of result.stale) {
+          log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree`);
+        }
       }
     }
 

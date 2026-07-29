@@ -174,6 +174,11 @@ function buildEvidenceBlock(evidence) {
   if (evidence.story) {
     lines.push(`**Story:** \`${evidence.story}\``);
   }
+  const env = evidence.environment;
+  if (env) {
+    const lock = env.lockfile ? ` · lock \`${env.lockfile.name}@${(env.lockfile.sha256 || "").slice(0, 7)}\`` : "";
+    lines.push(`**Toolchain:** ${env.node} · ${env.platform}/${env.arch}${lock}`);
+  }
   lines.push(`**When:** ${evidence.generatedAt || "n/a"}`);
   lines.push("");
 

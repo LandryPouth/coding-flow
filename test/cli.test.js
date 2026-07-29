@@ -139,3 +139,11 @@ test('list-skills lists the available skills', (t) => {
   assert.equal(code, 0);
   assert.ok(output.includes('run-story'), 'the output must contain at least one known skill');
 });
+
+test('version prints the package version and matches package.json', (t) => {
+  const dir = freshProject(t);
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  const { code, output } = run(dir, ['version']);
+  assert.equal(code, 0);
+  assert.equal(output.trim(), pkg.version);
+});
