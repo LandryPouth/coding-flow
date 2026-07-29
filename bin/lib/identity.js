@@ -6,6 +6,7 @@
 // to make it auditable: "asserted != proven; anonymous != auditable".
 
 const os = require("os");
+const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 
 // Runs a command and returns trimmed stdout, or null on failure. No exception
@@ -61,6 +62,61 @@ function capturePr(cwd) {
   return null;
 }
 
+// Content token of the current *working tree* source, independent of whether the
+// changes are committed yet. `git stash create` builds a commit of the dirty
+// working tree WITHOUT touching refs, the index, or the working tree (it only
+// writes loose objects); empty output means a clean tree, so we peel HEAD.
+//
+// We then hash the top-level tree listing MINUS `.coding-flow/` — the evidence
+// home. That directory holds the outputs of verification (runs, ledger); letting
+// it into the token would be absurd, since capturing or committing a proof would
+// invalidate the very proof it records. Excluding it also makes the token immune
+// to whether the run files are tracked or not.
+//
+// The key property: the token is content-addressed, so it is stable across the
+// commit that materializes exactly what was verified (no false "stale" on
+// commit), and moves the moment any source content changes. Untracked new files
+// are not part of `stash create`, so they do not move the token (documented
+// limitation). Outside git -> null.
+const EVIDENCE_DIR = ".coding-flow";
+
+function computeTreeToken(cwd) {
+  const head = gitField(cwd, ["rev-parse", "HEAD"]);
+
+  if (!head) {
+    return null;
+  }
+
+  const stash = tryExec("git", ["stash", "create"], cwd);
+  const ref = stash && stash.length > 0 ? stash : head;
+  const tree = gitField(cwd, ["rev-parse", `${ref}^{tree}`]);
+
+  if (!tree) {
+    return null;
+  }
+
+  const listing = tryExec("git", ["ls-tree", tree], cwd);
+
+  if (listing == null) {
+    return null;
+  }
+
+  // Each line: "<mode> <type> <objectid>\t<name>". Drop the evidence dir, then
+  // hash the rest: any source change flips a subtree object id and the token.
+  const source = listing
+    .split(/\r?\n/)
+    .filter((line) => line && line.split("\t")[1] !== EVIDENCE_DIR)
+    .join("\n");
+
+  return crypto.createHash("sha256").update(source).digest("hex").slice(0, 40);
+}
+
+// Recomputes the working-tree token for the current state, for freshness checks
+// (status / audit --check). Same primitive stored in an evidence's provenance.
+function currentTreeToken(cwd) {
+  return computeTreeToken(cwd);
+}
+
 function captureHost() {
   let user = null;
 
@@ -102,10 +158,13 @@ function captureIdentity(cwd) {
       author: captureAuthor(cwd),
       dirty: porcelain != null && porcelain.length > 0,
       remote: gitField(cwd, ["remote", "get-url", "origin"]),
+      // Content token of the working tree — binds a verify to the code it proved
+      // so a later edit makes the proof "stale" instead of silently current.
+      treeToken: computeTreeToken(cwd),
     },
     pr: capturePr(cwd),
     host,
   };
 }
 
-module.exports = { captureIdentity };
+module.exports = { captureIdentity, currentTreeToken };

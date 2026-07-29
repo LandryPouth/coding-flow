@@ -10,6 +10,7 @@ const path = require("path");
 
 const { toPortable } = require("../util");
 const { latestVerifyByStoryDir } = require("../audit");
+const { currentTreeToken } = require("../identity");
 
 // Derives a story's status. Resolution order, from most to least authoritative:
 //   1. an explicit `## Status <x>` in implementation-notes.md (human/author override);
@@ -20,7 +21,11 @@ const { latestVerifyByStoryDir } = require("../audit");
 //
 // `verify` is "pass" | "fail" | null, resolved by the caller from the run files
 // (kept out of this function so it stays pure and directly unit-testable).
-function inferStoryStatus(storyDir, { verify = null } = {}) {
+// `fresh` says whether a "pass" verify still describes the current code: a green
+// but stale proof (the code changed since) is not "verified" but "stale". It
+// defaults to true so a caller that cannot assess freshness keeps the old
+// behavior.
+function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
   const notesPath = path.join(storyDir, "implementation-notes.md");
   const notes = fs.existsSync(notesPath) ? fs.readFileSync(notesPath, "utf8") : "";
 
@@ -32,9 +37,10 @@ function inferStoryStatus(storyDir, { verify = null } = {}) {
     return statusMatch[1].trim().toLowerCase().replace(/\s+/g, "-");
   }
 
-  // 2. Evidence-backed: a captured verify is proof, prose is not.
+  // 2. Evidence-backed: a captured verify is proof, prose is not. A green proof
+  //    that no longer matches the code is "stale" (re-verify), not "verified".
   if (verify === "pass") {
-    return "verified";
+    return fresh ? "verified" : "stale";
   }
 
   if (verify === "fail") {
@@ -89,8 +95,10 @@ function createLocalStorage(cwd) {
         return epics;
       }
 
-      // Latest verify per story dir, read once for the whole listing.
+      // Latest verify per story dir, read once for the whole listing, plus the
+      // current working-tree token to tell a fresh proof from a stale one.
       const verifyByDir = latestVerifyByStoryDir(cwd);
+      const currentToken = currentTreeToken(cwd);
 
       for (const epicEntry of fs.readdirSync(epicsRoot, { withFileTypes: true })) {
         if (!epicEntry.isDirectory()) {
@@ -106,11 +114,18 @@ function createLocalStorage(cwd) {
             const storyPath = toPortable(path.relative(cwd, storyDir));
             const verifyEntry = verifyByDir.get(storyPath);
             const verify = verifyEntry ? (verifyEntry.ok ? "pass" : "fail") : null;
+            // Freshness is only decidable when both tokens exist; otherwise stay
+            // lenient (a green proof reads as "verified", as before).
+            const fresh =
+              !verifyEntry ||
+              !verifyEntry.treeToken ||
+              !currentToken ||
+              verifyEntry.treeToken === currentToken;
 
             stories.push({
               name: storyEntry.name,
               title: storyTitle(storyDir),
-              status: inferStoryStatus(storyDir, { verify }),
+              status: inferStoryStatus(storyDir, { verify, fresh }),
               path: storyPath,
             });
           }
