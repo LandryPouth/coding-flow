@@ -4,7 +4,7 @@
 
 const path = require("path");
 
-const { cwd, githubNpxCommand } = require("./context");
+const { cwd, npxCommand } = require("./context");
 const { log, normalizePortable } = require("./util");
 const { detectProjectPackageJson, commandsPath } = require("./templates");
 
@@ -20,17 +20,17 @@ function printCommands({ json = false } = {}) {
           harness: "npm run flow:harness",
         }
       : {
-          doctor: `${githubNpxCommand} doctor`,
-          check: `${githubNpxCommand} doctor --strict`,
-          skills: `${githubNpxCommand} list-skills`,
-          status: `${githubNpxCommand} status`,
-          harness: `${githubNpxCommand} harness check --quick`,
+          doctor: `${npxCommand} doctor`,
+          check: `${npxCommand} doctor --strict`,
+          skills: `${npxCommand} list-skills`,
+          status: `${npxCommand} status`,
+          harness: `${npxCommand} harness check --quick`,
         },
     setup: {
-      init: `${githubNpxCommand} init`,
-      upgrade: detected.exists ? "npm run flow:upgrade" : `${githubNpxCommand} upgrade`,
-      fix: detected.exists ? "npm run flow:fix" : `${githubNpxCommand} doctor --fix`,
-      uninstall: detected.exists ? "npm run flow:uninstall" : `${githubNpxCommand} uninstall`,
+      init: `${npxCommand} init`,
+      upgrade: detected.exists ? "npm run flow:upgrade" : `${npxCommand} upgrade`,
+      fix: detected.exists ? "npm run flow:fix" : `${npxCommand} doctor --fix`,
+      uninstall: detected.exists ? "npm run flow:uninstall" : `${npxCommand} uninstall`,
     },
     cheatsheet: normalizePortable(path.relative(cwd, commandsPath())),
   };

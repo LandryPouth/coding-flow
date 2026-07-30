@@ -50,6 +50,18 @@ test('hooks.json wires the guard PreToolUse on the write tools', () => {
   assert.match(entry.hooks[0].command, /guard/);
 });
 
+test('hooks.json pins the guard command to the package version (no skew)', () => {
+  const hooks = readJson('.claude-plugin/hooks/hooks.json');
+  const pkg = readJson('package.json');
+  const command = hooks.hooks.PreToolUse[0].hooks[0].command;
+  // The guard the plugin runs must match the tool version it ships with; a bare
+  // (unpinned) command would silently drift to whatever npx resolves as latest.
+  assert.ok(
+    command.includes(`${pkg.name}@${pkg.version}`),
+    `guard command must pin ${pkg.name}@${pkg.version}, got: ${command}`,
+  );
+});
+
 test('marketplace.json lists the plugin with a consistent source and version', () => {
   const market = readJson('.claude-plugin/marketplace.json');
   const pkg = readJson('package.json');

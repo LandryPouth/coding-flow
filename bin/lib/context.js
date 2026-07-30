@@ -9,20 +9,25 @@ const packageRoot = path.resolve(__dirname, "..", "..");
 const templatesRoot = path.join(packageRoot, "templates");
 const cwd = process.cwd();
 const packageJson = require(path.join(packageRoot, "package.json"));
-const githubNpxCommand = "npx github:LandryPouth/coding-flow";
+// The published npm package. Built from packageJson.name so it always matches the
+// published scope. npx resolves it from the registry and caches it after the first
+// call — users never install it by hand. (Previously fetched from GitHub via
+// `npx github:…`; that only added latency and broke version pinning now that the
+// package is published.)
+const npxCommand = `npx ${packageJson.name}`;
 
 const flowScripts = {
-  flow: githubNpxCommand,
-  "flow:init": `${githubNpxCommand} init`,
-  "flow:upgrade": `${githubNpxCommand} upgrade`,
-  "flow:doctor": `${githubNpxCommand} doctor`,
-  "flow:fix": `${githubNpxCommand} doctor --fix`,
-  "flow:skills": `${githubNpxCommand} list-skills`,
-  "flow:status": `${githubNpxCommand} status`,
-  "flow:check": `${githubNpxCommand} doctor --strict`,
-  "flow:harness": `${githubNpxCommand} harness check --quick`,
-  "flow:commands": `${githubNpxCommand} commands`,
-  "flow:uninstall": `${githubNpxCommand} uninstall`,
+  flow: npxCommand,
+  "flow:init": `${npxCommand} init`,
+  "flow:upgrade": `${npxCommand} upgrade`,
+  "flow:doctor": `${npxCommand} doctor`,
+  "flow:fix": `${npxCommand} doctor --fix`,
+  "flow:skills": `${npxCommand} list-skills`,
+  "flow:status": `${npxCommand} status`,
+  "flow:check": `${npxCommand} doctor --strict`,
+  "flow:harness": `${npxCommand} harness check --quick`,
+  "flow:commands": `${npxCommand} commands`,
+  "flow:uninstall": `${npxCommand} uninstall`,
 };
 
 module.exports = {
@@ -30,6 +35,6 @@ module.exports = {
   templatesRoot,
   cwd,
   packageJson,
-  githubNpxCommand,
+  npxCommand,
   flowScripts,
 };
