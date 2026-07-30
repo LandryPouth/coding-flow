@@ -1,7 +1,7 @@
 {
   "name": "coding-flow",
   "version": "0.3.1",
-  "description": "The evidence & governance layer for AI engineering: epics/stories skills, a deterministic secret-blocking guard hook, executed verify evidence, an append-only audit ledger, and end-to-end traceability.",
+  "description": "Make Claude Code reliable on real projects: epics/stories skills, a deterministic secret-blocking guard hook, and executed verify — proof the tests actually ran and passed, not the agent's word. Optional audit ledger and traceability for teams that need governance.",
   "author": {
     "name": "Landry Pouth"
   },

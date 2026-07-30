@@ -33,7 +33,7 @@ coding-flow, in that logic, provided:
 - **skills** (planner, story writer, implementer, validators);
 - **rules** and a **security harness** that *scans* (secrets, sensitive files)
   and *estimates* a story's risk;
-- a **distribution** via `npx github:LandryPouth/coding-flow`.
+- a **distribution** via the published npm package (`npx @landry_pouth/coding-flow`).
 
 **Its real value**: imposing structure and discipline on an agent, to avoid
 "go-with-the-flow" code. That is useful — but it is what the *whole* SDD category
