@@ -21,7 +21,7 @@ function readTemplateSkillInfo(name) {
 }
 
 function skillGroup(name) {
-  if (["quick-story", "plan-epic", "run-story", "run-story-secure"].includes(name)) {
+  if (["setup", "quick-story", "plan-epic", "run-story"].includes(name)) {
     return "Macro";
   }
 

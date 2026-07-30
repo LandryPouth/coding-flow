@@ -185,7 +185,7 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     'Use /plan-epic to turn an objective into implementation-ready stories.',
     "Use /run-story to run the next story end-to-end (add STRICT for risky work).",
     "Use /quick-story for a tiny isolated change.",
-    "Use /run-story-secure for auth, permissions, admin, secrets, payments, uploads, or sensitive data.",
+    "Use /run-story STRICT for auth, permissions, admin, secrets, payments, uploads, or sensitive data.",
     "```",
     "",
     "In the terminal:",

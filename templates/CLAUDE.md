@@ -11,7 +11,6 @@ Prefer the macro workflows for daily work:
 
 - `/plan-epic`
 - `/quick-story` — isolated changes, no orchestration
-- `/run-story`
-- `/run-story-secure`
+- `/run-story` — add `STRICT` for security-sensitive or risky work
 
 Use atomic skills when a specific phase needs focused attention.

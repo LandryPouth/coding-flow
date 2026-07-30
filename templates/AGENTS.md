@@ -16,7 +16,7 @@ Use the lightest workflow that protects the change:
 - `/quick-story` for tiny isolated changes.
 - `/run-story FAST` for simple story work.
 - `/run-story STANDARD` for normal features.
-- `/run-story STRICT` or `/run-story-secure` for auth, permissions, payments, migrations, or sensitive data.
+- `/run-story STRICT` for auth, permissions, payments, migrations, or sensitive data.
 - `/agent-context-scout` only when edit points are unclear or broad codebase exploration would otherwise be needed.
 
 Keep implementation one-shot once scope and edit points are clear:
