@@ -1,17 +1,76 @@
-# AGENT_RULES.md
+# RULES.md
 
-Shared operating rules for Claude Code, Codex, and any specialized agents.
+The single rulebook for this repository: project constraints first, then the
+operating rules every agent follows. `CLAUDE.md` imports this file.
 
-## Core Behavior
+---
 
-- Follow `PROJECT_RULES.md` before any agent preference.
+## Project constraints
+
+These constrain all agent work in this repository.
+
+### Architecture
+
+- Prefer feature-first organization.
+- Keep business logic out of UI components.
+- Keep domain logic testable and independent from rendering.
+- Isolate data access behind explicit services or repositories when persistence is involved.
+- Prefer deep modules with clear APIs over many tiny abstractions.
+- Do not introduce speculative abstractions.
+- Document meaningful architecture decisions in the active story `decisions.md`.
+
+### Code Quality
+
+- Treat quality as context efficiency: duplication and complexity make every future story more expensive, so keeping the code clean serves the agent too.
+- Follow existing project conventions before introducing new ones.
+- Prefer strong typing and explicit boundaries.
+- Avoid `any` unless it is justified in code or story notes.
+- Keep functions small and intention-revealing.
+- Prefer duplication over the wrong abstraction: apply the rule of three, and only unify cases that are the same concept and will change together.
+- Run deterministic quality checks (lint, format, duplication) as validation; declare them in `.coding-flow/config.json` under `validation.quality` so they are executed and captured, not asserted.
+- Do not silently modify unrelated files.
+
+### Validation
+
+- Validate external inputs at the boundary.
+- Never trust client-side validation alone.
+- Validate server-side before persistence or privileged actions.
+- Keep error handling explicit and user-safe.
+
+### Testing
+
+- New business logic requires tests.
+- Use TDD for complex logic, permissions, validation, transformations, workflows, and bug fixes.
+- Add integration tests where data flow or service boundaries matter.
+- Add E2E tests for critical user/admin flows.
+- Do not over-test trivial UI.
+
+### Security
+
+- Never expose secrets.
+- Never bypass authentication or authorization checks.
+- Check permissions server-side.
+- Avoid leaking private admin data into public surfaces.
+- Treat file uploads, user content, and external inputs as hostile.
+
+---
+
+## Operating rules
+
+### Core Behavior
+
+- Follow the project constraints above before any agent preference.
 - Prefer existing patterns, APIs, and conventions.
 - Do not duplicate business logic.
 - Do not introduce new architectural patterns without recording the decision.
 - Do not bypass tests to make a task pass.
 - Do not change unrelated files.
+- Read the relevant docs and story files before coding.
+- Preserve the current architecture unless the story explicitly changes it.
+- Run relevant validation commands when available.
+- Record unresolved risk instead of hiding it.
 
-## Execution Flow
+### Execution Flow
 
 - Load the smallest context that can safely finish the work in one pass.
 - Start with the user request, active story, acceptance criteria, and targeted search anchors.
@@ -24,7 +83,7 @@ Shared operating rules for Claude Code, Codex, and any specialized agents.
 - Every non-quick story execution must define an Execution Packet, Validation Gates, Stop Conditions, and Rollback Notes before implementation begins.
 - Preserve one-shot delivery: once scope and edit points are clear, implement code, tests, validation, and notes in the same focused pass.
 
-## Context Boundaries
+### Context Boundaries
 
 - `docs/project-context.md` is the current state map of the project.
 - Do not use `project-context.md` as a scratchpad, implementation log, or detailed decision journal.
@@ -32,7 +91,7 @@ Shared operating rules for Claude Code, Codex, and any specialized agents.
 - Story-level `implementation-notes.md` stores what was actually changed, tests run, issues, follow-ups, and remaining risks.
 - Only update `project-context.md` when the project's current state, target architecture, domains, roles, workflows, constraints, risks, roadmap, or decision summary changes.
 
-## Context Ladder
+### Context Ladder
 
 Use the lightest context level that protects the story.
 
@@ -52,7 +111,7 @@ Context budget defaults:
 
 If a context budget is exceeded, stop and summarize what is known before reading more.
 
-## Composite Workflows
+### Composite Workflows
 
 - Use `plan-epic` to create an epic and its implementation-ready stories from product intent or brownfield analysis.
 - Use `bootstrap-brownfield` after `ai-flow bootstrap --scan` to turn a local scan into durable project docs.
@@ -60,11 +119,11 @@ If a context budget is exceeded, stop and summarize what is known before reading
 - Use `run-story` for story execution in `FAST`, `STANDARD`, or `STRICT` mode. Use `STRICT` for security-sensitive stories: it adds security validation (server-side enforcement, the required security questions, and `agent-validator-security`).
 - Prefer composite workflows for daily work; use atomic skills when a specific phase needs focused attention.
 
-## Intensity Modes
+### Intensity Modes
 
 Use the lightest mode that protects the story's risk.
 
-### FAST
+#### FAST
 
 Use for small UI changes, copy/text, simple bugs, isolated components, and low-risk local changes.
 
@@ -78,7 +137,7 @@ Pipeline:
 2. lightweight `tests-check`
 3. `blueprint-implementation-notes`
 
-### STANDARD
+#### STANDARD
 
 Use for normal CRUD, product features, frontend/backend integration, and ordinary vertical stories.
 
@@ -96,7 +155,7 @@ Pipeline:
 6. `review-codebase`
 7. `blueprint-implementation-notes`
 
-### STRICT
+#### STRICT
 
 Use for auth, admin, permissions, payments, DB migrations, risky refactors, security-sensitive work, enterprise workflows, and high-regression-risk changes.
 
@@ -119,7 +178,7 @@ Pipeline:
 11. fix loop
 12. `blueprint-implementation-notes`
 
-## Quality Gates
+### Quality Gates
 
 - When `ai-flow harness` is available, use it automatically for story work: `preflight` before orchestration, `check` after validation, and `evidence` at the end of STANDARD, STRICT, or secure stories.
 - Run relevant tests.
@@ -130,7 +189,7 @@ Pipeline:
 - If validation cannot be completed, document the reason clearly.
 - Stop instead of guessing when a stop condition is triggered.
 
-## Required Stop Conditions
+### Required Stop Conditions
 
 Stop story execution when:
 
@@ -150,7 +209,7 @@ When stopped, report:
 - What decision, artifact, or user input is needed.
 - Suggested next skill or command.
 
-## Skill Selection
+### Skill Selection
 
 - Use `*-check` skills for quick, targeted post-story checklists.
 - Use `agent-validator-*` skills for deeper reviewer-agent passes on risky or broad changes.
@@ -166,7 +225,7 @@ When stopped, report:
 - `security-check`: quick security checklist for stories touching auth, admin, inputs, persistence, or data visibility.
 - `agent-validator-security`: deep security review for auth, permissions, payments, uploads, secrets, external integrations, or sensitive data.
 
-## Communication
+### Communication
 
 - Summarize what changed.
 - List validation commands run.

@@ -86,7 +86,7 @@ test('upgrade --json returns an actionable report', (t) => {
 test('upgrade restores a deleted managed file', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
-  const target = path.join(dir, 'AGENT_RULES.md');
+  const target = path.join(dir, 'RULES.md');
   fs.unlinkSync(target);
 
   run(dir, ['upgrade']);
@@ -96,7 +96,7 @@ test('upgrade restores a deleted managed file', (t) => {
 test('uninstall --dry-run deletes no file', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
-  const marker = path.join(dir, 'AGENT_RULES.md');
+  const marker = path.join(dir, 'RULES.md');
   assert.ok(fs.existsSync(marker), 'pre-condition: the file exists after init');
 
   const { code } = run(dir, ['uninstall', '--dry-run']);

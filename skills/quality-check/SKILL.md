@@ -1,6 +1,6 @@
 ---
 name: quality-check
-description: Quick code-quality checklist for a normal story. Use after implementation to flag duplication clusters, high-complexity spots, naming/coupling smells, and convention drift against docs/conventions.md and PROJECT_RULES.md. Advisory only — never edits code. For refactors, wide duplication, or quality-critical work, use agent-validator-quality instead.
+description: Quick code-quality checklist for a normal story. Use after implementation to flag duplication clusters, high-complexity spots, naming/coupling smells, and convention drift against docs/conventions.md and RULES.md. Advisory only — never edits code. For refactors, wide duplication, or quality-critical work, use agent-validator-quality instead.
 ---
 
 # Quality Check
@@ -18,7 +18,7 @@ Use `agent-validator-quality` instead when the change is a refactor, introduces 
 ## Conventions
 
 - `{project-root}` means the current repository root.
-- Read `docs/conventions.md` and `PROJECT_RULES.md` before making claims.
+- Read `docs/conventions.md` and `RULES.md` before making claims.
 - Read nearby code to learn the local patterns before calling something a smell.
 - Recommend the smallest corrective change; never rewrite beyond the story.
 
@@ -32,7 +32,7 @@ DRY is the most misapplied principle, and worse with an agent. Do **not** recomm
 
 ## Workflow
 
-1. Read `PROJECT_RULES.md`, `docs/conventions.md`, and the active story files.
+1. Read `RULES.md`, `docs/conventions.md`, and the active story files.
 2. Inspect the changed files and their immediate neighbors.
 3. Look for duplication clusters, high-complexity functions, unclear naming, and coupling that will spread the next change.
 4. Decide whether any issue actually blocks the story, or is just advice.

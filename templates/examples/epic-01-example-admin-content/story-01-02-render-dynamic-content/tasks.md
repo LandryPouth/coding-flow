@@ -2,8 +2,7 @@
 
 ## Pre-Implementation
 
-- [ ] Read `PROJECT_RULES.md`
-- [ ] Read `AGENT_RULES.md`
+- [ ] Read `RULES.md`
 - [ ] Read story `Implementation Context`
 - [ ] Read Story 01.01 recommendation
 - [ ] Confirm selected content section

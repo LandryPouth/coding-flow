@@ -38,7 +38,7 @@ function run(cwd, args) {
   }
 }
 
-const REQUIRED_FILES = ['PROJECT_RULES.md', 'AGENT_RULES.md', 'CLAUDE.md', 'AGENTS.md', 'package.json'];
+const REQUIRED_FILES = ['RULES.md', 'CLAUDE.md', 'package.json'];
 const REQUIRED_DIRS = ['.claude/skills', 'docs', 'epics', '.coding-flow'];
 
 test('init installs the base structure and succeeds', (t) => {
@@ -77,14 +77,14 @@ test('doctor succeeds on a healthy install', (t) => {
 test('doctor fails when a required file is missing', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
-  fs.unlinkSync(path.join(dir, 'PROJECT_RULES.md'));
+  fs.unlinkSync(path.join(dir, 'RULES.md'));
   assert.notEqual(run(dir, ['doctor']).code, 0, 'doctor must detect a missing file');
 });
 
 test('doctor --fix restores a missing required file', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
-  const target = path.join(dir, 'PROJECT_RULES.md');
+  const target = path.join(dir, 'RULES.md');
   fs.unlinkSync(target);
   run(dir, ['doctor', '--fix']);
   assert.ok(fs.existsSync(target), 'doctor --fix must recreate the file');
@@ -93,7 +93,7 @@ test('doctor --fix restores a missing required file', (t) => {
 test('upgrade is idempotent and preserves local edits', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
-  const rules = path.join(dir, 'PROJECT_RULES.md');
+  const rules = path.join(dir, 'RULES.md');
   fs.appendFileSync(rules, '\n<!-- LOCAL-MARKER -->\n');
 
   const { code } = run(dir, ['upgrade']);
@@ -107,7 +107,7 @@ test('upgrade is idempotent and preserves local edits', (t) => {
 test('init --force reinstalls and overwrites local edits', (t) => {
   const dir = freshProject(t);
   run(dir, ['init']);
-  const rules = path.join(dir, 'PROJECT_RULES.md');
+  const rules = path.join(dir, 'RULES.md');
   fs.appendFileSync(rules, '\n<!-- LOCAL-MARKER -->\n');
 
   run(dir, ['init', '--force']);
@@ -128,7 +128,7 @@ test('uninstall removes the managed files but keeps epics/', (t) => {
   assert.equal(run(dir, ['uninstall']).code, 0, 'uninstall must exit 0');
   assert.ok(fs.existsSync(story), 'uninstall must never touch epics/');
   assert.ok(
-    !fs.existsSync(path.join(dir, 'AGENT_RULES.md')),
+    !fs.existsSync(path.join(dir, 'RULES.md')),
     'uninstall must remove the managed files',
   );
 });

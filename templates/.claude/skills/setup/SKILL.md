@@ -13,7 +13,7 @@ This is the one-context alternative to running `init` yourself in a terminal:
 ## When To Use
 
 - Right after installing the plugin, the first time you open a repo that does not
-  yet have Coding Flow (`PROJECT_RULES.md`, `epics/`, `.coding-flow/`).
+  yet have Coding Flow (`RULES.md`, `epics/`, `.coding-flow/`).
 - To re-check or repair an existing install.
 
 ## Steps

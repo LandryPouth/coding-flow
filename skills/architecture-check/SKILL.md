@@ -1,6 +1,6 @@
 ---
 name: architecture-check
-description: Quick architecture checklist for a normal story or small implementation. Use after implementation to quickly check module boundaries, data flow, clean-code constraints, docs/architecture.md, PROJECT_RULES.md, conventions, and recorded decisions. For deep refactors, cross-module changes, new patterns, or architecture-critical work, use agent-validator-architecture instead.
+description: Quick architecture checklist for a normal story or small implementation. Use after implementation to quickly check module boundaries, data flow, clean-code constraints, docs/architecture.md, RULES.md, conventions, and recorded decisions. For deep refactors, cross-module changes, new patterns, or architecture-critical work, use agent-validator-architecture instead.
 ---
 
 # Architecture Check
@@ -22,7 +22,7 @@ Use `agent-validator-architecture` instead when the change is broad, risky, intr
 
 ## Workflow
 
-1. Read `PROJECT_RULES.md`, `docs/architecture.md`, `docs/conventions.md`, and active story decisions.
+1. Read `RULES.md`, `docs/architecture.md`, `docs/conventions.md`, and active story decisions.
 2. Inspect changed files and nearby module boundaries.
 3. Identify drift, coupling, duplication, misplaced logic, and over-abstraction.
 4. Decide whether issues block the story.

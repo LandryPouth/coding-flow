@@ -30,7 +30,7 @@ Use `architecture-check` for a quick checklist after ordinary stories. Use this 
 
 ## Required Inputs
 
-- `PROJECT_RULES.md`
+- `RULES.md`
 - `docs/architecture.md`
 - `docs/conventions.md`
 - Active story files.
@@ -42,7 +42,7 @@ Use `architecture-check` for a quick checklist after ordinary stories. Use this 
 - Coupling.
 - Duplication.
 - Business logic placement.
-- Consistency with `PROJECT_RULES.md`.
+- Consistency with `RULES.md`.
 - Architecture drift.
 - Overengineering.
 - Missing decisions.

@@ -30,7 +30,7 @@ Use `security-check` for quick post-story checks. Use this skill when security d
 
 ## Required Inputs
 
-- `PROJECT_RULES.md`
+- `RULES.md`
 - Active story files.
 - Changed server, API, auth, data, or admin files.
 - Security assumptions from `docs/project-context.md`.

@@ -22,7 +22,7 @@ Use `agent-validator-security` instead for high-risk security work, sensitive da
 
 ## Workflow
 
-1. Read `PROJECT_RULES.md`, `docs/project-context.md`, and the active story files.
+1. Read `RULES.md`, `docs/project-context.md`, and the active story files.
 2. Inspect changed server, API, auth, data, admin, and external-input code.
 3. Identify trust boundaries and privileged actions.
 4. Check validation, authorization, and data exposure.
