@@ -20,7 +20,7 @@ This is a review skill, not a summary skill. Findings come first.
 
 ## Workflow
 
-1. Read `PROJECT_RULES.md`, `AGENT_RULES.md`, project docs, and the active story files.
+1. Read `RULES.md`, project docs, and the active story files.
 2. Inspect the changed files and relevant surrounding code.
 3. Check behavior against acceptance criteria.
 4. Prioritize bugs, regressions, security risks, missing tests, and architecture drift.

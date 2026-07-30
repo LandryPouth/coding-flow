@@ -25,9 +25,7 @@ function collectDoctorReport({ strict = false } = {}) {
 
   const skillNames = listTemplateSkillNames();
   const required = [
-    "PROJECT_RULES.md",
-    "AGENT_RULES.md",
-    "AGENTS.md",
+    "RULES.md",
     "docs/project-context.md",
     "docs/architecture.md",
     "docs/conventions.md",

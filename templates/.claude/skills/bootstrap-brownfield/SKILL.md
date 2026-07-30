@@ -21,8 +21,7 @@ Do not modify application code.
 - existing `docs/architecture.md`
 - existing `docs/conventions.md`
 - existing `docs/roadmap.md`
-- `PROJECT_RULES.md`
-- `AGENT_RULES.md`
+- `RULES.md`
 
 ## Workflow
 
@@ -43,8 +42,7 @@ Update:
 
 Optionally update:
 
-- `PROJECT_RULES.md`
-- `AGENT_RULES.md`
+- `RULES.md`
 
 ## Rules
 

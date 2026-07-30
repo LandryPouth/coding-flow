@@ -35,8 +35,7 @@ Tasks should guide implementation and validation without turning the story into 
 
 ## Pre-Implementation
 
-- [ ] Read `PROJECT_RULES.md`
-- [ ] Read `AGENT_RULES.md`
+- [ ] Read `RULES.md`
 - [ ] Read story `Implementation Context`
 - [ ] Read epic `index.md` only if scope, dependencies, or sequencing are unclear
 - [ ] Read project docs only when the context level or risk requires them

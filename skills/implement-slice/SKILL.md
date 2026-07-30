@@ -21,13 +21,12 @@ The success condition is not "code changed"; it is "acceptance criteria are sati
 
 ## Before Coding
 
-1. Read `PROJECT_RULES.md`.
-2. Read `AGENT_RULES.md`.
-3. Read the active story folder.
-4. Read the Execution Packet or inline packet when present.
-5. Read the epic `index.md` only when scope, sequencing, or dependencies are unclear.
-6. Read `docs/project-context.md`, `docs/architecture.md`, or `docs/conventions.md` only when the story risk or packet requires them.
-7. Confirm non-quick work has an Execution Packet, Validation Gates, Stop Conditions, and Rollback Notes.
+1. Read `RULES.md`.
+2. Read the active story folder.
+3. Read the Execution Packet or inline packet when present.
+4. Read the epic `index.md` only when scope, sequencing, or dependencies are unclear.
+5. Read `docs/project-context.md`, `docs/architecture.md`, or `docs/conventions.md` only when the story risk or packet requires them.
+6. Confirm non-quick work has an Execution Packet, Validation Gates, Stop Conditions, and Rollback Notes.
 
 ## Implementation Strategy
 

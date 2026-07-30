@@ -1,7 +1,6 @@
 # Claude Code Project Instructions
 
-@PROJECT_RULES.md
-@AGENT_RULES.md
+@RULES.md
 
 ## Coding Flow
 

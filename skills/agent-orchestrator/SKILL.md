@@ -32,8 +32,7 @@ You do not create bureaucracy. You reduce ambiguity until implementation can hap
 
 ## Required Inputs
 
-- `PROJECT_RULES.md`
-- `AGENT_RULES.md`
+- `RULES.md`
 - Active story folder
 - Active epic `index.md` when dependencies, sequencing, or scope are unclear
 - `docs/project-context.md` when domain or current state matters

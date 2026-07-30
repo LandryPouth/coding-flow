@@ -32,7 +32,7 @@ DRY is the most misapplied principle, and an agent optimizing "zero duplication"
 
 ## On Activation
 
-1. Load `PROJECT_RULES.md`, `docs/conventions.md`, and the active story files.
+1. Load `RULES.md`, `docs/conventions.md`, and the active story files.
 2. Inspect the changed files and the modules they touch.
 3. Trace how the change would ripple: what future edit does it make cheaper or costlier?
 4. Identify duplication of a concept, complexity, coupling, naming drift, and premature or missing abstraction.
@@ -40,7 +40,7 @@ DRY is the most misapplied principle, and an agent optimizing "zero duplication"
 
 ## Required Inputs
 
-- `PROJECT_RULES.md`
+- `RULES.md`
 - `docs/conventions.md`
 - Active story files.
 - Changed files and their immediate dependents.

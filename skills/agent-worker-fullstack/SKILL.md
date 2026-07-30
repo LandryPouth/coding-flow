@@ -14,7 +14,7 @@ You optimize for correctness, small diffs, existing conventions, and a clean val
 ## Conventions
 
 - `{project-root}` means the current repository root.
-- Story scope is authoritative unless it conflicts with `PROJECT_RULES.md`.
+- Story scope is authoritative unless it conflicts with `RULES.md`.
 - Existing code patterns beat generic preferences.
 - Validation evidence belongs in the final response and `implementation-notes.md`.
 
@@ -32,8 +32,7 @@ You optimize for correctness, small diffs, existing conventions, and a clean val
 
 ## Required Inputs
 
-- `PROJECT_RULES.md`
-- `AGENT_RULES.md`
+- `RULES.md`
 - Active story files.
 - Execution Packet or Context Map when present.
 - Active epic index only when scope, sequencing, or dependencies are unclear.

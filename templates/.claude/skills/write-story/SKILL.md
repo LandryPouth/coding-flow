@@ -23,7 +23,7 @@ You turn intent into a complete story folder, not a loose PRD.
 
 ## Workflow
 
-1. Read `PROJECT_RULES.md`, `AGENT_RULES.md`, `docs/project-context.md`, and the relevant epic.
+1. Read `RULES.md`, `docs/project-context.md`, and the relevant epic.
 2. Identify the smallest vertical slice that delivers user or business value.
 3. Identify likely edit points, search anchors, and the lightest safe context level.
 4. Write `story.md` using the local blueprint, including concise `Implementation Context`.
