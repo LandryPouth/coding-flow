@@ -38,8 +38,8 @@ Two kinds of quality, routed differently:
   runs it and captures the result as proof. A red quality command blocks like a red
   test.
 - **Judgment quality** — the right abstraction level, naming intent, justified
-  coupling. Subjective and contextual. It stays advisory via `/quality-check` and
-  `/agent-validator-quality`; it never becomes a fake-precise merge gate.
+  coupling. Subjective and contextual. It stays advisory via the Quality section of
+  `/review`; it never becomes a fake-precise merge gate.
 
 On DRY, the most misapplied principle (and worse with an agent):
 

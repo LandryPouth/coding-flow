@@ -12,9 +12,9 @@ Coding Flow makes **Claude Code** reliable on real projects: the machine runs yo
 
 Coding Flow is **not** an application framework and does not replace your stack. It installs a small working system around your repo so the agent knows what to read, what to produce, when to stop, what to validate, and how to leave a useful trace.
 
-> **In a hurry?** The front door is small: install the plugin once, run `/setup` (or `ai-flow init`) once per repo, then `/plan-epic` and `/run-story` in Claude Code. Everything else is machinery the skills run for you. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — the whole loop on one screen.
+> **In a hurry?** The front door is small: install the plugin once, run `/setup` (or `ai-flow init`) once per repo, then `/plan` and `/run` in Claude Code. Everything else is machinery the skills run for you. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — the whole loop on one screen.
 
-> **Start light.** Most work is `/quick-story` or `/run-story FAST` — a request and a targeted change, no paperwork. The heavier artifacts (Execution Packet, Context Map, the multi-point stop conditions) **only appear at `STANDARD` and `STRICT`**, and you opt into that rigor when the risk earns it. You do not fill out a packet to add a field to a form.
+> **Start light.** Most work is `/run` on a small change — a request and a targeted change, no paperwork. `/run` picks its intensity from the story's risk; the heavier artifacts (Execution Packet, Context Map, the multi-point stop conditions) **only appear at `STANDARD` and `STRICT`**, and you opt into that rigor when the risk earns it. You do not fill out a packet to add a field to a form.
 
 ## Table Of Contents
 
@@ -36,17 +36,17 @@ Coding Flow is **not** an application framework and does not replace your stack.
 Coding Flow rests on four blocks:
 
 1. **The `ai-flow` CLI** — installs, updates, and checks the workflow files; scans existing projects; runs the security harness.
-2. **The context files** — `PROJECT_RULES.md`, `AGENT_RULES.md`, and `docs/` give the agent the rules and a durable map of the project.
-3. **The skills** — reusable workflows. `/plan-epic` breaks a capability into stories, `/run-story` runs one. The `agent-*` skills are **structured prompts Claude Code reads and follows** — grouped by role for clarity, not autonomous processes or a multi-agent runtime. There is no orchestration at runtime.
+2. **The context files** — `RULES.md` and `docs/` give the agent the rules and a durable map of the project.
+3. **The skills** — a small, flat set of reusable workflows, one per stage: `/setup`, `/plan`, `/run`, `/verify`, `/review`, `/ship`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/run` and `/review`, not as separate skills. There is no orchestration at runtime.
 4. **The security harness** — a set of **CLI checks over your repo and story files** (not a sandbox): secrets, sensitive files, a story's risk level, rollback notes, and JSON evidence in `.coding-flow/runs/`.
 
 The daily loop:
 
 ```txt
-init once  →  /plan-epic  →  /run-story (add STRICT for sensitive work)  →  ai-flow status / ship
+init once  →  /plan  →  /run (add STRICT for sensitive work)  →  /review  →  /ship
 ```
 
-You never chain ten commands by hand: the `/run-story` skill calls the harness automatically when `ai-flow` is available.
+You never chain ten commands by hand: the `/run` skill calls the harness automatically when `ai-flow` is available.
 
 ## Getting Started
 
@@ -54,8 +54,8 @@ Coding Flow has **two layers**, installed in **two different places**. This spli
 
 | Layer | What it is | Where it lives | How often |
 | --- | --- | --- | --- |
-| **Tooling** | The skills (`/plan-epic`, `/run-story`, …) and the `guard` hook | Your Claude Code config — **global** | **Once**, ever |
-| **Project scaffold** | `PROJECT_RULES.md`, `docs/`, `epics/`, `.coding-flow/`, CI | The project's own Git repo — **per project** | **Once per repo** |
+| **Tooling** | The skills (`/plan`, `/run`, …) and the `guard` hook | Your Claude Code config — **global** | **Once**, ever |
+| **Project scaffold** | `RULES.md`, `docs/`, `epics/`, `.coding-flow/`, CI | The project's own Git repo — **per project** | **Once per repo** |
 
 The **tooling** is *how you work*, so it follows you everywhere. The **scaffold** *describes one project*, so it is committed, reviewed in PRs, and shared with teammates and CI.
 
@@ -74,13 +74,13 @@ The **tooling** is *how you work*, so it follows you everywhere. The **scaffold*
 /setup
 ```
 
-It runs `init` for you (non-destructive) and points you to `/plan-epic`. The terminal equivalent is `npx @landry_pouth/coding-flow init`, which writes `PROJECT_RULES.md`, `docs/`, `epics/`, `.coding-flow/config.json`, and the `flow:*` scripts into the repo, ready to commit.
+It runs `init` for you (non-destructive) and points you to `/plan`. The terminal equivalent is `npx @landry_pouth/coding-flow init`, which writes `RULES.md`, `docs/`, `epics/`, `.coding-flow/config.json`, and the `flow:*` scripts into the repo, ready to commit.
 
 **Step 3 — work.**
 
 ```text
-/plan-epic     break a capability into vertical stories
-/run-story     implement a story; the guard blocks secrets automatically
+/plan     break a capability into vertical stories
+/run      implement a story; the guard blocks secrets automatically
 ```
 
 **Do I need both steps?** If you use Claude Code, yes — Step 1 once, Step 2 per repo. If you only use the CLI/CI (no Claude Code), skip Step 1 and just run `init` per repo. Two misconceptions to avoid:
@@ -90,17 +90,18 @@ It runs `init` for you (non-destructive) and points you to `/plan-epic`. The ter
 
 ## Choosing The Mode
 
-| Situation | Skill | Why |
-| --- | --- | --- |
-| Small isolated fix, text, local styling | `/quick-story` | Lowest context cost. No ceremony. |
-| Simple story, already clear | `/run-story FAST` | Minimal stop conditions and rollback notes. |
-| Normal product feature | `/run-story STANDARD` | Balance of one-shot, validation, and cost. |
-| Auth, permissions, admin, payment, migration | `/run-story STRICT` | Stronger validation and security checks. |
-| Edit point unclear or cross-module | `/agent-context-scout` then `/run-story` | Maps the context without polluting the implementation. |
-| Plan several stories | `/plan-epic` | Creates a vertical epic and implementation-ready stories. |
-| Clarify a fuzzy requirement | `/grill-me` | Asks the blocking questions before coding. |
+`/run` picks its intensity from the story's risk, but you can name it. One skill, four intensities:
 
-`SCOUT` is not an execution mode — it is an optional pre-step for unclear or cross-module edit points. Context is reduced to save tokens, never to split the feature: once the edit points are clear, the agent implements, tests, validates, and documents in the **same pass**.
+| Situation | Command | Why |
+| --- | --- | --- |
+| Small isolated fix, text, local styling | `/run` (QUICK/FAST) | Lowest context cost. No ceremony. |
+| Normal product feature | `/run STANDARD` | Balance of one-shot, validation, and cost. |
+| Auth, permissions, admin, payment, migration | `/run STRICT` | Stronger validation and security checks. |
+| Edit point unclear or cross-module | `/run` (scout pre-step) | Maps the context without polluting the implementation. |
+| Plan several stories | `/plan` | Creates a vertical epic and implementation-ready stories. |
+| Clarify a fuzzy requirement | `/plan` (Clarify First) | Asks the blocking questions before coding. |
+
+`SCOUT` is not an execution mode — it is an optional pre-step inside `/run` for unclear or cross-module edit points. Context is reduced to save tokens, never to split the feature: once the edit points are clear, the agent implements, tests, validates, and documents in the **same pass**.
 
 ## Core Concepts
 
@@ -112,25 +113,21 @@ It runs `init` for you (non-destructive) and points you to `/plan-epic`. The ter
 
 ## Skills Catalog
 
-You pick the **macro** skills below. Everything else is atomic — `/run-story` and `/plan-epic` call them for you; you don't chain them by hand.
+A small, flat set — one skill per stage of the workflow. You pick any of them directly; there is no macro/atomic hierarchy to chain by hand.
 
-| Macro skill | Use |
+| Skill | Use |
 | --- | --- |
 | `/setup` | Scaffold Coding Flow into the current repo from Claude Code (once per repo). |
-| `/quick-story` | Run a tiny change with the minimum of context. |
-| `/plan-epic` | Create a vertical epic and implementation-ready stories. |
-| `/run-story` | Run a story in `FAST`, `STANDARD`, or `STRICT` (STRICT adds security validation). |
+| `/plan` | Turn an objective into a vertical epic and implementation-ready stories. Includes opt-in sections for clarifying fuzzy requirements and bootstrapping a brownfield codebase. |
+| `/run` | Execute one story end-to-end. Picks QUICK/FAST/STANDARD/STRICT by risk; STRICT adds security validation. Context scout and TDD are inline modes. |
+| `/verify` | Run the declared validation commands and capture verbatim pass/fail as tamper-evident proof. `/run` calls it automatically. |
+| `/review` | Findings-first pre-merge review. Each dimension (architecture, tests, security, quality, E2E) has an opt-in deep section for high-risk work. |
+| `/ship` | Push the branch and open/update one PR, with the latest verify evidence attached. |
 
-<details>
-<summary><strong>Under the hood</strong> — the atomic skills that <code>/run-story</code> and <code>/plan-epic</code> run for you (expand)</summary>
-
-**Planning & story writing:** `/grill-me`, `/agent-planner`, `/bootstrap-brownfield`, `/write-story`, `/blueprint-epic-index`, `/blueprint-story`, `/blueprint-tasks`, `/blueprint-tests`, `/blueprint-decisions`, `/blueprint-implementation-notes`.
-
-**Implementation & validation:** `/agent-context-scout`, `/implement-slice`, `/agent-worker-fullstack`, `/agent-worker-tests`, `/tdd`, `/tests-check`, `/e2e-check`, `/architecture-check`, `/quality-check`, `/security-check`, `/review-codebase`.
-
-**Deep validators** (escalate only when the risk justifies it): `/agent-validator-architecture`, `/agent-validator-quality`, `/agent-validator-tests`, `/agent-validator-security`.
-
-</details>
+The depth that used to live in separate `agent-*` and `*-check` skills — the deep
+validators, the multi-agent worker roles, the context scout, TDD — is **not gone**;
+it moved into opt-in sections of `/run` and `/review`, so nothing capable was lost
+while the front door shrank from thirty skills to six.
 
 ## The Reliability Layer
 
@@ -142,7 +139,7 @@ The harness turns *advisory* guardrails into *executed* ones, attached to an ide
 
 **What the proof does and does not claim.** `verify` executes your declared commands and captures their real exit codes, so the agent **cannot lie about having run them or about the result** — a green story means the machine ran the checks and they passed. It does **not** prove the *code is correct*: the agent writes both the code and the tests, so a weak suite proves only that weak tests pass. The value is removing the "did you actually check?" trust gap, not certifying correctness.
 
-**Where this actually pays off.** If you supervise every run and press Enter on `npm test` yourself, you don't need captured proof — be honest about that. The proof earns its keep the moment you are *not* in the loop: a `/run-story` that chains several stories unattended, a CI gate that decides without you watching, or a teammate reviewing a PR who wasn't there when it ran. In those cases "the agent said the tests passed" is worth nothing and an executed, provenance-stamped result is worth everything.
+**Where this actually pays off.** If you supervise every run and press Enter on `npm test` yourself, you don't need captured proof — be honest about that. The proof earns its keep the moment you are *not* in the loop: a `/run` that chains several stories unattended, a CI gate that decides without you watching, or a teammate reviewing a PR who wasn't there when it ran. In those cases "the agent said the tests passed" is worth nothing and an executed, provenance-stamped result is worth everything.
 
 We are validating this claim honestly with a small vanilla-vs-coding-flow benchmark on five escalating tasks — methodology and (pending) numbers in [`docs/experiments/reliability-benchmark.md`](docs/experiments/reliability-benchmark.md).
 
