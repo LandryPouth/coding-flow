@@ -1,13 +1,13 @@
 ---
 name: blueprint-story
-description: Create or update a vertical story.md file. Use when generating epics/<epic>/story-NN-NN-name/story.md with goal, value, context, requirements, acceptance criteria, edge cases, UX notes, technical notes, dependencies, and out of scope.
+description: Create or update a vertical spec.md file. Use when generating epics/<epic>/story-NN-NN-name/spec.md with goal, value, context, requirements, acceptance criteria, edge cases, UX notes, dependencies, and out of scope.
 ---
 
 # Blueprint Story
 
 ## Overview
 
-Create a `story.md` that lets Codex implement a complete vertical slice with minimal ambiguity.
+Create a `spec.md` that lets Codex implement a complete vertical slice with minimal ambiguity.
 
 The story should describe product behavior, not an internal engineering checklist.
 

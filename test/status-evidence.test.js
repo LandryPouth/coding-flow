@@ -43,7 +43,7 @@ function storyDirWithNotes(t, notes) {
   const dir = tmp('status-unit');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   if (notes != null) {
-    fs.writeFileSync(path.join(dir, 'implementation-notes.md'), notes);
+    fs.writeFileSync(path.join(dir, 'tasks.md'), notes);
   }
   return dir;
 }
@@ -84,7 +84,7 @@ function projectWithStory(t, prefix) {
   run(dir, ['init']);
   const storyRel = 'epics/epic-01-x/story-01-01-y';
   fs.mkdirSync(path.join(dir, storyRel), { recursive: true });
-  fs.writeFileSync(path.join(dir, storyRel, 'story.md'), '# Story 01.01\n');
+  fs.writeFileSync(path.join(dir, storyRel, 'spec.md'), '# Story 01.01\n');
   return { dir, storyRel };
 }
 

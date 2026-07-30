@@ -12,12 +12,38 @@ const { toPortable } = require("../util");
 const { latestVerifyByStoryDir } = require("../audit");
 const { currentTreeToken } = require("../identity");
 
+// Extracts the body of the `## Result` section (with its ### children) from a
+// tasks.md. The checklist above Result must not influence status, so only the
+// executed-outcome part counts as "notes". A tasks.md without a Result section
+// (e.g. a bare unit-test fixture) is read whole.
+function resultNotes(raw) {
+  const lines = raw.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^##\s+Result\s*$/i.test(line));
+
+  if (start === -1) {
+    return raw;
+  }
+
+  const section = [];
+
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^##\s+/.test(lines[index])) {
+      break;
+    }
+
+    section.push(lines[index]);
+  }
+
+  return section.join("\n");
+}
+
 // Derives a story's status. Resolution order, from most to least authoritative:
-//   1. an explicit `## Status <x>` in implementation-notes.md (human/author override);
+//   1. an explicit `## Status <x>` in tasks.md (human/author override);
 //   2. the latest captured `verify` evidence for this story — green -> "verified",
 //      red -> "blocked". This is the anti-drift point: a proven status beats prose,
 //      so the agent can no longer claim "done" without an executed check behind it;
-//   3. the legacy prose heuristic, only when no evidence exists at all.
+//   3. the legacy prose heuristic over the tasks.md Result, only when no evidence
+//      exists at all.
 //
 // `verify` is "pass" | "fail" | null, resolved by the caller from the run files
 // (kept out of this function so it stays pure and directly unit-testable).
@@ -26,16 +52,19 @@ const { currentTreeToken } = require("../identity");
 // defaults to true so a caller that cannot assess freshness keeps the old
 // behavior.
 function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
-  const notesPath = path.join(storyDir, "implementation-notes.md");
-  const notes = fs.existsSync(notesPath) ? fs.readFileSync(notesPath, "utf8") : "";
+  const tasksPath = path.join(storyDir, "tasks.md");
+  const raw = fs.existsSync(tasksPath) ? fs.readFileSync(tasksPath, "utf8") : "";
 
-  // 1. Explicit status wins: a person can mark a story blocked/wontfix/done
-  //    regardless of the machine signal.
-  const statusMatch = notes.match(/## Status\s+([a-zA-Z -]+)/i);
+  // 1. Explicit status wins, anywhere in the file: a person can mark a story
+  //    blocked/wontfix/done regardless of the machine signal.
+  const statusMatch = raw.match(/## Status\s+([a-zA-Z -]+)/i);
 
   if (statusMatch) {
     return statusMatch[1].trim().toLowerCase().replace(/\s+/g, "-");
   }
+
+  // The prose heuristic (step 3) only sees the executed outcome, not the checklist.
+  const notes = resultNotes(raw);
 
   // 2. Evidence-backed: a captured verify is proof, prose is not. A green proof
   //    that no longer matches the code is "stale" (re-verify), not "verified".
@@ -70,7 +99,7 @@ function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
 }
 
 function storyTitle(storyDir) {
-  const storyPath = path.join(storyDir, "story.md");
+  const storyPath = path.join(storyDir, "spec.md");
 
   if (!fs.existsSync(storyPath)) {
     return path.basename(storyDir);

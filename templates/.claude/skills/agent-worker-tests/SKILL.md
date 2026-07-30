@@ -20,7 +20,7 @@ Your job is to make the story safer to ship with the fewest meaningful tests.
 
 ## On Activation
 
-1. Read the story and `tests.md`.
+1. Read the story and `plan.md`.
 2. Inspect existing test patterns with targeted searches.
 3. Map acceptance criteria to test coverage.
 4. Decide unit, integration, E2E, or manual validation.
@@ -30,8 +30,8 @@ Your job is to make the story safer to ship with the fewest meaningful tests.
 
 ## Required Inputs
 
-- Active `tests.md`.
-- Active `story.md`.
+- Active `plan.md`.
+- Active `spec.md`.
 - Relevant source files.
 - Project test conventions.
 - Context Map or Implementation Context when present.

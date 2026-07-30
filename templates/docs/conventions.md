@@ -108,6 +108,6 @@ Replace these with real project commands.
 
 - Start with targeted search before broad directory reads.
 - Prefer existing helpers and patterns.
-- Record meaningful tradeoffs in story-level `decisions.md`.
-- Record implementation facts in story-level `implementation-notes.md`.
+- Record meaningful tradeoffs in the story-level `plan.md` Decisions section.
+- Record implementation facts in the story-level `tasks.md` `## Result` section.
 - Stop instead of guessing when validation, auth, data ownership, or scope is unclear.

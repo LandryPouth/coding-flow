@@ -31,8 +31,8 @@ Use `tests-check` for quick adequacy checks after ordinary stories. Use this ski
 
 ## Required Inputs
 
-- Active `story.md`.
-- Active `tests.md`.
+- Active `spec.md`.
+- Active `plan.md`.
 - Test files changed.
 - Validation command output when available.
 

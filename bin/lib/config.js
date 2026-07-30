@@ -25,7 +25,7 @@ function defaultConfig() {
     storage: "local",
     branchPerEpic: true,
     // Validation commands run by `ai-flow harness verify`. Empty by default: the
-    // command then falls back to the "## Commands" block of tests.md, then to the
+    // command then falls back to the "## Commands" block of plan.md, then to the
     // package.json scripts. Declaring them here makes validation explicit and
     // language-independent.
     //

@@ -77,7 +77,7 @@ test('harness preflight classifies a payment story as high risk', (t) => {
   const dir = freshProject(t);
   const storyDir = path.join(dir, 'epics', 'epic-01-pay', 'story-01-01-stripe');
   fs.mkdirSync(storyDir, { recursive: true });
-  fs.writeFileSync(path.join(storyDir, 'story.md'), '# Payment\n\nStripe payment and webhook integration.\n');
+  fs.writeFileSync(path.join(storyDir, 'spec.md'), '# Payment\n\nStripe payment and webhook integration.\n');
 
   const { code, output } = run(dir, [
     'harness', 'preflight',

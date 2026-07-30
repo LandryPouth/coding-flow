@@ -38,7 +38,7 @@ function repoWithStory(t) {
   const repo = path.join(base, 'repo');
   const storyRel = 'epics/epic-03-kyc/story-03-01-kyc-upload';
   fs.mkdirSync(path.join(repo, storyRel), { recursive: true });
-  fs.writeFileSync(path.join(repo, storyRel, 'story.md'), '# Story 03.01 - KYC upload\n');
+  fs.writeFileSync(path.join(repo, storyRel, 'spec.md'), '# Story 03.01 - KYC upload\n');
   sh(repo, 'git', ['-c', 'init.defaultBranch=main', 'init']);
   sh(repo, 'git', ['config', 'user.email', 'test@example.com']);
   sh(repo, 'git', ['config', 'user.name', 'Test']);

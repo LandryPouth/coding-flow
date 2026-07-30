@@ -12,35 +12,6 @@ The team knows which content can become dynamic without risking unrelated produc
 
 This is a discovery story. It should produce a small map of hardcoded content and recommend the first safe section.
 
-## Implementation Context
-
-Likely files or directories:
-
-- `src/` - likely application source
-- `app/` or `pages/` - likely routes/pages
-- `components/` - likely UI content
-
-Search anchors:
-
-- `hardcoded`
-- `Hero`
-- `homepage`
-- `content`
-
-Execution mode:
-
-- `FAST`
-
-Scout pre-step:
-
-- `no`
-
-Avoid unless needed:
-
-- auth modules
-- billing modules
-- unrelated admin surfaces
-
 ## Requirements
 
 - [ ] Identify hardcoded content sections.
@@ -60,10 +31,6 @@ Avoid unless needed:
 ## UX Notes
 
 No user-facing UI change is required.
-
-## Technical Notes
-
-Prefer targeted search. Do not refactor content during the audit.
 
 ## Dependencies
 

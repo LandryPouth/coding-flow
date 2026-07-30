@@ -246,7 +246,7 @@ function resolveProjectPath(relativeOrAbsolutePath) {
 function readStoryBundle(storyFullPath) {
   const files = {};
 
-  for (const name of ["story.md", "tasks.md", "tests.md", "decisions.md", "implementation-notes.md"]) {
+  for (const name of ["spec.md", "plan.md", "tasks.md"]) {
     const filePath = path.join(storyFullPath, name);
     files[name] = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
   }
@@ -352,16 +352,19 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
   const risk = scoreStoryRisk(Object.values(bundle).join("\n"), report.config);
   const relativeStoryDir = normalizePortable(path.relative(cwd, storyDir));
 
-  if (!bundle["story.md"].trim()) {
-    addIssue(report.errors, "missing_story_file", "story.md is required for story-scoped harness checks", `${relativeStoryDir}/story.md`);
+  if (!bundle["spec.md"].trim()) {
+    addIssue(report.errors, "missing_spec_file", "spec.md is required for story-scoped harness checks", `${relativeStoryDir}/spec.md`);
   }
 
-  const notes = bundle["implementation-notes.md"];
-  const notesPath = `${relativeStoryDir}/implementation-notes.md`;
+  // The executed outcome lives under `## Result` in tasks.md (Status, files
+  // changed, tests run, rollback). The checklist above it must not satisfy the
+  // high-assurance requirement, so we look at the Result section specifically.
+  const notes = extractSection(bundle["tasks.md"], "Result");
+  const notesPath = `${relativeStoryDir}/tasks.md`;
   const highAssurance = strict || report.config.mode === "strict" || risk.level === "high";
 
   if (highAssurance && !notes.trim()) {
-    addIssue(report.errors, "missing_implementation_notes", "High-assurance story checks require implementation-notes.md", notesPath);
+    addIssue(report.errors, "missing_result", "High-assurance story checks require a filled ## Result in tasks.md", notesPath);
     return;
   }
 
@@ -369,7 +372,7 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
     addIssue(
       highAssurance ? report.errors : report.warnings,
       "missing_rollback_notes",
-      "implementation-notes.md should include rollback notes",
+      "the tasks.md ## Result should include rollback notes",
       notesPath,
     );
   }
@@ -378,17 +381,17 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
     addIssue(
       report.warnings,
       "missing_security_evidence",
-      "High-risk story notes should mention the security validation performed",
+      "High-risk story results should mention the security validation performed",
       notesPath,
     );
   }
 
-  if (risk.level === "high" && !bundle["tests.md"].trim()) {
+  if (risk.level === "high" && !bundle["plan.md"].trim()) {
     addIssue(
       report.warnings,
       "missing_tests_plan",
-      "High-risk stories should keep tests.md up to date",
-      `${relativeStoryDir}/tests.md`,
+      "High-risk stories should keep the test plan in plan.md up to date",
+      `${relativeStoryDir}/plan.md`,
     );
   }
 }
@@ -454,9 +457,25 @@ function getChangedFiles() {
   ])].sort();
 }
 
+// Extract a markdown section by heading, at any level (## through ######), and
+// stop at the next heading of the same or higher level. So `Result` (a ##)
+// keeps its ### children, while `Rollback Notes` (a ### nested under Result)
+// returns just its own body.
 function extractSection(content, heading) {
   const lines = content.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim().toLowerCase() === `## ${heading.toLowerCase()}`);
+  const target = heading.toLowerCase();
+
+  let start = -1;
+  let level = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(#{2,6})\s+(.*)$/);
+    if (match && match[2].trim().toLowerCase() === target) {
+      start = index;
+      level = match[1].length;
+      break;
+    }
+  }
 
   if (start === -1) {
     return "";
@@ -465,7 +484,8 @@ function extractSection(content, heading) {
   const section = [];
 
   for (let index = start + 1; index < lines.length; index += 1) {
-    if (lines[index].startsWith("## ")) {
+    const match = lines[index].match(/^(#{1,6})\s+/);
+    if (match && match[1].length <= level) {
       break;
     }
 
@@ -487,7 +507,7 @@ function buildHarnessEvidence({ story = null } = {}) {
       const storyDir = fs.statSync(resolvedStory.fullPath).isDirectory()
         ? resolvedStory.fullPath
         : path.dirname(resolvedStory.fullPath);
-      const notesPath = path.join(storyDir, "implementation-notes.md");
+      const notesPath = path.join(storyDir, "tasks.md");
 
       if (fs.existsSync(notesPath)) {
         rollbackNotes = extractSection(fs.readFileSync(notesPath, "utf8"), "Rollback Notes");
@@ -711,7 +731,7 @@ function parseTestsCommands(testsMarkdown) {
 }
 
 // Source of the commands, by decreasing priority: explicit config, then the
-// story's tests.md contract, then the usual package.json scripts.
+// story's plan.md contract, then the usual package.json scripts.
 function resolveValidationCommands({ storyDir = null } = {}) {
   const config = readConfig(cwd);
 
@@ -730,13 +750,13 @@ function resolveValidationCommands({ storyDir = null } = {}) {
   }
 
   if (storyDir) {
-    const testsPath = path.join(storyDir, "tests.md");
+    const planPath = path.join(storyDir, "plan.md");
 
-    if (fs.existsSync(testsPath)) {
-      const commands = parseTestsCommands(fs.readFileSync(testsPath, "utf8"));
+    if (fs.existsSync(planPath)) {
+      const commands = parseTestsCommands(fs.readFileSync(planPath, "utf8"));
 
       if (commands.length > 0) {
-        return { source: "tests.md", commands };
+        return { source: "plan.md", commands };
       }
     }
   }
@@ -787,7 +807,7 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
 function printVerify(evidence, outputPath) {
   if (evidence.commandsFound === 0) {
     log("Harness verify: no validation commands found.");
-    log("Declare them in tests.md under '## Commands', or in config.validation.commands.");
+    log("Declare them in plan.md under '## Commands', or in config.validation.commands.");
   } else if (evidence.ok) {
     log(`Harness verify passed (${evidence.results.length} command(s)).`);
   } else {

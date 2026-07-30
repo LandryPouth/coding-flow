@@ -1,13 +1,13 @@
 ---
 name: blueprint-tests
-description: Create or update a story tests.md file. Use when defining unit, integration, E2E, edge case, command, and expected-result validation for a story.
+description: Create or update a story plan.md file. Use when defining unit, integration, E2E, edge case, command, and expected-result validation for a story.
 ---
 
 # Blueprint Tests
 
 ## Overview
 
-Create `tests.md` as the validation contract for a story.
+Create `plan.md` as the validation contract for a story.
 
 The test plan should protect important behavior without making Codex over-test low-risk UI.
 
@@ -20,7 +20,7 @@ The test plan should protect important behavior without making Codex over-test l
 
 ## Generation Workflow
 
-1. Read `story.md`.
+1. Read `spec.md`.
 2. Map acceptance criteria to unit, integration, E2E, or manual validation.
 3. Identify risky logic that needs TDD.
 4. Identify critical journeys that need E2E.
@@ -107,12 +107,12 @@ Every test must be able to fail. A test that can never fail is noise, not eviden
 For each critical acceptance criterion, plan a proof that the guarding test bites:
 break the behavior (revert the change or inject a fault), confirm the test goes red
 for the expected reason, then restore and confirm green. Record the red→green in
-`implementation-notes.md`. This is what separates "tests exist" from "tests prove".
+`tasks.md`. This is what separates "tests exist" from "tests prove".
 
 ## Traceability
 
 Map each acceptance criterion to the test that proves it, as `criterion -> file::test`.
-Keep this map in `tests.md` so intent and proof stay linked over time.
+Keep this map in `plan.md` so intent and proof stay linked over time.
 
 ## Execution Of Record
 

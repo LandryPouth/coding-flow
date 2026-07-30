@@ -3,7 +3,7 @@
 ## Pre-Implementation
 
 - [ ] Read `RULES.md`
-- [ ] Read story `Implementation Context`
+- [ ] Read `plan.md` (Implementation Context)
 - [ ] Run listed search anchors before opening broad directories
 - [ ] Confirm this is audit-only
 
@@ -14,16 +14,15 @@
 - [ ] Choose the safest first candidate.
 - [ ] Document why the chosen candidate is low-risk.
 
-## Testing Tasks
-
-- [ ] No automated tests required unless code changes are made.
-
 ## Validation Tasks
 
 - [ ] Confirm no application code changed.
 - [ ] Confirm recommendation is specific enough for the next story.
 
-## Completion
+## Result
 
-- [ ] Update `implementation-notes.md`
-- [ ] Document meaningful decisions if needed
+_Filled after execution: summary, files changed, tests run._
+
+### Rollback Notes
+
+-

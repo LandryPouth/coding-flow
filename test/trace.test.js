@@ -58,8 +58,8 @@ function makeTestsMd({ mapped = true } = {}) {
 function scaffoldStory(dir, { mapped = true } = {}) {
   const storyDir = path.join(dir, STORY_REL);
   fs.mkdirSync(storyDir, { recursive: true });
-  fs.writeFileSync(path.join(storyDir, 'story.md'), '# Demo story\n');
-  fs.writeFileSync(path.join(storyDir, 'tests.md'), makeTestsMd({ mapped }));
+  fs.writeFileSync(path.join(storyDir, 'spec.md'), '# Demo story\n');
+  fs.writeFileSync(path.join(storyDir, 'plan.md'), makeTestsMd({ mapped }));
 }
 
 function writeVerifyRun(dir, { ok = true, story = STORY_REL, when = '2026-07-21T10:00:00.000Z' } = {}) {
@@ -69,7 +69,7 @@ function writeVerifyRun(dir, { ok = true, story = STORY_REL, when = '2026-07-21T
     generatedAt: when,
     provenance: { git: { shortCommit: 'abc1234' } },
     story,
-    commandSource: 'tests.md',
+    commandSource: 'plan.md',
     commandsFound: 1,
     ok,
     results: [{ command: 'npm test', ok, exitCode: ok ? 0 : 1, timedOut: false, durationMs: 5 }],

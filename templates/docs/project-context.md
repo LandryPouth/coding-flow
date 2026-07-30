@@ -8,8 +8,8 @@ Keep it current, compact, and useful for future agents. Do not use it as a scrat
 
 - Prefer short, factual bullets.
 - Record current reality, not hopes or temporary plans.
-- Move detailed story tradeoffs to `epics/.../decisions.md`.
-- Move execution history to `epics/.../implementation-notes.md`.
+- Move detailed story tradeoffs to the story `plan.md` Decisions section.
+- Move execution history to the story `tasks.md` `## Result` section.
 - Update this file only when the durable product or architecture context changes.
 
 Example level of detail:
@@ -103,11 +103,11 @@ The app is a B2B dashboard for managing customer invoices. Admins can create cus
 
 ## Decisions Summary
 
-[Short summary of durable decisions only. Detailed decisions belong in story-level `decisions.md`.]
+[Short summary of durable decisions only. Detailed decisions belong in the story-level `plan.md` Decisions section.]
 
 ## Agent Notes
 
 - `project-context.md` = durable current state of the project.
-- `decisions.md` = detailed decisions for a story.
-- `implementation-notes.md` = what was actually implemented.
+- `plan.md` = the story plan: how, decisions, and test plan.
+- `tasks.md` = the execution checklist and the `## Result` of what was actually implemented.
 - Keep this file dense, scannable, and stable.

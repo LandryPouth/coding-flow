@@ -3,7 +3,7 @@
 ## Pre-Implementation
 
 - [ ] Read `RULES.md`
-- [ ] Read story `Implementation Context`
+- [ ] Read `plan.md` (Implementation Context)
 - [ ] Read Story 01.01 recommendation
 - [ ] Confirm selected content section
 
@@ -25,7 +25,10 @@
 - [ ] Run relevant tests.
 - [ ] Manually verify the page if no automated render coverage exists.
 
-## Completion
+## Result
 
-- [ ] Update `implementation-notes.md`
-- [ ] Record decisions if a new content boundary was introduced
+_Filled after execution: summary, files changed, tests run._
+
+### Rollback Notes
+
+-

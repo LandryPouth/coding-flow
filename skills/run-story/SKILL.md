@@ -36,7 +36,7 @@ When `ai-flow` is available in the project, use the Security Evidence Harness au
 
 ## Status From Proof
 
-`ai-flow status` derives a story's state from executed proof: a green `verify` shows as `verified`, a red one as `blocked`. An explicit `## Status` line in `implementation-notes.md` overrides that signal, so keep it honest:
+`ai-flow status` derives a story's state from executed proof: a green `verify` shows as `verified`, a red one as `blocked`. An explicit `## Status` line in `tasks.md` overrides that signal, so keep it honest:
 
 - Write `## Status: done` **only after** a green `ai-flow harness verify` for this story is captured. A passing verify is the precondition, not the agent's assertion.
 - On a red or partial verify, write `## Status: blocked` and record what failed.
@@ -48,7 +48,7 @@ The rule is simple: the user should never have to ask "did you check this?". `do
 
 Use the lightest context path that still lets the story ship in one focused implementation pass.
 
-- Prefer `/quick-story` for isolated changes that can be solved from the request, `story.md`, and direct target files.
+- Prefer `/quick-story` for isolated changes that can be solved from the request, `spec.md`, and direct target files.
 - Use FAST when a story folder exists but orchestration would be heavier than the change.
 - Use STANDARD for normal feature work; create a compact Context Map instead of reading the whole project.
 - Use STRICT for trust boundaries, migrations, permissions, security-sensitive work, or high-regression-risk changes.
@@ -97,7 +97,7 @@ Pipeline:
 5. Use `/quality-check` when the change adds non-trivial logic, duplication, or complexity (advisory; skip for tiny changes).
 6. Use `/review-codebase` for the final pre-merge review.
 7. If blocking issues exist, use `/implement-slice` to fix them and repeat the failed checks.
-8. Use `/blueprint-implementation-notes` to update `implementation-notes.md`.
+8. Use `/blueprint-implementation-notes` to update `tasks.md`.
 
 ### STRICT
 
