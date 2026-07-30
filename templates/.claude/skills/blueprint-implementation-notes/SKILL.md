@@ -1,13 +1,13 @@
 ---
 name: blueprint-implementation-notes
-description: Create or update a story implementation-notes.md file. Use after implementation to summarize files changed, tests run, validation results, rollback notes, issues, follow-ups, and remaining risks.
+description: Create or update a story tasks.md file. Use after implementation to summarize files changed, tests run, validation results, rollback notes, issues, follow-ups, and remaining risks.
 ---
 
 # Blueprint Implementation Notes
 
 ## Overview
 
-Create or update `implementation-notes.md` after execution.
+Create or update `tasks.md` after execution.
 
 This file is the handoff from Codex back to Claude, validators, or future work. It should say what actually happened, not what was planned.
 

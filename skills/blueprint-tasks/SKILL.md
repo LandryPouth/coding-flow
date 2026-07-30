@@ -20,7 +20,7 @@ Tasks should guide implementation and validation without turning the story into 
 
 ## Generation Workflow
 
-1. Read `story.md` and `tests.md`.
+1. Read `spec.md` and `plan.md`.
 2. Turn `Implementation Context` into targeted discovery tasks.
 3. Identify code areas and existing patterns to inspect.
 4. Break implementation into 3-7 meaningful steps.
@@ -66,7 +66,7 @@ Tasks should guide implementation and validation without turning the story into 
 
 ## Completion
 
-- [ ] Update `implementation-notes.md`
+- [ ] Update `tasks.md`
 - [ ] Document new decisions if needed
 - [ ] Summarize changed files
 ```

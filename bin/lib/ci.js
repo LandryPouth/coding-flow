@@ -48,7 +48,7 @@ jobs:
           node-version: 20.x
 
       # verify runs the validation commands DECLARED by the project
-      # (config.validation.commands, then tests.md, then package.json scripts).
+      # (config.validation.commands, then plan.md, then package.json scripts).
       # So we install the target project's dependencies if they exist.
       - name: Install project dependencies
         run: |

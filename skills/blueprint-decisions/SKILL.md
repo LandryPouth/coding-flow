@@ -1,13 +1,13 @@
 ---
 name: blueprint-decisions
-description: Create or update a story decisions.md file. Use when recording architecture tradeoffs, irreversible choices, rejected alternatives, consequences, or decisions future agents must preserve.
+description: Create or update a story plan.md file. Use when recording architecture tradeoffs, irreversible choices, rejected alternatives, consequences, or decisions future agents must preserve.
 ---
 
 # Blueprint Decisions
 
 ## Overview
 
-Create `decisions.md` to preserve meaningful tradeoffs for future agents.
+Create `plan.md` to preserve meaningful tradeoffs for future agents.
 
 This file prevents future work from re-litigating choices or accidentally undoing architecture decisions.
 

@@ -23,10 +23,10 @@ Do not use when:
 
 ## Contract
 
-- **Reads**: user request or `story.md`, plus direct target files found by 1-3 targeted searches
+- **Reads**: user request or `spec.md`, plus direct target files found by 1-3 targeted searches
 - **Produces**: working code + passing tests
-- **Artifacts**: none required - update `implementation-notes.md` only if the change is non-trivial; skip `decisions.md` unless a real tradeoff occurred
-- **Skips**: Execution Packet, Validation Gates, Rollback Notes, `decisions.md`
+- **Artifacts**: none required - update the `tasks.md` `## Result` only if the change is non-trivial; skip the `plan.md` Decisions section unless a real tradeoff occurred
+- **Skips**: Execution Packet, Validation Gates, Rollback Notes, `plan.md`
 
 ## Context Budget
 
@@ -37,11 +37,11 @@ Do not use when:
 
 ## Pipeline
 
-1. Read the user request or `story.md`.
+1. Read the user request or `spec.md`.
 2. Identify the likely edit point with targeted search.
 3. Implement the change.
 4. Run the narrowest useful validation.
-5. Update `implementation-notes.md` only if the change is non-trivial.
+5. Update `tasks.md` only if the change is non-trivial.
 
 ## Stop Conditions
 

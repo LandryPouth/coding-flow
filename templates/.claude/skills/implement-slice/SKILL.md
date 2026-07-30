@@ -17,7 +17,7 @@ The success condition is not "code changed"; it is "acceptance criteria are sati
 - Implement from the active story folder.
 - Keep changes scoped and reversible.
 - Prefer existing code style and architecture.
-- Use `decisions.md` for meaningful tradeoffs.
+- Use `plan.md` for meaningful tradeoffs.
 
 ## Before Coding
 
@@ -47,9 +47,9 @@ The success condition is not "code changed"; it is "acceptance criteria are sati
 - Keep implementation one-shot once the edit points are clear: code, tests, validation, and notes should happen in one focused pass.
 - Do not load broad project context when targeted files, search anchors, or a Context Map are enough.
 - If more than 8 files or 5 searches are needed before edit points are clear, stop and switch to `/agent-context-scout` unless the mode is STRICT.
-- Add or update tests according to `tests.md`.
-- Record meaningful architecture choices in `decisions.md`.
-- Update `implementation-notes.md` after execution.
+- Add or update tests according to `plan.md`.
+- Record meaningful architecture choices in `plan.md`.
+- Update `tasks.md` after execution.
 
 ## Validation
 
@@ -93,8 +93,8 @@ The success condition is not "code changed"; it is "acceptance criteria are sati
 
 ## Notes Updated
 
-- `implementation-notes.md`: yes/no
-- `decisions.md`: yes/no
+- `tasks.md`: yes/no
+- `plan.md`: yes/no
 
 ## Remaining Risks
 

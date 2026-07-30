@@ -182,7 +182,7 @@ function gate(entries, { currentToken = null } = {}) {
 // Latest VERIFY result per story DIRECTORY, keyed by the portable relative path
 // of the story dir. `status` uses it to back a story's state on executed proof
 // (a captured verify) instead of prose. Same grouping as `gate`, but normalizes a
-// file-path `--story` (e.g. `.../story.md`) down to its directory so the key
+// file-path `--story` (e.g. `.../spec.md`) down to its directory so the key
 // matches the story dir that `status`/`listEpics` iterate. Read-only.
 function latestVerifyByStoryDir(root) {
   const byDir = new Map(); // dirPath -> { ok, generatedAt }

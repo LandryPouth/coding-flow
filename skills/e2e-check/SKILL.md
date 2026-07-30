@@ -1,6 +1,6 @@
 ---
 name: e2e-check
-description: Define or validate critical end-to-end coverage for user-facing and admin-facing flows. Use for auth, admin CRUD, publishing, payment, permissions, critical journeys, or story tests.md E2E planning.
+description: Define or validate critical end-to-end coverage for user-facing and admin-facing flows. Use for auth, admin CRUD, publishing, payment, permissions, critical journeys, or story plan.md E2E planning.
 ---
 
 # E2E Check
@@ -33,7 +33,7 @@ E2E tests are expensive. Use them where confidence matters.
 2. Select one happy path and one important failure path when relevant.
 3. Prefer stable selectors and behavior-level assertions.
 4. Avoid testing every visual detail.
-5. Record commands and expected results in `tests.md`.
+5. Record commands and expected results in `plan.md`.
 
 ## Scenario Design
 

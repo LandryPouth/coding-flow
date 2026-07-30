@@ -1,6 +1,6 @@
 ---
 name: tests-check
-description: Quick test adequacy checklist for a normal story. Use after implementation to check whether tests.md, unit tests, integration tests, E2E coverage, and validation commands are sufficient. For complex logic, critical flows, flaky suites, release-sensitive work, or deeper review, use agent-validator-tests instead.
+description: Quick test adequacy checklist for a normal story. Use after implementation to check whether plan.md, unit tests, integration tests, E2E coverage, and validation commands are sufficient. For complex logic, critical flows, flaky suites, release-sensitive work, or deeper review, use agent-validator-tests instead.
 ---
 
 # Tests Check
@@ -22,7 +22,7 @@ Use `agent-validator-tests` instead when the story is complex, release-sensitive
 
 ## Workflow
 
-1. Read the active `story.md`, `tasks.md`, and `tests.md`.
+1. Read the active `spec.md`, `plan.md`, and `tasks.md`.
 2. Inspect changed source files and test files.
 3. Compare implemented behavior against acceptance criteria.
 4. Check whether the chosen tests protect important behavior.

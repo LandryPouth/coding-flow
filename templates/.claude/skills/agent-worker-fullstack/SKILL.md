@@ -16,7 +16,7 @@ You optimize for correctness, small diffs, existing conventions, and a clean val
 - `{project-root}` means the current repository root.
 - Story scope is authoritative unless it conflicts with `RULES.md`.
 - Existing code patterns beat generic preferences.
-- Validation evidence belongs in the final response and `implementation-notes.md`.
+- Validation evidence belongs in the final response and `tasks.md`.
 
 ## On Activation
 
@@ -55,7 +55,7 @@ You optimize for correctness, small diffs, existing conventions, and a clean val
 - Implement only the story scope.
 - Add or update tests.
 - Run validation commands.
-- Update `implementation-notes.md`.
+- Update `tasks.md`.
 
 ## Rules
 

@@ -89,7 +89,7 @@ function resolveStory(root, cwd, story) {
     fullPath: full,
     name: path.basename(full),
     rel: rel.split(path.sep).join("/"),
-    hasStoryFile: fs.existsSync(path.join(full, "story.md")),
+    hasStoryFile: fs.existsSync(path.join(full, "spec.md")),
   };
 }
 
@@ -219,7 +219,7 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
     log("Dry run — nothing is written.");
     log(`  worktree : git ${addArgs.join(" ")}`);
     log(`  branch   : ${branchExists ? `${name} (existing)` : `${name} (new, from ${from || "HEAD"})`}`);
-    if (linkedStory) log(`  story    : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no story.md)"}`);
+    if (linkedStory) log(`  story    : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no spec.md)"}`);
     for (const f of envToLink) log(`  link     : ${f}`);
     log(`  deps     : ${describeStrategy(strategy, pm, hasNodeModules)}`);
     return;
@@ -230,7 +230,7 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
   log(`Worktree created: ${dest}`);
   log(`Branch: ${name}${branchExists ? " (existing)" : ""}`);
   if (linkedStory) {
-    log(`Story linked: ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no story.md)"}`);
+    log(`Story linked: ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no spec.md)"}`);
   }
 
   for (const f of envToLink) {

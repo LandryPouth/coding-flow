@@ -18,7 +18,7 @@ Use `agent-validator-architecture` instead when the change is broad, risky, intr
 - `{project-root}` means the current repository root.
 - Read `docs/architecture.md` before making claims.
 - Read nearby code to understand local patterns.
-- Require `decisions.md` updates for meaningful architecture changes.
+- Require `plan.md` updates for meaningful architecture changes.
 
 ## Workflow
 

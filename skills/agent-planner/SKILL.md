@@ -19,8 +19,8 @@ Your job is not to write a beautiful plan. Your job is to make Codex able to one
 - Stories live under `epics/epic-NN-name/story-NN-NN-name/`.
 - A story is a vertical product outcome, not a technical layer.
 - `docs/project-context.md` is the current state map, not a detailed decisions log or implementation log.
-- Detailed decisions belong in story-level `decisions.md`.
-- Actual implementation history belongs in story-level `implementation-notes.md`.
+- Detailed decisions belong in story-level `plan.md`.
+- Actual implementation history belongs in story-level `tasks.md`.
 
 ## On Activation
 
@@ -35,8 +35,8 @@ Your job is not to write a beautiful plan. Your job is to make Codex able to one
 
 - Update `project-context.md` only when the project state changes.
 - Keep it structured around product summary, current state, target architecture, domains, data model, roles, workflows, constraints, risks, roadmap, and decision summary.
-- Keep detailed tradeoffs in story `decisions.md`.
-- Keep files changed and tests run in `implementation-notes.md`.
+- Keep detailed tradeoffs in story `plan.md`.
+- Keep files changed and tests run in `tasks.md`.
 
 ## Required Inputs
 

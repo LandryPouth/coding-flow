@@ -97,12 +97,12 @@ function buildChain(storyRel, ancestry) {
     return chain;
   }
 
-  // story → tests (traceability + commands)
-  const testsPath = path.join(storyDir, "tests.md");
-  if (fs.existsSync(testsPath)) {
-    chain.criteria = parseTraceabilityTable(fs.readFileSync(testsPath, "utf8"));
+  // story → test plan (traceability + commands), which lives in plan.md
+  const planPath = path.join(storyDir, "plan.md");
+  if (fs.existsSync(planPath)) {
+    chain.criteria = parseTraceabilityTable(fs.readFileSync(planPath, "utf8"));
   } else {
-    chain.gaps.push("no tests.md");
+    chain.gaps.push("no plan.md");
   }
 
   const unmapped = chain.criteria.filter((row) => !row.mapped);

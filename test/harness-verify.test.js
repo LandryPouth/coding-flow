@@ -85,7 +85,7 @@ test('verify fails and exits 1 when a command fails, capturing the exit code', (
 
 test('verify exits 1 when no validation commands are found', (t) => {
   const dir = initProject(t, 'verify-none');
-  // Default config: validation.commands empty, no tests.md, and the flow:*
+  // Default config: validation.commands empty, no plan.md, and the flow:*
   // package.json scripts match no verify candidate.
   const { code, output } = run(dir, ['harness', 'verify']);
   assert.equal(code, 1, 'no command = not verified = failure');
@@ -106,14 +106,14 @@ test('verify --dry-run runs nothing', (t) => {
   );
 });
 
-test('verify falls back to the tests.md Commands block for a story', (t) => {
-  const dir = initProject(t, 'verify-testsmd');
+test('verify falls back to the plan.md Commands block for a story', (t) => {
+  const dir = initProject(t, 'verify-planmd');
   const storyDir = path.join(dir, 'epics', 'epic-01', 'story-01-01-demo');
   fs.mkdirSync(storyDir, { recursive: true });
-  fs.writeFileSync(path.join(storyDir, 'story.md'), '# Demo\n');
+  fs.writeFileSync(path.join(storyDir, 'spec.md'), '# Demo\n');
   fs.writeFileSync(
-    path.join(storyDir, 'tests.md'),
-    ['# Tests', '', '## Commands', '', '```bash', 'node -e "process.exit(0)"', '```', ''].join('\n'),
+    path.join(storyDir, 'plan.md'),
+    ['# Plan', '', '## Commands', '', '```bash', 'node -e "process.exit(0)"', '```', ''].join('\n'),
   );
 
   const { code, output } = run(dir, [
@@ -125,7 +125,7 @@ test('verify falls back to the tests.md Commands block for a story', (t) => {
   ]);
   assert.equal(code, 0, output);
   const evidence = JSON.parse(output);
-  assert.equal(evidence.commandSource, 'tests.md');
+  assert.equal(evidence.commandSource, 'plan.md');
   assert.equal(evidence.ok, true);
 });
 

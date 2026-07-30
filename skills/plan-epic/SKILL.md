@@ -1,6 +1,6 @@
 ---
 name: plan-epic
-description: Composite workflow to plan an epic from product intent or brownfield analysis. Use to run planner, create the epic index, split into vertical stories, and generate story blueprints including story.md, tasks.md, tests.md, decisions.md, and implementation-notes.md.
+description: Composite workflow to plan an epic from product intent or brownfield analysis. Use to run planner, create the epic index, split into vertical stories, and generate story blueprints including spec.md, plan.md, and tasks.md.
 ---
 
 # Plan Epic
@@ -19,8 +19,8 @@ This is the macro planning workflow. It keeps the planning path short while stil
 - Use vertical stories, not technical phases.
 - Keep the epic small enough to start shipping quickly.
 - `docs/project-context.md` is the current state map only.
-- Story `decisions.md` stores detailed decisions.
-- Story `implementation-notes.md` stores what actually happened during implementation.
+- Story `plan.md` stores detailed decisions.
+- Story `tasks.md` stores what actually happened during implementation.
 
 ## Pipeline
 
