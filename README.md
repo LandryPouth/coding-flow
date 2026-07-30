@@ -4,11 +4,11 @@
 [![CI](https://github.com/LandryPouth/coding-flow/actions/workflows/test.yml/badge.svg)](https://github.com/LandryPouth/coding-flow/actions/workflows/test.yml)
 [![license](https://img.shields.io/npm/l/@landry_pouth/coding-flow)](LICENSE)
 
-Coding Flow is an AI-native engineering workflow for developers who use **Claude Code**.
+Coding Flow makes **Claude Code** reliable on real projects: the machine runs your tests and shows `verified` only when they *actually* passed — not when the agent says they did.
 
 > **Claude Code first.** Coding Flow currently targets Claude Code — the skills, the plugin, and the `guard` hook are wired for it. Support for Codex and other agents is planned (per-agent targeting; see `docs/plans/multi-agent-install.md`), but not shipped yet.
 
-Its goal is simple: make AI-assisted development more predictable, less token-hungry, and able to ship complete features in a single pass when the context is clear.
+**What you get over plain Claude Code + a good `CLAUDE.md`:** executed proof instead of the agent's word, fewer forgotten files, and less context burned per change — plus, when you want it, an audit/evidence layer for teams that need governance. The evidence and audit machinery runs *for* you underneath a tiny front door; you rarely type it yourself.
 
 In practice, Coding Flow installs a small working system into your project. This system gives agents:
 
@@ -37,7 +37,7 @@ The project rests on four simple blocks:
    `PROJECT_RULES.md`, `AGENT_RULES.md`, `docs/project-context.md`, `docs/architecture.md`, `docs/conventions.md`, and `docs/roadmap.md` give the agent the rules and the durable map of the project.
 
 3. **The skills**
-   Skills are reusable workflows. For example `/plan-epic` breaks a product capability into stories, `/run-story` runs a story, and `/run-story-secure` adds security validations.
+   Skills are reusable workflows. For example `/plan-epic` breaks a product capability into stories, `/run-story` runs a story, and `/run-story` in STRICT mode adds security validation.
 
 4. **The security harness**
    The harness makes certain guardrails checkable by the CLI: secrets, sensitive files, a story's risk level, rollback notes, and JSON evidence in `.coding-flow/runs/`.
@@ -57,7 +57,7 @@ The normal workflow looks like this:
    -> /plan-epic, /write-story, or /bootstrap-brownfield.
 
 4. You run a story
-   -> /quick-story, /run-story, or /run-story-secure.
+   -> /quick-story or /run-story (add STRICT for sensitive work).
 
 5. The agent implements, tests, validates, and documents
    -> implementation-notes.md, decisions.md if needed, harness evidence if applicable.
@@ -66,7 +66,7 @@ The normal workflow looks like this:
    -> useful locally, in CI, or before a release.
 ```
 
-The important point: the user should not have to chain ten commands by hand. The `harness` commands exist for debugging and CI, but the `/run-story` and `/run-story-secure` workflows ask the agent to call them automatically when `ai-flow` is available.
+The important point: the user should not have to chain ten commands by hand. The `harness` commands exist for debugging and CI, but the `/run-story` workflow asks the agent to call them automatically when `ai-flow` is available.
 
 ## Table Of Contents
 
@@ -87,7 +87,7 @@ The important point: the user should not have to chain ten commands by hand. The
 - [CLI commands](#cli-commands)
 - [Uninstall Coding Flow](#uninstall-coding-flow)
 - [Local package development](#local-package-development)
-- [GitHub distribution via npx](#github-distribution-via-npx)
+- [Distribution via npx](#distribution-via-npx)
 
 ## Getting Started
 
@@ -118,7 +118,13 @@ The skills and the `guard` hook become available in **every** project you open, 
 
 ### Step 2 — Scaffold each project (per repo, once)
 
-From the project directory, in a **terminal**:
+Easiest, without leaving Claude Code — run the `/setup` skill in the project:
+
+```text
+/setup
+```
+
+It runs `init` for you (non-destructive) and points you to `/plan-epic`. Prefer a terminal? The equivalent is:
 
 ```bash
 npx @landry_pouth/coding-flow init
@@ -154,7 +160,7 @@ Coding Flow is available on npm (`@landry_pouth/coding-flow`) and directly from 
 In the project you want to equip:
 
 ```bash
-npx github:LandryPouth/coding-flow init
+npx @landry_pouth/coding-flow init
 ```
 
 `init` also adds local `flow:*` scripts to `package.json`.
@@ -196,7 +202,7 @@ npm run flow:upgrade
 To prepare an existing project:
 
 ```bash
-npx github:LandryPouth/coding-flow bootstrap --scan
+npx @landry_pouth/coding-flow bootstrap --scan
 ```
 
 For local package development, clone the repo then use `npm link`; see [Local package development](#local-package-development).
@@ -216,13 +222,13 @@ ai-flow worktree add <name>|--story <dir>   # optional: parallel work (see Pract
 By default, existing files are not overwritten. To deliberately reinstall the templates:
 
 ```bash
-npx github:LandryPouth/coding-flow init --force
+npx @landry_pouth/coding-flow init --force
 ```
 
 To see what would be installed without writing files:
 
 ```bash
-npx github:LandryPouth/coding-flow init --dry-run
+npx @landry_pouth/coding-flow init --dry-run
 ```
 
 For output readable by CI or scripts:
@@ -298,7 +304,7 @@ Use /run-story in STANDARD mode for the first story.
 | Small isolated fix, text, local styling | `/quick-story` | Lowest context cost. No ceremony. |
 | Simple story, already clear | `/run-story FAST` | Keeps a minimum of stop conditions and rollback notes. |
 | Normal product feature | `/run-story STANDARD` | Good balance between one-shot, validation, and cost. |
-| Auth, permissions, admin, payment, migration | `/run-story STRICT` or `/run-story-secure` | Stronger validation and better guardrails. |
+| Auth, permissions, admin, payment, migration | `/run-story STRICT` | Stronger validation and security guardrails. |
 | The edit point is unclear or cross-module | `/agent-context-scout` then `/run-story` | Maps the context without polluting the implementation. |
 | Need to plan several stories | `/plan-epic` | Creates a vertical epic and implementation-ready stories. |
 | Need to clarify the requirement | `/grill-me` | Asks the blocking questions before coding. |
@@ -309,7 +315,7 @@ Rule of thumb:
 Small and obvious -> quick-story
 Clear story -> FAST
 Normal feature -> STANDARD
-Risky or security-sensitive -> STRICT / run-story-secure
+Risky or security-sensitive -> STRICT
 Unclear edit points -> agent-context-scout
 ```
 
@@ -393,7 +399,7 @@ Use /run-story in STANDARD mode for story-02-03-admin-create-post.
 ```
 
 ```txt
-Use /run-story-secure for story-01-02-register because it touches auth and user data.
+Use /run-story STRICT for story-01-02-register because it touches auth and user data.
 ```
 
 ### 3. Implement In One Pass
@@ -487,7 +493,6 @@ Important:
     plan-epic/
     quick-story/
     run-story/
-    run-story-secure/
 
     grill-me/
     implement-slice/
@@ -542,14 +547,19 @@ Claude Code discovers the skills in `.claude/skills/`.
 
 ## Skills Catalog
 
+You pick the **macro** skills below. Everything else is atomic — `/run-story` and `/plan-epic` call them for you; you don't chain them by hand.
+
 ### Macro Skills
 
 | Skill | Use |
 | --- | --- |
+| `/setup` | Scaffold Coding Flow into the current repo from Claude Code (once per repo). |
 | `/quick-story` | Run a tiny change with the minimum of context. |
 | `/plan-epic` | Create a vertical epic and implementation-ready stories. |
-| `/run-story` | Run a story in `FAST`, `STANDARD`, or `STRICT`. |
-| `/run-story-secure` | Run a sensitive story with security validation. |
+| `/run-story` | Run a story in `FAST`, `STANDARD`, or `STRICT` (STRICT adds security validation). |
+
+<details>
+<summary><strong>Under the hood</strong> — the atomic skills that <code>/run-story</code> and <code>/plan-epic</code> run for you (expand)</summary>
 
 ### Planning And Story Writing
 
@@ -591,6 +601,8 @@ Claude Code discovers the skills in `.claude/skills/`.
 | `/agent-validator-tests` | In-depth test review. |
 | `/agent-validator-security` | In-depth security review. |
 
+</details>
+
 ## Practical Guides
 
 ### Fix A Small Text Error
@@ -612,7 +624,7 @@ Use /run-story in STANDARD mode for story-01-01-admin-create-post.
 ### Modify An Auth Area
 
 ```txt
-Use /run-story-secure for story-01-02-register because it touches auth, validation, and user data.
+Use /run-story STRICT for story-01-02-register because it touches auth, validation, and user data.
 ```
 
 ### When The Codebase Is Too Large
@@ -876,7 +888,7 @@ npm run flow:skills -- --json
 To remove Coding Flow from a project without deleting the already-created epics and stories:
 
 ```bash
-npx github:LandryPouth/coding-flow uninstall
+npx @landry_pouth/coding-flow uninstall
 ```
 
 The command removes:
@@ -895,13 +907,13 @@ The command always keeps:
 To preview before deleting:
 
 ```bash
-npx github:LandryPouth/coding-flow uninstall --dry-run
+npx @landry_pouth/coding-flow uninstall --dry-run
 ```
 
 If some Coding Flow files were modified locally, they are kept by default. To force their removal:
 
 ```bash
-npx github:LandryPouth/coding-flow uninstall --force
+npx @landry_pouth/coding-flow uninstall --force
 ```
 
 ## Security Harness
@@ -934,7 +946,7 @@ What the harness does not do:
 
 Its role is more modest and more useful: catch obvious mistakes, make sensitive workflows more explicit, and leave a usable proof without weighing down the daily flow.
 
-The daily workflow stays simple. `ai-flow init` creates the default harness policy if it doesn't exist, then the `/run-story` and `/run-story-secure` skills call the harness automatically when `ai-flow` is available. The `ai-flow harness ...` commands are mainly for debugging, CI, or one-off checks.
+The daily workflow stays simple. `ai-flow init` creates the default harness policy if it doesn't exist, then the `/run-story` skill calls the harness automatically when `ai-flow` is available. The `ai-flow harness ...` commands are mainly for debugging, CI, or one-off checks.
 
 Optional reset in an already-installed target project:
 
@@ -953,9 +965,15 @@ ai-flow harness evidence --story epics/epic-01/story-01-01
 
 Production-grade testability (non-fakeable execution, negative proof, anti AI-slop discipline) is detailed in `docs/plans/testability.md`. The storage seam, project config, and branch policy: `docs/plans/storage-backends.md`.
 
-## Evidence & Governance Layer
+## Reliability Layer (and Governance For Teams That Need It)
 
-Beyond scanning, coding-flow turns every *advisory* guardrail into an *executed* guardrail, attached to an **identity**, aggregated into an **exportable ledger**, and verified **out of the agent's hands**. This is the answer to the real blocker of enterprise adoption: governance, audit, and compliance — not code quality. Details and design: `docs/plans/evidence-governance.md`.
+Beyond scanning, coding-flow turns every *advisory* guardrail into an *executed* guardrail, attached to an **identity**, aggregated into an **exportable ledger**, and verified **out of the agent's hands**.
+
+**What the proof does and does not claim.** `verify` executes your declared commands and captures their real exit codes, so the agent **cannot lie about having run them or about the result** — a green story means the machine ran the checks and they passed. It does **not** prove the *code is correct*: the agent still writes both the code and the tests, so a weak test suite proves only that weak tests pass. The value is removing the "did you actually check?" trust gap, not certifying correctness. Strengthening the tests themselves is your job (and the validators' advisory job).
+
+For solo work the payoff is reliability — you stop re-asking the agent to verify. For teams, the same executed proof doubles as governance, audit, and compliance evidence. Details and design: `docs/plans/evidence-governance.md`.
+
+We are validating this reliability claim honestly, with a small vanilla-vs-coding-flow benchmark on five escalating tasks — methodology and (pending) numbers in [`docs/experiments/reliability-benchmark.md`](docs/experiments/reliability-benchmark.md).
 
 - **`guard` — deterministic enforcement.** A PreToolUse hook refuses writing a `.env`, a key, or content containing a secret **before** it reaches the disk (exit 2). A secret *cannot* leak, we no longer merely hope it won't. Wired into `.claude/settings.json` by `init`, it also travels with the native plugin.
 - **Provenance.** Every `verify`/`evidence` proof carries `provenance`: commit, branch, git author, *dirty* state — "asserted ≠ proven; anonymous ≠ auditable".
@@ -1033,6 +1051,8 @@ The dependency graph is acyclic: `context → util → config → harness → te
 | [`docs/plans/code-quality.md`](docs/plans/code-quality.md) | Code quality & DRY: the deterministic-vs-judgment split, the DRY-as-signal decision, and the 3 tiers |
 | [`docs/plans/status-and-check-enforcement.md`](docs/plans/status-and-check-enforcement.md) | Evidence-backed story status and machine-enforced post-implementation checks (no more asking the agent to verify) |
 | [`docs/plans/evidence-hardening.md`](docs/plans/evidence-hardening.md) | Evidence freshness (anti-stale proof), reproducibility fingerprint, and the opt-in local pre-push gate |
+| [`docs/plans/reliability-repositioning.md`](docs/plans/reliability-repositioning.md) | Repositioning to "reliability", distribution cleanup (npm over github), surface reduction, and the `run-story-secure` → STRICT merge |
+| [`docs/experiments/reliability-benchmark.md`](docs/experiments/reliability-benchmark.md) | The (in-progress) benchmark validating the reliability claim: vanilla vs. coding-flow on 5 tasks — methodology and pending results |
 
 From this repository:
 
@@ -1072,20 +1092,20 @@ ai-flow bootstrap --scan
 ai-flow list-skills
 ```
 
-## GitHub Distribution Via `npx`
+## Distribution Via `npx`
 
-The official distribution goes through GitHub via `npx`. The end user does not need to clone this repository:
+The official distribution is the published npm package, run through `npx`. The end user does not need to clone this repository:
 
 ```bash
-npx github:LandryPouth/coding-flow init
-npx github:LandryPouth/coding-flow doctor
+npx @landry_pouth/coding-flow init
+npx @landry_pouth/coding-flow doctor
 ```
 
-Each `npx github:LandryPouth/coding-flow ...` call fetches the package from GitHub and runs the binary declared in `package.json`.
+Each `npx @landry_pouth/coding-flow ...` call fetches the package from the npm registry and runs the binary declared in `package.json`, caching it after the first call. (Installing from GitHub — `npx github:LandryPouth/coding-flow` — still works for unreleased `main`, but the published package is preferred: it is faster and lets CI pin a version.)
 
 After `init`, the project can use the local `npm run flow:*` scripts.
 If the project had no `package.json`, Coding Flow creates a minimal one to keep the commands simple.
-The user therefore no longer needs to memorize the full GitHub command for common actions.
+The user therefore no longer needs to memorize the full command for common actions.
 
 To work on the package itself, clone the repo and link the command locally:
 

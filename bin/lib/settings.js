@@ -17,9 +17,12 @@ const GUARD_MATCHER = "Write|Edit|MultiEdit|NotebookEdit";
 
 // Command run by the hook: the published npm package, resolved by npx and cached
 // after the first call. Built from packageJson.name to stay in sync with the
-// published scope.
+// published scope, and PINNED to the installed version so the guard the agent
+// runs matches the tool the project was set up with, rather than silently
+// following whatever npx resolves as latest. (Note: re-wiring is idempotent, so
+// bumping the pin on an existing settings.json is a separate upgrade concern.)
 function guardCommandString() {
-  return `npx --yes ${packageJson.name} guard`;
+  return `npx --yes ${packageJson.name}@${packageJson.version} guard`;
 }
 
 function settingsPath() {

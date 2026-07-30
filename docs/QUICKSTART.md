@@ -8,7 +8,7 @@ story — you rarely type it yourself.
 
 ```bash
 # 1. Install into the current project (once)
-npx github:LandryPouth/coding-flow init
+npx @landry_pouth/coding-flow init
 ```
 
 Then, in Claude Code:

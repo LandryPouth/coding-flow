@@ -2,14 +2,14 @@
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "coding-flow",
   "version": "0.3.1",
-  "description": "Coding Flow — the evidence & governance layer for AI engineering on Claude Code.",
+  "description": "Coding Flow — make Claude Code reliable on real projects: executed proof that tests actually passed, with an optional evidence & audit layer for teams.",
   "owner": {
     "name": "Landry Pouth"
   },
   "plugins": [
     {
       "name": "coding-flow",
-      "description": "Epics/stories skills plus the enforcement layer: a deterministic secret-blocking guard hook, executed verify evidence, an append-only audit ledger, and end-to-end traceability.",
+      "description": "Epics/stories skills plus a reliability layer: a deterministic secret-blocking guard hook and executed verify (proof the tests ran and passed), with an optional audit ledger and traceability for teams that need governance.",
       "version": "0.3.1",
       "author": {
         "name": "Landry Pouth"

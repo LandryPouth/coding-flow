@@ -57,8 +57,7 @@ If a context budget is exceeded, stop and summarize what is known before reading
 - Use `plan-epic` to create an epic and its implementation-ready stories from product intent or brownfield analysis.
 - Use `bootstrap-brownfield` after `ai-flow bootstrap --scan` to turn a local scan into durable project docs.
 - Use `quick-story` for small, isolated changes that need no orchestration or formal artifacts.
-- Use `run-story` for story execution in `FAST`, `STANDARD`, or `STRICT` mode.
-- Use `run-story-secure` for security-sensitive stories: normal execution plus security validation.
+- Use `run-story` for story execution in `FAST`, `STANDARD`, or `STRICT` mode. Use `STRICT` for security-sensitive stories: it adds security validation (server-side enforcement, the required security questions, and `agent-validator-security`).
 - Prefer composite workflows for daily work; use atomic skills when a specific phase needs focused attention.
 
 ## Intensity Modes
