@@ -100,7 +100,7 @@ Use the lightest context level that protects the story.
 - `STANDARD`: story folder, epic index as needed, compact Execution Packet, targeted Context Map, normal validation.
 - `STRICT`: required project docs, compact Context Map, security/architecture/test gates, deeper validators when risk justifies them.
 
-`SCOUT` is not an execution mode. Use `/agent-context-scout` as a pre-step when edit points are unclear, the story crosses modules, or broad reading would otherwise be needed.
+`SCOUT` is not an execution mode. Use a scout pre-step (the read-only Context Map pass in `/run`'s Context Policy) when edit points are unclear, the story crosses modules, or broad reading would otherwise be needed.
 
 Context budget defaults:
 

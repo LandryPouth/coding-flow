@@ -137,7 +137,7 @@ test('list-skills lists the available skills', (t) => {
   const dir = freshProject(t);
   const { code, output } = run(dir, ['list-skills']);
   assert.equal(code, 0);
-  assert.ok(output.includes('run-story'), 'the output must contain at least one known skill');
+  assert.ok(output.includes('run'), 'the output must contain at least one known skill');
 });
 
 test('version prints the package version and matches package.json', (t) => {

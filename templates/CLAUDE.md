@@ -4,12 +4,15 @@
 
 ## Coding Flow
 
-This project uses Coding Flow skills installed in `.claude/skills/`.
+This project uses Coding Flow skills installed in `.claude/skills/`. There is a
+small, flat set — one per stage of the workflow:
 
-Prefer the macro workflows for daily work:
+- `/setup` — scaffold Coding Flow into the repo (once)
+- `/plan` — turn an objective into implementation-ready stories
+- `/run` — execute one story end-to-end; it picks QUICK..STRICT by risk
+- `/verify` — capture verbatim pass/fail proof for a story
+- `/review` — findings-first pre-merge review
+- `/ship` — push the branch and open/update the PR
 
-- `/plan-epic`
-- `/quick-story` — isolated changes, no orchestration
-- `/run-story` — add `STRICT` for security-sensitive or risky work
-
-Use atomic skills when a specific phase needs focused attention.
+Depth (STRICT mode, deep validators, context scout, TDD) lives as opt-in sections
+inside `/run` and `/review` — you do not chain separate skills by hand.

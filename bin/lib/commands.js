@@ -70,9 +70,10 @@ function printGoldenPath() {
 START HERE
 
   In Claude Code (daily):
-    /plan-epic     turn an objective into implementation-ready stories
-    /run-story     execute one story end-to-end (plan -> code -> verify)
-    /quick-story   a small isolated change, no ceremony
+    /plan     turn an objective into implementation-ready stories
+    /run      execute one story end-to-end (picks QUICK..STRICT by risk)
+    /review   findings-first pre-merge review
+    /ship     push the branch and open/update the PR
 
   In the terminal:
     ai-flow init     install into the current project (once)
@@ -85,7 +86,7 @@ you (verification, evidence, audit, guard) — you rarely type it yourself.
 More
   ai-flow help --all     every command, grouped by role
   ai-flow commands       the easiest commands for THIS project
-  ai-flow list-skills    all skills (the macros above, and the ones they call)
+  ai-flow list-skills    the six skills, in workflow order
 
 Quickstart: docs/QUICKSTART.md`);
 }
@@ -99,7 +100,7 @@ function printHelp({ all = false } = {}) {
   log(`Coding Flow — full command reference
 
 Most of these are invoked automatically by the skills, CI, or the git hook. As a
-user you mainly need: init, status, ship (and the /plan-epic, /run-story skills).
+user you mainly need: init, status, ship (and the /plan, /run skills).
 
 Usage:
   ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--force] [--dry-run]

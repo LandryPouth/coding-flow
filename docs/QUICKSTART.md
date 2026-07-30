@@ -14,8 +14,8 @@ npx @landry_pouth/coding-flow init
 Then, in Claude Code:
 
 ```
-/plan-epic "let users reset their password by email"   # objective -> stories
-/run-story                                              # run the next story end-to-end
+/plan "let users reset their password by email"   # objective -> stories
+/run                                              # run the next story end-to-end
 ```
 
 Back in the terminal, when you want to see state or ship:
@@ -27,17 +27,19 @@ ai-flow ship       # push the branch and open (or update) the PR
 
 That is 95% of daily use.
 
-## The three skills you actually pick
+## The six skills, in workflow order
 
 | Skill | When |
 | --- | --- |
-| `/plan-epic` | Turn an objective into implementation-ready stories. |
-| `/run-story` | Execute one story: plan → code → tests → verify. Add `STRICT` for risky work. |
-| `/quick-story` | A small, isolated change with no orchestration. |
+| `/setup` | Scaffold Coding Flow into the repo (once). |
+| `/plan` | Turn an objective into implementation-ready stories. |
+| `/run` | Execute one story: plan → code → tests → verify. Picks QUICK..STRICT by risk. |
+| `/verify` | Capture verbatim pass/fail proof for a story. |
+| `/review` | Findings-first pre-merge review. |
+| `/ship` | Push the branch and open/update the PR. |
 
-Everything else (`/architecture-check`, `/tdd`, `/agent-validator-*`, …) is an
-atomic skill that `run-story` calls when the story needs it. You don't chain them
-by hand.
+The depth (STRICT mode, deep validators, context scout, TDD) lives as opt-in
+sections inside `/run` and `/review` — you don't chain separate skills by hand.
 
 ## What "verified" means
 
