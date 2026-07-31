@@ -2,7 +2,6 @@
 
 > Why coding-flow changed nature, what stays the same, and what is left to do for
 > the package to be **fully usable and online**.
-> Detailed design of the additions: [`docs/plans/evidence-governance.md`](plans/evidence-governance.md).
 
 ## TL;DR
 
@@ -114,65 +113,29 @@ And **distribution becomes an asset again**:
 What SDD **keeps**: the epics/stories, the skills, the story format, the test
 discipline. That is the **foundation**, not what disappeared.
 
-## 5. What is left to do to publish and make the tool usable online
+## 5. Current state
 
-Current state: 97 green tests, version **0.2.0**, PR **#7** open against `main`
-(https://github.com/LandryPouth/coding-flow/pull/7). Remaining, in order:
+Published as **`@landry_pouth/coding-flow`** on npm (0.4.0) and installable as a
+native Claude Code plugin. The evidence & governance spine is live end-to-end:
+`guard` (deterministic write refusal), `verify` (executed proof), `audit`
+(append-only ledger + `docs/AUDIT.md` export + `--check` gate), `trace`, `ship`,
+and `ci init`. The plugin ships the six skills plus the `guard` hook, and `guard`
+resolves through `npx --yes @landry_pouth/coding-flow guard` now that the package
+is published.
 
-### A. Merge and publish (prerequisite to everything else)
+### Deliberately deferred
 
-1. **Merge PR #7 into `main`** once the CI is green.
-2. **Authenticate to npm** (current blocker: `ENEEDAUTH`). Interactively:
-   ```bash
-   npm login --auth-type=legacy      # @landry_pouth account
-   ```
-3. **Publish** from `~/dev/tools/coding-flow`:
-   ```bash
-   npm test                          # also run by prepublishOnly
-   npm publish                       # publishes @landry_pouth/coding-flow@0.2.0
-   ```
-
-> ⚠️ **Critical dependency — `guard` only works once published.**
-> The wired hook (in `.claude/settings.json` and in `.claude-plugin/hooks/hooks.json`)
-> invokes `npx --yes @landry_pouth/coding-flow guard`. As long as the package is
-> **not** published on npm, `npx` cannot resolve it and the hook blocks nothing.
-> **npm publication is therefore a prerequisite** for the enforcement (the
-> flagship argument) to actually be active for the user. Do it first.
-
-### B. Validate the plugin channel end-to-end
-
-4. **Test the real plugin install** in a Claude Code session:
-   ```text
-   /plugin marketplace add LandryPouth/coding-flow
-   /plugin install coding-flow
-   ```
-   Verify that the skills appear and that the `guard` hook fires.
-5. **Confirm that `guard` actually refuses in real conditions**: try to write a
-   `.env` or content with a fake secret, and verify the refusal (exit 2).
-
-### C. Consistency & finishing
-
-6. **Repo name vs package**: the repo is `coding-flow` (without the "g") while the
-   package is `@landry_pouth/coding-flow`. Decide whether to rename the repo for
-   discoverability, or to accept the gap (documented).
-7. **CHANGELOG**: add a 0.2.0 entry listing the evidence & governance layer
-   (useful for future users and the marketplace).
-8. **Clean-install smoke test**: `npx @landry_pouth/coding-flow init` in a
-   throwaway project after publication, then `ai-flow doctor`, `harness verify`,
-   `audit --export`, `trace` — verify the full path in real conditions.
-9. (Optional) **README**: npm/CI badges, "Install as a plugin" section already
-   present, to re-check once the plugin install is validated.
-
-### Out of scope (deliberately deferred)
-
-- **GitHub storage backend** (issues/sub-issues): the seam exists, the
-  implementation stays deferred until a real need appears.
-- **Home-made diff-coverage runner**: `ci init` provides the documented hook, not
-  a runner; you wire a third-party tool if needed.
+- **Codex target.** The workflow is Claude-Code-first; a Codex install target is
+  planned, not built (as `package.json` states).
+- **Unattended agent driver.** `ai-flow run` orchestrates story-based
+  verification; agent *execution* is a reserved `--driver` seam, not yet wired.
+- **GitHub storage backend.** The storage seam exists with a clean `fail()`; the
+  `github` backend stays deferred until a real need appears.
+- **Diff-coverage runner.** `ci init` provides the documented hook, not a runner;
+  wire a third-party tool if needed.
 
 ## In one sentence
 
 The old coding-flow **described** the work (SDD); the new one **proves and governs
 it**, and distributes through the channel (plugin) that made plain skill bundles
-obsolete. To be fully online, all that is missing is the **npm publication**
-(which also unblocks `guard`) and the **validation of the plugin channel**.
+obsolete — published on npm, installable as a plugin, with `guard` active.

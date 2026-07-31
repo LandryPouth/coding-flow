@@ -111,13 +111,20 @@ Context budget defaults:
 
 If a context budget is exceeded, stop and summarize what is known before reading more.
 
-### Composite Workflows
+### Workflow
 
-- Use `plan-epic` to create an epic and its implementation-ready stories from product intent or brownfield analysis.
-- Use `bootstrap-brownfield` after `ai-flow bootstrap --scan` to turn a local scan into durable project docs.
-- Use `quick-story` for small, isolated changes that need no orchestration or formal artifacts.
-- Use `run-story` for story execution in `FAST`, `STANDARD`, or `STRICT` mode. Use `STRICT` for security-sensitive stories: it adds security validation (server-side enforcement, the required security questions, and `agent-validator-security`).
-- Prefer composite workflows for daily work; use atomic skills when a specific phase needs focused attention.
+The skill set is small and flat — one skill per stage:
+
+- `/setup` — scaffold Coding Flow into the repo (once).
+- `/plan` — turn an objective, product intent, or brownfield scan into implementation-ready stories.
+- `/run` — execute one story end-to-end; it selects `QUICK`..`STRICT` by risk and runs the right depth.
+- `/verify` — capture verbatim pass/fail proof for a story.
+- `/review` — findings-first pre-merge review.
+- `/ship` — push the branch and open or update the PR.
+
+Depth (`STRICT` mode, deep validators, the context scout, TDD) lives as opt-in
+*sections* inside `/run` and `/review`. You do not chain separate skills by hand:
+pick the skill for the stage, and let it escalate depth by the story's risk.
 
 ### Intensity Modes
 
@@ -131,11 +138,11 @@ Use for small UI changes, copy/text, simple bugs, isolated components, and low-r
 - **Artifacts**: no formal orchestration required; inline stop conditions and rollback notes suffice.
 - **Traceability**: `tasks.md` `## Result` only for non-trivial changes; skip the `plan.md` Decisions section unless a real tradeoff occurred.
 
-Pipeline:
+`/run` in FAST:
 
-1. `implement-slice`
-2. lightweight `tests-check`
-3. `blueprint-implementation-notes`
+1. Implement the slice.
+2. Run a lightweight test check.
+3. Record the result in `tasks.md`.
 
 #### STANDARD
 
@@ -145,15 +152,15 @@ Use for normal CRUD, product features, frontend/backend integration, and ordinar
 - **Artifacts**: compact Execution Packet + Context Map + Validation Gates + Stop Conditions + Rollback Notes.
 - **Traceability**: `tasks.md` `## Result` always; `plan.md` Decisions for meaningful tradeoffs only.
 
-Pipeline:
+`/run` in STANDARD:
 
-1. `agent-orchestrator`
-2. `implement-slice`
-3. `tests-check`
-4. `architecture-check`
-5. `quality-check` (advisory; skip for tiny changes)
-6. `review-codebase`
-7. `blueprint-implementation-notes`
+1. Build a compact Execution Packet and Context Map.
+2. Implement the slice.
+3. Run tests.
+4. Architecture check.
+5. Advisory quality check (skip for tiny changes).
+6. `/review`.
+7. Record decisions in `plan.md` and the result in `tasks.md`.
 
 #### STRICT
 
@@ -163,27 +170,25 @@ Use for auth, admin, permissions, payments, DB migrations, risky refactors, secu
 - **Artifacts**: all - Execution Packet + Context Map + Validation Gates + Stop Conditions + Rollback Notes.
 - **Traceability**: both the `tasks.md` `## Result` and the `plan.md` Decisions required.
 
-Pipeline:
+`/run` in STRICT:
 
-1. `agent-planner` or `grill-me` if requirements are unclear
-2. `agent-orchestrator`
-3. `tdd` for critical logic
-4. `implement-slice`
-5. `tests-check`
-6. `e2e-check`
-7. `architecture-check`
-8. `quality-check` (escalate to `agent-validator-quality` for refactors or wide duplication)
-9. `security-check`
-10. `review-codebase`
-11. fix loop
-12. `blueprint-implementation-notes`
+1. Clarify requirements first (via `/plan`) when they are unclear.
+2. Plan the execution and build the Context Map (scout when discovery is broad).
+3. TDD for critical logic.
+4. Implement the slice.
+5. Run tests and E2E.
+6. Architecture check (deep review for refactors or new patterns).
+7. Deep quality review for refactors or wide duplication.
+8. Security check: server-side enforcement plus the required security questions.
+9. `/review`, then a fix loop.
+10. Record decisions in `plan.md` and the result in `tasks.md`.
 
 ### Quality Gates
 
 - When `ai-flow harness` is available, use it automatically for story work: `preflight` before orchestration, `check` after validation, and `evidence` at the end of STANDARD, STRICT, or secure stories.
 - Run relevant tests.
 - Run lint and typecheck when available.
-- Deterministic quality (lint, format-check, duplication detectors like jscpd) belongs in `validation.quality`, so `verify` executes and captures it as proof — a red quality command blocks like a red test. Judgment quality (`quality-check`) stays advisory.
+- Deterministic quality (lint, format-check, duplication detectors like jscpd) belongs in `validation.quality`, so `verify` executes and captures it as proof — a red quality command blocks like a red test. Judgment quality (the advisory quality pass inside `/review`) stays advisory.
 - Treat code quality as context efficiency, not style: duplication and complexity make every future story more expensive. Prefer duplication over the wrong abstraction — apply the rule of three, and only unify cases that are the same concept and will change together.
 - If validation fails, fix the root cause when feasible.
 - If validation cannot be completed, document the reason clearly.
@@ -209,21 +214,19 @@ When stopped, report:
 - What decision, artifact, or user input is needed.
 - Suggested next skill or command.
 
-### Skill Selection
+### Choosing depth
 
-- Use `*-check` skills for quick, targeted post-story checklists.
-- Use `agent-validator-*` skills for deeper reviewer-agent passes on risky or broad changes.
-- `bootstrap-brownfield`: convert `docs/bootstrap-scan.md` into useful project context without modifying application code.
-- `quick-story`: minimal workflow for isolated changes - no orchestration, no formal artifacts.
-- `agent-context-scout`: compact pre-implementation context discovery for broad, ambiguous, cross-module, or high-risk stories. Does not modify files.
-- `architecture-check`: quick architecture checklist after a normal story.
-- `agent-validator-architecture`: deep architecture review for refactors, cross-module changes, new patterns, or architecture-critical work.
-- `tests-check`: quick test adequacy checklist after implementation.
-- `agent-validator-tests`: deep test review for complex logic, critical flows, flaky suites, or release-sensitive work.
-- `quality-check`: quick advisory code-quality checklist (duplication, complexity, naming, convention drift). Reviews only; never edits.
-- `agent-validator-quality`: deep advisory quality review for refactors, wide duplication, or quality-critical work.
-- `security-check`: quick security checklist for stories touching auth, admin, inputs, persistence, or data visibility.
-- `agent-validator-security`: deep security review for auth, permissions, payments, uploads, secrets, external integrations, or sensitive data.
+Depth is opt-in and lives inside `/run` and `/review`. Escalate by the story's
+risk, not by chaining separate skills.
+
+- **Context scout** — the read-only Context Map pass in `/run`, before implementing, when edit points are unclear or the story crosses modules. Does not modify files.
+- **Architecture** — a quick architecture checklist after a normal story; escalate to a deep review for refactors, cross-module changes, or new patterns.
+- **Tests** — a quick test-adequacy check after implementation; escalate to a deep review for complex logic, critical flows, flaky suites, or release-sensitive work.
+- **Quality** — a quick advisory pass (duplication, complexity, naming, convention drift; reviews only, never edits); escalate to a deep review for refactors or wide duplication.
+- **Security** — a quick check for stories touching auth, admin, inputs, persistence, or data visibility; escalate to a deep review for permissions, payments, uploads, secrets, external integrations, or sensitive data.
+
+Brownfield: run `ai-flow bootstrap --scan`, then `/plan` to turn the scan into
+durable project context without modifying application code.
 
 ### Communication
 

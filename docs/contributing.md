@@ -102,16 +102,8 @@ npm publish     # publishes @landry_pouth/coding-flow@<version>
 | [`migration.md`](migration.md) | Migrating an existing project to a new version: `upgrade` vs re-install, what is protected, and the gotchas |
 | [`sdd-vs-plugins.md`](sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed and why |
 | [`git-worktree-bare.md`](git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |
-| [`plans/parallel-mode.md`](plans/parallel-mode.md) | Parallel mode (`worktree`), story link, `ship` |
-| [`plans/storage-backends.md`](plans/storage-backends.md) | Storage seam, project config, branch policy |
-| [`plans/evidence-governance.md`](plans/evidence-governance.md) | Evidence & governance layer: guard, provenance, audit, trace, CI, plugin |
-| [`plans/testability.md`](plans/testability.md) | Production-grade testability: `verify`, negative proof, anti-slop |
-| [`plans/testing-and-ci.md`](plans/testing-and-ci.md) | The package's test suite and CI |
-| [`plans/code-quality.md`](plans/code-quality.md) | Code quality & DRY: deterministic-vs-judgment split, the 3 tiers |
-| [`plans/status-and-check-enforcement.md`](plans/status-and-check-enforcement.md) | Evidence-backed story status and machine-enforced checks |
-| [`plans/evidence-hardening.md`](plans/evidence-hardening.md) | Evidence freshness (anti-stale), reproducibility fingerprint, pre-push gate |
-| [`plans/reliability-repositioning.md`](plans/reliability-repositioning.md) | Repositioning to "reliability", npm-over-github, surface reduction, STRICT merge |
-| [`plans/reliability-framing-honesty.md`](plans/reliability-framing-honesty.md) | Honest-framing pass: naming, opt-in ceremony, evidence pitch, guard-first |
+| [`plans/multi-agent-install.md`](plans/multi-agent-install.md) | Planned per-agent install targeting (Claude/Codex, no shared mirror) |
+| [`plans/storage-backends.md`](plans/storage-backends.md) | Storage seam, project config, branch policy (github backend deferred) |
 | [`experiments/reliability-benchmark.md`](experiments/reliability-benchmark.md) | The (in-progress) benchmark validating the reliability claim |
 
 ## Roadmap

@@ -157,7 +157,7 @@ ai-flow worktree list
 ai-flow worktree remove feat/payments     # removes the worktree, keeps the branch
 ```
 
-Worktrees are placed as **siblings** (`../<repo>-worktrees/<name>`), not inside the repo, so tools like `tsc`/eslint/jest and `git clean -fdx` can't reach them. With `--story`, the worktree↔story mapping is stateless (resolved by branch name). Trade-offs: [`docs/plans/parallel-mode.md`](docs/plans/parallel-mode.md).
+Worktrees are placed as **siblings** (`../<repo>-worktrees/<name>`), not inside the repo, so tools like `tsc`/eslint/jest and `git clean -fdx` can't reach them. With `--story`, the worktree↔story mapping is stateless (resolved by branch name). Worktree concepts and trade-offs: [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md).
 
 **One PR per feature** — from a worktree or any feature branch, `ship` pushes and opens **one** idempotent PR against the base (via `gh` if available):
 

@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-07-31
+
+A consolidation release: the same evidence spine, a much smaller surface. Three
+renames make the tool easier to hold in your head. Breaking — see
+[`docs/migration.md`](docs/migration.md) (`upgrade` adds the new files but never
+deletes the old ones, so a 0.3 project keeps working alongside residue to clean
+by hand with `trash`).
+
+### Added
+
+- **`ai-flow run`** — batch story orchestrator: resolves stories (all / `--epic` /
+  `--story`), verifies each for real, writes per-story proof plus one aggregated
+  `-run.json` rollup, and exits non-zero if any verifiable story failed. Ships the
+  `none` driver (verify already-done work); agent execution is a reserved
+  `--driver` seam that fails cleanly until wired.
+
+### Changed
+
+- **Rules merged into one file.** `PROJECT_RULES.md` + `AGENT_RULES.md` → a single
+  **`RULES.md`** (imported by `CLAUDE.md`).
+- **Stories collapsed from six files to three:** **`spec.md`** (what & acceptance),
+  **`plan.md`** (how + decisions + `## Commands` + test plan), **`tasks.md`**
+  (checklist + `## Result` + rollback).
+- **Skills collapsed from ~30 to six:** `setup`, `plan`, `run`, `verify`, `review`,
+  `ship`. Depth (STRICT mode, deep validators, the context scout, TDD) is now
+  opt-in *sections* inside `/run` and `/review`, not separate skills.
+- **CI gate** now replays `run` (per-story verify) or repo-wide `harness verify`,
+  then `audit --check`, on a clean checkout — pinned to the published version.
+
 ## [0.3.0] - 2026-07-28
 
 Coding Flow is now explicitly a **Claude Code** tool. Support for Codex and other
@@ -70,4 +99,5 @@ agent's hands. Distributed as a native Claude Code plugin and published on npm.
 - The GitHub storage backend (issues/sub-issues) is a proven seam with a clean
   `fail()`; implementation stays deferred until a real need appears.
 
+[0.4.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.4.0
 [0.2.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.2.0
