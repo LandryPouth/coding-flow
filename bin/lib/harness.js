@@ -864,12 +864,54 @@ function captureEnvironment() {
   };
 }
 
-function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
+// Executes the declared validation commands for one story and returns the
+// evidence. Pure: it runs the commands and captures their results verbatim but
+// writes nothing — the caller decides whether to persist it (writeVerifyEvidence)
+// and what a red result means for its own flow. Shared by `harness verify` (a
+// single story) and `run` (a batch), so both produce identical evidence.
+function verifyStoryOnce({ story = null } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
   const resolution = resolveValidationCommands({ storyDir });
+  const results = resolution.commands.map((command) => runValidationCommand(command));
+  const ok = results.length > 0 && results.every((item) => item.ok);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    root: cwd,
+    provenance: captureIdentity(cwd),
+    story: resolvedStory ? resolvedStory.relativePath : null,
+    commandSource: resolution.source,
+    commandsFound: resolution.commands.length,
+    environment: captureEnvironment(),
+    ok,
+    results,
+  };
+}
+
+// Persists a verify evidence under .coding-flow/runs and returns its path. The
+// name always ends in -verify.json (so the ledger/audit ingest it) and stays
+// unique even inside a tight batch loop: same-millisecond writes get a counter.
+function writeVerifyEvidence(evidence) {
+  fs.mkdirSync(harnessRunsDir(), { recursive: true });
+  const base = new Date().toISOString().replace(/[:.]/g, "-");
+  let outputPath = path.join(harnessRunsDir(), `${base}-verify.json`);
+  let counter = 1;
+
+  while (fs.existsSync(outputPath)) {
+    outputPath = path.join(harnessRunsDir(), `${base}-${counter}-verify.json`);
+    counter += 1;
+  }
+
+  writeJson(outputPath, evidence);
+  return outputPath;
+}
+
+function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
+  const resolvedStory = story ? resolveProjectPath(story) : null;
 
   if (dryRun) {
+    const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
     const plan = {
       root: cwd,
       story: resolvedStory ? resolvedStory.relativePath : null,
@@ -896,24 +938,8 @@ function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
     return;
   }
 
-  const results = resolution.commands.map((command) => runValidationCommand(command));
-  const ok = results.length > 0 && results.every((item) => item.ok);
-  const evidence = {
-    generatedAt: new Date().toISOString(),
-    root: cwd,
-    provenance: captureIdentity(cwd),
-    story: resolvedStory ? resolvedStory.relativePath : null,
-    commandSource: resolution.source,
-    commandsFound: resolution.commands.length,
-    environment: captureEnvironment(),
-    ok,
-    results,
-  };
-
-  fs.mkdirSync(harnessRunsDir(), { recursive: true });
-  const fileName = `${new Date().toISOString().replace(/[:.]/g, "-")}-verify.json`;
-  const outputPath = path.join(harnessRunsDir(), fileName);
-  writeJson(outputPath, evidence);
+  const evidence = verifyStoryOnce({ story });
+  const outputPath = writeVerifyEvidence(evidence);
 
   if (json) {
     log(JSON.stringify(evidence, null, 2));
@@ -922,7 +948,7 @@ function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
   }
 
   // "Nothing executed" is not "verified": we fail if no command ran.
-  if (!ok) {
+  if (!evidence.ok) {
     process.exitCode = 1;
   }
 }
@@ -977,4 +1003,11 @@ module.exports = {
   parseTestsCommands,
   getSecretPatterns,
   harnessCommand,
+  // Reused by `run` (batch orchestration) so it shares the single-story verify
+  // execution path instead of duplicating it.
+  verifyStoryOnce,
+  writeVerifyEvidence,
+  resolveValidationCommands,
+  resolveStoryDir,
+  captureEnvironment,
 };
