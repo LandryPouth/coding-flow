@@ -144,7 +144,7 @@ Machinery (usually run FOR you by the skills, CI, or the git hook):
   trace        Show the story -> commits -> PR -> evidence -> tests chain and flag missing links.
   guard        PreToolUse hook: deny writes to blocked paths or secret content (wired into settings.json by init).
   hook         Install/remove an opt-in pre-push gate that runs audit --check before each push.
-  ci           Scaffold a clean-room GitHub Actions workflow that reruns harness verify + audit on every PR.
+  ci           Scaffold a clean-room GitHub Actions workflow that replays run (per-story verify) + audit on every PR.
   worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
 
 Meta:
