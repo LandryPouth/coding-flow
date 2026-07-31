@@ -107,6 +107,7 @@ Usage:
   ai-flow upgrade [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
+  ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
   ai-flow bootstrap --scan [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
@@ -133,6 +134,7 @@ Setup (you run these):
 
 Daily (you run these):
   status       List epics, stories, and inferred story status (verified / stale / blocked).
+  run          Verify a batch of stories (all, one --epic, or one --story) and emit one proof report.
   ship         Push the current branch and open/update one PR to the base (uses gh if available).
   bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
 
@@ -172,6 +174,8 @@ Flags:
   --export   Write docs/AUDIT.md from the audit ledger.
   --check    Exit non-zero if the latest verify per story is failing or missing (CI gate).
   --since    Filter audit entries to those generated at or after an ISO timestamp.
+  --epic     Scope run to every story in one epic (matched by name).
+  --driver   Executor for run: none (default; verify only). Agent drivers are reserved.
   --storage  Storage backend recorded at init: local (default; github is reserved).
   --no-branch-per-epic  Disable the "one epic = one branch, never main" policy.
   --no-guard  Skip wiring the PreToolUse guard hook into .claude/settings.json at init.

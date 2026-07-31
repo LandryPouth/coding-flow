@@ -24,6 +24,7 @@ const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
 const { worktreeCommand } = require("./lib/worktree");
 const { shipCommand } = require("./lib/ship");
+const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
 const { ensureConfig, STORAGE_BACKENDS } = require("./lib/config");
 const { ensureHookSettings } = require("./lib/settings");
@@ -175,6 +176,8 @@ if (command === "init") {
   });
 } else if (command === "ship") {
   shipCommand({ getFlagValue, flags, cwd });
+} else if (command === "run") {
+  runCommand({ getFlagValue, flags });
 } else if (command === "hook") {
   hookCommand({ commandArgs, flags, cwd });
 } else if (command === "commands") {

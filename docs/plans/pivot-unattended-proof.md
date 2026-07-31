@@ -171,6 +171,12 @@ replaces (single preamble, not ten). Record before/after line counts in the PR.
 
 ## 5. Batch 4 — `ai-flow run`: the product (high risk, staged)
 
+> **Status: 4a DONE (2026-07-31). 4b DEFERRED per the §8 decision.** `bin/lib/run.js`
+> ships the deterministic orchestrator with the pluggable-driver seam (`--driver`,
+> default `none`; agent drivers reserved and fail cleanly). `run.test.js` covers
+> dry-run, pass, fail→exit 1, skipped-not-failed, the driver seam, and the empty
+> case. 4b (`--unattended` → `claude -p`) stays a reserved seam, not built.
+
 **Goal:** the CLI can drive a run and emit one trustworthy proof report.
 
 **New module `bin/lib/run.js` + `run` in the dispatcher.**
@@ -244,6 +250,14 @@ covers every rename; `npm test` green.
 ---
 
 ## 8. The decision line (put it in the README, first paragraph)
+
+> **Decided (2026-07-31): "Personal tool + competence signal."** Rationale: the
+> daily driver is a $20 Claude plan plus DeepSeek for bulk work — a budget that
+> does not support routine token-heavy *unattended* Claude runs, and a workflow
+> that is already multi-model. So we ship the spine and build `run` (4a) with an
+> **agnostic, pluggable driver seam** (the valuable part for a multi-model user),
+> but treat the Claude-only unattended path (4b) as optional/deferred. The README
+> reposition (Batch 6) must open with this line.
 
 Write one of these two, explicitly, before any refactor code:
 
