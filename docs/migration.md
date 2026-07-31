@@ -105,3 +105,36 @@ your project context or your epics.
 - **The plugin is separate.** The global Claude Code plugin (skills + `guard` hook)
   updates through the marketplace and is independent of a project's `upgrade`. See
   the README's "Getting started" for the two-layer model.
+
+### 0.3 → 0.4 (three renames leave residue to clean by hand)
+
+0.4.0 renamed three things. `upgrade` **adds the new files but never deletes the
+old ones**, so a 0.3 project ends up with the new layout working *alongside*
+obsolete residue. `upgrade` is still the right path — run it on a branch, then
+clean the residue below with `trash` (never `rm`):
+
+1. **The rules merged into one file.** `PROJECT_RULES.md` + `AGENT_RULES.md` →
+   a single **`RULES.md`** (imported by `CLAUDE.md`). After upgrading, move any
+   custom rules you had in the two old files into `RULES.md`, then trash them.
+
+2. **Stories collapsed from six files to three.** A story folder is now exactly
+   **`spec.md`** (what & acceptance), **`plan.md`** (how + decisions + `## Commands`
+   + test plan), and **`tasks.md`** (checklist + `## Result` + rollback). The old
+   per-story `story.md` / `tests.md` / `decisions.md` (and any separate notes file)
+   are residue — fold their content into the three above, then trash them. This is
+   per *existing* story folder under `epics/`; new stories already use the layout.
+
+3. **The skill set collapsed from ~30 to six.** The skills are now **`setup`,
+   `plan`, `run`, `verify`, `review`, `ship`** (depth like STRICT mode, deep
+   validators, TDD, and the context scout are opt-in *sections* inside `run` and
+   `review`, not separate skills). Every other Coding Flow skill directory under
+   `.claude/skills/` — `plan-epic`, `run-story`, `quick-story`, the `blueprint-*`,
+   `agent-*`, and `*-check` folders — is obsolete; trash the ones that are not in
+   the set of six. Leave any skill *you* authored in place.
+
+A quick way to spot the residue after upgrading:
+
+```bash
+npx @landry_pouth/coding-flow doctor   # flags managed-file problems
+ls .claude/skills/                     # anything beyond the six is likely residue
+```

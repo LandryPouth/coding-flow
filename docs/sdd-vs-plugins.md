@@ -28,8 +28,7 @@ same family: GitHub **Spec Kit**, **BMAD**, **Kiro**, **OpenSpec**.
 
 coding-flow, in that logic, provided:
 
-- a **format**: epic → vertical story → `story.md` / `tasks.md` / `tests.md` /
-  `decisions.md` / `implementation-notes.md`;
+- a **format**: epic → vertical story → `spec.md` / `plan.md` / `tasks.md`;
 - **skills** (planner, story writer, implementer, validators);
 - **rules** and a **security harness** that *scans* (secrets, sensitive files)
   and *estimates* a story's risk;
