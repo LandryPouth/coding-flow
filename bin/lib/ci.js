@@ -1,9 +1,9 @@
 "use strict";
 
 // `ai-flow ci init`: scaffolds a GitHub Actions workflow in the TARGET project
-// that replays `harness verify` on a FRESH checkout, out of the agent's hands.
-// This is the non-gameable gate: the machine's pass/fail, not the agent's claim.
-// Carried by GitHub compute (free), it preserves the Claude budget.
+// that replays the story verification on a FRESH checkout, out of the agent's
+// hands. This is the non-gameable gate: the machine's pass/fail, not the agent's
+// claim. Carried by GitHub compute (free), it preserves the Claude budget.
 //
 // Opt-in by design: the workflow is written on demand (not in templates/, so it
 // isn't installed by default on every `init`). Non-destructive: it does not
@@ -60,10 +60,19 @@ jobs:
             echo "No package.json — skipping dependency install."
           fi
 
-      # Clean-room: runs and CAPTURES the evidence. Fails if a command breaks or
-      # if no command ran at all ("nothing executed != verified").
+      # Clean-room: executes the declared validation commands and CAPTURES the
+      # evidence. A story-based repo (epics/*/story-*) is verified per story via
+      # \`run\`, so every story gets its own captured proof; a repo that declares
+      # its commands globally instead falls back to a single \`harness verify\`.
+      # Either way it fails if a command breaks or if nothing ran at all
+      # ("nothing executed != verified").
       - name: Verify (execute declared validation commands)
-        run: npx --yes ${pkg} harness verify
+        run: |
+          if ls epics/*/story-*/ >/dev/null 2>&1; then
+            npx --yes ${pkg} run
+          else
+            npx --yes ${pkg} harness verify
+          fi
 
       # Gate: the latest verify evidence per story must be green.
       - name: Audit gate (no green evidence, no merge)
@@ -108,7 +117,7 @@ function ciInit({ dryRun = false, force = false } = {}) {
 
   const verb = dryRun ? "Would write" : exists ? "Overwrote" : "Wrote";
   log(`${verb} clean-room CI workflow: ${rel}`);
-  log("It runs `harness verify` + `audit --check` on a fresh checkout for every PR.");
+  log("It runs `ai-flow run` (per story) or `harness verify`, then `audit --check`, on a fresh checkout for every PR.");
   return { status: exists ? "overwritten" : "created", path: target };
 }
 

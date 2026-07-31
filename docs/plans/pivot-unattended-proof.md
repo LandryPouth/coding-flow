@@ -211,6 +211,16 @@ replaces (single preamble, not ten). Record before/after line counts in the PR.
 
 ## 6. Batch 5 — Harden the spine for headless (low/medium risk)
 
+> **Status: DONE (2026-07-31).** The `ci init` workflow now verifies per story via
+> `run` (falling back to repo-wide `harness verify` for global-config projects),
+> then `audit --check`, all pinned to the exact published version. This closed a
+> real gap: the old repo-wide `harness verify` found *no* commands for a
+> story-based repo that declares them in each `plan.md`. `ci.test.js` asserts the
+> `run` wiring and that no unpinned reference can leak into the workflow. Deferred
+> as optional (not needed for a coherent gate): a `run --format md` renderer —
+> `ship` already attaches verify evidence to PRs and `audit --export` already
+> produces the markdown view, so the schemas already agree at the evidence level.
+
 **Goal:** make the proof trustworthy when nobody is watching.
 
 - **Pin enforcement everywhere** headless: `ci init` template and any `npx` call in

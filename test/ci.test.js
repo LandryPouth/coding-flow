@@ -36,17 +36,35 @@ function project(t, prefix) {
   return dir;
 }
 
-test('ci init writes the clean-room workflow with verify + audit', (t) => {
+test('ci init writes the clean-room workflow with run/verify + audit', (t) => {
   const dir = project(t, 'ci-init');
   const res = run(dir, ['ci', 'init']);
   assert.equal(res.code, 0, res.output);
 
   const wf = fs.readFileSync(path.join(dir, WF), 'utf8');
   assert.match(wf, /name: coding-flow verify/);
-  assert.match(wf, /harness verify/);
+  // Story-based repos are verified per story via `run`; the repo-wide
+  // `harness verify` stays as the fallback for global-config projects.
+  assert.match(wf, /\brun\b/, 'the workflow drives the per-story run orchestrator');
+  assert.match(wf, /harness verify/, 'the repo-wide verify remains as a fallback');
   assert.match(wf, /audit --check/);
-  assert.match(wf, /@landry_pouth\/coding-flow/, 'the workflow targets the published package');
   assert.match(wf, /upload-artifact/, 'the evidence is uploaded');
+});
+
+test('ci init pins the workflow to the exact published version (reproducible gate)', (t) => {
+  const dir = project(t, 'ci-pin');
+  run(dir, ['ci', 'init']);
+
+  const wf = fs.readFileSync(path.join(dir, WF), 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.match(
+    wf,
+    new RegExp(`@landry_pouth/coding-flow@${pkg.version.replace(/\./g, '\\.')}`),
+    'the clean-room gate replays a pinned CLI version, not whatever is latest',
+  );
+  // Every npx invocation of the package must carry the pin — no bare/floating call.
+  const floating = wf.match(/@landry_pouth\/coding-flow(?!@)/g);
+  assert.equal(floating, null, 'no unpinned reference to the package may leak into the workflow');
 });
 
 test('ci init is non-destructive without --force', (t) => {
