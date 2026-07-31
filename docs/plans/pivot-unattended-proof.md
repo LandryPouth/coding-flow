@@ -240,6 +240,29 @@ replaces (single preamble, not ten). Record before/after line counts in the PR.
 
 ## 7. Batch 6 — Reposition (docs + version, do LAST so docs match reality)
 
+> **Status: DONE (2026-07-31), with two deliberate scope changes vs this section
+> as written — both flow from the §8 "outil perso" decision:**
+>
+> 1. **Honest update, not a CLI-first *restructure*.** The README already led
+>    with the truthful "executed proof that tests actually ran and passed" (not
+>    the unattended dream). Since 4b is deferred, leading with `npx … run` would
+>    *overclaim* a command that doesn't yet drive an agent, and a full inversion
+>    would bloat a polished README — against the golden-path rule *subtract, don't
+>    add*. So Batch 6 documented `run`, wired the CI gate mention, and fixed every
+>    straggler that made docs describe the old reality (the `## Commands` block now
+>    lives in `plan.md` not `tests.md`; the story-files table is the 3-file layout;
+>    the "unattended" pay-off example is now the shipped batch `run`; the
+>    skill/rules references are current) — without rewriting the identity.
+> 2. **No public "this is a personal tool" line in the README.** The §8 decision
+>    is an *author* investment call (how much effort, whether to chase users), not
+>    marketing copy — declaring it publicly would undersell a genuinely useful,
+>    tested tool. It stays recorded in §8 of this plan, not in the shipped README.
+>
+> Version parity: all four manifests + the guard-hook pin bumped to **0.4.0**
+> together; `plugin.test.js` parity green. Migration guide gained a **0.3 → 0.4**
+> section covering the three renames (RULES.md, 3-file stories, six skills) and the
+> residue `upgrade` leaves to clean by hand. `npm test` 141/141.
+
 **Goal:** the surface now *describes what shipped*, CLI-first.
 
 - `README.md`: rewrite around the one-sentence pitch; **CLI/CI first**, plugin as an

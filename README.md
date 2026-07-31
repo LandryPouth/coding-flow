@@ -134,12 +134,13 @@ while the front door shrank from thirty skills to six.
 The harness turns *advisory* guardrails into *executed* ones, attached to an identity and verified out of the agent's hands. It does **not** sandbox the agent, intercept every shell command, replace your tests/lint/reviews, or guarantee an app is secure — it catches obvious mistakes and leaves usable proof.
 
 - **`guard` — deterministic enforcement.** A PreToolUse hook refuses writing a `.env`, a key, or content containing a secret **before** it reaches the disk (exit 2). Wired into `.claude/settings.json` by `init`; also travels with the plugin.
-- **`verify` — executed proof.** Runs the declared validation commands (config `validation.commands`, the `## Commands` block of `tests.md`, or `package.json` scripts), captures their exit codes verbatim into `.coding-flow/runs/*-verify.json`, and fails if one breaks or none ran. Declare `validation.quality` (lint, format-check, `jscpd`) and it runs in the same pass. Each proof binds to a content token of the working tree and a toolchain fingerprint, so a green run that no longer matches the code reads as `stale` until re-verified.
-- **`audit` / `trace` / `ship` / `ci`.** `audit` aggregates proofs into an append-only ledger (`--export` writes `docs/AUDIT.md`, `--check` is the "no merge without a green verify" gate); `trace` walks story → commits → PR → evidence → tests; `ship` injects the latest proof into the PR body; `ci init` scaffolds a clean-room workflow replaying `verify` + `audit --check`.
+- **`verify` — executed proof.** Runs the declared validation commands (config `validation.commands`, the `## Commands` block of `plan.md`, or `package.json` scripts), captures their exit codes verbatim into `.coding-flow/runs/*-verify.json`, and fails if one breaks or none ran. Declare `validation.quality` (lint, format-check, `jscpd`) and it runs in the same pass. Each proof binds to a content token of the working tree and a toolchain fingerprint, so a green run that no longer matches the code reads as `stale` until re-verified.
+- **`run` — one report over many stories.** `ai-flow run` (all stories, one `--epic`, or one `--story`) verifies each story for real, writes its per-story proof, and emits one aggregated `*-run.json` report. It orchestrates; an executor *driver* runs the work — today only `none` (verify what's already implemented), with agent drivers a reserved, pluggable seam. Afterward `status` reflects the fresh proof.
+- **`audit` / `trace` / `ship` / `ci`.** `audit` aggregates proofs into an append-only ledger (`--export` writes `docs/AUDIT.md`, `--check` is the "no merge without a green verify" gate); `trace` walks story → commits → PR → evidence → tests; `ship` injects the latest proof into the PR body; `ci init` scaffolds a clean-room workflow replaying the per-story `run` (or `verify`) + `audit --check`.
 
 **What the proof does and does not claim.** `verify` executes your declared commands and captures their real exit codes, so the agent **cannot lie about having run them or about the result** — a green story means the machine ran the checks and they passed. It does **not** prove the *code is correct*: the agent writes both the code and the tests, so a weak suite proves only that weak tests pass. The value is removing the "did you actually check?" trust gap, not certifying correctness.
 
-**Where this actually pays off.** If you supervise every run and press Enter on `npm test` yourself, you don't need captured proof — be honest about that. The proof earns its keep the moment you are *not* in the loop: a `/run` that chains several stories unattended, a CI gate that decides without you watching, or a teammate reviewing a PR who wasn't there when it ran. In those cases "the agent said the tests passed" is worth nothing and an executed, provenance-stamped result is worth everything.
+**Where this actually pays off.** If you supervise every run and press Enter on `npm test` yourself, you don't need captured proof — be honest about that. The proof earns its keep the moment you are *not* in the loop: a batch `ai-flow run` that verifies several stories and hands you one proof report, a CI gate that decides without you watching, or a teammate reviewing a PR who wasn't there when it ran. In those cases "the agent said the tests passed" is worth nothing and an executed, provenance-stamped result is worth everything.
 
 We are validating this claim honestly with a small vanilla-vs-coding-flow benchmark on five escalating tasks — methodology and (pending) numbers in [`docs/experiments/reliability-benchmark.md`](docs/experiments/reliability-benchmark.md).
 
@@ -174,8 +175,9 @@ ai-flow ship --dry-run
 | `docs/architecture.md` | Boundaries, modules, data flow, architecture conventions, important dependencies. |
 | `docs/conventions.md` | Code, test, UI, API, naming, file, and validation conventions. |
 | `docs/roadmap.md` | Next product steps and milestones. |
-| Story `decisions.md` | A story's tradeoffs, rejected alternatives, consequences, accepted debt. |
-| Story `implementation-notes.md` | What actually happened: files changed, tests run, validations, rollback notes, follow-ups, remaining risks. |
+| Story `spec.md` | What the story delivers and its acceptance criteria. |
+| Story `plan.md` | How: approach, decisions and tradeoffs, the `## Commands` validation block, and the test plan. |
+| Story `tasks.md` | The checklist plus `## Result` — what actually happened: files changed, tests run, rollback notes, follow-ups, remaining risks. |
 
 ## Stop Conditions
 
@@ -189,12 +191,13 @@ Stop and report instead of guessing when: the scope is ambiguous; acceptance cri
 | `ai-flow upgrade` | Update installed files without overwriting local changes. |
 | `ai-flow doctor` | Check files, skills, frontmatter, manifest. `--fix` restores missing files, `--strict` adds checks. |
 | `ai-flow status` | List epics/stories, inferred status, and the linked worktree. |
+| `ai-flow run [--epic\|--story <path>]` | Verify a batch of stories and emit one aggregated proof report. `--driver` is a reserved executor seam (only `none` today); `--dry-run` shows the plan. |
 | `ai-flow bootstrap --scan` | Scan an existing codebase into `docs/bootstrap-scan.md`. |
 | `ai-flow harness preflight\|check\|verify\|evidence --story <path>` | Estimate risk / scan secrets / run + capture validation / write evidence. |
 | `ai-flow guard` | PreToolUse hook: refuses (exit 2) writing a blocked path or secret, before the disk. |
 | `ai-flow audit [--export\|--check]` | Aggregate the append-only ledger; export `docs/AUDIT.md`; CI gate on the latest verify. |
 | `ai-flow trace [--story <path>]` | Story → commits → PR → evidence → tests chain, with missing links. |
-| `ai-flow ci init` | Scaffold a clean-room GitHub Actions workflow (`verify` + `audit --check`). |
+| `ai-flow ci init` | Scaffold a clean-room GitHub Actions workflow (per-story `run` or `verify`, then `audit --check`). |
 | `ai-flow hook install\|uninstall\|status` | Opt-in local pre-push gate running `audit --check`. |
 | `ai-flow worktree add\|list\|remove` | Optional Git worktrees for parallel work. |
 | `ai-flow ship` | Push the current branch and open/update one PR against the base. |

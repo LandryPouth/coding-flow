@@ -54,7 +54,16 @@ the story (which re-verifies). You never have to ask the agent "did you check it
 ai-flow help          # the golden path (this, in the terminal)
 ai-flow help --all    # every command, grouped by role
 ai-flow commands      # the easiest commands for THIS project
-ai-flow list-skills   # all skills, macros first
+ai-flow list-skills   # the six skills, in workflow order
+```
+
+Verify a batch of stories at once and get one proof report:
+
+```bash
+ai-flow run                       # every story: verify each, one aggregated report
+ai-flow run --epic epic-02-...    # just one epic
+ai-flow run --story epics/.../story-02-01-...   # just one story
+ai-flow run --dry-run             # show what would run, execute nothing
 ```
 
 Optional hardening, only if you want it:
