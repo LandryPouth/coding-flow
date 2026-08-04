@@ -87,6 +87,22 @@ migration, billing, permissions, or data modeling. Highest-value question types:
 
 Prefer a labeled assumption over a question that would not change implementation.
 
+### Readiness Gate
+
+When the questions stop, record a verdict instead of sliding into writing. Judge
+it against the stopping criterion: *would the next question change
+implementation?*
+
+- **`ready`** — no open question would change implementation. Write the stories.
+- **`not ready`** — a blocking question is still open. Do not write stories yet:
+  ask the highest-leverage follow-up, surface the missing decision to the user as
+  a labeled question, or cut scope until it no longer matters. Record what is
+  blocking.
+
+Record the verdict — and the blocking item when `not ready` — in the epic
+`index.md`, so `/run` starts from a plan explicitly judged ready, not from
+silence.
+
 ## Brownfield Bootstrap (opt-in)
 
 For an existing codebase, prepare durable project docs before creating stories. Run
@@ -146,6 +162,10 @@ shippable slice.
 ## Risks
 
 -
+
+## Clarification Readiness
+
+ready / not ready — include only when Clarify First ran
 
 ## Recommended Next Command
 

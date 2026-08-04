@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "coding-flow",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Coding Flow — make Claude Code reliable on real projects: executed proof that tests actually passed, with an optional evidence & audit layer for teams.",
   "owner": {
     "name": "Landry Pouth"
@@ -10,7 +10,7 @@
     {
       "name": "coding-flow",
       "description": "Epics/stories skills plus a reliability layer: a deterministic secret-blocking guard hook and executed verify (proof the tests ran and passed), with an optional audit ledger and traceability for teams that need governance.",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "author": {
         "name": "Landry Pouth"
       },
