@@ -6,8 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx --yes @landry_pouth/coding-flow@0.4.0 guard",
-            "timeout": 30
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/bin/ai-flow.js", "guard"],
+            "timeout": 10
           }
         ]
       }

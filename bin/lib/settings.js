@@ -5,6 +5,13 @@
 // (unlike the templates copied verbatim). Idempotent: if our hook is already
 // there, we don't duplicate it. Non-destructive: we don't touch any other
 // existing hook or setting.
+//
+// The hook command runs a LOCALLY-RESOLVED binary, not `npx` on every call.
+// `npx --yes pkg guard` was the original wiring: it re-resolves against the
+// registry on every Edit/Write (spawning npm, revalidating the cache, or
+// hanging without a network) — fast enough once, catastrophic in the hot path.
+// The package is already on disk whenever `init` runs (it IS the process doing
+// the init), so we record its real path and the hook spawns it directly.
 
 const fs = require("fs");
 const path = require("path");
@@ -15,14 +22,52 @@ const { readJson, writeJson } = require("./util");
 // Write tools the guard must intercept (Claude Code matcher regex).
 const GUARD_MATCHER = "Write|Edit|MultiEdit|NotebookEdit";
 
-// Command run by the hook: the published npm package, resolved by npx and cached
-// after the first call. Built from packageJson.name to stay in sync with the
-// published scope, and PINNED to the installed version so the guard the agent
-// runs matches the tool the project was set up with, rather than silently
-// following whatever npx resolves as latest. (Note: re-wiring is idempotent, so
-// bumping the pin on an existing settings.json is a separate upgrade concern.)
+// Hook timeout, in seconds. The resolved-binary fast path finishes in well under
+// a second; 60s is insurance for the npx fallback's rare first download on a
+// shared machine. A timed-out hook exits non-zero (not exit 2) and is therefore
+// non-blocking — the write proceeds, the guard is skipped, latency is lost.
+const GUARD_TIMEOUT = 60;
+
+// Absolute path of the `ai-flow.js` entry point that is executing this code.
+// Anchored to __dirname rather than argv so it is correct whether the package
+// was installed via npx's cache, globally, or is this repo itself. realpathSync
+// resolves npm's bin symlinks. Returns null if unresolvable (never happens in
+// practice); the caller then emits an npx-only command.
+function guardBinaryPath() {
+  try {
+    return fs.realpathSync(path.join(__dirname, "..", "ai-flow.js"));
+  } catch {
+    return null;
+  }
+}
+
+// Characters that would break the path when single-quoted inside the shell
+// command. npm/global install paths never contain these; if one ever does, we
+// skip the fast path rather than emit a broken command.
+function isShellSafePath(p) {
+  return !/['"`$\\]/.test(p);
+}
+
+// Command run by the hook. Fast path: spawn the resolved local binary directly
+// (`node <path> guard`, ~50ms, no network). Guarded by `[ -f ]` so a stale path
+// on a machine that shares the settings.json falls back to npx — slow but it
+// still enforces, preserving the guard's deterministic contract. The npx
+// fallback is PINNED to the installed version (packageJson.name@version) so the
+// guard the agent runs matches the tool the project was set up with, rather
+// than silently following whatever npx resolves as latest.
+//
+// Deliberately an if/else, NOT `A && B || C`: a denied write makes guard exit 2
+// (non-zero), and `||` would then ALSO run the npx fallback — which reads a
+// stdin already consumed by the fast path, fails open, and masks the deny with
+// an allow. if/else runs exactly one branch and preserves its exit code.
 function guardCommandString() {
-  return `npx --yes ${packageJson.name}@${packageJson.version} guard`;
+  const binary = guardBinaryPath();
+  const fallback = `npx --yes ${packageJson.name}@${packageJson.version} guard`;
+
+  if (binary && isShellSafePath(binary)) {
+    return `R='${binary}'; if [ -f "$R" ]; then node "$R" guard; else ${fallback}; fi`;
+  }
+  return fallback;
 }
 
 function settingsPath() {
@@ -32,33 +77,48 @@ function settingsPath() {
 function guardHookEntry() {
   return {
     matcher: GUARD_MATCHER,
-    hooks: [{ type: "command", command: guardCommandString(), timeout: 30 }],
+    hooks: [{ type: "command", command: guardCommandString(), timeout: GUARD_TIMEOUT }],
   };
 }
 
-// Is our hook already wired? We recognize any PreToolUse entry whose command
-// invokes `guard` on our package — tolerant of matcher variants.
-function hasGuardHook(settings) {
+// Returns the guard hook object within settings (a reference into the parsed
+// object graph), or null. We recognize any PreToolUse hook whose command
+// invokes `guard` on our package — tolerant of matcher variants. This is what
+// lets ensureHookSettings UPGRADE an existing (older-format) guard hook in
+// place instead of treating it as "already wired".
+function findGuardHook(settings) {
   const pre = settings && settings.hooks && Array.isArray(settings.hooks.PreToolUse)
     ? settings.hooks.PreToolUse
     : [];
 
-  return pre.some(
-    (entry) =>
-      entry &&
-      Array.isArray(entry.hooks) &&
-      entry.hooks.some(
-        (hook) =>
-          hook &&
-          typeof hook.command === "string" &&
-          hook.command.includes(" guard") &&
-          (hook.command.includes(packageJson.name) || hook.command.includes("coding-flow")),
-      ),
-  );
+  for (const entry of pre) {
+    if (!entry || !Array.isArray(entry.hooks)) {
+      continue;
+    }
+    const hook = entry.hooks.find(
+      (h) =>
+        h &&
+        typeof h.command === "string" &&
+        h.command.includes(" guard") &&
+        (h.command.includes(packageJson.name) || h.command.includes("coding-flow")),
+    );
+    if (hook) {
+      return hook;
+    }
+  }
+  return null;
+}
+
+function hasGuardHook(settings) {
+  return findGuardHook(settings) !== null;
 }
 
 // Merges the guard hook into settings.json. Creates the file if it's missing.
 // Modifies nothing else. Returns the status for the init output.
+//
+// Statuses: "created" (file created), "merged" (added to an existing file),
+// "upgraded" (an existing guard hook was replaced with the current fast
+// command), "unchanged" (already wired with the current command), "unparseable".
 function ensureHookSettings({ dryRun = false } = {}) {
   const target = settingsPath();
   const existed = fs.existsSync(target);
@@ -71,8 +131,24 @@ function ensureHookSettings({ dryRun = false } = {}) {
 
   const next = settings && typeof settings === "object" ? settings : {};
 
-  if (hasGuardHook(next)) {
-    return { status: "unchanged", path: target };
+  const existing = findGuardHook(next);
+
+  if (existing) {
+    const current = guardCommandString();
+
+    if (existing.command === current && existing.timeout === GUARD_TIMEOUT) {
+      return { status: "unchanged", path: target };
+    }
+
+    // Upgrade in place: replace the command and timeout, keep the matcher and
+    // every other hook untouched.
+    existing.command = current;
+    existing.timeout = GUARD_TIMEOUT;
+
+    if (!dryRun) {
+      writeJson(target, next);
+    }
+    return { status: "upgraded", path: target };
   }
 
   if (!next.hooks || typeof next.hooks !== "object" || Array.isArray(next.hooks)) {
@@ -92,4 +168,12 @@ function ensureHookSettings({ dryRun = false } = {}) {
   return { status: existed ? "merged" : "created", path: target };
 }
 
-module.exports = { ensureHookSettings, hasGuardHook, guardCommandString, GUARD_MATCHER };
+module.exports = {
+  ensureHookSettings,
+  hasGuardHook,
+  findGuardHook,
+  guardCommandString,
+  guardBinaryPath,
+  GUARD_MATCHER,
+  GUARD_TIMEOUT,
+};

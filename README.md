@@ -86,7 +86,7 @@ It runs `init` for you (non-destructive) and points you to `/plan`. The terminal
 **Do I need both steps?** If you use Claude Code, yes — Step 1 once, Step 2 per repo. If you only use the CLI/CI (no Claude Code), skip Step 1 and just run `init` per repo. Two misconceptions to avoid:
 
 - **"I installed the plugin, so my project is ready."** No — the plugin gives you the commands globally, but a fresh repo has nothing for them to act on until `init` runs inside it.
-- **"I need to install the npm package myself."** No — `npx` fetches it automatically (Step 2 and the `guard` hook).
+- **"I need to install the npm package myself."** No — `npx` fetches it automatically (Step 2). The `guard` hook then runs that package's binary **directly from disk** (bundled with the plugin, or resolved when `init` runs) — it never re-fetches through `npx` on every write, so it stays fast even offline.
 
 ## Choosing The Mode
 
@@ -133,7 +133,7 @@ while the front door shrank from thirty skills to six.
 
 The harness turns *advisory* guardrails into *executed* ones, attached to an identity and verified out of the agent's hands. It does **not** sandbox the agent, intercept every shell command, replace your tests/lint/reviews, or guarantee an app is secure — it catches obvious mistakes and leaves usable proof.
 
-- **`guard` — deterministic enforcement.** A PreToolUse hook refuses writing a `.env`, a key, or content containing a secret **before** it reaches the disk (exit 2). Wired into `.claude/settings.json` by `init`; also travels with the plugin.
+- **`guard` — deterministic enforcement.** A PreToolUse hook refuses writing a `.env`, a key, or content containing a secret **before** it reaches the disk (exit 2). Wired into `.claude/settings.json` by `init`; also travels with the plugin. It runs the package's own binary, resolved locally at install — no `npx` in the write path, so enforcement costs milliseconds.
 - **`verify` — executed proof.** Runs the declared validation commands (config `validation.commands`, the `## Commands` block of `plan.md`, or `package.json` scripts), captures their exit codes verbatim into `.coding-flow/runs/*-verify.json`, and fails if one breaks or none ran. Declare `validation.quality` (lint, format-check, `jscpd`) and it runs in the same pass. Each proof binds to a content token of the working tree and a toolchain fingerprint, so a green run that no longer matches the code reads as `stale` until re-verified.
 - **`run` — one report over many stories.** `ai-flow run` (all stories, one `--epic`, or one `--story`) verifies each story for real, writes its per-story proof, and emits one aggregated `*-run.json` report. It orchestrates; an executor *driver* runs the work — today only `none` (verify what's already implemented), with agent drivers a reserved, pluggable seam. Afterward `status` reflects the fresh proof.
 - **`audit` / `trace` / `ship` / `ci`.** `audit` aggregates proofs into an append-only ledger (`--export` writes `docs/AUDIT.md`, `--check` is the "no merge without a green verify" gate); `trace` walks story → commits → PR → evidence → tests; `ship` injects the latest proof into the PR body; `ci init` scaffolds a clean-room workflow replaying the per-story `run` (or `verify`) + `audit --check`.

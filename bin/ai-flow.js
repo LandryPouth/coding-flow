@@ -111,6 +111,8 @@ if (command === "init") {
       log(dry ? "Guard hook: would create .claude/settings.json" : "Guard hook: wired in .claude/settings.json");
     } else if (hook.status === "merged") {
       log(dry ? "Guard hook: would merge into .claude/settings.json" : "Guard hook: merged into .claude/settings.json");
+    } else if (hook.status === "upgraded") {
+      log(dry ? "Guard hook: would upgrade to the resolved binary" : "Guard hook: upgraded to the resolved binary");
     } else if (hook.status === "unchanged") {
       log("Guard hook: already wired");
     } else if (hook.status === "unparseable") {
