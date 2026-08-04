@@ -52,6 +52,23 @@ function runCli(cwd, args) {
   }
 }
 
+// Runs a hook command the way Claude Code would: `sh -c "<command>"` with the
+// hook payload piped on stdin. Returns { code, stdout, stderr }.
+function runHook(cwd, command, payload) {
+  const input = payload === null ? '' : JSON.stringify(payload);
+  try {
+    const stdout = execFileSync('sh', ['-c', command], {
+      cwd,
+      input,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return { code: 0, stdout, stderr: '' };
+  } catch (err) {
+    return { code: err.status ?? 1, stdout: err.stdout || '', stderr: err.stderr || '' };
+  }
+}
+
 test('guard denies writing a .env file (exit 2, deny decision)', (t) => {
   const dir = project(t, 'guard-env');
   const res = guard(dir, { tool_name: 'Write', tool_input: { file_path: '.env', content: 'X=1' } });
@@ -168,4 +185,72 @@ test('init merges the guard hook into an existing settings.json without clobberi
   assert.deepEqual(settings.permissions.allow, ['Bash(ls:*)'], 'the existing settings are preserved');
   assert.equal(settings.hooks.PreToolUse.length, 2, 'our hook is added alongside the existing one');
   assert.ok(settings.hooks.PreToolUse.some((e) => /guard/.test(e.hooks[0].command)));
+});
+
+test('the wired hook runs the resolved binary directly (fast path, no npx)', (t) => {
+  const dir = project(t, 'guard-fastpath');
+  runCli(dir, ['init']);
+  const settings = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
+  const command = settings.hooks.PreToolUse[0].hooks[0].command;
+
+  // The emitted command spawns a locally-resolved binary, not npx, in the
+  // happy path: R='<real path>'; if [ -f "$R" ]; then node "$R" guard; else …
+  assert.match(command, /^R='/);
+  assert.match(command, /if \[ -f "\$R" \]; then node "\$R" guard/);
+
+  // allow: normal source write
+  const allow = runHook(dir, command, {
+    tool_name: 'Write',
+    tool_input: { file_path: 'src/index.ts', content: 'export const x = 1;' },
+  });
+  assert.equal(allow.code, 0, 'the fast path must allow a normal write');
+
+  // deny: blocked path
+  const deny = runHook(dir, command, {
+    tool_name: 'Write',
+    tool_input: { file_path: '.env', content: 'X=1' },
+  });
+  assert.equal(deny.code, 2, 'the fast path must deny a blocked path');
+  assert.equal(JSON.parse(deny.stdout).hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('init upgrades an existing npx-based guard hook to the resolved binary', (t) => {
+  const dir = project(t, 'guard-upgrade');
+  fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+  const existing = {
+    permissions: { allow: ['Bash(ls:*)'] },
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: 'Write|Edit',
+          hooks: [
+            { type: 'command', command: 'npx --yes @landry_pouth/coding-flow@0.4.0 guard', timeout: 30 },
+          ],
+        },
+        { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo hi' }] },
+      ],
+    },
+  };
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify(existing, null, 2));
+
+  const res = runCli(dir, ['init']);
+  assert.match(res.output, /upgraded/);
+
+  const settings = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
+  assert.equal(settings.hooks.PreToolUse.length, 2, 'the hook is upgraded in place, never duplicated');
+  assert.ok(settings.permissions.allow.includes('Bash(ls:*)'), 'existing permissions are preserved');
+  assert.ok(
+    settings.hooks.PreToolUse.some((e) => e.matcher === 'Bash' && e.hooks[0].command === 'echo hi'),
+    'unrelated hooks are untouched',
+  );
+
+  const guardEntry = settings.hooks.PreToolUse.find((e) => /guard/.test(e.hooks[0].command));
+  assert.equal(guardEntry.matcher, 'Write|Edit', 'the user matcher is preserved');
+  assert.equal(guardEntry.hooks[0].timeout, 60, 'the timeout is updated to the current value');
+  assert.match(guardEntry.hooks[0].command, /^R='/, 'the command is replaced with the fast path');
+  assert.match(
+    guardEntry.hooks[0].command,
+    /coding-flow@0\.4\.0 guard/,
+    'the npx fallback stays pinned to the installed version',
+  );
 });

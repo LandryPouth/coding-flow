@@ -47,19 +47,25 @@ test('hooks.json wires the guard PreToolUse on the write tools', () => {
   assert.ok(Array.isArray(hooks.hooks.PreToolUse) && hooks.hooks.PreToolUse.length >= 1);
   const entry = hooks.hooks.PreToolUse[0];
   assert.match(entry.matcher, /Write/);
-  assert.match(entry.hooks[0].command, /guard/);
+  // Exec form: the guard subcommand travels in `args`, not the command string.
+  const hook = entry.hooks[0];
+  assert.equal(hook.type, 'command');
+  assert.ok(hook.args && Array.isArray(hook.args), 'the hook is in exec form (has args)');
+  assert.ok(hook.args.includes('guard'), 'the hook must invoke the guard subcommand');
 });
 
-test('hooks.json pins the guard command to the package version (no skew)', () => {
+test('hooks.json runs the guard binary bundled in the plugin (no npx, no skew)', () => {
   const hooks = readJson('.claude-plugin/hooks/hooks.json');
-  const pkg = readJson('package.json');
-  const command = hooks.hooks.PreToolUse[0].hooks[0].command;
-  // The guard the plugin runs must match the tool version it ships with; a bare
-  // (unpinned) command would silently drift to whatever npx resolves as latest.
-  assert.ok(
-    command.includes(`${pkg.name}@${pkg.version}`),
-    `guard command must pin ${pkg.name}@${pkg.version}, got: ${command}`,
-  );
+  const hook = hooks.hooks.PreToolUse[0].hooks[0];
+  // The plugin bundles bin/ from this repo, so the hook spawns its own copy of
+  // ai-flow.js via ${CLAUDE_PLUGIN_ROOT} — no npx, no registry, and the guard
+  // can never drift from the plugin version it ships with.
+  const binaryRef = hook.args && hook.args.find((a) => a.includes('CLAUDE_PLUGIN_ROOT'));
+  assert.ok(binaryRef, 'the hook must reference the bundled binary via ${CLAUDE_PLUGIN_ROOT}');
+  assert.match(binaryRef, /bin\/ai-flow\.js$/);
+  // The referenced file exists in this repo, so the bundled plugin ships it.
+  const rel = binaryRef.replace(/\$\{CLAUDE_PLUGIN_ROOT\}\/?/, '');
+  assert.ok(fs.existsSync(path.join(ROOT, rel)), 'the guard binary is part of the plugin bundle');
 });
 
 test('marketplace.json lists the plugin with a consistent source and version', () => {

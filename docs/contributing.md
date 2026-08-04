@@ -43,7 +43,7 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/harness.js` | Security, scan of secrets/sensitive files, preflight/check/`verify`/evidence |
 | `lib/identity.js` | Git provenance (commit, branch, author, dirty, PR) injected into every proof |
 | `lib/guard.js` | Deterministic PreToolUse hook (refusal of blocked paths / secrets before write) |
-| `lib/settings.js` | Idempotent merge of the `guard` hook into `.claude/settings.json` |
+| `lib/settings.js` | Idempotent merge/upgrade of the `guard` hook into `.claude/settings.json` (resolved binary, npx fallback) |
 | `lib/audit.js` | Append-only ledger, `docs/AUDIT.md` export, `--check` gate |
 | `lib/trace.js` | Story → commits → PR → evidence → tests chain |
 | `lib/ci.js` | Scaffolder of the clean-room CI workflow (`verify` + `audit`) |

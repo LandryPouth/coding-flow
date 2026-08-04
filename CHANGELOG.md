@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **The guard hook no longer shells out to `npx` on every write.** It previously
+  ran `npx --yes @landry_pouth/coding-flow@0.4.0 guard`, which re-resolved
+  against the registry on each Edit/Write and could hang to its 30s timeout —
+  stalling every write in coding-flow-enabled projects. It now runs the
+  package's binary directly: the plugin hook spawns the copy bundled with the
+  plugin (`${CLAUDE_PLUGIN_ROOT}/bin/ai-flow.js`, exec form, no registry), and
+  the `init`-wired project hook records the path of the binary that ran `init`,
+  falling back to the pinned `npx` command only when that path is missing (e.g.
+  a shared settings.json). Re-running `init` upgrades an existing project's hook
+  in place; the timeout is raised to 60s to cover the fallback's one-time
+  download.
+
 ## [0.4.0] - 2026-07-31
 
 A consolidation release: the same evidence spine, a much smaller surface. Three
