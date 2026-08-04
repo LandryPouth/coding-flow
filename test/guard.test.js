@@ -12,6 +12,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
+const PKG = require('../package.json');
 
 function tmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `coding-flow-${prefix}-`));
@@ -248,9 +249,8 @@ test('init upgrades an existing npx-based guard hook to the resolved binary', (t
   assert.equal(guardEntry.matcher, 'Write|Edit', 'the user matcher is preserved');
   assert.equal(guardEntry.hooks[0].timeout, 60, 'the timeout is updated to the current value');
   assert.match(guardEntry.hooks[0].command, /^R='/, 'the command is replaced with the fast path');
-  assert.match(
-    guardEntry.hooks[0].command,
-    /coding-flow@0\.4\.0 guard/,
+  assert.ok(
+    guardEntry.hooks[0].command.includes(`coding-flow@${PKG.version} guard`),
     'the npx fallback stays pinned to the installed version',
   );
 });
