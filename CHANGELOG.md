@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-08-04
+
+### Added
+
+- **`/plan` Clarify First now ends with a readiness gate.** After the
+  pressure-test interview, `/plan` records an explicit `ready` / `not ready`
+  verdict instead of sliding straight into writing stories. `ready` means no open
+  question would change implementation; `not ready` holds story writing until the
+  blocking item is answered, surfaced to the user as a labeled question, or cut
+  out of scope. The verdict — and the blocking item when `not ready` — is recorded
+  in the epic `index.md`, so `/run` starts from a plan explicitly judged ready,
+  not from silence. This restores the go/no-go that grill-me provided before the
+  0.4 consolidation, as a smaller step integrated into `plan` rather than a
+  separate skill.
+
 ## [0.4.1] - 2026-08-04
 
 ### Fixed
@@ -115,6 +130,7 @@ agent's hands. Distributed as a native Claude Code plugin and published on npm.
 - The GitHub storage backend (issues/sub-issues) is a proven seam with a clean
   `fail()`; implementation stays deferred until a real need appears.
 
+[0.5.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.0
 [0.4.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.4.1
 [0.4.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.4.0
 [0.2.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.2.0
