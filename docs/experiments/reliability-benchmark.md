@@ -17,8 +17,8 @@ on first-pass success and forgotten-file rate, at comparable or lower token cost
 Run each task twice, from the same clean starting commit, in separate sessions:
 
 - **A — vanilla:** Claude Code with a normal `CLAUDE.md`, free conversation.
-- **B — coding-flow:** the same repo scaffolded with `init`, driven via `/plan-epic`
-  → `/run-story`.
+- **B — coding-flow:** the same repo scaffolded with `init`, driven via `/flow-plan-epic`
+  → `/flow-run-story`.
 
 Same prompt wording for the user-facing objective in both arms. Blind the grader
 to the arm where feasible.

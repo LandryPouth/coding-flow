@@ -11,10 +11,13 @@ const {
   log,
   fail,
   toPortable,
+  normalizePortable,
   walkFiles,
   hashFile,
   readJson,
   writeJson,
+  removeFileIfExists,
+  removeEmptyDirsUpward,
 } = require("./util");
 const { ensureHarnessConfig } = require("./harness");
 
@@ -37,13 +40,28 @@ function listTemplateSkillNames() {
     .sort();
 }
 
-function getTemplateSpecs() {
+const SKILLS_DIR = ".claude/skills";
+
+// The single seam that decides "does this project carry its own copy of the
+// skills?". Every consumer (init, upgrade, doctor, manifest, uninstall) derives
+// its view of the install from here, so the answer can never disagree between
+// two commands.
+function isSkillTarget(targetRel) {
+  return normalizePortable(targetRel).startsWith(`${SKILLS_DIR}/`);
+}
+
+function getTemplateSpecs({ includeSkills = true } = {}) {
   ensureTemplatesExist();
 
   const specs = [];
 
   for (const source of walkFiles(templatesRoot)) {
     const relativePath = toPortable(path.relative(templatesRoot, source));
+
+    if (!includeSkills && isSkillTarget(relativePath)) {
+      continue;
+    }
+
     specs.push({
       source,
       sourceRel: relativePath,
@@ -86,7 +104,11 @@ function buildManifestFromCurrentTargets(previous = null) {
         hash: sourceHash,
         kind: spec.kind,
       };
-    } else if (previous && previous.files && previous.files[spec.targetRel]) {
+    } else if (fs.existsSync(target) && previous && previous.files && previous.files[spec.targetRel]) {
+      // Carrying the previous entry forward keeps the original hash of a file
+      // the user edited locally. It must not resurrect an entry for a file that
+      // is gone — a skill pruned when the project switched to the plugin would
+      // otherwise stay in the manifest forever.
       files[spec.targetRel] = previous.files[spec.targetRel];
     }
   }
@@ -182,10 +204,12 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     "In Claude Code (the daily driver):",
     "",
     "```txt",
-    'Use /plan to turn an objective into implementation-ready stories.',
-    "Use /run to run the next story end-to-end (it picks QUICK..STRICT by risk).",
-    "Use /run STRICT for auth, permissions, admin, secrets, payments, uploads, or sensitive data.",
-    "Then /verify to capture proof, /review before merge, and /ship to open the PR.",
+    'Use /flow-plan to turn an objective into implementation-ready stories.',
+    "Use /flow-run to run the next story end-to-end (it picks QUICK..STRICT by risk).",
+    "Use /flow-run STRICT for auth, permissions, admin, secrets, payments, uploads, or sensitive data.",
+    "Then /flow-verify to capture proof, /flow-review before merge, and /flow-ship to open the PR.",
+    "",
+    "With the plugin installed the same skills answer to coding-flow:flow-*.",
     "```",
     "",
     "In the terminal:",
@@ -402,6 +426,27 @@ function printConvenienceSummary(convenience, { dryRun = false } = {}) {
   }
 }
 
+function printPrunedSkills(pruned, { dryRun = false } = {}) {
+  if (!pruned) {
+    return;
+  }
+
+  if (pruned.removed.length > 0) {
+    log(`Outdated skills: ${dryRun ? "would remove" : "removed"} ${pruned.removed.length}`);
+    for (const file of pruned.removed) {
+      log(`- ${file}`);
+    }
+  }
+
+  if (pruned.skippedModified.length > 0) {
+    log(`Outdated skills kept (locally edited): ${pruned.skippedModified.length}`);
+    for (const file of pruned.skippedModified) {
+      log(`- ${file}`);
+    }
+    log("Delete them by hand, or re-run with --force.");
+  }
+}
+
 function copyFileToTarget(source, targetRel, { force = false, dryRun = false } = {}) {
   const target = path.join(cwd, targetRel);
   const targetExists = fs.existsSync(target);
@@ -418,14 +463,70 @@ function copyFileToTarget(source, targetRel, { force = false, dryRun = false } =
   return targetExists ? "updated" : "copied";
 }
 
-function copyTemplates({ force = false, dryRun = false } = {}) {
+// Skill files this project installed that the templates no longer expect —
+// either because the skill was renamed, or because the project switched to the
+// plugin as its skills channel. Only files that still match their manifest hash
+// are removable; anything the user edited is reported, never deleted.
+function collectStaleSkillFiles({ includeSkills = true } = {}) {
+  const manifest = readManifest();
+  const expected = new Set(
+    getTemplateSpecs({ includeSkills })
+      .filter((spec) => isSkillTarget(spec.targetRel))
+      .map((spec) => normalizePortable(spec.targetRel)),
+  );
+
+  const removable = [];
+  const modified = [];
+
+  for (const [targetRel, entry] of Object.entries(manifest.files || {})) {
+    const normalized = normalizePortable(targetRel);
+
+    if (!isSkillTarget(normalized) || expected.has(normalized)) {
+      continue;
+    }
+
+    const target = path.join(cwd, normalized);
+
+    if (!fs.existsSync(target)) {
+      continue;
+    }
+
+    if (entry && entry.hash && hashFile(target) !== entry.hash) {
+      modified.push(normalized);
+      continue;
+    }
+
+    removable.push(normalized);
+  }
+
+  return { removable: removable.sort(), modified: modified.sort() };
+}
+
+function pruneStaleSkills({ dryRun = false, force = false, includeSkills = true } = {}) {
+  const { removable, modified } = collectStaleSkillFiles({ includeSkills });
+  const targets = force ? [...removable, ...modified] : removable;
+  const removed = [];
+
+  for (const targetRel of targets) {
+    const target = path.join(cwd, targetRel);
+
+    if (removeFileIfExists(target, { dryRun })) {
+      removed.push(targetRel);
+      removeEmptyDirsUpward(path.dirname(target), cwd, { dryRun });
+    }
+  }
+
+  return { removed, skippedModified: force ? [] : modified };
+}
+
+function copyTemplates({ force = false, dryRun = false, includeSkills = true } = {}) {
   ensureTemplatesExist();
 
   const copied = [];
   const updated = [];
   const skipped = [];
 
-  for (const spec of getTemplateSpecs()) {
+  for (const spec of getTemplateSpecs({ includeSkills })) {
     const result = copyFileToTarget(spec.source, spec.targetRel, { force, dryRun });
 
     if (result === "copied") {
@@ -437,23 +538,27 @@ function copyTemplates({ force = false, dryRun = false } = {}) {
     }
   }
 
+  // Prune BEFORE the manifest is rewritten: it reads the entries recorded by the
+  // previous install to know what it is allowed to remove.
+  const prunedSkills = pruneStaleSkills({ dryRun, force, includeSkills });
+
   if (!dryRun) {
     writeManifest(force ? null : readManifest());
   }
 
   const harnessCreated = ensureHarnessConfig({ dryRun });
 
-  return { copied, updated, skipped, harnessCreated };
+  return { copied, updated, skipped, harnessCreated, prunedSkills };
 }
 
-function upgrade({ force = false, dryRun = false, json = false } = {}) {
+function upgrade({ force = false, dryRun = false, json = false, includeSkills = true, skillsMode = null } = {}) {
   const previous = readManifest();
   const copied = [];
   const updated = [];
   const skippedModified = [];
   const unchanged = [];
 
-  for (const spec of getTemplateSpecs().filter((item) => item.kind === "template")) {
+  for (const spec of getTemplateSpecs({ includeSkills }).filter((item) => item.kind === "template")) {
     const target = path.join(cwd, spec.targetRel);
     const sourceHash = hashFile(spec.source);
     const manifestEntry = previous.files ? previous.files[spec.targetRel] : null;
@@ -490,6 +595,10 @@ function upgrade({ force = false, dryRun = false, json = false } = {}) {
     }
   }
 
+  // Renamed skills and a project that moved to the plugin channel both leave
+  // orphan skill files behind. Upgrading is exactly when they must go.
+  const prunedSkills = pruneStaleSkills({ dryRun, force, includeSkills });
+
   if (!dryRun) {
     writeManifest(previous);
   }
@@ -501,6 +610,8 @@ function upgrade({ force = false, dryRun = false, json = false } = {}) {
     updated,
     skippedModified,
     unchanged,
+    skillsMode,
+    prunedSkills,
     convenience,
   };
 
@@ -518,6 +629,7 @@ function upgrade({ force = false, dryRun = false, json = false } = {}) {
   log(`Copied: ${result.copied.length}`);
   log(`Updated: ${result.updated.length}`);
   log(`Unchanged: ${result.unchanged.length}`);
+  printPrunedSkills(result.prunedSkills, { dryRun });
   printConvenienceSummary(result.convenience, { dryRun });
 
   if (result.skippedModified.length > 0) {
@@ -533,6 +645,10 @@ module.exports = {
   ensureTemplatesExist,
   listTemplateSkillNames,
   getTemplateSpecs,
+  isSkillTarget,
+  collectStaleSkillFiles,
+  pruneStaleSkills,
+  printPrunedSkills,
   manifestPath,
   commandsPath,
   readManifest,

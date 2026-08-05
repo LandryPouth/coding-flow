@@ -1,6 +1,6 @@
 ---
-name: verify
-description: Run the declared validation commands for a story and capture verbatim pass/fail as tamper-evident proof. Use when you need to prove a change actually passed — not self-report that it did — or to understand the evidence the harness writes. Wraps `ai-flow harness verify`; the captured exit codes are the story's source of truth, and `/run` and CI both gate on them.
+name: flow-verify
+description: Run the declared validation commands for a story and capture verbatim pass/fail as tamper-evident proof. Use when you need to prove a change actually passed — not self-report that it did — or to understand the evidence the harness writes. Wraps `ai-flow harness verify`; the captured exit codes are the story's source of truth, and `/flow-run` and CI both gate on them.
 ---
 
 # Verify
@@ -10,7 +10,7 @@ description: Run the declared validation commands for a story and capture verbat
 `verify` is the proof step of the workflow. It executes the story's declared
 validation commands, records their real exit codes, and writes a content-addressed
 evidence file. Nothing here trusts a self-reported "tests pass" — the captured
-result is the pass/fail of record. `/run` calls it automatically; use `/verify`
+result is the pass/fail of record. `/flow-run` calls it automatically; use `/flow-verify`
 directly when you want the proof on demand, or to explain what the evidence means.
 
 ## Command

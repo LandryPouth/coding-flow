@@ -12,7 +12,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { packageRoot } = require("./context");
-const { log, walkFiles, hashFile, toPortable } = require("./util");
+const { log, walkFiles, hashFile, toPortable, removeEmptyDirsUpward } = require("./util");
 
 function templatesSkillsRoot() {
   return path.join(packageRoot, "templates", ".claude", "skills");
@@ -81,7 +81,11 @@ function pluginSync({ dryRun = false } = {}) {
     }
 
     for (const rel of diff.extra) {
-      fs.rmSync(path.join(target, rel), { force: true });
+      const stale = path.join(target, rel);
+      fs.rmSync(stale, { force: true });
+      // A renamed skill leaves its old directory behind once the file is gone.
+      // Pruning it keeps skills/ an exact mirror of the templates.
+      removeEmptyDirsUpward(path.dirname(stale), target);
     }
   }
 

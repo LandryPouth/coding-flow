@@ -11,6 +11,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { execFileSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -24,13 +25,52 @@ function freshProject(t) {
   return dir;
 }
 
+// A Claude Code config directory with no plugin in it. `init` reads the real
+// one to decide whether to copy the skills, so without this the suite would
+// pass or fail depending on whether the DEVELOPER has the plugin installed.
+function claudeConfigWithoutPlugin(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-claude-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+// A Claude Code config directory with the plugin really installed — registry
+// entry AND the skills on disk, because detection believes the artifact rather
+// than the registry (see plugin-detect.test.js).
+function claudeConfigWithPlugin(t) {
+  const dir = claudeConfigWithoutPlugin(t);
+  const installPath = path.join(dir, 'plugins', 'cache', 'coding-flow', 'coding-flow', '9.9.9');
+  fs.mkdirSync(path.join(installPath, 'skills', 'flow-run'), { recursive: true });
+  fs.writeFileSync(path.join(installPath, 'skills', 'flow-run', 'SKILL.md'), '---\nname: flow-run\n---\n');
+  fs.mkdirSync(path.join(installPath, '.claude-plugin'), { recursive: true });
+  fs.writeFileSync(
+    path.join(installPath, '.claude-plugin', 'plugin.json'),
+    JSON.stringify({ name: 'coding-flow', version: '9.9.9' }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'installed_plugins.json'),
+    JSON.stringify({
+      version: 2,
+      plugins: { 'coding-flow@coding-flow': [{ scope: 'user', installPath, version: '9.9.9' }] },
+    }),
+  );
+  return dir;
+}
+
 // Runs the CLI in `cwd`. Never throws: returns { code, output }.
-function run(cwd, args) {
+function run(cwd, args, { claudeConfigDir = null } = {}) {
   try {
     const output = execFileSync(process.execPath, [CLI, ...args], {
       cwd,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        // Never inherit the developer's plugin install: these tests must give
+        // the same answer on a laptop and in CI.
+        CLAUDE_CONFIG_DIR: claudeConfigDir || path.join(cwd, '.no-claude-config'),
+        CLAUDE_PLUGIN_ROOT: '',
+      },
     });
     return { code: 0, output };
   } catch (err) {
@@ -133,11 +173,203 @@ test('uninstall removes the managed files but keeps epics/', (t) => {
   );
 });
 
-test('list-skills lists the available skills', (t) => {
+test('list-skills lists the available skills under their flow- names', (t) => {
   const dir = freshProject(t);
   const { code, output } = run(dir, ['list-skills']);
   assert.equal(code, 0);
-  assert.ok(output.includes('run'), 'the output must contain at least one known skill');
+  // The prefix is the whole point: a bare `run` would collide with Claude Code's
+  // own built-in skill of that name.
+  assert.ok(output.includes('flow-run'), 'the output must list flow-run');
+  assert.ok(output.includes('flow-review'), 'the output must list flow-review');
+  assert.ok(!/^- run:/m.test(output), 'no skill may keep the bare, colliding name');
+});
+
+// --- Skills channel: plugin vs project -------------------------------------
+// The project must never carry a second copy of a skill the plugin already
+// serves: two names for the same thing is the confusion this whole seam exists
+// to remove.
+
+const SKILL_DIRS = ['flow-setup', 'flow-plan', 'flow-run', 'flow-verify', 'flow-review', 'flow-ship'];
+
+function readConfigSkills(dir) {
+  return JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'config.json'), 'utf8')).skills;
+}
+
+test('init copies the skills when no plugin is installed', (t) => {
+  const dir = freshProject(t);
+  assert.equal(run(dir, ['init'], { claudeConfigDir: claudeConfigWithoutPlugin(t) }).code, 0);
+
+  for (const name of SKILL_DIRS) {
+    assert.ok(
+      fs.existsSync(path.join(dir, '.claude', 'skills', name, 'SKILL.md')),
+      `missing skill after init: ${name}`,
+    );
+  }
+  assert.equal(readConfigSkills(dir), 'project');
+});
+
+test('init skips the skills when the plugin is already installed', (t) => {
+  const dir = freshProject(t);
+  const { code, output } = run(dir, ['init'], { claudeConfigDir: claudeConfigWithPlugin(t) });
+
+  assert.equal(code, 0);
+  assert.ok(!fs.existsSync(path.join(dir, '.claude', 'skills')), 'no project copy of the skills');
+  assert.equal(readConfigSkills(dir), 'plugin');
+  assert.match(output, /served by the plugin/i, 'init must say which channel serves the skills');
+});
+
+test('a plugin-served install is healthy for doctor', (t) => {
+  const dir = freshProject(t);
+  const claude = claudeConfigWithPlugin(t);
+  run(dir, ['init'], { claudeConfigDir: claude });
+
+  // doctor judges the project against the recorded decision, so missing project
+  // skills must not read as a broken install.
+  assert.equal(run(dir, ['doctor'], { claudeConfigDir: claude }).code, 0);
+});
+
+test('--with-skills and --no-skills override the detection', (t) => {
+  const forced = freshProject(t);
+  run(forced, ['init', '--with-skills'], { claudeConfigDir: claudeConfigWithPlugin(t) });
+  assert.ok(fs.existsSync(path.join(forced, '.claude', 'skills', 'flow-run')), '--with-skills wins');
+  assert.equal(readConfigSkills(forced), 'project');
+
+  const skipped = freshProject(t);
+  run(skipped, ['init', '--no-skills'], { claudeConfigDir: claudeConfigWithoutPlugin(t) });
+  assert.ok(!fs.existsSync(path.join(skipped, '.claude', 'skills')), '--no-skills wins');
+  assert.equal(readConfigSkills(skipped), 'plugin');
+});
+
+test('a re-init keeps the channel recorded at install time', (t) => {
+  const dir = freshProject(t);
+  run(dir, ['init'], { claudeConfigDir: claudeConfigWithoutPlugin(t) });
+
+  // Same project, but now on a machine that HAS the plugin: the recorded choice
+  // must win, or the install would differ between teammates.
+  run(dir, ['init'], { claudeConfigDir: claudeConfigWithPlugin(t) });
+
+  assert.equal(readConfigSkills(dir), 'project');
+  assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md')));
+});
+
+test('upgrade removes skills left over under their old names', (t) => {
+  const dir = freshProject(t);
+  const claude = claudeConfigWithoutPlugin(t);
+  run(dir, ['init'], { claudeConfigDir: claude });
+
+  // Simulate an install made before the flow- rename: an old name on disk AND
+  // in the manifest, one untouched and one edited by the user.
+  const skills = path.join(dir, '.claude', 'skills');
+  const manifestPath = path.join(dir, '.coding-flow', 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const sha = (p) => createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+
+  for (const [old, current] of [['run', 'flow-run'], ['review', 'flow-review']]) {
+    fs.mkdirSync(path.join(skills, old), { recursive: true });
+    fs.copyFileSync(path.join(skills, current, 'SKILL.md'), path.join(skills, old, 'SKILL.md'));
+    manifest.files[`.claude/skills/${old}/SKILL.md`] = {
+      source: `.claude/skills/${old}/SKILL.md`,
+      hash: sha(path.join(skills, old, 'SKILL.md')),
+      kind: 'template',
+    };
+  }
+  fs.appendFileSync(path.join(skills, 'review', 'SKILL.md'), '\nlocal edit\n');
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+  const { code, output } = run(dir, ['upgrade'], { claudeConfigDir: claude });
+
+  assert.equal(code, 0);
+  assert.ok(!fs.existsSync(path.join(skills, 'run')), 'the stale old name must be removed');
+  assert.ok(fs.existsSync(path.join(skills, 'review', 'SKILL.md')), 'a locally edited file is never deleted');
+  assert.match(output, /locally edited/i, 'upgrade must report what it kept and why');
+  assert.ok(fs.existsSync(path.join(skills, 'flow-run', 'SKILL.md')), 'the current skills stay');
+});
+
+// Turns a fresh install into what a project installed BEFORE this release looks
+// like: skills under their old bare names, and a config with no skills field.
+function makeLegacyInstall(dir) {
+  const skills = path.join(dir, '.claude', 'skills');
+  const manifestPath = path.join(dir, '.coding-flow', 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+  for (const name of ['setup', 'plan', 'run', 'verify', 'review', 'ship']) {
+    fs.renameSync(path.join(skills, `flow-${name}`), path.join(skills, name));
+    delete manifest.files[`.claude/skills/flow-${name}/SKILL.md`];
+    manifest.files[`.claude/skills/${name}/SKILL.md`] = {
+      source: `.claude/skills/${name}/SKILL.md`,
+      hash: createHash('sha256')
+        .update(fs.readFileSync(path.join(skills, name, 'SKILL.md')))
+        .digest('hex'),
+      kind: 'template',
+    };
+  }
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  delete config.skills;
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+}
+
+test('upgrading a legacy project adopts the plugin channel without re-running init', (t) => {
+  const dir = freshProject(t);
+  run(dir, ['init'], { claudeConfigDir: claudeConfigWithoutPlugin(t) });
+  makeLegacyInstall(dir);
+
+  // The user has since installed the plugin. A plain `upgrade` — no flag, no
+  // second `init` — must be enough to stop having two names for one skill.
+  const { code, output } = run(dir, ['upgrade'], { claudeConfigDir: claudeConfigWithPlugin(t) });
+
+  assert.equal(code, 0);
+  assert.equal(readConfigSkills(dir), 'plugin', 'the choice is recorded, so teammates share it');
+  assert.ok(!fs.existsSync(path.join(dir, '.claude', 'skills')), 'the duplicated copies are gone');
+  assert.match(output, /served by the plugin/i, 'upgrade says which channel won and why');
+  assert.equal(run(dir, ['doctor'], { claudeConfigDir: claudeConfigWithPlugin(t) }).code, 0);
+});
+
+test('upgrading a legacy project without the plugin keeps the skills, renamed', (t) => {
+  const dir = freshProject(t);
+  const claude = claudeConfigWithoutPlugin(t);
+  run(dir, ['init'], { claudeConfigDir: claude });
+  makeLegacyInstall(dir);
+
+  assert.equal(run(dir, ['upgrade'], { claudeConfigDir: claude }).code, 0);
+
+  assert.equal(readConfigSkills(dir), 'project');
+  for (const name of SKILL_DIRS) {
+    assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', name)), `${name} must be installed`);
+  }
+  assert.ok(!fs.existsSync(path.join(dir, '.claude', 'skills', 'run')), 'the old name is gone');
+});
+
+test('a recorded choice survives an upgrade run on a machine that would detect otherwise', (t) => {
+  const dir = freshProject(t);
+  run(dir, ['init'], { claudeConfigDir: claudeConfigWithoutPlugin(t) });
+  assert.equal(readConfigSkills(dir), 'project');
+
+  // A teammate WITH the plugin upgrades the same repo. Deleting the committed
+  // skills here would break every teammate who does not have the plugin.
+  const { output } = run(dir, ['upgrade'], { claudeConfigDir: claudeConfigWithPlugin(t) });
+
+  assert.equal(readConfigSkills(dir), 'project');
+  assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md')));
+  assert.match(output, /recorded in \.coding-flow\/config\.json/i);
+});
+
+test('upgrade --no-skills hands the channel over to the plugin', (t) => {
+  const dir = freshProject(t);
+  const claude = claudeConfigWithoutPlugin(t);
+  run(dir, ['init'], { claudeConfigDir: claude });
+  assert.equal(readConfigSkills(dir), 'project');
+
+  const { code } = run(dir, ['upgrade', '--no-skills'], { claudeConfigDir: claude });
+
+  assert.equal(code, 0);
+  assert.equal(readConfigSkills(dir), 'plugin');
+  for (const name of SKILL_DIRS) {
+    assert.ok(!fs.existsSync(path.join(dir, '.claude', 'skills', name)), `${name} must be gone`);
+  }
+  assert.equal(run(dir, ['doctor'], { claudeConfigDir: claude }).code, 0, 'doctor stays green');
 });
 
 test('version prints the package version and matches package.json', (t) => {

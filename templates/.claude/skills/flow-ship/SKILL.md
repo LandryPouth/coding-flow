@@ -1,5 +1,5 @@
 ---
-name: ship
+name: flow-ship
 description: Push the current branch and open or update one pull request against the base, with the latest verify evidence attached to the PR body. Use when a story is verified and ready for review or merge. Wraps `ai-flow ship`; it is idempotent (one feature = one branch = one PR) and refreshes the proof without overwriting the human text of the description.
 ---
 
@@ -10,7 +10,7 @@ description: Push the current branch and open or update one pull request against
 `ship` takes the verified work on the current branch and turns it into one pull
 request: it pushes the branch and opens (or updates) a single PR against the base,
 attaching the latest `verify` evidence so a reviewer sees the proof, not a promise.
-It is the last step of a story — run it after a green `/verify`.
+It is the last step of a story — run it after a green `/flow-verify`.
 
 ## Command
 

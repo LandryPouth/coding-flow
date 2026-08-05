@@ -1,5 +1,5 @@
 ---
-name: review
+name: flow-review
 description: Review an implementation before merge against project rules, architecture, tests, security, and story acceptance criteria — findings first, ranked by severity. Use to validate a change, prepare a PR, or catch blocking issues. Runs as a quick checklist by default; each dimension (architecture, tests, security, quality, E2E) has an opt-in deep section for refactors, cross-module change, or high-risk work.
 ---
 

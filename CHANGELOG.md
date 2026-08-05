@@ -4,6 +4,48 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-08-05
+
+### Changed
+
+- **The six skills are now `flow-*`: `flow-setup`, `flow-plan`, `flow-run`,
+  `flow-verify`, `flow-review`, `flow-ship`.** `run` and `review` collided head-on
+  with Claude Code's own built-in skills of those names — `/run` launches your
+  app, `/run` executed a story, and nothing in the menu told you which was which.
+  The prefix gives every command exactly one meaning. **Breaking:** `/run` and
+  friends no longer resolve to Coding Flow; `upgrade` removes the old skill files
+  from installed projects (a file you edited yourself is reported and kept).
+
+- **A project installs its skills from one channel, never two.** The skills ship
+  both with the plugin (`coding-flow:flow-run`) and as project files
+  (`/flow-run`). Installing both gave two names for one skill. `init` now detects
+  an installed plugin and skips the project copy; with no plugin it copies them as
+  before, so a teammate cloning the repo still gets the workflow. The resolved
+  choice is recorded in `.coding-flow/config.json` (`"skills": "plugin" |
+  "project"`) and committed, so `doctor`, `upgrade`, and `uninstall` all read the
+  same decision and the install cannot behave differently per machine. Override
+  with `--with-skills` / `--no-skills` on `init` or `upgrade`.
+
+  An existing project needs no second `init`: it has no recorded choice, so its
+  first `upgrade` makes one — detecting, recording it, and pruning the copies
+  that would now duplicate the plugin. A project that already recorded a choice
+  is never second-guessed, so a teammate upgrading on a machine with the plugin
+  cannot delete the skills every other teammate depends on.
+
+  Detection fails toward copying. A plugin counts as installed only when the
+  skills it would serve are visible on disk: a corrupt or unfamiliar registry, an
+  entry left behind by an uninstall, a half-finished install, and a leftover
+  cache directory all resolve to "no plugin", so the worst case is a duplicate
+  name and never a project with no skills at all. `test/plugin-detect.test.js`
+  pins down each of those cases.
+
+### Fixed
+
+- **The manifest no longer keeps entries for files that are gone.** A locally
+  edited template had its previous entry carried forward unconditionally, so a
+  removed file stayed listed forever. The carry-forward now requires the file to
+  still exist.
+
 ## [0.5.0] - 2026-08-04
 
 ### Added
@@ -130,6 +172,7 @@ agent's hands. Distributed as a native Claude Code plugin and published on npm.
 - The GitHub storage backend (issues/sub-issues) is a proven seam with a clean
   `fail()`; implementation stays deferred until a real need appears.
 
+[0.5.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.1
 [0.5.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.0
 [0.4.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.4.1
 [0.4.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.4.0

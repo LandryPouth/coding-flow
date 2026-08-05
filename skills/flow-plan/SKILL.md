@@ -1,5 +1,5 @@
 ---
-name: plan
+name: flow-plan
 description: Turn product intent or a brownfield codebase into an implementation-ready epic and vertical stories, each with spec.md, plan.md, and tasks.md. Use to plan work before running it — analyze the request, pick the smallest valuable slice, split into vertical stories, and write the story files. Includes opt-in sections for clarifying ambiguous requirements and for bootstrapping an existing codebase.
 ---
 
@@ -9,7 +9,7 @@ description: Turn product intent or a brownfield codebase into an implementation
 
 Turn product intent or brownfield discovery into an implementation-ready epic.
 
-Your job is not to write a beautiful plan. It is to make the next `/run` able to
+Your job is not to write a beautiful plan. It is to make the next `/flow-run` able to
 one-shot a useful slice with minimal ambiguity. Keep the path short; produce dense,
 useful artifacts, not ceremony.
 
@@ -28,7 +28,7 @@ useful artifacts, not ceremony.
 3. Create or update the epic `index.md` (goal, scope, ordered stories).
 4. Define the story sequence — vertical slices, each with concise Implementation Context.
 5. For each selected story, write its three files (see Story File Contract).
-6. Recommend the first story to run with `/run`.
+6. Recommend the first story to run with `/flow-run`.
 
 ## Planning Heuristics
 
@@ -45,7 +45,7 @@ useful artifacts, not ceremony.
 ## Story File Contract
 
 Each story folder holds exactly three files. Leave the `tasks.md` `## Result`
-section empty for `/run` to fill after implementation.
+section empty for `/flow-run` to fill after implementation.
 
 - **`spec.md`** — what & acceptance: user value, requirements, acceptance criteria
   (observable and testable), edge cases (correctness/security/UX/data), UX notes,
@@ -63,7 +63,7 @@ and migration when persistence changes. Avoid micro-stories like "create DTO".
 
 ## Context Efficiency
 
-Planning should make implementation one-shot without forcing `/run` to rediscover
+Planning should make implementation one-shot without forcing `/flow-run` to rediscover
 the whole project. For each story, capture likely files/directories, search anchors,
 the execution mode, whether a scout pre-step is needed, areas to avoid, and the
 validation focus. Mark `scout pre-step: yes` only when broad, cross-module, or
@@ -100,7 +100,7 @@ implementation?*
   blocking.
 
 Record the verdict — and the blocking item when `not ready` — in the epic
-`index.md`, so `/run` starts from a plan explicitly judged ready, not from
+`index.md`, so `/flow-run` starts from a plan explicitly judged ready, not from
 silence.
 
 ## Brownfield Bootstrap (opt-in)
@@ -169,5 +169,5 @@ ready / not ready — include only when Clarify First ran
 
 ## Recommended Next Command
 
-Use /run for ...
+Use /flow-run for ...
 ```

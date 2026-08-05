@@ -7,7 +7,7 @@
 //
 // Design: the CLI orchestrates, a DRIVER executes. In this version the only
 // driver is "none": it implements nothing and simply verifies work that was
-// already done (by a human, or by an interactive `/run` session in Claude Code).
+// already done (by a human, or by an interactive `/flow-run` session in Claude Code).
 // The executor seam is deliberately visible — a future driver (an agent binary
 // that implements each story before it is verified) becomes a purely additive
 // change, not a rewrite. Same shape as the storage-backend seam: one name active,
@@ -168,7 +168,7 @@ function run({ story = null, epic = null, driver = "none", json = false, dryRun 
   const all = flattenStories();
 
   if (all.length === 0) {
-    fail("no stories found under epics/. Create one with `/plan` first.");
+    fail("no stories found under epics/. Create one with `/flow-plan` first.");
   }
 
   const target = selectStories(all, { story, epic });

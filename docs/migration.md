@@ -106,6 +106,50 @@ your project context or your epics.
   updates through the marketplace and is independent of a project's `upgrade`. See
   the README's "Getting started" for the two-layer model.
 
+### 0.5 → next (the skills are renamed and now come from one channel)
+
+Two changes, and unlike the 0.3 → 0.4 renames below, `upgrade` cleans up after
+itself here — no manual `trash` pass:
+
+1. **Every skill gained a `flow-` prefix**: `setup`, `plan`, `run`, `verify`,
+   `review`, `ship` → **`flow-setup`, `flow-plan`, `flow-run`, `flow-verify`,
+   `flow-review`, `flow-ship`**. Claude Code ships its own built-in `run` and
+   `review` skills, so the old names sat next to built-ins that do something
+   entirely different. `upgrade` installs the new names and removes the old files
+   it originally installed; any skill file **you edited** is reported and left in
+   place for you to delete once you have moved your changes over.
+
+2. **A project no longer holds a copy of the skills when the plugin is
+   installed.** Your project predates that choice, so the first `upgrade` makes
+   it for you — no second `init`, no flag:
+
+   ```bash
+   ai-flow upgrade
+   ```
+
+   With the plugin installed it records `"skills": "plugin"` and removes the
+   copies that would otherwise duplicate it; without the plugin it records
+   `"project"` and keeps them. Either way the answer lands in
+   `.coding-flow/config.json` and is **committed**, so teammates and CI see the
+   same install — and from then on it is never re-decided, whatever a given
+   machine detects.
+
+   Force it either way whenever you disagree:
+
+   ```bash
+   ai-flow upgrade --no-skills    # the plugin serves them; drop the project copies
+   ai-flow upgrade --with-skills  # keep them committed in the repo instead
+   ```
+
+   Keep `--with-skills` if your repo is shared with people who do not install the
+   plugin — that copy is what gives them the workflow.
+
+   Detection errs toward copying: it only believes a plugin is installed when the
+   skills it would serve are visible on disk, so a stale registry entry or a
+   leftover cache directory leaves you with the project copy rather than with
+   nothing. `upgrade` prints which channel it chose and why — read that line, and
+   review the diff before committing.
+
 ### 0.3 → 0.4 (three renames leave residue to clean by hand)
 
 0.4.0 renamed three things. `upgrade` **adds the new files but never deletes the
@@ -130,7 +174,8 @@ clean the residue below with `trash` (never `rm`):
    `review`, not separate skills). Every other Coding Flow skill directory under
    `.claude/skills/` — `plan-epic`, `run-story`, `quick-story`, the `blueprint-*`,
    `agent-*`, and `*-check` folders — is obsolete; trash the ones that are not in
-   the set of six. Leave any skill *you* authored in place.
+   the set of six. Leave any skill *you* authored in place. Coming from 0.3 you
+   land past the rename above, so the six you keep are the `flow-*` ones.
 
 A quick way to spot the residue after upgrading:
 

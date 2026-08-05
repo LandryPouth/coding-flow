@@ -14,8 +14,8 @@ npx @landry_pouth/coding-flow init
 Then, in Claude Code:
 
 ```
-/plan "let users reset their password by email"   # objective -> stories
-/run                                              # run the next story end-to-end
+/flow-plan "let users reset their password by email"   # objective -> stories
+/flow-run                                              # run the next story end-to-end
 ```
 
 Back in the terminal, when you want to see state or ship:
@@ -31,15 +31,21 @@ That is 95% of daily use.
 
 | Skill | When |
 | --- | --- |
-| `/setup` | Scaffold Coding Flow into the repo (once). |
-| `/plan` | Turn an objective into implementation-ready stories. |
-| `/run` | Execute one story: plan → code → tests → verify. Picks QUICK..STRICT by risk. |
-| `/verify` | Capture verbatim pass/fail proof for a story. |
-| `/review` | Findings-first pre-merge review. |
-| `/ship` | Push the branch and open/update the PR. |
+| `/flow-setup` | Scaffold Coding Flow into the repo (once). |
+| `/flow-plan` | Turn an objective into implementation-ready stories. |
+| `/flow-run` | Execute one story: plan → code → tests → verify. Picks QUICK..STRICT by risk. |
+| `/flow-verify` | Capture verbatim pass/fail proof for a story. |
+| `/flow-review` | Findings-first pre-merge review. |
+| `/flow-ship` | Push the branch and open/update the PR. |
 
 The depth (STRICT mode, deep validators, context scout, TDD) lives as opt-in
-sections inside `/run` and `/review` — you don't chain separate skills by hand.
+sections inside `/flow-run` and `/flow-review` — you don't chain separate skills by hand.
+
+With the plugin installed, the same six answer to `coding-flow:flow-*` as well.
+The `flow-` prefix is deliberate: Claude Code has its own `/run` and `/review`,
+and a story run must never be confused with launching your app. You get the
+skills from **one** channel — `init` copies them into the repo only when the
+plugin is not installed, and records the choice in `.coding-flow/config.json`.
 
 ## What "verified" means
 

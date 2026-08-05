@@ -1,14 +1,14 @@
 ---
-name: setup
+name: flow-setup
 description: Scaffold Coding Flow into the current project from Claude Code (runs the published `init`). Use once per repo, right after installing the plugin, so setup happens in one place without switching to a terminal. Use when the user wants to install, set up, or scaffold Coding Flow in a repository.
 ---
 
 # Setup
 
 Install the Coding Flow project scaffold into the current repository, so the
-`/plan` and `/run` skills have rules, docs, and a harness to act on. This is the
+`/flow-plan` and `/flow-run` skills have rules, docs, and a harness to act on. This is the
 one-context alternative to running `init` yourself in a terminal: `/plugin install`
-then `/setup`.
+then `/flow-setup`.
 
 ## When To Use
 
@@ -31,7 +31,7 @@ then `/setup`.
    - If the project has no `package.json`, a minimal private one is created so the
      `flow:*` scripts work.
 3. For an existing (brownfield) codebase, optionally prepare durable project docs
-   first: run `npx @landry_pouth/coding-flow bootstrap --scan`, then `/plan` (its
+   first: run `npx @landry_pouth/coding-flow bootstrap --scan`, then `/flow-plan` (its
    Brownfield Bootstrap section fills the project docs from the scan).
 4. Verify the install:
 
@@ -39,8 +39,8 @@ then `/setup`.
    npx @landry_pouth/coding-flow doctor
    ```
 
-5. Report what was created, then point to the next step: `/plan` to turn an
-   objective into implementation-ready stories, followed by `/run`.
+5. Report what was created, then point to the next step: `/flow-plan` to turn an
+   objective into implementation-ready stories, followed by `/flow-run`.
 
 ## Stop Conditions
 

@@ -30,7 +30,7 @@ Excluded:
 ## Context Strategy
 
 - Default execution mode: `STANDARD`
-- Stories that need a scout pre-step (the Context Map pass in `/run`): none for this example
+- Stories that need a scout pre-step (the Context Map pass in `/flow-run`): none for this example
 - Shared search anchors: `hardcoded`, `Hero`, `content`, `homepage`
 - Areas to avoid unless needed: auth, billing, unrelated admin pages
 
