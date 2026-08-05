@@ -11,6 +11,7 @@ const path = require("path");
 const { toPortable } = require("../util");
 const { latestVerifyByStoryDir } = require("../audit");
 const { currentTreeToken } = require("../identity");
+const { readStoryPart } = require("../story");
 
 // Extracts the body of the `## Result` section (with its ### children) from a
 // tasks.md. The checklist above Result must not influence status, so only the
@@ -52,12 +53,21 @@ function resultNotes(raw) {
 // defaults to true so a caller that cannot assess freshness keeps the old
 // behavior.
 function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
-  const tasksPath = path.join(storyDir, "tasks.md");
-  const raw = fs.existsSync(tasksPath) ? fs.readFileSync(tasksPath, "utf8") : "";
+  // A single-file story answers the "tasks" role from story.md, so `## Status`
+  // and `## Result` are read from wherever this story actually keeps them.
+  const raw = readStoryPart(storyDir, "tasks");
 
   // 1. Explicit status wins, anywhere in the file: a person can mark a story
   //    blocked/wontfix/done regardless of the machine signal.
-  const statusMatch = raw.match(/## Status\s+([a-zA-Z -]+)/i);
+  //
+  //    The colon is optional because `flow-run` tells agents to write
+  //    `## Status: done` — the one form the previous `\s+` could not match. The
+  //    most authoritative of the three signals was silently inert for the exact
+  //    syntax the skill mandates, so a story marked blocked after a red verify
+  //    quietly fell through to the prose heuristic.
+  //    Three forms are accepted: `## Status: done` (what the skill mandates),
+  //    `## Status done`, and `## Status` with the value on the following line.
+  const statusMatch = raw.match(/^##[ \t]+Status[ \t]*:?[ \t\r\n]*([a-zA-Z][a-zA-Z -]*)/im);
 
   if (statusMatch) {
     return statusMatch[1].trim().toLowerCase().replace(/\s+/g, "-");
@@ -99,16 +109,10 @@ function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
 }
 
 function storyTitle(storyDir) {
-  const storyPath = path.join(storyDir, "spec.md");
-
-  if (!fs.existsSync(storyPath)) {
-    return path.basename(storyDir);
-  }
-
-  const heading = fs
-    .readFileSync(storyPath, "utf8")
+  const heading = readStoryPart(storyDir, "spec")
     .split(/\r?\n/)
     .find((line) => line.startsWith("# "));
+
   return heading ? heading.replace(/^#\s+/, "").trim() : path.basename(storyDir);
 }
 

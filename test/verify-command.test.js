@@ -190,12 +190,12 @@ test('check keeps its own story guard rather than inheriting verify\'s', (t) => 
   const scoped = run(dir, ['harness', 'check', '--story', story]);
   assert.equal(scoped.code, 0, scoped.output);
 
-  // check refuses a non-story for its own reason — a missing spec.md — and says
+  // check refuses a non-story for its own reason — no story content — and says
   // so. Layering verify's epics/ rule on top would only blur that message.
   fs.mkdirSync(path.join(dir, 'src'));
   const loose = run(dir, ['harness', 'check', '--story', 'src']);
   assert.equal(loose.code, 1, loose.output);
-  assert.match(loose.output, /spec\.md is required/);
+  assert.match(loose.output, /needs story content/);
 });
 
 test('verify accepts a --story given as a file inside the story directory', (t) => {

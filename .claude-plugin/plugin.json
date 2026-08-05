@@ -1,6 +1,6 @@
 {
   "name": "coding-flow",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Make Claude Code reliable on real projects: epics/stories skills, a deterministic secret-blocking guard hook, and executed verify — proof the tests actually ran and passed, not the agent's word. Optional audit ledger and traceability for teams that need governance.",
   "author": {
     "name": "Landry Pouth"

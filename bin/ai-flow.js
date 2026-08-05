@@ -5,7 +5,29 @@
 // Thin entry point: parses the arguments and dispatches to the bin/lib modules.
 // The logic of each command lives in its own module.
 
-const { cwd } = require("./lib/context");
+// A crash used to reach the user as a raw Node stack trace. Agents driving this
+// CLI reported that as "the tool errored internally" with nothing actionable in
+// it, and a stack trace is not a diagnosis for the human either. Registered
+// before the requires so a module that fails to load is covered too.
+process.on("uncaughtException", (error) => {
+  if (error && error.code === "EPIPE") {
+    process.exit(0);
+  }
+
+  process.stderr.write(`Error: ${(error && error.message) || error}\n`);
+  process.stderr.write(
+    "This is a Coding Flow bug, not a validation failure. " +
+      "Re-run with CODING_FLOW_DEBUG=1 for the stack trace, and please report it.\n",
+  );
+
+  if (process.env.CODING_FLOW_DEBUG && error && error.stack) {
+    process.stderr.write(`${error.stack}\n`);
+  }
+
+  process.exit(1);
+});
+
+const { cwd, invocationDir } = require("./lib/context");
 const { log, fail } = require("./lib/util");
 const {
   copyTemplates,
@@ -58,6 +80,14 @@ function getFlagValue(name, fallback = null) {
   }
 
   return fallback;
+}
+
+// Commands operate on the project, not on the directory the user stood in. When
+// those differ, say so once: a silently relocated root is how a verify ends up
+// proving a subpackage while reporting the project. stderr, so `--json` stays
+// machine-readable on stdout.
+if (cwd !== invocationDir) {
+  process.stderr.write(`Coding Flow project root: ${cwd} (invoked from ${invocationDir})\n`);
 }
 
 // Which channel serves this project's skills. `--with-skills` / `--no-skills`

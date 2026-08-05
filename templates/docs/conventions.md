@@ -34,7 +34,7 @@ Two kinds of quality, routed differently:
 
 - **Deterministic quality** — lint, format-check, typecheck, duplication detectors
   (jscpd/similarity). Executable and reproducible. Declare it in
-  `.coding-flow/config.json` under `validation.quality` so `ai-flow harness verify`
+  `.coding-flow/config.json` under `validation.quality` so `ai-flow verify`
   runs it and captures the result as proof. A red quality command blocks like a red
   test.
 - **Judgment quality** — the right abstraction level, naming intent, justified

@@ -8,6 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const { readStoryPart } = require("./story");
 
 const { cwd } = require("./context");
 const { log, normalizePortable, toPortable } = require("./util");
@@ -97,12 +98,13 @@ function buildChain(storyRel, ancestry) {
     return chain;
   }
 
-  // story → test plan (traceability + commands), which lives in plan.md
-  const planPath = path.join(storyDir, "plan.md");
-  if (fs.existsSync(planPath)) {
-    chain.criteria = parseTraceabilityTable(fs.readFileSync(planPath, "utf8"));
+  // story → test plan (traceability + commands). Lives in plan.md, or in
+  // story.md for a single-file story.
+  const planContent = readStoryPart(storyDir, "plan");
+  if (planContent) {
+    chain.criteria = parseTraceabilityTable(planContent);
   } else {
-    chain.gaps.push("no plan.md");
+    chain.gaps.push("no test plan (plan.md or story.md)");
   }
 
   const unmapped = chain.criteria.filter((row) => !row.mapped);
