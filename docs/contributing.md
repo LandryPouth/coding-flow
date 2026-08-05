@@ -52,6 +52,7 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/policy.js` | "One epic = one branch, never main" policy |
 | `lib/doctor.js` | Diagnostic + `--fix` |
 | `lib/skills.js` | `list-skills` |
+| `lib/claude-plugin.js` | Best-effort detection of an installed coding-flow plugin (decides the `init` default for the skills channel) |
 | `lib/status.js` | State of the epics/stories (via the seam) + worktrees + policy |
 | `lib/bootstrap.js` | Brownfield scan |
 | `lib/uninstall.js` | Uninstall preserving `epics/` |
@@ -73,6 +74,17 @@ The dependency graph is acyclic:
 The plugin's `skills/` are materialized from `templates/.claude/skills/` by
 `ai-flow plugin sync` and kept drift-free by `ai-flow plugin check` (enforced in
 tests/CI). **Any skill add/remove/rename must happen in both trees.**
+
+A project must never receive the skills from both channels at once — that is two
+names for the same skill. `lib/claude-plugin.js` detects an installed plugin and
+`init` copies the project files only when there is none; the answer is recorded
+in `.coding-flow/config.json` (`skills: "plugin" | "project"`) so `doctor`,
+`upgrade`, and `uninstall` all judge the project against the same decision rather
+than re-detecting per machine. `getTemplateSpecs({ includeSkills })` in
+`lib/templates.js` is the single seam every one of them derives that view from.
+
+Skills are named `flow-*` because Claude Code ships built-in `run` and `review`
+skills. Never reintroduce a bare, generic skill name.
 
 ```bash
 npx @landry_pouth/coding-flow init      # official install, no clone needed

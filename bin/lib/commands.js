@@ -70,10 +70,13 @@ function printGoldenPath() {
 START HERE
 
   In Claude Code (daily):
-    /plan     turn an objective into implementation-ready stories
-    /run      execute one story end-to-end (picks QUICK..STRICT by risk)
-    /review   findings-first pre-merge review
-    /ship     push the branch and open/update the PR
+    /flow-plan     turn an objective into implementation-ready stories
+    /flow-run      execute one story end-to-end (picks QUICK..STRICT by risk)
+    /flow-review   findings-first pre-merge review
+    /flow-ship     push the branch and open/update the PR
+
+  With the plugin installed they answer to coding-flow:flow-* too. The flow-
+  prefix keeps them clear of Claude Code's own /run and /review.
 
   In the terminal:
     ai-flow init     install into the current project (once)
@@ -100,11 +103,11 @@ function printHelp({ all = false } = {}) {
   log(`Coding Flow — full command reference
 
 Most of these are invoked automatically by the skills, CI, or the git hook. As a
-user you mainly need: init, status, ship (and the /plan, /run skills).
+user you mainly need: init, status, ship (and the /flow-plan, /flow-run skills).
 
 Usage:
-  ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--force] [--dry-run]
-  ai-flow upgrade [--force] [--dry-run] [--json]
+  ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
+  ai-flow upgrade [--with-skills|--no-skills] [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
@@ -179,7 +182,17 @@ Flags:
   --storage  Storage backend recorded at init: local (default; github is reserved).
   --no-branch-per-epic  Disable the "one epic = one branch, never main" policy.
   --no-guard  Skip wiring the PreToolUse guard hook into .claude/settings.json at init.
+  --with-skills  Install the skills into .claude/skills even when the plugin serves them.
+  --no-skills    Leave the skills to the plugin; remove any copy this project holds.
   --input    Read the guard hook payload from a file instead of stdin (for testing).
+
+Skills channel:
+  The skills ship through the plugin (coding-flow:flow-run) AND as project files
+  (/flow-run). Installing both would give you two names for one skill, so init
+  detects the plugin and copies them only when it is absent. The choice is
+  recorded in .coding-flow/config.json ("skills": "plugin" | "project") so every
+  later command — and every teammate — sees the same install. Change it with
+  \`upgrade --with-skills\` / \`upgrade --no-skills\`.
 `);
 }
 

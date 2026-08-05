@@ -19,10 +19,16 @@ const {
   ensureConvenienceFiles,
 } = require("./templates");
 const { collectHarnessReport } = require("./harness");
+const { readConfig } = require("./config");
 
 function collectDoctorReport({ strict = false } = {}) {
   ensureTemplatesExist();
 
+  // The install recorded which channel serves its skills. Doctor must judge the
+  // project against THAT decision, not against whether this particular machine
+  // happens to have the plugin.
+  const skillsMode = readConfig(cwd).skills;
+  const includeSkills = skillsMode === "project";
   const skillNames = listTemplateSkillNames();
   const required = [
     "RULES.md",
@@ -36,7 +42,7 @@ function collectDoctorReport({ strict = false } = {}) {
   const errors = [];
   const warnings = [];
 
-  for (const spec of getTemplateSpecs()) {
+  for (const spec of getTemplateSpecs({ includeSkills })) {
     required.push(spec.targetRel);
   }
 
@@ -147,6 +153,7 @@ function collectDoctorReport({ strict = false } = {}) {
     root: cwd,
     version: packageJson.version,
     strict,
+    skillsMode,
     skills: skillNames,
     errors,
     warnings,
@@ -155,7 +162,11 @@ function collectDoctorReport({ strict = false } = {}) {
 
 function doctor({ fix = false, json = false, strict = false } = {}) {
   if (fix) {
-    copyTemplates({ force: false, dryRun: false });
+    copyTemplates({
+      force: false,
+      dryRun: false,
+      includeSkills: readConfig(cwd).skills === "project",
+    });
     writeManifest(readManifest());
     ensureConvenienceFiles({ dryRun: false, force: false });
   }

@@ -12,9 +12,9 @@ Coding Flow makes **Claude Code** reliable on real projects: the machine runs yo
 
 Coding Flow is **not** an application framework and does not replace your stack. It installs a small working system around your repo so the agent knows what to read, what to produce, when to stop, what to validate, and how to leave a useful trace.
 
-> **In a hurry?** The front door is small: install the plugin once, run `/setup` (or `ai-flow init`) once per repo, then `/plan` and `/run` in Claude Code. Everything else is machinery the skills run for you. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — the whole loop on one screen.
+> **In a hurry?** The front door is small: install the plugin once, run `/flow-setup` (or `ai-flow init`) once per repo, then `/flow-plan` and `/flow-run` in Claude Code. Everything else is machinery the skills run for you. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — the whole loop on one screen.
 
-> **Start light.** Most work is `/run` on a small change — a request and a targeted change, no paperwork. `/run` picks its intensity from the story's risk; the heavier artifacts (Execution Packet, Context Map, the multi-point stop conditions) **only appear at `STANDARD` and `STRICT`**, and you opt into that rigor when the risk earns it. You do not fill out a packet to add a field to a form.
+> **Start light.** Most work is `/flow-run` on a small change — a request and a targeted change, no paperwork. `/flow-run` picks its intensity from the story's risk; the heavier artifacts (Execution Packet, Context Map, the multi-point stop conditions) **only appear at `STANDARD` and `STRICT`**, and you opt into that rigor when the risk earns it. You do not fill out a packet to add a field to a form.
 
 ## Table Of Contents
 
@@ -37,16 +37,16 @@ Coding Flow rests on four blocks:
 
 1. **The `ai-flow` CLI** — installs, updates, and checks the workflow files; scans existing projects; runs the security harness.
 2. **The context files** — `RULES.md` and `docs/` give the agent the rules and a durable map of the project.
-3. **The skills** — a small, flat set of reusable workflows, one per stage: `/setup`, `/plan`, `/run`, `/verify`, `/review`, `/ship`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/run` and `/review`, not as separate skills. There is no orchestration at runtime.
+3. **The skills** — a small, flat set of reusable workflows, one per stage: `/flow-setup`, `/flow-plan`, `/flow-run`, `/flow-verify`, `/flow-review`, `/flow-ship`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/flow-run` and `/flow-review`, not as separate skills. There is no orchestration at runtime.
 4. **The security harness** — a set of **CLI checks over your repo and story files** (not a sandbox): secrets, sensitive files, a story's risk level, rollback notes, and JSON evidence in `.coding-flow/runs/`.
 
 The daily loop:
 
 ```txt
-init once  →  /plan  →  /run (add STRICT for sensitive work)  →  /review  →  /ship
+init once  →  /flow-plan  →  /flow-run (add STRICT for sensitive work)  →  /flow-review  →  /flow-ship
 ```
 
-You never chain ten commands by hand: the `/run` skill calls the harness automatically when `ai-flow` is available.
+You never chain ten commands by hand: the `/flow-run` skill calls the harness automatically when `ai-flow` is available.
 
 ## Getting Started
 
@@ -54,7 +54,7 @@ Coding Flow has **two layers**, installed in **two different places**. This spli
 
 | Layer | What it is | Where it lives | How often |
 | --- | --- | --- | --- |
-| **Tooling** | The skills (`/plan`, `/run`, …) and the `guard` hook | Your Claude Code config — **global** | **Once**, ever |
+| **Tooling** | The skills (`/flow-plan`, `/flow-run`, …) and the `guard` hook | Your Claude Code config — **global** | **Once**, ever |
 | **Project scaffold** | `RULES.md`, `docs/`, `epics/`, `.coding-flow/`, CI | The project's own Git repo — **per project** | **Once per repo** |
 
 The **tooling** is *how you work*, so it follows you everywhere. The **scaffold** *describes one project*, so it is committed, reviewed in PRs, and shared with teammates and CI.
@@ -71,16 +71,16 @@ The **tooling** is *how you work*, so it follows you everywhere. The **scaffold*
 **Step 2 — scaffold each project (per repo, once).** Easiest, without leaving Claude Code:
 
 ```text
-/setup
+/flow-setup
 ```
 
-It runs `init` for you (non-destructive) and points you to `/plan`. The terminal equivalent is `npx @landry_pouth/coding-flow init`, which writes `RULES.md`, `docs/`, `epics/`, `.coding-flow/config.json`, and the `flow:*` scripts into the repo, ready to commit.
+It runs `init` for you (non-destructive) and points you to `/flow-plan`. The terminal equivalent is `npx @landry_pouth/coding-flow init`, which writes `RULES.md`, `docs/`, `epics/`, `.coding-flow/config.json`, and the `flow:*` scripts into the repo, ready to commit.
 
 **Step 3 — work.**
 
 ```text
-/plan     break a capability into vertical stories
-/run      implement a story; the guard blocks secrets automatically
+/flow-plan     break a capability into vertical stories
+/flow-run      implement a story; the guard blocks secrets automatically
 ```
 
 **Do I need both steps?** If you use Claude Code, yes — Step 1 once, Step 2 per repo. If you only use the CLI/CI (no Claude Code), skip Step 1 and just run `init` per repo. Two misconceptions to avoid:
@@ -88,20 +88,33 @@ It runs `init` for you (non-destructive) and points you to `/plan`. The terminal
 - **"I installed the plugin, so my project is ready."** No — the plugin gives you the commands globally, but a fresh repo has nothing for them to act on until `init` runs inside it.
 - **"I need to install the npm package myself."** No — `npx` fetches it automatically (Step 2). The `guard` hook then runs that package's binary **directly from disk** (bundled with the plugin, or resolved when `init` runs) — it never re-fetches through `npx` on every write, so it stays fast even offline.
 
+### One Skill, One Name
+
+The skills can reach you through either layer — the plugin (as `coding-flow:flow-run`) or the project's own `.claude/skills/` (as `/flow-run`). Getting **both** would leave you with two commands doing the exact same thing, so you never do:
+
+- `init` detects the plugin. Installed → it skips the copy, and the plugin serves the skills. Absent → it copies them into the repo, so a teammate who clones without the plugin still gets the workflow.
+- The decision is written to `.coding-flow/config.json` as `"skills": "plugin" | "project"` and **committed**. Every later command reads that record instead of re-detecting, so the install cannot behave differently on your machine and your teammate's.
+- Override it whenever you want: `init --with-skills` / `--no-skills`, or `upgrade --with-skills` / `--no-skills` to switch an existing repo. Switching to the plugin removes the project copies (a file you edited yourself is reported and kept, never deleted).
+- **Already installed? Just `upgrade`.** A project from before this release has no recorded choice, so the first `upgrade` makes it — detecting, recording it, and removing the now-duplicated copies. No second `init`, no flag. A project that *has* a recorded choice is never second-guessed, even on a machine that would detect otherwise.
+
+**What if the detection is wrong?** It is built to fail in the harmless direction. A plugin counts as installed only when the skills it would serve are visible on disk — a name in Claude Code's registry is a claim, not evidence. So a corrupt or unfamiliar config, a registry entry left behind by an uninstall, a half-finished install, or a cache directory that survived a removal all resolve to "no plugin", and you get the project copy: at worst two names for one skill, never zero. The reverse — skipping the copy while nothing serves the skills — is the outcome that would actually break your workflow, and it takes a real plugin, with real skills, declaring itself in its own manifest. `init` and `upgrade` always print which channel won and why. Every one of these cases is a test in `test/plugin-detect.test.js`.
+
+**Why `flow-` at all?** Claude Code ships its own `/run` and `/review`. A skill named `run` would sit right next to a built-in that does something completely different — "launch the app" versus "execute a story". The prefix makes each command mean exactly one thing.
+
 ## Choosing The Mode
 
-`/run` picks its intensity from the story's risk, but you can name it. One skill, four intensities:
+`/flow-run` picks its intensity from the story's risk, but you can name it. One skill, four intensities:
 
 | Situation | Command | Why |
 | --- | --- | --- |
-| Small isolated fix, text, local styling | `/run` (QUICK/FAST) | Lowest context cost. No ceremony. |
-| Normal product feature | `/run STANDARD` | Balance of one-shot, validation, and cost. |
-| Auth, permissions, admin, payment, migration | `/run STRICT` | Stronger validation and security checks. |
-| Edit point unclear or cross-module | `/run` (scout pre-step) | Maps the context without polluting the implementation. |
-| Plan several stories | `/plan` | Creates a vertical epic and implementation-ready stories. |
-| Clarify a fuzzy requirement | `/plan` (Clarify First) | Asks the blocking questions before coding. |
+| Small isolated fix, text, local styling | `/flow-run` (QUICK/FAST) | Lowest context cost. No ceremony. |
+| Normal product feature | `/flow-run STANDARD` | Balance of one-shot, validation, and cost. |
+| Auth, permissions, admin, payment, migration | `/flow-run STRICT` | Stronger validation and security checks. |
+| Edit point unclear or cross-module | `/flow-run` (scout pre-step) | Maps the context without polluting the implementation. |
+| Plan several stories | `/flow-plan` | Creates a vertical epic and implementation-ready stories. |
+| Clarify a fuzzy requirement | `/flow-plan` (Clarify First) | Asks the blocking questions before coding. |
 
-`SCOUT` is not an execution mode — it is an optional pre-step inside `/run` for unclear or cross-module edit points. Context is reduced to save tokens, never to split the feature: once the edit points are clear, the agent implements, tests, validates, and documents in the **same pass**.
+`SCOUT` is not an execution mode — it is an optional pre-step inside `/flow-run` for unclear or cross-module edit points. Context is reduced to save tokens, never to split the feature: once the edit points are clear, the agent implements, tests, validates, and documents in the **same pass**.
 
 ## Core Concepts
 
@@ -117,16 +130,16 @@ A small, flat set — one skill per stage of the workflow. You pick any of them 
 
 | Skill | Use |
 | --- | --- |
-| `/setup` | Scaffold Coding Flow into the current repo from Claude Code (once per repo). |
-| `/plan` | Turn an objective into a vertical epic and implementation-ready stories. Includes opt-in sections for clarifying fuzzy requirements and bootstrapping a brownfield codebase. |
-| `/run` | Execute one story end-to-end. Picks QUICK/FAST/STANDARD/STRICT by risk; STRICT adds security validation. Context scout and TDD are inline modes. |
-| `/verify` | Run the declared validation commands and capture verbatim pass/fail as tamper-evident proof. `/run` calls it automatically. |
-| `/review` | Findings-first pre-merge review. Each dimension (architecture, tests, security, quality, E2E) has an opt-in deep section for high-risk work. |
-| `/ship` | Push the branch and open/update one PR, with the latest verify evidence attached. |
+| `/flow-setup` | Scaffold Coding Flow into the current repo from Claude Code (once per repo). |
+| `/flow-plan` | Turn an objective into a vertical epic and implementation-ready stories. Includes opt-in sections for clarifying fuzzy requirements and bootstrapping a brownfield codebase. |
+| `/flow-run` | Execute one story end-to-end. Picks QUICK/FAST/STANDARD/STRICT by risk; STRICT adds security validation. Context scout and TDD are inline modes. |
+| `/flow-verify` | Run the declared validation commands and capture verbatim pass/fail as tamper-evident proof. `/flow-run` calls it automatically. |
+| `/flow-review` | Findings-first pre-merge review. Each dimension (architecture, tests, security, quality, E2E) has an opt-in deep section for high-risk work. |
+| `/flow-ship` | Push the branch and open/update one PR, with the latest verify evidence attached. |
 
 The depth that used to live in separate `agent-*` and `*-check` skills — the deep
 validators, the multi-agent worker roles, the context scout, TDD — is **not gone**;
-it moved into opt-in sections of `/run` and `/review`, so nothing capable was lost
+it moved into opt-in sections of `/flow-run` and `/flow-review`, so nothing capable was lost
 while the front door shrank from thirty skills to six.
 
 ## The Reliability Layer

@@ -1,5 +1,5 @@
 ---
-name: run
+name: flow-run
 description: Execute one prepared story end-to-end — plan the edit, implement, add tests, and verify — at an intensity that matches its risk. Use QUICK/FAST for small UI, copy, or isolated bug fixes; STANDARD for normal CRUD, features, and integration; STRICT for risky or security-sensitive work (auth, permissions, payments, secrets, uploads, sensitive data). This is the daily driver; it runs the harness verify automatically and only marks a story done when a green verify proves it.
 ---
 
@@ -101,11 +101,11 @@ For CRUD, product features, frontend/backend integration, ordinary vertical stor
 For auth, admin, permissions, payments, migrations, risky refactors, high-regression
 work. Everything in STANDARD, plus:
 
-1. If requirements are unclear, clarify first (`/plan` Clarify First).
+1. If requirements are unclear, clarify first (`/flow-plan` Clarify First).
 2. Do a scout pre-step when broad discovery is needed (see Context Policy).
 3. Use **TDD** for critical logic (see below).
 4. Answer the Security Questions before finalizing.
-5. Broaden the review to the deep sections of `/review` (security, tests,
+5. Broaden the review to the deep sections of `/flow-review` (security, tests,
    architecture) rather than the quick checklist.
 
 ## Context Policy
@@ -148,7 +148,7 @@ input, server-side enforcement beats client-side checks. Answer:
 - What validation or tests prove the boundary works?
 
 An unanswered question above, or a red `ai-flow harness verify`, is a blocker — not
-something to work around. Route to the deep security section of `/review` for auth
+something to work around. Route to the deep security section of `/flow-review` for auth
 systems, permission models, payments, uploads, secrets, or external integrations.
 
 ## Review Before Done
@@ -156,7 +156,7 @@ systems, permission models, payments, uploads, secrets, or external integrations
 Before marking a story done, self-review the change: acceptance criteria met,
 architecture not drifting, tests protect behavior (not implementation), no security
 regression, no unrelated changes. For a quick story this is a glance; for STANDARD/
-STRICT, run `/review` (use its deep sections when risk warrants).
+STRICT, run `/flow-review` (use its deep sections when risk warrants).
 
 ## Stop Conditions
 

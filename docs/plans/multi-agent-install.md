@@ -144,7 +144,7 @@ on the agent.
 
 1. **Codex detection env**: what reliable marker does Codex expose (variable,
    file)? To be confirmed — otherwise we rely on `--target` + existing config.
-2. **`/skill` invocation**: does Codex resolve `/run-story` like Claude? If not,
+2. **`/skill` invocation**: does Codex resolve `/flow-run-story` like Claude? If not,
    the `shared → .codex/skills` materialization must transform the references.
 3. **Codex hook config**: is a **project** level possible, or only user level
    (`~/.codex/hooks.json`)? Impacts idempotence and wiring scope.

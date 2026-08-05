@@ -39,7 +39,7 @@ Two kinds of quality, routed differently:
   test.
 - **Judgment quality** — the right abstraction level, naming intent, justified
   coupling. Subjective and contextual. It stays advisory via the Quality section of
-  `/review`; it never becomes a fake-precise merge gate.
+  `/flow-review`; it never becomes a fake-precise merge gate.
 
 On DRY, the most misapplied principle (and worse with an agent):
 

@@ -67,7 +67,7 @@ function bootstrapScan({ json = false, dryRun = false } = {}) {
     configFiles,
     testDirectories: testDirs,
     recommendedNextPrompt:
-      "Use /plan (its Brownfield Bootstrap section) with docs/bootstrap-scan.md to fill project context, architecture, conventions, and roadmap. Do not modify application code.",
+      "Use /flow-plan (its Brownfield Bootstrap section) with docs/bootstrap-scan.md to fill project context, architecture, conventions, and roadmap. Do not modify application code.",
   };
 
   if (json) {

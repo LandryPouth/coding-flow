@@ -11,6 +11,7 @@ const {
   copyTemplates,
   ensureConvenienceFiles,
   printConvenienceSummary,
+  printPrunedSkills,
   upgrade,
 } = require("./lib/templates");
 const { doctor } = require("./lib/doctor");
@@ -26,7 +27,13 @@ const { worktreeCommand } = require("./lib/worktree");
 const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
-const { ensureConfig, STORAGE_BACKENDS } = require("./lib/config");
+const {
+  ensureConfig,
+  readConfigSkillsChoice,
+  writeConfigSkills,
+  STORAGE_BACKENDS,
+} = require("./lib/config");
+const { detectPlugin } = require("./lib/claude-plugin");
 const { ensureHookSettings } = require("./lib/settings");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
@@ -53,6 +60,32 @@ function getFlagValue(name, fallback = null) {
   return fallback;
 }
 
+// Which channel serves this project's skills. `--with-skills` / `--no-skills`
+// are the explicit overrides; otherwise the plugin, when installed, wins — it
+// already provides them globally, and a second copy under a second name is the
+// confusion this resolves.
+function resolveSkillsMode() {
+  if (flags.has("--with-skills")) {
+    return { mode: "project", reason: "--with-skills" };
+  }
+
+  if (flags.has("--no-skills")) {
+    return { mode: "plugin", reason: "--no-skills" };
+  }
+
+  const detection = detectPlugin();
+
+  return detection.installed
+    ? { mode: "plugin", reason: `plugin detected (${detection.source})` }
+    : { mode: "project", reason: "no plugin detected" };
+}
+
+function describeSkillsMode(mode, reason) {
+  return mode === "plugin"
+    ? `Skills: served by the plugin as coding-flow:flow-* — no project copy (${reason})`
+    : `Skills: installed in .claude/skills as /flow-* (${reason})`;
+}
+
 if (command === "init") {
   const storage = getFlagValue("--storage", "local");
 
@@ -67,18 +100,24 @@ if (command === "init") {
     );
   }
 
-  const result = copyTemplates({
-    force: flags.has("--force"),
-    dryRun: flags.has("--dry-run"),
-  });
-  const convenience = ensureConvenienceFiles({
-    force: flags.has("--force"),
-    dryRun: flags.has("--dry-run"),
-  });
+  const skills = resolveSkillsMode();
+  // Config first: on a re-init, the choice recorded at the original install wins
+  // over whatever this machine detects, so the copy below matches the config.
   const configResult = ensureConfig(cwd, {
     dryRun: flags.has("--dry-run"),
     storage,
     branchPerEpic: !flags.has("--no-branch-per-epic"),
+    skills: skills.mode,
+  });
+  const effectiveSkills = configResult.config.skills;
+  const result = copyTemplates({
+    force: flags.has("--force"),
+    dryRun: flags.has("--dry-run"),
+    includeSkills: effectiveSkills === "project",
+  });
+  const convenience = ensureConvenienceFiles({
+    force: flags.has("--force"),
+    dryRun: flags.has("--dry-run"),
   });
 
   if (flags.has("--dry-run")) {
@@ -89,6 +128,10 @@ if (command === "init") {
 
   log(`Copied: ${result.copied.length}`);
   log(`Updated: ${result.updated.length}`);
+  // An existing project already had a config, so its recorded choice wins over
+  // what we just detected — say which one is actually in effect.
+  log(describeSkillsMode(effectiveSkills, configResult.created ? skills.reason : "recorded at init"));
+  printPrunedSkills(result.prunedSkills, { dryRun: flags.has("--dry-run") });
 
   if (result.harnessCreated) {
     log(flags.has("--dry-run") ? "Harness config: would create" : "Harness config: created");
@@ -129,11 +172,46 @@ if (command === "init") {
 } else if (command === "upgrade") {
   // Migration: projects installed before the storage seam have no config.json.
   // We create it with the defaults without ever overwriting an existing choice.
-  ensureConfig(cwd, { dryRun: flags.has("--dry-run") });
+  // Read the recorded choice BEFORE ensureConfig, which would otherwise write a
+  // default and make "never chose" indistinguishable from "chose project".
+  const recorded = readConfigSkillsChoice(cwd);
+  let skills;
+  let reason;
+
+  if (flags.has("--with-skills") || flags.has("--no-skills")) {
+    // The explicit way to MOVE channel: --no-skills hands the skills to the
+    // plugin and drops this project's copies, --with-skills brings them back.
+    ({ mode: skills, reason } = resolveSkillsMode());
+  } else if (recorded) {
+    // An install that already chose is never second-guessed — not even when
+    // this machine would detect something different.
+    skills = recorded;
+    reason = "recorded in .coding-flow/config.json";
+  } else {
+    // A project installed before this was a choice. Upgrading is exactly when
+    // it gets made, so nobody has to re-run `init` to stop having two names for
+    // one skill.
+    const detection = resolveSkillsMode();
+    skills = detection.mode;
+    reason = `${detection.reason}, recorded now`;
+  }
+
+  ensureConfig(cwd, { dryRun: flags.has("--dry-run"), skills });
+
+  if (!flags.has("--dry-run") && recorded !== skills) {
+    writeConfigSkills(cwd, skills);
+  }
+
+  if (!flags.has("--json")) {
+    log(describeSkillsMode(skills, reason));
+  }
+
   upgrade({
     force: flags.has("--force"),
     dryRun: flags.has("--dry-run"),
     json: flags.has("--json"),
+    includeSkills: skills === "project",
+    skillsMode: skills,
   });
 } else if (command === "doctor") {
   doctor({
