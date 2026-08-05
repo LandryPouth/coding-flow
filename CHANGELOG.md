@@ -4,6 +4,99 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.2] - 2026-08-05
+
+### Changed
+
+- **The brownfield scan is machinery, not a command you run.** `ai-flow init` now
+  scans the repository itself and reports what it found, so onboarding an existing
+  codebase no longer requires a second trip to the terminal. The scan writes
+  nothing: it is `readdir` plus a few regexes over `package.json`, regenerable in
+  milliseconds and always true at the moment it runs, so persisting it cached
+  something cheaper to recompute than to store — and made it an installed file
+  that owed a manifest lifecycle it was never part of. `/flow-plan` re-runs the
+  scan when it needs the data. `ai-flow bootstrap --scan` stays a public command
+  for humans and CI who want the document, and now refuses to overwrite an edited
+  one without `--force`.
+
+  What `init` prints is the point. It reports the detected stack **and** that the
+  project docs are still empty, ending on `Next: /flow-plan bootstrap` — because
+  automating the mechanical half of onboarding is only a win if the user still
+  learns that the expensive half, where the model reads the code and writes four
+  durable docs, has not run.
+
+- **Five skills instead of six: `/flow-verify` is gone.** It was the only skill
+  where the model exercised no judgment — it shelled out to one command and echoed
+  the result — and no skill ever called it: `flow-run`, `flow-review`, and
+  `flow-ship` all invoke the CLI directly. Verification did not become optional;
+  it stopped occupying a slot in a catalog meant for verbs a human initiates.
+  **`ai-flow verify --story <path>` is promoted to top level** as the escape hatch
+  for re-proving a story that went `stale` after a small edit, and every message
+  that asks you to re-verify — `audit --check`, `ship`, the pre-push hook — now
+  names it instead of the `ai-flow harness verify` long form. `harness verify`
+  still works. `upgrade` removes the skill from installed projects.
+
+- **`ai-flow commands` follows the front door.** `harness check --quick` left the
+  daily cheat sheet (it is machinery nobody types) and `verify` took its place.
+
+### Added
+
+- **`doctor` warns when brownfield onboarding never finished.** Existing code
+  detected, and `docs/project-context.md`, `docs/conventions.md`, and
+  `docs/roadmap.md` all still byte-identical to what `init` installed, now
+  produces `brownfield_not_onboarded` pointing at `/flow-plan bootstrap`.
+  Comparison is against the manifest's recorded hashes, so it is exact rather than
+  a length heuristic, and it stays a warning: an unfinished onboarding is not a
+  broken install, and `doctor` keeps exiting 0. Partial progress is not nagged —
+  all three docs must be untouched.
+
+- **The scan reads workspace monorepos.** `pnpm-workspace.yaml`, npm/yarn
+  `workspaces`, `lerna.json`, `turbo.json`, and `nx.json` are detected, and member
+  `package.json` files are read so frameworks are found where they actually live.
+  Bounded on purpose: one level of glob, no recursion, at most 50 members.
+
+### Fixed
+
+- **A JavaScript monorepo is no longer called a Python project.** A pnpm workspace
+  with no root `package.json` — an ordinary shape — was told "this stack is likely
+  Python, Go, Rust, or similar". Naming a stack is a claim, and it now requires no
+  JavaScript signal anywhere: no root manifest, no workspace marker, no framework
+  found in a member. A genuine Python or Go repository still gets the warning.
+
+- **`--story` no longer scopes silently.** A path that did not resolve, pointed
+  outside the repository, or named a directory that is not a story fell back to
+  the project-wide commands and then wrote an evidence claiming it had proved a
+  story that does not exist — which `audit` ingests as-is, leaving a red ledger
+  entry nothing could ever re-verify. `verify` now refuses all three, as `run`
+  already did. `--story` with no value at all (`verify --story --json`) is refused
+  across every harness subcommand. `preflight` keeps reporting a missing story as
+  `(missing)`, which is its designed behavior.
+
+- **The scan no longer reads Coding Flow's own scaffold as project signal.** `init`
+  writes eleven `flow:*` scripts, an `examples/` directory, and a `package.json`
+  when the repository has none — all of it was being read straight back, so a
+  fresh repository reported "13 scripts" and a Python project reported as
+  JavaScript. The `packageJsonCreated` flag also stopped being sticky: a greenfield
+  repository that later becomes a real Next.js application is now detected instead
+  of staying invisible forever.
+
+- **A broken `package.json` is reported as a broken file.** A merge conflict or a
+  truncated write used to surface as "no JavaScript signal", sending you to doubt
+  the detectors instead of fixing the file. Non-object `scripts` and `dependencies`
+  no longer invent signal either — a `scripts` string was walked character by
+  character, turning eight letters into eight scripts.
+
+- **`init` and `uninstall` name the files they touch.** `init` reported "Skipped
+  existing files: 1" and advised `--force`; on a brownfield repository that file
+  is typically the project's own `docs/architecture.md`, so the advice read as
+  "overwrite your architecture document". It now lists the paths and frames them
+  as kept. `uninstall` lists every file it removes rather than counting them, on
+  the one command that deletes.
+
+- **Piping no longer crashes.** `ai-flow status | head` died with an unhandled
+  `EPIPE` stack trace over whatever you were reading. A closed pipe is a normal
+  end.
+
 ## [0.5.1] - 2026-08-05
 
 ### Changed
