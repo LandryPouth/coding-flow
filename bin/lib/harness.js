@@ -11,7 +11,8 @@ const { spawnSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
-const { captureIdentity } = require("./identity");
+const { captureIdentity, currentTreeToken } = require("./identity");
+const { PART_FILES, readStoryPart, storyPartPath } = require("./story");
 const {
   fail,
   log,
@@ -243,12 +244,13 @@ function resolveProjectPath(relativeOrAbsolutePath) {
   };
 }
 
+// Keyed by the canonical filename so callers read unchanged, but resolved by role:
+// a single-file story answers all three from story.md.
 function readStoryBundle(storyFullPath) {
   const files = {};
 
-  for (const name of ["spec.md", "plan.md", "tasks.md"]) {
-    const filePath = path.join(storyFullPath, name);
-    files[name] = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+  for (const [part, name] of Object.entries(PART_FILES)) {
+    files[name] = readStoryPart(storyFullPath, part);
   }
 
   return files;
@@ -352,15 +354,24 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
   const risk = scoreStoryRisk(Object.values(bundle).join("\n"), report.config);
   const relativeStoryDir = normalizePortable(path.relative(cwd, storyDir));
 
+  // Paths come from the resolver, so a single-file story is told about story.md
+  // and never sent looking for a spec.md it was never meant to have.
+  const partPath = (part) => normalizePortable(path.relative(cwd, storyPartPath(storyDir, part)));
+
   if (!bundle["spec.md"].trim()) {
-    addIssue(report.errors, "missing_spec_file", "spec.md is required for story-scoped harness checks", `${relativeStoryDir}/spec.md`);
+    addIssue(
+      report.errors,
+      "missing_spec_file",
+      "a story-scoped harness check needs story content (spec.md or story.md)",
+      partPath("spec"),
+    );
   }
 
   // The executed outcome lives under `## Result` in tasks.md (Status, files
   // changed, tests run, rollback). The checklist above it must not satisfy the
   // high-assurance requirement, so we look at the Result section specifically.
   const notes = extractSection(bundle["tasks.md"], "Result");
-  const notesPath = `${relativeStoryDir}/tasks.md`;
+  const notesPath = partPath("tasks");
   const highAssurance = strict || report.config.mode === "strict" || risk.level === "high";
 
   if (highAssurance && !notes.trim()) {
@@ -391,7 +402,7 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
       report.warnings,
       "missing_tests_plan",
       "High-risk stories should keep the test plan in plan.md up to date",
-      `${relativeStoryDir}/plan.md`,
+      partPath("plan"),
     );
   }
 }
@@ -750,10 +761,11 @@ function resolveValidationCommands({ storyDir = null } = {}) {
   }
 
   if (storyDir) {
-    const planPath = path.join(storyDir, "plan.md");
+    // The "plan" role: plan.md, or story.md for a single-file story.
+    const planContent = readStoryPart(storyDir, "plan");
 
-    if (fs.existsSync(planPath)) {
-      const commands = parseTestsCommands(fs.readFileSync(planPath, "utf8"));
+    if (planContent) {
+      const commands = parseTestsCommands(planContent);
 
       if (commands.length > 0) {
         return { source: "plan.md", commands };
@@ -779,29 +791,72 @@ function resolveValidationCommands({ storyDir = null } = {}) {
   return { source: null, commands: [] };
 }
 
+// A test suite that prints a lot is not a failing test suite. At 10 MB Node kills
+// the child with SIGTERM and returns ENOBUFS with status null, which this function
+// used to fold into `exit 127` — a green suite reported red, an evidence written,
+// and the story marked blocked in the ledger. `turbo test` over a monorepo with
+// jsdom clears 10 MB without trying.
+//
+// Two changes: a much larger buffer, and — when it still overflows — an explicit
+// tool failure instead of a fabricated exit code. We only ever keep the last 4 KB
+// of each stream, so the buffer exists purely to let the child finish.
+// Overridable so a project with an unusually loud suite can raise it without a
+// release — and so the overflow path itself is testable without generating a
+// quarter of a gigabyte of output.
+function outputBufferBytes() {
+  const override = Number.parseInt(process.env.CODING_FLOW_MAX_OUTPUT_BYTES || "", 10);
+  return Number.isFinite(override) && override > 0 ? override : 256 * 1024 * 1024;
+}
+
 function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
+  const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
   const result = spawnSync(command, [], {
     cwd,
     shell: true,
     encoding: "utf8",
     timeout: timeoutMs,
-    maxBuffer: 10 * 1024 * 1024,
+    maxBuffer: maxOutputBytes,
   });
 
   const cap = 4000;
   const timedOut = Boolean(result.error && result.error.code === "ETIMEDOUT");
+  const overflowed = Boolean(result.error && result.error.code === "ENOBUFS");
   const exitCode = result.status != null ? result.status : timedOut ? 124 : result.error ? 127 : 1;
+
+  // `toolError` says "the harness could not observe this command", which is not
+  // the same claim as "this command failed". Both block a verify — an unobserved
+  // command proves nothing — but only one of them means the code is broken, and
+  // the report must not confuse the two.
+  const toolError = overflowed
+    ? `output exceeded ${Math.round(maxOutputBytes / (1024 * 1024))} MB and could not be captured; ` +
+      "the command's real exit code is unknown"
+    : !timedOut && result.error && result.status == null
+      ? `could not be executed (${result.error.code || result.error.message})`
+      : null;
 
   return {
     command,
-    exitCode,
-    ok: exitCode === 0,
+    exitCode: toolError ? null : exitCode,
+    ok: !toolError && exitCode === 0,
     timedOut,
+    toolError,
     durationMs: Date.now() - started,
     stdoutTail: (result.stdout || "").slice(-cap),
     stderrTail: (result.stderr || "").slice(-cap),
   };
+}
+
+function resultStatus(item) {
+  if (item.ok) {
+    return "ok";
+  }
+
+  if (item.toolError) {
+    return "tool error";
+  }
+
+  return item.timedOut ? "timeout" : `exit ${item.exitCode}`;
 }
 
 function printVerify(evidence, outputPath) {
@@ -814,9 +869,20 @@ function printVerify(evidence, outputPath) {
     log("Harness verify FAILED.");
   }
 
+  // Which commands ran, and why those. The silent fallback from a config that was
+  // never found to whatever package.json happened to hold is exactly how a verify
+  // ends up proving less than it claims; naming the source makes the drift visible
+  // on the line above the results instead of only inside the JSON.
+  if (evidence.commandsFound > 0) {
+    log(`Commands from: ${evidence.commandSource}`);
+  }
+
   for (const item of evidence.results) {
-    const status = item.ok ? "ok" : item.timedOut ? "timeout" : `exit ${item.exitCode}`;
-    log(`- [${status}] ${item.command} (${item.durationMs}ms)`);
+    log(`- [${resultStatus(item)}] ${item.command} (${item.durationMs}ms)`);
+
+    if (item.toolError) {
+      log(`    ${item.toolError}`);
+    }
 
     if (!item.ok && item.stderrTail.trim()) {
       const tail = item.stderrTail.trim().split(/\r?\n/).slice(-3).join("\n    ");
@@ -883,10 +949,88 @@ function verifyStoryOnce({ story = null } = {}) {
     story: resolvedStory ? resolvedStory.relativePath : null,
     commandSource: resolution.source,
     commandsFound: resolution.commands.length,
+    // Recorded so a later verify can recognise this proof as still applicable.
+    commandsFingerprint: commandsFingerprint(resolution.commands),
+    untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
     environment: captureEnvironment(),
     ok,
     results,
   };
+}
+
+// Identifies WHAT was proved, so a recorded proof is only reusable for the same
+// set of commands. Changing config.validation must invalidate every prior green.
+function commandsFingerprint(commands) {
+  return crypto.createHash("sha256").update(commands.join("\n")).digest("hex").slice(0, 40);
+}
+
+// The tree token deliberately ignores untracked files (see identity.js), which is
+// fine for flagging staleness but not for skipping a run: a brand-new, untracked
+// source file is exactly the case where re-running matters. Folding the untracked
+// listing into the cache key closes that hole without touching what `stale` means.
+// Only ever called once currentTreeToken() has confirmed a git repository, so an
+// empty listing here means "no untracked files", not "git unavailable".
+//
+// `.coding-flow/` is excluded for the same reason the tree token excludes it: it
+// is where proofs are written, so counting it would mean every verify invalidates
+// the proof it just recorded.
+function untrackedDigest() {
+  const listing = runGitList(["ls-files", "--others", "--exclude-standard"]).filter(
+    (file) => file !== ".coding-flow" && !file.startsWith(".coding-flow/"),
+  );
+
+  return crypto.createHash("sha256").update(listing.join("\n")).digest("hex").slice(0, 40);
+}
+
+// Looks for a green verify that already proves this exact story, at this exact
+// working-tree content, for this exact command set. Re-running `tsc && test &&
+// lint` to reconfirm a result nothing has invalidated is pure latency.
+//
+// Conservative by construction: outside git, or when anything cannot be
+// determined, this returns null and the commands run for real.
+function findReusableVerify({ storyRelativePath, commands }) {
+  const token = currentTreeToken(cwd);
+
+  if (!token || commands.length === 0) {
+    return null;
+  }
+
+  const untracked = untrackedDigest();
+  const fingerprint = commandsFingerprint(commands);
+  const runsDir = harnessRunsDir();
+
+  if (!fs.existsSync(runsDir)) {
+    return null;
+  }
+
+  const candidates = fs
+    .readdirSync(runsDir)
+    .filter((name) => name.endsWith("-verify.json"))
+    .sort()
+    .reverse();
+
+  for (const name of candidates) {
+    const fullPath = path.join(runsDir, name);
+    const evidence = readJson(fullPath, null);
+
+    if (!evidence || evidence.ok !== true || evidence.story !== storyRelativePath) {
+      continue;
+    }
+
+    const provenanceToken = evidence.provenance && evidence.provenance.git
+      ? evidence.provenance.git.treeToken
+      : null;
+
+    if (
+      provenanceToken === token &&
+      evidence.commandsFingerprint === fingerprint &&
+      evidence.untrackedDigest === untracked
+    ) {
+      return { evidence, path: fullPath };
+    }
+  }
+
+  return null;
 }
 
 // Persists a verify evidence under .coding-flow/runs and returns its path. The
@@ -929,7 +1073,7 @@ function requireStoryScope(story) {
   }
 }
 
-function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
+function harnessVerify({ json = false, dryRun = false, story = null, noCache = false } = {}) {
   if (story !== null) {
     requireStoryScope(story);
   }
@@ -962,6 +1106,33 @@ function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
     }
 
     return;
+  }
+
+  // A green proof is reusable while the code it proved has not moved. Re-running
+  // the suite to reconfirm it costs minutes and establishes nothing new.
+  //
+  // The hit does NOT write a fresh evidence: claiming a run that did not happen is
+  // the one thing this tool must never do. The earlier evidence still carries the
+  // current tree token, so `status` and `audit` already read it as verified.
+  if (!noCache) {
+    const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
+    const reusable = findReusableVerify({
+      storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
+      commands: resolution.commands,
+    });
+
+    if (reusable) {
+      if (json) {
+        log(JSON.stringify({ ...reusable.evidence, reused: true }, null, 2));
+      } else {
+        log(`Harness verify: already proved (${reusable.evidence.results.length} command(s), nothing changed since).`);
+        log(`Commands from: ${reusable.evidence.commandSource}`);
+        log(`Evidence: ${normalizePortable(path.relative(cwd, reusable.path))}`);
+        log("Re-run anyway with --no-cache.");
+      }
+
+      return;
+    }
   }
 
   const evidence = verifyStoryOnce({ story });
@@ -1019,6 +1190,7 @@ function harnessCommand({ commandArgs, getFlagValue, flags }) {
       json: flags.has("--json"),
       dryRun: flags.has("--dry-run"),
       story,
+      noCache: flags.has("--no-cache"),
     });
   } else {
     fail(`unknown harness command "${subcommand}". Use init, preflight, check, verify, or evidence.`);

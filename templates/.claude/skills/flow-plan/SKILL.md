@@ -1,6 +1,6 @@
 ---
 name: flow-plan
-description: Turn product intent or a brownfield codebase into an implementation-ready epic and vertical stories, each with spec.md, plan.md, and tasks.md. Use to plan work before running it — analyze the request, pick the smallest valuable slice, split into vertical stories, and write the story files. Includes opt-in sections for clarifying ambiguous requirements and for bootstrapping an existing codebase.
+description: Turn product intent or a brownfield codebase into an implementation-ready epic and vertical stories, each sized to its story: one story.md for a small change, spec.md/plan.md/tasks.md for real feature work. Use to plan work before running it — analyze the request, pick the smallest valuable slice, split into vertical stories, and write the story files. Includes opt-in sections for clarifying ambiguous requirements and for bootstrapping an existing codebase.
 ---
 
 # Plan
@@ -19,7 +19,7 @@ useful artifacts, not ceremony.
 - Epics live under `epics/epic-NN-name/`; stories under `epics/epic-NN-name/story-NN-MM-name/`.
 - A story is a vertical product outcome, not a technical layer.
 - `docs/project-context.md` is the durable current-state map only — not a decisions log.
-- Detailed story decisions belong in the story `plan.md`; execution history in `tasks.md`.
+- Detailed story decisions belong in the story plan; execution history in its `## Result`.
 
 ## Pipeline
 
@@ -27,7 +27,7 @@ useful artifacts, not ceremony.
 2. Decide the smallest valuable epic (see Planning Heuristics). If requirements are ambiguous enough to cause rework, run **Clarify First** below.
 3. Create or update the epic `index.md` (goal, scope, ordered stories).
 4. Define the story sequence — vertical slices, each with concise Implementation Context.
-5. For each selected story, write its three files (see Story File Contract).
+5. For each selected story, write its files at the shape its size calls for (see Story File Contract).
 6. Recommend the first story to run with `/flow-run`.
 
 ## Planning Heuristics
@@ -44,8 +44,23 @@ useful artifacts, not ceremony.
 
 ## Story File Contract
 
-Each story folder holds exactly three files. Leave the `tasks.md` `## Result`
-section empty for `/flow-run` to fill after implementation.
+The shape follows the story's size. Leave the `## Result` section empty for
+`/flow-run` to fill after implementation.
+
+### QUICK / FAST stories — one file
+
+A copy change, an isolated fix, a low-risk local change: write a single
+**`story.md`** with the sections that actually carry information — a `# Title`,
+acceptance criteria, a `## Commands` block, and an empty `## Result`. Skip the rest.
+
+Three files for a one-line change means three files to create, three to re-read on
+every later turn, and two to update at the end — to record that a heading changed.
+The tool reads either shape, so this costs nothing in traceability: a single-file
+story verifies, reaches `verified`, and audits exactly like a three-file one.
+
+### STANDARD / STRICT stories — three files
+
+The split earns itself once a story is worth a day's work:
 
 - **`spec.md`** — what & acceptance: user value, requirements, acceptance criteria
   (observable and testable), edge cases (correctness/security/UX/data), UX notes,

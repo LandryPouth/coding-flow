@@ -17,7 +17,7 @@ By default this is a quick checklist. For a refactor, cross-module change, a new
 pattern, or high-risk work, run the matching **Deep** section below instead of the
 quick pass for that dimension. Deterministic quality (lint, format, typecheck,
 duplication detectors) is not your job — that runs as executed proof through
-`ai-flow harness verify`; you cover the judgment a linter cannot.
+`ai-flow verify`; you cover the judgment a linter cannot.
 
 ## Conventions
 
@@ -26,7 +26,7 @@ duplication detectors) is not your job — that runs as executed proof through
 - Cite files and lines; rank findings by severity. Treat missing validation evidence
   as a risk, and any unrun command as an evidence gap.
 - Run the suite yourself when in doubt — never trust a reported result. When `ai-flow`
-  is present, run `ai-flow harness verify --story <dir>` and read the captured evidence.
+  is present, run `ai-flow verify --story <dir>` and read the captured evidence.
 
 ## Severity
 
@@ -68,7 +68,7 @@ implementation details instead of observable behavior; over-mocking that fakes t
 behavior under test; flaky or order-dependent tests.
 
 **Deep (critical flows, complex logic, release-sensitive, flaky suites):** run the
-suite yourself via `ai-flow harness verify` and read the evidence. For each critical
+suite yourself via `ai-flow verify` and read the evidence. For each critical
 criterion require demonstrated **negative evidence** — breaking the behavior makes the
 guarding test fail for the expected reason, restoring it makes it pass. Absent that,
 treat the coverage as unproven regardless of a green run. Block on: risky logic with

@@ -1,6 +1,6 @@
 ---
 name: flow-run
-description: Execute one prepared story end-to-end — plan the edit, implement, add tests, and verify — at an intensity that matches its risk. Use QUICK/FAST for small UI, copy, or isolated bug fixes; STANDARD for normal CRUD, features, and integration; STRICT for risky or security-sensitive work (auth, permissions, payments, secrets, uploads, sensitive data). This is the daily driver; it runs the harness verify automatically and only marks a story done when a green verify proves it.
+description: Execute one prepared story end-to-end — plan the edit, implement, add tests, and verify — at an intensity that matches its risk. Use QUICK/FAST for small UI, copy, or isolated bug fixes; STANDARD for normal CRUD, features, and integration; STRICT only when the change alters an authorization decision, a persistence schema, a payment or secret path, or creates a new externally-reachable trust boundary. This is the daily driver; it runs the verify automatically and only marks a story done when a green verify proves it.
 ---
 
 # Run
@@ -18,41 +18,57 @@ below are that pipeline, inlined.
 ## Conventions
 
 - `{project-root}` means the current repository root.
-- The active story lives under `epics/epic-NN-name/story-NN-NN-name/` with
-  `spec.md` / `plan.md` / `tasks.md`.
+- The active story lives under `epics/epic-NN-name/story-NN-NN-name/`. A QUICK story
+  is a single `story.md`; a STANDARD/STRICT story splits into `spec.md` / `plan.md` /
+  `tasks.md`. Read whichever shape is there.
 - Story scope is authoritative unless it conflicts with `RULES.md`.
 - Existing code patterns beat generic preferences; keep changes scoped and reversible.
 - If a phase finds blocking issues, fix them before continuing.
 
 ## Harness Automation (do this without being asked)
 
-When `ai-flow` is available, use the Security Evidence Harness automatically.
+When `ai-flow` is available, use the harness automatically.
 
 > If bare `ai-flow` is not on `PATH` (common when the plugin is installed but the
 > package was never linked globally), run the same commands via
 > `npx @landry_pouth/coding-flow <args>`.
 
-- Before finalizing the mode, run `ai-flow harness preflight --story <story-dir>`
-  when a story directory exists; use its risk and required checks to confirm the mode.
-- **Required, non-skippable:** after implementation, run
-  `ai-flow harness verify --story <story-dir>` to execute the declared validation
-  commands and capture verbatim pass/fail. It is a phase, not an extra — the story is
-  not finished until it has run. Fix real failures; never weaken tests to pass.
-- After validation and notes, run `ai-flow harness check --story <story-dir>`; for
-  STANDARD/STRICT, also run `ai-flow harness evidence --story <story-dir>`.
-- With no story directory, use `ai-flow harness check --quick` for a lightweight
+**Required at every intensity, non-skippable:** after implementation, run
+
+```bash
+ai-flow verify --story <story-dir>
+```
+
+It executes the declared validation commands and captures verbatim pass/fail. It is
+a phase, not an extra — the story is not finished until it has run. Fix real
+failures; never weaken tests to pass. Re-running an unchanged story replays the
+existing proof instead of re-executing, so calling it again is cheap.
+
+Everything else is machinery, and scales with intensity:
+
+- QUICK/FAST: `verify` only. One command.
+- STANDARD/STRICT: also `ai-flow harness check --story <story-dir>` after notes,
+  and `ai-flow harness evidence --story <story-dir>` at the end.
+- STRICT only: `ai-flow harness preflight --story <story-dir>` before implementing,
+  to confirm the mode against the recorded risk.
+- With no story directory, `ai-flow harness check --quick` is a lightweight
   secret/sensitive-file pass.
-- If the harness cannot run, continue but record that verification could not run —
-  and do not write `## Status: done` (no proof exists).
+
+If `verify` reports a **tool error** rather than a failing command, the harness could
+not observe the result — that is not a red suite. Report it; do not treat it as a
+validation failure, and do not write `## Status: done`.
+
+If the harness cannot run at all, continue but record that verification could not
+run — and do not write `## Status: done` (no proof exists).
 
 ## Status From Proof
 
 `ai-flow status` derives a story's state from executed proof: a green `verify` shows
-as `verified`, a red one as `blocked`. A `## Status` line in `tasks.md` overrides
+as `verified`, a red one as `blocked`. A `## Status` line in the story overrides
 that — keep it honest:
 
-- Write `## Status: done` **only after** a green `ai-flow harness verify` for this
-  story is captured. A passing verify is the precondition, not your assertion.
+- Write `## Status: done` **only after** a green `ai-flow verify` for this story is
+  captured. A passing verify is the precondition, not your assertion.
 - On a red or partial verify, write `## Status: blocked` and record what failed.
 - Before implementation is finished, or when verify could not run, leave
   `## Status: in-progress` (or `planned`) — never `done`.
@@ -62,25 +78,42 @@ already proved it.
 
 ## Choosing Intensity
 
-If the user names a mode, use it. Otherwise infer the lightest safe mode from the
-story and the preflight risk. Use **STRICT** whenever the story touches auth,
-permissions, admin surfaces, user input, persistence, external integrations, secrets,
-payments, uploads, or sensitive data — there is no separate "secure" workflow;
-security is the STRICT intensity of this one.
+If the user names a mode, use it. Otherwise pick the **lightest** mode that covers
+the change, and ask what this change can break that the test suite would not catch —
+not what subject it happens to touch.
+
+Use **STRICT** when the change does any of these:
+
+- alters an authorization decision, or who can reach something;
+- changes a persistence schema, or needs a migration;
+- moves money, credentials, or secrets;
+- creates a **new** externally-reachable trust boundary (a new endpoint, a new
+  upload path, a new third-party integration).
+
+Otherwise it is not STRICT. A form posting to an existing, already-validated
+endpoint creates no new boundary — that is STANDARD. Copy or layout inside an
+existing page is QUICK.
+
+"Touches user input" and "reads the database" are not escalation signals: every form
+and nearly every feature does both, and treating them as STRICT means paying TDD and
+E2E prices for a heading change. The security rules in `RULES.md` apply at every
+intensity — what scales is the ceremony, never the constraints.
+
+There is no separate "secure" workflow; security is the STRICT intensity of this one.
 
 ### QUICK / FAST — small, isolated changes
 
 For copy updates, simple bug fixes, isolated components, low-risk local changes with
 obvious acceptance criteria and no auth/permissions/data involvement.
 
-1. Read the request or `spec.md`; find the edit point with 1–3 targeted searches
+1. Read the request or the story; find the edit point with 1–3 targeted searches
    (read at most ~5 files before deciding it is still small).
 2. Implement the change.
-3. Run the narrowest useful validation, then `ai-flow harness verify`.
-4. Update the `tasks.md` `## Result` only if the change is non-trivial.
+3. Run the narrowest useful validation, then `ai-flow verify`.
+4. Update the story `## Result` only if the change is non-trivial.
 
-Even here, capture Stop Conditions and Rollback Notes before editing. If the scope
-grows, multiple modules need changes, or auth/data appears, switch up to STANDARD.
+If the scope grows, several modules need changes, or the change starts matching a
+STRICT trigger, switch up rather than pushing through.
 
 ### STANDARD — normal feature work
 
@@ -91,10 +124,10 @@ For CRUD, product features, frontend/backend integration, ordinary vertical stor
    validation gates — inline, not a separate document.
 2. Map acceptance criteria to code areas; inspect current patterns before editing.
 3. Implement the smallest coherent slice end-to-end: code + tests + validation in one
-   focused pass. Add/update tests per `plan.md`.
-4. Run `ai-flow harness verify`; then self-review (see Review Before Done).
-5. Fix blocking issues and re-run the failed checks. Update the `tasks.md` `## Result`
-   and record meaningful architecture choices in `plan.md`.
+   focused pass. Add/update tests per the story plan.
+4. Run `ai-flow verify`; then self-review (see Review Before Done).
+5. Fix blocking issues and re-run the failed checks. Update the story `## Result`
+   and record meaningful architecture choices in its Decisions section.
 
 ### STRICT — risky or security-sensitive work
 
@@ -147,7 +180,7 @@ input, server-side enforcement beats client-side checks. Answer:
 - What private data could leak (client bundles, logs, responses, public queries)?
 - What validation or tests prove the boundary works?
 
-An unanswered question above, or a red `ai-flow harness verify`, is a blocker — not
+An unanswered question above, or a red `ai-flow verify`, is a blocker — not
 something to work around. Route to the deep security section of `/flow-review` for auth
 systems, permission models, payments, uploads, secrets, or external integrations.
 
@@ -155,8 +188,15 @@ systems, permission models, payments, uploads, secrets, or external integrations
 
 Before marking a story done, self-review the change: acceptance criteria met,
 architecture not drifting, tests protect behavior (not implementation), no security
-regression, no unrelated changes. For a quick story this is a glance; for STANDARD/
-STRICT, run `/flow-review` (use its deep sections when risk warrants).
+regression, no unrelated changes.
+
+For a QUICK story this is a glance. In STANDARD, `/flow-review` is **opt-in** — run
+it when the self-review finds something, when the change crosses modules, or on
+request. A full review pass over a diff you wrote minutes ago mostly re-reads your
+own reasoning; it earns its cost when the diff is large or unfamiliar, not by
+default.
+
+In STRICT, `/flow-review` is required. An independent pass is the point of STRICT.
 
 ## Stop Conditions
 
@@ -172,11 +212,30 @@ Stop and report — do not push through — when:
 
 ## Rollback Notes
 
-Before implementing, capture: files/areas likely to change; any migration/data
-rollback concerns; any config or feature-flag rollback path; manual cleanup steps if
-validation fails. Record them in the `tasks.md` `## Result` → `### Rollback Notes`.
+For STANDARD and STRICT, capture before implementing: files/areas likely to change;
+any migration/data rollback concerns; any config or feature-flag rollback path;
+manual cleanup steps if validation fails. Record them in the story `## Result` →
+`### Rollback Notes`.
+
+A QUICK change that is reverted by `git revert` needs no rollback plan — say so by
+omitting the section rather than writing "n/a".
 
 ## Output
+
+The report scales with the story. Sections that would come back empty are omitted,
+not filled with `-`: an empty field costs tokens to write and attention to read past.
+
+**QUICK / FAST** — three lines:
+
+```md
+# Run Result
+
+- **Changed**: what changed and why
+- **Verify**: green / red (+ the failing command if red)
+- **Risks**: anything genuinely unresolved, or omit this line
+```
+
+**STANDARD / STRICT** — the full report:
 
 ```md
 # Run Result
@@ -205,11 +264,11 @@ QUICK / FAST / STANDARD / STRICT
 
 - Command:
   - Result:
-- Harness verify: green / red
+- Verify: green / red
 
 ## Decisions Recorded
 
-- plan.md: yes/no
+- Story plan: yes/no
 
 ## Rollback Notes
 

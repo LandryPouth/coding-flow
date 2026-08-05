@@ -4,6 +4,90 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.3] - 2026-08-05
+
+Reported from real use: 45–60 minutes for a simple task. Five defects made the
+tool report states it had not established; the rest of the release is about what
+the tool *demands* rather than what it does. See
+`docs/plans/execution-cost.md`.
+
+### Fixed
+
+- **Commands run from a subdirectory now operate on the project.** `cwd` was
+  `process.cwd()`, captured once. Run `verify --story epics/x` from `apps/web` and
+  the config was looked up in `apps/web`, not found, and the declared validation
+  commands were silently replaced by whatever that subpackage's `package.json`
+  held — the evidence was then filed under `root: .../apps/web`. A proof that
+  quietly proves something else is worse than no proof. The `.coding-flow/`
+  marker is now walked upward, and a relocated root is announced on stderr so it
+  is never silent.
+- **A passing suite that prints a lot is no longer recorded as a failure.**
+  `spawnSync` capped output at 10 MB; past that Node kills the child and returns
+  `ENOBUFS` with a null status, which was folded into `exit 127`. A green
+  `turbo test` over a monorepo came back red, and the story was marked blocked in
+  the ledger. The buffer is now 256 MB (`CODING_FLOW_MAX_OUTPUT_BYTES` to
+  override), and an overflow reports `toolError` with a null exit code: "the
+  harness could not observe this command" is a different claim from "this command
+  failed", and both block a verify, but only one means the code is broken.
+- **`## Status: done` is finally readable.** The matcher required whitespace
+  after `Status`, so the colon form `/flow-run` explicitly mandates never matched.
+  The most authoritative of the three status signals — the human override — had
+  been inert for its own documented syntax, and a story marked `blocked` after a
+  red verify fell through to the prose heuristic. All three forms now work.
+- **A crash reports as a bug, not as a stack trace.** There was no top-level
+  handler, so any exception reached the user as raw Node output — agents driving
+  the CLI reported it as "the tool errored internally", indistinguishable from a
+  red suite. `CODING_FLOW_DEBUG=1` still prints the stack.
+- **`verify` names where its commands came from.** The fallback from a config
+  that was never found to `package.json` scripts was silent, which is how a
+  verify ends up proving less than it claims.
+
+### Added
+
+- **An unchanged story is not re-verified.** A green proof is reusable while the
+  code it proved has not moved, so `verify` replays it instead of re-running the
+  suite. Keyed on the working-tree token, the untracked-file listing, and a
+  fingerprint of the command set — change any of the three and it re-executes.
+  A cache hit writes **no new evidence**: recording a run that did not happen is
+  the one thing this tool must never do. `--no-cache` forces execution.
+- **Single-file stories.** A QUICK story is one `story.md`; `spec.md` / `plan.md`
+  / `tasks.md` stay the shape for STANDARD and STRICT. Every reader now asks for
+  a role rather than a filename, so a single-file story verifies, reaches
+  `verified`, and audits exactly like a three-file one — cheaper ceremony,
+  identical proof.
+
+### Changed
+
+- **`RULES.md` lost 58% of its words** (1780 → 746). It is imported by
+  `CLAUDE.md`, so every word was paid on every turn of every session — and 1094 of
+  them restated policy `/flow-run` and `/flow-review` already carry. The two
+  copies had already diverged: `RULES.md` still taught `ai-flow harness verify`
+  after 0.5.2 promoted `ai-flow verify --story`. A rule written twice is a rule
+  that will eventually disagree with itself, and the always-loaded copy wins by
+  default. The project constraints — architecture, quality, validation, testing,
+  security — are untouched.
+- **STRICT is triggered by blast radius, not by subject matter.** The old rule
+  escalated on "touches user input, persistence, external integrations", which
+  every form and nearly every feature matches; a landing page with a contact form
+  bought TDD and E2E. STRICT is now for a change that alters an authorization
+  decision, changes a persistence schema, moves money or secrets, or creates a
+  **new** externally-reachable trust boundary. The security constraints apply at
+  every intensity — what scales is the ceremony, never the constraints.
+- **`/flow-review` is opt-in in STANDARD**, and still required in STRICT. A full
+  review pass over a diff the same agent wrote minutes earlier mostly re-reads its
+  own reasoning.
+- **Reports scale with the story.** The 25-field Run Result block stays for
+  STANDARD/STRICT; QUICK gets three lines. Sections that would come back empty are
+  omitted rather than filled with `-`.
+- **Fewer harness calls per story.** QUICK/FAST runs `verify` alone;
+  `check`/`evidence` are STANDARD/STRICT, and `preflight` is STRICT only.
+
+### Not done
+
+- Parallel execution of validation commands. Declared command lists are ordered
+  (`build` before `test` is legitimate), so running them concurrently would break
+  projects to save ~20 seconds the cache already avoids spending at all.
+
 ## [0.5.2] - 2026-08-05
 
 ### Changed

@@ -138,7 +138,12 @@ function printReport(report, reportPath) {
       const firstFail = entry.results.find((item) => !item.ok);
 
       if (firstFail) {
-        const why = firstFail.timedOut ? "timeout" : `exit ${firstFail.exitCode}`;
+        // A command the harness could not observe is not a command that failed.
+        const why = firstFail.toolError
+          ? `tool error: ${firstFail.toolError}`
+          : firstFail.timedOut
+            ? "timeout"
+            : `exit ${firstFail.exitCode}`;
         log(`    ${firstFail.command} — ${why}`);
       }
     }
