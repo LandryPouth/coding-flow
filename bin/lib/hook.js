@@ -43,7 +43,7 @@ function managedBlock() {
     "fi",
     "if ! $CF audit --check; then",
     '  echo "coding-flow: push blocked — a story\'s latest verify is red, missing, or stale." >&2',
-    "  echo \"Re-run 'ai-flow harness verify', or bypass once with 'git push --no-verify'.\" >&2",
+    "  echo \"Re-run 'ai-flow verify --story <dir>', or bypass once with 'git push --no-verify'.\" >&2",
     "  exit 1",
     "fi",
     BLOCK_END,

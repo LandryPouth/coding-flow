@@ -10,7 +10,7 @@ description: Push the current branch and open or update one pull request against
 `ship` takes the verified work on the current branch and turns it into one pull
 request: it pushes the branch and opens (or updates) a single PR against the base,
 attaching the latest `verify` evidence so a reviewer sees the proof, not a promise.
-It is the last step of a story — run it after a green `/flow-verify`.
+It is the last step of a story — run it after a green verify.
 
 ## Command
 
@@ -42,7 +42,7 @@ Useful flags:
 
 ## Before Shipping
 
-- Confirm the story is verified: a green `ai-flow harness verify` should exist, so the
+- Confirm the story is verified: a green `ai-flow verify` should exist, so the
   attached evidence reflects a passing run. Do not ship a red or unproven story.
 - Confirm you are on the feature branch for this work, not the base branch.
 

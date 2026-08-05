@@ -27,21 +27,20 @@ ai-flow ship       # push the branch and open (or update) the PR
 
 That is 95% of daily use.
 
-## The six skills, in workflow order
+## The five skills, in workflow order
 
 | Skill | When |
 | --- | --- |
 | `/flow-setup` | Scaffold Coding Flow into the repo (once). |
 | `/flow-plan` | Turn an objective into implementation-ready stories. |
 | `/flow-run` | Execute one story: plan → code → tests → verify. Picks QUICK..STRICT by risk. |
-| `/flow-verify` | Capture verbatim pass/fail proof for a story. |
 | `/flow-review` | Findings-first pre-merge review. |
 | `/flow-ship` | Push the branch and open/update the PR. |
 
 The depth (STRICT mode, deep validators, context scout, TDD) lives as opt-in
 sections inside `/flow-run` and `/flow-review` — you don't chain separate skills by hand.
 
-With the plugin installed, the same six answer to `coding-flow:flow-*` as well.
+With the plugin installed, the same five answer to `coding-flow:flow-*` as well.
 The `flow-` prefix is deliberate: Claude Code has its own `/run` and `/review`,
 and a story run must never be confused with launching your app. You get the
 skills from **one** channel — `init` copies them into the repo only when the
@@ -60,7 +59,7 @@ the story (which re-verifies). You never have to ask the agent "did you check it
 ai-flow help          # the golden path (this, in the terminal)
 ai-flow help --all    # every command, grouped by role
 ai-flow commands      # the easiest commands for THIS project
-ai-flow list-skills   # the six skills, in workflow order
+ai-flow list-skills   # the five skills, in workflow order
 ```
 
 Verify a batch of stories at once and get one proof report:

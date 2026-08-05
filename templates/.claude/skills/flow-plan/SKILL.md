@@ -105,12 +105,17 @@ silence.
 
 ## Brownfield Bootstrap (opt-in)
 
-For an existing codebase, prepare durable project docs before creating stories. Run
-`ai-flow bootstrap --scan` first, then use `docs/bootstrap-scan.md`. Do not modify
-application code.
+For an existing codebase, prepare durable project docs before creating stories. Do
+not modify application code.
 
-1. Read `docs/bootstrap-scan.md`; inspect only the files needed to verify framework,
-   scripts, architecture, tests, and conventions.
+1. Run `ai-flow bootstrap --scan --json` and read its output. The scan is mechanical
+   — directories, scripts, declared dependencies — and costs milliseconds, so always
+   run it fresh rather than trusting a `docs/bootstrap-scan.md` that may be stale.
+   Then inspect only the files needed to verify framework, scripts, architecture,
+   tests, and conventions.
+   - If the scan reports `"classification": "empty"` while the repo clearly holds
+     code, the detectors (JavaScript only) did not recognize the stack. Say so, and
+     derive the facts by reading the project directly instead of trusting the scan.
 2. Update `docs/project-context.md`, `docs/architecture.md`, `docs/conventions.md`,
    and `docs/roadmap.md` with durable current-state facts — current architecture,
    existing patterns, hardcoded data, coupling points, migration risks, and the first

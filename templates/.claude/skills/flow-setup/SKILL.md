@@ -30,9 +30,11 @@ then `/flow-setup`.
      existing file is left untouched, so re-running is safe.
    - If the project has no `package.json`, a minimal private one is created so the
      `flow:*` scripts work.
-3. For an existing (brownfield) codebase, optionally prepare durable project docs
-   first: run `npx @landry_pouth/coding-flow bootstrap --scan`, then `/flow-plan` (its
-   Brownfield Bootstrap section fills the project docs from the scan).
+3. Read what `init` reports about the repo. It scans for an existing codebase on
+   its own and says whether it found one — relay that verdict, and if it is
+   brownfield, be explicit that the project docs are still empty: the scan is
+   mechanical and does not document anything. `/flow-plan` (its Brownfield
+   Bootstrap section) is what fills them.
 4. Verify the install:
 
    ```bash

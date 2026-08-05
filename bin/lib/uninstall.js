@@ -167,8 +167,14 @@ function uninstall({ dryRun = false, force = false, json = false } = {}) {
       log(dryRun ? "Coding Flow uninstall dry run." : "Coding Flow uninstalled.");
     }
 
-    log(`Removed files: ${result.removedFiles.length}`);
-    log(`Removed package scripts: ${result.removedScripts.length}`);
+    log(`${dryRun ? "Would remove" : "Removed"} files: ${result.removedFiles.length}`);
+    // Name them: this command deletes, and a bare count gives the user nothing to
+    // check a dry run against.
+    for (const file of result.removedFiles) {
+      log(`- ${file}`);
+    }
+
+    log(`${dryRun ? "Would remove" : "Removed"} package scripts: ${result.removedScripts.length}`);
     if (result.packageJsonRemoved) {
       log(dryRun ? "Would remove generated package.json." : "Removed generated package.json.");
     }

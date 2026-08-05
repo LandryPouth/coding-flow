@@ -115,7 +115,7 @@ discipline. That is the **foundation**, not what disappeared.
 
 ## 5. Current state
 
-Published as **`@landry_pouth/coding-flow`** on npm (0.5.1) and installable as a
+Published as **`@landry_pouth/coding-flow`** on npm (0.5.2) and installable as a
 native Claude Code plugin. The evidence & governance spine is live end-to-end:
 `guard` (deterministic write refusal), `verify` (executed proof), `audit`
 (append-only ledger + `docs/AUDIT.md` export + `--check` gate), `trace`, `ship`,

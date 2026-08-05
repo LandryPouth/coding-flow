@@ -277,7 +277,7 @@ function ship({ base = null, draft = false, title = null, web = false, dryRun = 
       if (evidence) {
         log(`  evidence: latest verify (${evidence.ok ? "passed" : "FAILED"}) will be attached to the PR body.`);
       } else {
-        log("  evidence: none (run `ai-flow harness verify` before you ship to attach the proof).");
+        log("  evidence: none (run `ai-flow verify --story <dir>` before you ship to attach the proof).");
       }
     }
     return;
@@ -311,7 +311,7 @@ function ship({ base = null, draft = false, title = null, web = false, dryRun = 
       return;
     }
     if (!evidence) {
-      log("Note: no verify evidence — run `ai-flow harness verify` before you ship to attach the proof.");
+      log("Note: no verify evidence — run `ai-flow verify --story <dir>` before you ship to attach the proof.");
       return;
     }
     if (syncEvidenceIntoPr(root, branch, buildEvidenceBlock(evidence))) {
