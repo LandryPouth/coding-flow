@@ -907,7 +907,33 @@ function writeVerifyEvidence(evidence) {
   return outputPath;
 }
 
+// `--story` scopes the proof, and a scope that silently misses is worse than no
+// scope at all: verify falls back to the project-wide commands and then writes an
+// evidence claiming it proved a story that does not exist — which `audit` ingests
+// as-is. `run` already refuses this (run.js selectStories); now that
+// `verify --story` is the promoted, typed-by-hand escape hatch, it must too.
+//
+// Only verify is this strict. `preflight` deliberately reports a missing story as
+// "(missing)", and `check` legitimately scopes its secret scan to any directory.
+function requireStoryScope(story) {
+  const storyDir = resolveStoryDir(story);
+
+  if (storyDir === null) {
+    fail(`--story "${story}" is not a story directory inside the project.`);
+  }
+
+  const relative = normalizePortable(path.relative(cwd, storyDir));
+
+  if (!relative.startsWith("epics/")) {
+    fail(`--story "${story}" is not under epics/. Verify proves stories, not arbitrary directories.`);
+  }
+}
+
 function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
+  if (story !== null) {
+    requireStoryScope(story);
+  }
+
   const resolvedStory = story ? resolveProjectPath(story) : null;
 
   if (dryRun) {
@@ -956,6 +982,12 @@ function harnessVerify({ json = false, dryRun = false, story = null } = {}) {
 function harnessCommand({ commandArgs, getFlagValue, flags }) {
   const subcommand = commandArgs[0] || "check";
   const story = getFlagValue("--story", null);
+
+  // A flag with no value is a typo in any subcommand: `verify --story --json`
+  // used to swallow the flag and quietly verify the whole project.
+  if (flags.has("--story") && story === null) {
+    fail("--story requires a path, e.g. --story epics/epic-01/story-01-01-name.");
+  }
 
   if (subcommand === "init") {
     harnessInit({

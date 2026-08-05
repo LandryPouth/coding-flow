@@ -119,7 +119,15 @@ itself here — no manual `trash` pass:
    it originally installed; any skill file **you edited** is reported and left in
    place for you to delete once you have moved your changes over.
 
-2. **A project no longer holds a copy of the skills when the plugin is
+2. **`flow-verify` is gone as a skill** — the front door is five skills, not six.
+   Nothing was lost: verification was never a decision you make. `/flow-run` still
+   runs it on every story, `status` and CI still read its evidence, and `ship`
+   still attaches it to the PR. The on-demand case — re-proving a story that went
+   `stale` after a small edit — is now `ai-flow verify --story <path>`, promoted
+   from `ai-flow harness verify`, which still works. `upgrade` removes the skill
+   file it installed; an edited copy is reported and left for you to delete.
+
+3. **A project no longer holds a copy of the skills when the plugin is
    installed.** Your project predates that choice, so the first `upgrade` makes
    it for you — no second `init`, no flag:
 

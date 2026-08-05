@@ -16,7 +16,7 @@ const {
 } = require("./lib/templates");
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
-const { bootstrapScan } = require("./lib/bootstrap");
+const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { harnessCommand } = require("./lib/harness");
 const { guardCommand } = require("./lib/guard");
 const { auditCommand } = require("./lib/audit");
@@ -165,10 +165,22 @@ if (command === "init") {
 
   printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });
 
+  // Name them. On a brownfield repo the collision is typically the project's own
+  // docs/architecture.md, and "use --force to overwrite them" then reads as advice
+  // to replace a real architecture document with a template stub.
   if (result.skipped.length > 0) {
-    log(`Skipped existing files: ${result.skipped.length}`);
-    log("Use --force to overwrite them.");
+    log("");
+    log(`Kept ${result.skipped.length} existing file${result.skipped.length === 1 ? "" : "s"} (yours, not overwritten):`);
+    for (const file of result.skipped) {
+      log(`- ${file}`);
+    }
+    log("Use --force only if you want the Coding Flow templates to replace them.");
   }
+
+  // Brownfield detection, last so it reads as the next step. The scan is a
+  // function call, not an artifact: nothing is written, and the deliverable is
+  // the pointer to /flow-plan — the expensive half of onboarding it cannot do.
+  printProjectScanSummary(scanProject(), { dryRun: flags.has("--dry-run") });
 } else if (command === "upgrade") {
   // Migration: projects installed before the storage seam have no config.json.
   // We create it with the defaults without ever overwriting an existing choice.
@@ -231,9 +243,15 @@ if (command === "init") {
   bootstrapScan({
     json: flags.has("--json"),
     dryRun: flags.has("--dry-run"),
+    force: flags.has("--force"),
   });
 } else if (command === "harness") {
   harnessCommand({ commandArgs, getFlagValue, flags });
+} else if (command === "verify") {
+  // Top-level alias of `harness verify`. The harness namespace earns itself for
+  // preflight/check/evidence, which nobody types by hand; verify is the one a
+  // user reaches for — re-proving a story that went `stale` after a small edit.
+  harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
 } else if (command === "guard") {
   guardCommand({ getFlagValue, flags });
 } else if (command === "audit") {

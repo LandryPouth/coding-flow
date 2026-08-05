@@ -264,7 +264,7 @@ function audit({ json = false, exportMd = false, check = false, since = null, dr
         }
       }
       if (result.stale.length > 0) {
-        log("Audit check FAILED — latest verify is stale (code changed since the proof); re-run `ai-flow harness verify` for:");
+        log("Audit check FAILED — latest verify is stale (code changed since the proof); re-run `ai-flow verify --story <dir>` for:");
         for (const entry of result.stale) {
           log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree`);
         }

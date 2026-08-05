@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { cwd, packageJson } = require("./context");
-const { log, toPortable, parseFrontmatter, readJson } = require("./util");
+const { log, toPortable, parseFrontmatter, readJson, hashFile } = require("./util");
 const {
   ensureTemplatesExist,
   listTemplateSkillNames,
@@ -20,6 +20,59 @@ const {
 } = require("./templates");
 const { collectHarnessReport } = require("./harness");
 const { readConfig } = require("./config");
+const { scanProject } = require("./bootstrap");
+
+// The docs `/flow-plan bootstrap` is supposed to write. architecture.md is left
+// out on purpose: a brownfield project often already has one, so `init` skips it
+// and it is never in the manifest to compare against.
+const ONBOARDING_DOCS = ["docs/project-context.md", "docs/conventions.md", "docs/roadmap.md"];
+
+// Untouched since `init` wrote it. The manifest stores the sha256 of what was
+// installed, so this is exact — no line counting, no marker string, and no false
+// positive on a short but genuine document.
+function isUntouchedTemplate(relativePath, manifest) {
+  const recorded = manifest.files ? manifest.files[relativePath] : null;
+  const fullPath = path.join(cwd, relativePath);
+
+  if (!recorded || !recorded.hash || !fs.existsSync(fullPath)) {
+    return false;
+  }
+
+  return hashFile(fullPath) === recorded.hash;
+}
+
+// The half of brownfield onboarding no command can do. `init` scans the repo and
+// points at /flow-plan, but nothing until now noticed when that pointer was never
+// followed — so the tool reported "installed correctly" on a project whose docs
+// were still the stubs it shipped. Installed is not onboarded.
+function checkBrownfieldOnboarding(warnings) {
+  const manifest = readJson(manifestPath(), null);
+
+  if (!manifest || typeof manifest !== "object") {
+    return;
+  }
+
+  const scan = scanProject();
+
+  if (scan.classification === "empty" && !scan.looksLikeCode) {
+    // Greenfield: there is no existing codebase to document.
+    return;
+  }
+
+  // Every one, not any: someone who has written project-context but not roadmap
+  // is mid-onboarding and does not need to be told to start.
+  if (!ONBOARDING_DOCS.every((file) => isUntouchedTemplate(file, manifest))) {
+    return;
+  }
+
+  warnings.push({
+    code: "brownfield_not_onboarded",
+    file: "docs/project-context.md",
+    message:
+      "existing code detected but the project docs are still the installed templates — " +
+      "run /flow-plan bootstrap to document this codebase",
+  });
+}
 
 function collectDoctorReport({ strict = false } = {}) {
   ensureTemplatesExist();
@@ -147,6 +200,12 @@ function collectDoctorReport({ strict = false } = {}) {
       });
     }
   }
+
+  // Not strict-only: this is the mitigation for the risk that folding the scan
+  // into `init` makes the expensive half of onboarding invisible, so it has to
+  // fire on the `doctor` a user actually runs. A warning, never an error —
+  // unfinished onboarding is not a broken install.
+  checkBrownfieldOnboarding(warnings);
 
   return {
     ok: errors.length === 0,

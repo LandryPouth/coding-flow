@@ -35,7 +35,7 @@ function defaultConfig() {
     // existed described an install that DID copy the skills, and doctor must
     // keep requiring them for those projects.
     skills: "project",
-    // Validation commands run by `ai-flow harness verify`. Empty by default: the
+    // Validation commands run by `ai-flow verify`. Empty by default: the
     // command then falls back to the "## Commands" block of plan.md, then to the
     // package.json scripts. Declaring them here makes validation explicit and
     // language-independent.

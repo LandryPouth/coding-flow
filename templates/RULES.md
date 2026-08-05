@@ -118,7 +118,6 @@ The skill set is small and flat — one skill per stage:
 - `/flow-setup` — scaffold Coding Flow into the repo (once).
 - `/flow-plan` — turn an objective, product intent, or brownfield scan into implementation-ready stories.
 - `/flow-run` — execute one story end-to-end; it selects `QUICK`..`STRICT` by risk and runs the right depth.
-- `/flow-verify` — capture verbatim pass/fail proof for a story.
 - `/flow-review` — findings-first pre-merge review.
 - `/flow-ship` — push the branch and open or update the PR.
 
@@ -225,8 +224,9 @@ risk, not by chaining separate skills.
 - **Quality** — a quick advisory pass (duplication, complexity, naming, convention drift; reviews only, never edits); escalate to a deep review for refactors or wide duplication.
 - **Security** — a quick check for stories touching auth, admin, inputs, persistence, or data visibility; escalate to a deep review for permissions, payments, uploads, secrets, external integrations, or sensitive data.
 
-Brownfield: run `ai-flow bootstrap --scan`, then `/flow-plan` to turn the scan into
-durable project context without modifying application code.
+Brownfield: `init` detects an existing codebase and says so. Use `/flow-plan` (its
+Brownfield Bootstrap section) to turn that into durable project context without
+modifying application code — it runs the scan itself, fresh.
 
 ### Communication
 

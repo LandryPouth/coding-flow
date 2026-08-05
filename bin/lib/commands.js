@@ -11,20 +11,26 @@ const { detectProjectPackageJson, commandsPath } = require("./templates");
 function printCommands({ json = false } = {}) {
   const detected = detectProjectPackageJson();
   const commands = {
+    // `harness check --quick` is machinery nobody types; `verify` is the one
+    // command a user reaches for, to re-prove a story that went stale. The cheat
+    // sheet follows the front door, not the list of available subcommands.
+    //
+    // verify keeps its direct form in both branches: it takes an argument, and
+    // `npm run flow:verify -- --story x` is not a command worth teaching.
     daily: detected.exists
       ? {
           doctor: "npm run flow:doctor",
           check: "npm run flow:check",
           skills: "npm run flow:skills",
           status: "npm run flow:status",
-          harness: "npm run flow:harness",
+          verify: `${npxCommand} verify --story <dir>`,
         }
       : {
           doctor: `${npxCommand} doctor`,
           check: `${npxCommand} doctor --strict`,
           skills: `${npxCommand} list-skills`,
           status: `${npxCommand} status`,
-          harness: `${npxCommand} harness check --quick`,
+          verify: `${npxCommand} verify --story <dir>`,
         },
     setup: {
       init: `${npxCommand} init`,
@@ -40,17 +46,24 @@ function printCommands({ json = false } = {}) {
     return;
   }
 
+  // Width from the longest name in both blocks: a hardcoded 8 made "uninstall"
+  // eat its own gap.
+  const width = Math.max(
+    ...Object.keys(commands.daily).map((name) => name.length),
+    ...Object.keys(commands.setup).map((name) => name.length),
+  );
+
   log("Coding Flow commands");
   log("");
   log("Daily:");
   for (const [name, value] of Object.entries(commands.daily)) {
-    log(`  ${name.padEnd(8)} ${value}`);
+    log(`  ${name.padEnd(width)} ${value}`);
   }
 
   log("");
   log("Setup / update:");
   for (const [name, value] of Object.entries(commands.setup)) {
-    log(`  ${name.padEnd(8)} ${value}`);
+    log(`  ${name.padEnd(width)} ${value}`);
   }
 
   log("");
@@ -89,7 +102,7 @@ you (verification, evidence, audit, guard) — you rarely type it yourself.
 More
   ai-flow help --all     every command, grouped by role
   ai-flow commands       the easiest commands for THIS project
-  ai-flow list-skills    the six skills, in workflow order
+  ai-flow list-skills    the five skills, in workflow order
 
 Quickstart: docs/QUICKSTART.md`);
 }
@@ -111,7 +124,8 @@ Usage:
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
-  ai-flow bootstrap --scan [--dry-run] [--json]
+  ai-flow verify --story path [--json] [--dry-run]
+  ai-flow bootstrap --scan [--force] [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
   ai-flow audit [--export] [--check] [--since iso] [--json] [--dry-run]
@@ -139,7 +153,8 @@ Daily (you run these):
   status       List epics, stories, and inferred story status (verified / stale / blocked).
   run          Verify a batch of stories (all, one --epic, or one --story) and emit one proof report.
   ship         Push the current branch and open/update one PR to the base (uses gh if available).
-  bootstrap    Scan a brownfield project and write docs/bootstrap-scan.md.
+  verify       Re-prove one story: run its declared validation commands and capture the result.
+  bootstrap    Write docs/bootstrap-scan.md for a brownfield project (init already scans; this is the artifact).
 
 Machinery (usually run FOR you by the skills, CI, or the git hook):
   harness      Run security checks (check), execute declared validation commands (verify), write evidence.

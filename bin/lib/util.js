@@ -9,6 +9,17 @@ const path = require("path");
 
 const { cwd } = require("./context");
 
+// `ai-flow status | head` closes the pipe under us, and an unhandled EPIPE on
+// stdout crashes Node with a stack trace over whatever the user was reading.
+// Paging output is normal use, so a closed pipe is a normal end, not an error.
+process.stdout.on("error", (error) => {
+  if (error.code === "EPIPE") {
+    process.exit(0);
+  }
+
+  throw error;
+});
+
 function log(message) {
   process.stdout.write(`${message}\n`);
 }

@@ -189,7 +189,7 @@ test('list-skills lists the available skills under their flow- names', (t) => {
 // serves: two names for the same thing is the confusion this whole seam exists
 // to remove.
 
-const SKILL_DIRS = ['flow-setup', 'flow-plan', 'flow-run', 'flow-verify', 'flow-review', 'flow-ship'];
+const SKILL_DIRS = ['flow-setup', 'flow-plan', 'flow-run', 'flow-review', 'flow-ship'];
 
 function readConfigSkills(dir) {
   return JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'config.json'), 'utf8')).skills;
@@ -292,17 +292,29 @@ function makeLegacyInstall(dir) {
   const manifestPath = path.join(dir, '.coding-flow', 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
-  for (const name of ['setup', 'plan', 'run', 'verify', 'review', 'ship']) {
-    fs.renameSync(path.join(skills, `flow-${name}`), path.join(skills, name));
-    delete manifest.files[`.claude/skills/flow-${name}/SKILL.md`];
+  const record = (name, content) => {
     manifest.files[`.claude/skills/${name}/SKILL.md`] = {
       source: `.claude/skills/${name}/SKILL.md`,
-      hash: createHash('sha256')
-        .update(fs.readFileSync(path.join(skills, name, 'SKILL.md')))
-        .digest('hex'),
+      hash: createHash('sha256').update(content).digest('hex'),
       kind: 'template',
     };
+  };
+
+  for (const name of ['setup', 'plan', 'run', 'review', 'ship']) {
+    fs.renameSync(path.join(skills, `flow-${name}`), path.join(skills, name));
+    delete manifest.files[`.claude/skills/flow-${name}/SKILL.md`];
+    record(name, fs.readFileSync(path.join(skills, name, 'SKILL.md')));
   }
+
+  // A legacy install also carried a `verify` skill, which this release drops:
+  // verification is machinery, not a command you reach for. It has no current
+  // counterpart to rename, so the fixture synthesizes it — upgrade must prove it
+  // removes the file rather than leaving a skill nothing serves.
+  const legacyVerify = '---\nname: verify\ndescription: Legacy verify skill.\n---\n\n# Verify\n';
+  fs.mkdirSync(path.join(skills, 'verify'), { recursive: true });
+  fs.writeFileSync(path.join(skills, 'verify', 'SKILL.md'), legacyVerify);
+  record('verify', legacyVerify);
+
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
   const configPath = path.join(dir, '.coding-flow', 'config.json');
@@ -340,6 +352,11 @@ test('upgrading a legacy project without the plugin keeps the skills, renamed', 
     assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', name)), `${name} must be installed`);
   }
   assert.ok(!fs.existsSync(path.join(dir, '.claude', 'skills', 'run')), 'the old name is gone');
+  assert.ok(!fs.existsSync(path.join(dir, '.claude', 'skills', 'verify')), 'the dropped skill is gone');
+  assert.ok(
+    !fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-verify')),
+    'and it is not reinstalled under the new name',
+  );
 });
 
 test('a recorded choice survives an upgrade run on a machine that would detect otherwise', (t) => {

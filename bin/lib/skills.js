@@ -15,7 +15,7 @@ const { ensureTemplatesExist, listTemplateSkillNames } = require("./templates");
 
 // The intended workflow order. Any skill not listed here (e.g. one added later)
 // still appears, after these, in alphabetical order.
-const WORKFLOW_ORDER = ["flow-setup", "flow-plan", "flow-run", "flow-verify", "flow-review", "flow-ship"];
+const WORKFLOW_ORDER = ["flow-setup", "flow-plan", "flow-run", "flow-review", "flow-ship"];
 
 function readTemplateSkillInfo(name) {
   const file = path.join(templatesRoot, ".claude", "skills", name, "SKILL.md");

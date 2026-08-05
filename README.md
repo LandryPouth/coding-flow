@@ -37,7 +37,7 @@ Coding Flow rests on four blocks:
 
 1. **The `ai-flow` CLI** — installs, updates, and checks the workflow files; scans existing projects; runs the security harness.
 2. **The context files** — `RULES.md` and `docs/` give the agent the rules and a durable map of the project.
-3. **The skills** — a small, flat set of reusable workflows, one per stage: `/flow-setup`, `/flow-plan`, `/flow-run`, `/flow-verify`, `/flow-review`, `/flow-ship`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/flow-run` and `/flow-review`, not as separate skills. There is no orchestration at runtime.
+3. **The skills** — a small, flat set of reusable workflows, one per stage: `/flow-setup`, `/flow-plan`, `/flow-run`, `/flow-review`, `/flow-ship`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/flow-run` and `/flow-review`, not as separate skills. There is no orchestration at runtime.
 4. **The security harness** — a set of **CLI checks over your repo and story files** (not a sandbox): secrets, sensitive files, a story's risk level, rollback notes, and JSON evidence in `.coding-flow/runs/`.
 
 The daily loop:
@@ -133,14 +133,20 @@ A small, flat set — one skill per stage of the workflow. You pick any of them 
 | `/flow-setup` | Scaffold Coding Flow into the current repo from Claude Code (once per repo). |
 | `/flow-plan` | Turn an objective into a vertical epic and implementation-ready stories. Includes opt-in sections for clarifying fuzzy requirements and bootstrapping a brownfield codebase. |
 | `/flow-run` | Execute one story end-to-end. Picks QUICK/FAST/STANDARD/STRICT by risk; STRICT adds security validation. Context scout and TDD are inline modes. |
-| `/flow-verify` | Run the declared validation commands and capture verbatim pass/fail as tamper-evident proof. `/flow-run` calls it automatically. |
 | `/flow-review` | Findings-first pre-merge review. Each dimension (architecture, tests, security, quality, E2E) has an opt-in deep section for high-risk work. |
 | `/flow-ship` | Push the branch and open/update one PR, with the latest verify evidence attached. |
 
 The depth that used to live in separate `agent-*` and `*-check` skills — the deep
 validators, the multi-agent worker roles, the context scout, TDD — is **not gone**;
 it moved into opt-in sections of `/flow-run` and `/flow-review`, so nothing capable was lost
-while the front door shrank from thirty skills to six.
+while the front door shrank from thirty skills to five.
+
+**Why no `verify` skill?** Because verification is not a decision you make — it is
+something the machine owes you. `/flow-run` runs it on every story, `ai-flow status`
+and CI read its result, and `ship` attaches it to the PR. You never have to ask for
+it. When you do want it on demand — re-proving a story that went `stale` after a
+one-line edit — that is `ai-flow verify --story <path>` in the terminal, not a slash
+command. A skill is a verb you need; verify is a fact you need to trust.
 
 ## The Reliability Layer
 

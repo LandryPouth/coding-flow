@@ -10,7 +10,6 @@ small, flat set — one per stage of the workflow:
 - `/flow-setup` — scaffold Coding Flow into the repo (once)
 - `/flow-plan` — turn an objective into implementation-ready stories
 - `/flow-run` — execute one story end-to-end; it picks QUICK..STRICT by risk
-- `/flow-verify` — capture verbatim pass/fail proof for a story
 - `/flow-review` — findings-first pre-merge review
 - `/flow-ship` — push the branch and open/update the PR
 
