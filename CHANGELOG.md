@@ -54,6 +54,14 @@ reading `status` and inferring it yourself. Both are now the tool's job.
   mechanical half of the same WIP-limit heuristic `/flow-plan` is told to apply,
   re-checked from the actual files on disk rather than trusted to survive a long
   planning session. Advisory only, like the other onboarding warnings.
+- **`doctor` warns on duplicate epic/story numbers** (`duplicate_epic_number`,
+  `duplicate_story_number`). The number is picked from a local scan of `epics/`
+  at plan time — on a team, two people branching from the same base can
+  independently land on the same `epic-05-` (or the same story number inside
+  one epic) with different slugs. No Git conflict, since the directory names
+  differ, but the number stops being unique once both branches merge. There is
+  no shared counter to prevent the race, so `doctor` catches it mechanically
+  right after the merge instead, while a rename is still a one-line fix.
 - **`ship`'s auto-merge now respects story order within an epic.** Story
   branches are cut independently from the base, so nothing previously stopped
   GitHub from merging a later, enriching story before the earlier one it builds

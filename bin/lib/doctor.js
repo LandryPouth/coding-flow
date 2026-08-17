@@ -105,6 +105,85 @@ function checkOversizedEpics(warnings) {
   }
 }
 
+// The epic/story number is picked from a local, unsynced scan of `epics/` at
+// plan time. Two people branching from the same base can independently land
+// on `epic-05-` (or the same story number inside one epic) with different
+// slugs — no Git conflict, since the directory names differ, but the number
+// stops being unique the moment both branches merge. Nothing can prevent that
+// race without a shared counter this tool deliberately does not have, so
+// `doctor` catches it mechanically right after the merge instead, while a
+// rename is still a one-line fix.
+function checkDuplicateNumbering(warnings) {
+  let epics;
+  try {
+    epics = getStorage(cwd, readConfig(cwd)).listEpics();
+  } catch {
+    return; // best-effort only — never block doctor on a storage read failure.
+  }
+
+  const epicsByNumber = new Map();
+
+  for (const epic of epics) {
+    const match = epic.name.match(/^epic-(\d+)-/);
+
+    if (!match) {
+      continue;
+    }
+
+    const number = match[1];
+
+    if (!epicsByNumber.has(number)) {
+      epicsByNumber.set(number, []);
+    }
+
+    epicsByNumber.get(number).push(epic.name);
+  }
+
+  for (const [number, names] of epicsByNumber) {
+    if (names.length > 1) {
+      warnings.push({
+        code: "duplicate_epic_number",
+        file: "epics",
+        message:
+          `epic-${number}- is used by ${names.length} epics (${names.join(", ")}) — ` +
+          "two branches likely picked the same number independently; rename one",
+      });
+    }
+  }
+
+  for (const epic of epics) {
+    const storiesByNumber = new Map();
+
+    for (const story of epic.stories) {
+      const match = story.name.match(/^story-\d+-(\d+)-/);
+
+      if (!match) {
+        continue;
+      }
+
+      const number = match[1];
+
+      if (!storiesByNumber.has(number)) {
+        storiesByNumber.set(number, []);
+      }
+
+      storiesByNumber.get(number).push(story.name);
+    }
+
+    for (const [number, names] of storiesByNumber) {
+      if (names.length > 1) {
+        warnings.push({
+          code: "duplicate_story_number",
+          file: epic.path,
+          message:
+            `${epic.name} has ${names.length} stories numbered -${number}- (${names.join(", ")}) — ` +
+            "two branches likely picked the same number independently; rename one",
+        });
+      }
+    }
+  }
+}
+
 function collectDoctorReport({ strict = false } = {}) {
   ensureTemplatesExist();
 
@@ -238,6 +317,7 @@ function collectDoctorReport({ strict = false } = {}) {
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
   checkOversizedEpics(warnings);
+  checkDuplicateNumbering(warnings);
 
   return {
     ok: errors.length === 0,
