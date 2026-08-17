@@ -94,6 +94,7 @@ START HERE
   In the terminal:
     ai-flow init     install into the current project (once)
     ai-flow status   where each story stands
+    ai-flow next     the one thing worth doing right now
     ai-flow ship     push the branch and open/update the PR
 
 That is almost all daily use. Everything else is machinery the skills run for
@@ -102,7 +103,7 @@ you (verification, evidence, audit, guard) — you rarely type it yourself.
 More
   ai-flow help --all     every command, grouped by role
   ai-flow commands       the easiest commands for THIS project
-  ai-flow list-skills    the five skills, in workflow order
+  ai-flow list-skills    the skills, in workflow order (plus flow-status/flow-next)
 
 Quickstart: docs/QUICKSTART.md`);
 }
@@ -116,26 +117,28 @@ function printHelp({ all = false } = {}) {
   log(`Coding Flow — full command reference
 
 Most of these are invoked automatically by the skills, CI, or the git hook. As a
-user you mainly need: init, status, ship (and the /flow-plan, /flow-run skills).
+user you mainly need: init, status, next, ship (and the /flow-plan, /flow-run skills).
 
 Usage:
   ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
   ai-flow upgrade [--with-skills|--no-skills] [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
+  ai-flow next [--all] [--json]
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
   ai-flow verify --story path [--json] [--dry-run]
   ai-flow bootstrap --scan [--force] [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
-  ai-flow audit [--export] [--check] [--since iso] [--json] [--dry-run]
+  ai-flow audit [--export] [--check] [--since iso] [--decisions] [--json] [--dry-run]
   ai-flow trace [--story path] [--json]
   ai-flow ci init [--force] [--dry-run]
   ai-flow plugin sync|check [--json] [--dry-run]
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
-  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--dry-run]
+  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit]
+               [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
   ai-flow hook install|uninstall|status [--dry-run] [--json]
   ai-flow commands [--json]
   ai-flow uninstall [--dry-run] [--force] [--json]
@@ -151,14 +154,16 @@ Setup (you run these):
 
 Daily (you run these):
   status       List epics, stories, and inferred story status (verified / stale / blocked).
+  next         Rank the same state status reads and print the one command worth running now.
   run          Verify a batch of stories (all, one --epic, or one --story) and emit one proof report.
-  ship         Push the current branch and open/update one PR to the base (uses gh if available).
+  ship         Commit a dirty tree, push, and open/update one PR to the base (uses gh if available).
   verify       Re-prove one story: run its declared validation commands and capture the result.
   bootstrap    Write docs/bootstrap-scan.md for a brownfield project (init already scans; this is the artifact).
 
 Machinery (usually run FOR you by the skills, CI, or the git hook):
   harness      Run security checks (check), execute declared validation commands (verify), write evidence.
   audit        Aggregate evidence into an append-only ledger; --export writes docs/AUDIT.md, --check is the CI gate.
+               --decisions: cross-epic view of every story's recorded ## Decisions (--export writes docs/DECISIONS.md).
   trace        Show the story -> commits -> PR -> evidence -> tests chain and flag missing links.
   guard        PreToolUse hook: deny writes to blocked paths or secret content (wired into settings.json by init).
   hook         Install/remove an opt-in pre-push gate that runs audit --check before each push.
@@ -180,6 +185,7 @@ Flags:
   --scan     Run brownfield bootstrap scan.
   --story    Scope harness preflight/check/evidence to one story directory.
   --quick    Limit harness check traversal depth.
+  --all      Print next's whole ranked queue instead of just the top suggestion.
   --json     Print machine-readable JSON where supported.
   --from     Base ref for a new worktree branch (default: HEAD).
   --deps     Dependency handling for a worktree: install, link, or skip.
@@ -189,9 +195,14 @@ Flags:
   --draft    Open ship's pull request as a draft.
   --web      Open the pull request in the browser after ship.
   --no-evidence  Do not attach the latest verify evidence to ship's PR body.
-  --export   Write docs/AUDIT.md from the audit ledger.
+  --no-commit  Do not auto-commit a dirty tree before ship pushes (push existing commits only).
+  --auto-merge  Force-enable ship's auto-merge for this run (overrides autoMergeEpic config).
+  --no-auto-merge  Force-disable ship's auto-merge for this run.
+  --merge-method  Merge strategy for ship's auto-merge: merge (default), squash, or rebase.
+  --export   Write docs/AUDIT.md from the audit ledger, or docs/DECISIONS.md with --decisions.
   --check    Exit non-zero if the latest verify per story is failing or missing (CI gate).
   --since    Filter audit entries to those generated at or after an ISO timestamp.
+  --decisions  Aggregate every story's ## Decisions section instead of the run-evidence ledger.
   --epic     Scope run to every story in one epic (matched by name).
   --driver   Executor for run: none (default; verify only). Agent drivers are reserved.
   --storage  Storage backend recorded at init: local (default; github is reserved).

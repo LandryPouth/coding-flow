@@ -4,6 +4,86 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-08-17
+
+`ship` used to stop one step short of shipping, and knowing what to do next meant
+reading `status` and inferring it yourself. Both are now the tool's job.
+
+### Added
+
+- **`ship` commits a dirty tree before it pushes.** The commit message is generic
+  (the linked story's title, or the branch name), and it runs behind the same
+  secret/sensitive-file scan as `harness check --quick` first — a hit stops the
+  commit, nothing partial gets pushed. `--no-commit` restores the old push-only
+  behavior.
+- **Opt-in auto-merge, gated on captured proof, not on prose.** `autoMergeEpic` in
+  `.coding-flow/config.json` (default `false`) lets `ship` merge its own PR via
+  GitHub's native auto-merge, but only once **every** story in the current
+  branch's epic has an actual captured green `verify` — a story's own
+  `## Status: done` does not count on its own here, unlike everywhere else in the
+  tool where a human override wins by default. Auto-merge is the one decision that
+  puts a PR into the base branch unattended, so it is the one place a written
+  label is not enough; an agent (or a less careful reviewer) claiming "done" in
+  prose no longer clears this gate. Also skipped on a draft PR or a PR that
+  conflicts with the base — a conflict is a human's call. `--auto-merge` /
+  `--no-auto-merge` and `--merge-method <merge|squash|rebase>` override the
+  config for one run.
+- **`ai-flow next`.** `status` describes state; `next` decides. It ranks the exact
+  same proof-derived state into the single command worth running right now:
+  blocked stories first, then a "done" claim with no captured verify behind it,
+  then stale proof, then a proven story with unshipped work, then a planned story
+  with no worktree yet. `--all` prints the whole ranked queue, `--json` for
+  scripting. It is read-only and scoped to the checkout it runs from — with
+  several worktrees open in parallel, each terminal's `next` answers for *that*
+  checkout, not a global view across all of them.
+- **`/flow-status` and `/flow-next` skills.** The plugin channel is the primary
+  way most users reach this tool, and until now `status`/`next` were CLI-only —
+  invisible to anyone without `ai-flow` on `PATH`. Both are thin, read-only
+  wrappers, reachable any time, not tied to a workflow stage. The front door goes
+  from five skills to five-plus-two: the five that follow the workflow stage by
+  stage, and two lookups you can reach for whenever.
+- **`/flow-plan` gets a stop condition, not a new skill.** Story 01 of a new epic
+  must now be a walking skeleton — the thinnest slice that crosses every layer
+  the epic will eventually touch, hardcoded beyond that one path — before any
+  story enriches it. Every story is also checked against INVEST (Independent,
+  Negotiable, Valuable, Estimable, Small, Testable) before the readiness verdict,
+  and an epic's `index.md` now carries a one-line `Backbone: <journey>` above its
+  `## Stories` list, so story order reads as a position on that journey instead
+  of arithmetic numbering nobody re-derives once written.
+- **`doctor` warns when an epic passes ~7 stories** (`epic_too_large`) — the
+  mechanical half of the same WIP-limit heuristic `/flow-plan` is told to apply,
+  re-checked from the actual files on disk rather than trusted to survive a long
+  planning session. Advisory only, like the other onboarding warnings.
+- **`ship`'s auto-merge now respects story order within an epic.** Story
+  branches are cut independently from the base, so nothing previously stopped
+  GitHub from merging a later, enriching story before the earlier one it builds
+  on. Auto-merge now waits for every story ahead of the current one (by
+  directory name) to merge first — the same ordering hazard Walking Skeleton is
+  meant to prevent, closed at merge time too.
+- **`ai-flow audit --decisions`.** A cross-epic, read-only view of every story's
+  recorded `## Decisions` — no new file to maintain by hand, it aggregates what
+  the story files already carry, on demand. `--export` writes
+  `docs/DECISIONS.md` (generated, never hand-maintained), `--json` for
+  scripting. Never touches the run-evidence ledger `audit` otherwise manages.
+- **`init`, `upgrade`, and `doctor` report whether `ai-flow` resolves on
+  `PATH`.** `init` writes project files but never installs anything
+  system-wide, so a bare `ai-flow status` right after a fresh install could
+  fail with `command not found` and no explanation. All three now print one
+  `PATH:` line answering that directly, and point at `npx
+  @landry_pouth/coding-flow <command>` (no install) or `npm install -g
+  @landry_pouth/coding-flow` (short form) when it does not resolve. Never a
+  warning — an npx-only workflow is the documented default and reports this
+  as false on every run by design.
+
+### Changed
+
+- **`RULES.md`** gains one line each on bounded contexts (treat a large repo's
+  epic as one bounded context; integrate through an explicit interface, not by
+  reaching into another epic's internals) and on mutation testing (an opt-in,
+  project-declared `validation.quality` command for STRICT-risk changes, never a
+  default `/flow-run` adds on its own) — still comfortably under its 900-word
+  budget.
+
 ## [0.5.3] - 2026-08-05
 
 Reported from real use: 45–60 minutes for a simple task. Five defects made the

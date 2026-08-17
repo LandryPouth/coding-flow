@@ -25,8 +25,8 @@ useful artifacts, not ceremony.
 
 1. Load existing project context when present (`docs/project-context.md`, `docs/architecture.md`, roadmap, existing epics).
 2. Decide the smallest valuable epic (see Planning Heuristics). If requirements are ambiguous enough to cause rework, run **Clarify First** below.
-3. Create or update the epic `index.md` (goal, scope, ordered stories).
-4. Define the story sequence — vertical slices, each with concise Implementation Context.
+3. Create or update the epic `index.md` (goal, scope, ordered stories along a backbone — see below).
+4. Define the story sequence — vertical slices, each with concise Implementation Context. Story 01 is the walking skeleton (see below); check every story against INVEST before moving on.
 5. For each selected story, write its files at the shape its size calls for (see Story File Contract).
 6. Recommend the first story to run with `/flow-run`.
 
@@ -40,7 +40,42 @@ useful artifacts, not ceremony.
   and data modeling; lighter for static UI, copy, and isolated fixes.
 - Start with 2–5 stories for a normal epic. Fewer when the first slice validates the
   direction; more only when dependencies or risk require it.
+- **Cap an epic around 5–7 stories.** Past that, the epic is no longer one
+  shippable capability — split the remainder into a follow-up epic instead of
+  growing this one further. A smaller epic also reaches "every story proven"
+  sooner, so its PR(s) merge sooner (see auto-merge in `/flow-ship`): a bloated
+  epic is not just harder to reason about, it sits open longer.
 - Every story is vertical, testable, and carries acceptance criteria.
+
+## Walking Skeleton (Story 01)
+
+The first story of a **new** epic must be the thinnest slice that crosses every
+layer the epic will eventually touch — UI (even a bare one) through the real
+logic to the real persistence or external call — rather than a single-layer stub
+(a UI over no data path, or an endpoint nothing calls yet). Hardcode everything
+beyond that one path; that is what later stories are for.
+
+This is not about story size — QUICK/FAST already caps that — it is about
+integration. After story 01 ships, the feature is demonstrably alive end to end;
+every later story only enriches an already-working path, so the base branch is
+never left with a rendered dead end or an orphaned endpoint waiting on a story
+that has not shipped. **Stop condition:** if story 01 does not cross every layer
+the epic implies, split it further or reorder before writing story 02 — do not
+let a later story become the first one to actually connect the pieces.
+
+A single-file QUICK story can be a walking skeleton too — "wire one real path
+end to end" is a shape, not a size.
+
+## Backbone (Story Order)
+
+Above the `## Stories` list in `index.md`, add one line — `Backbone: <journey>` —
+naming the user or system journey the stories walk, step by step (e.g.
+`Backbone: browse → select a plan → pay → confirm`). Story order then reads as
+*where on that journey each story sits*, not as arithmetic numbering nobody
+re-derives once written. Story 01 is the walking skeleton: the thinnest path
+across the whole backbone. Every later story deepens one step of it — reordering
+a story should mean moving it to a different point on the stated journey, never
+just renumbering.
 
 ## Story File Contract
 
@@ -101,6 +136,26 @@ migration, billing, permissions, or data modeling. Highest-value question types:
 - Validation — what would prove this is done?
 
 Prefer a labeled assumption over a question that would not change implementation.
+
+### INVEST Check
+
+Before the readiness verdict, check every story against INVEST — the failure
+modes it catches are the ones no amount of clarifying questions would surface:
+
+- **Independent** — does not require another not-yet-done story of *this* epic
+  to be minimally useful or testable on its own. A story-04 that silently needs
+  story-03 finished first is exactly the ordering hazard Walking Skeleton exists
+  to prevent for story 01, and it can recur at any position.
+- **Negotiable** — a slice of scope, not a rigid spec handed down whole.
+- **Valuable** — delivers an observable user or system outcome, not an internal
+  layer nobody can see land.
+- **Estimable** — sizeable without further discovery; if it cannot be sized, it
+  is not ready to write, it is still a question.
+- **Small** — fits one focused `/flow-run` pass (QUICK through STRICT), not
+  several days of work wearing one name.
+- **Testable** — has acceptance criteria concrete enough to verify.
+
+A story that fails Independent or Small is a split, not a note for later.
 
 ### Readiness Gate
 

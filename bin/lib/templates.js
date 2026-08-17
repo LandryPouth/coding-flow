@@ -158,10 +158,12 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
   const terminalDaily = hasPackageJson
     ? [
         "npm run flow:status                 # where each story stands",
+        "npm run flow:next                   # the one thing worth doing right now",
         `${githubNpxCommand} ship   # push the branch and open/update the PR`,
       ]
     : [
         `${githubNpxCommand} status`,
+        `${githubNpxCommand} next`,
         `${githubNpxCommand} ship`,
       ];
   const setupCommands = hasPackageJson

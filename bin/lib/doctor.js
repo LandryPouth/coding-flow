@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { cwd, packageJson } = require("./context");
-const { log, toPortable, parseFrontmatter, readJson, hashFile } = require("./util");
+const { log, toPortable, parseFrontmatter, readJson, hashFile, isCommandAvailable, binaryPathNote } = require("./util");
 const {
   ensureTemplatesExist,
   listTemplateSkillNames,
@@ -21,6 +21,13 @@ const {
 const { collectHarnessReport } = require("./harness");
 const { readConfig } = require("./config");
 const { scanProject } = require("./bootstrap");
+const { getStorage } = require("./storage");
+
+// Past this many stories, an epic is no longer one shippable capability (see
+// the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
+// auto-merge sees every story proven, so a bloated epic is slower to land, not
+// just harder to reason about.
+const EPIC_STORY_SOFT_LIMIT = 7;
 
 // The docs `/flow-plan bootstrap` is supposed to write. architecture.md is left
 // out on purpose: a brownfield project often already has one, so `init` skips it
@@ -72,6 +79,30 @@ function checkBrownfieldOnboarding(warnings) {
       "existing code detected but the project docs are still the installed templates — " +
       "run /flow-plan bootstrap to document this codebase",
   });
+}
+
+// Mechanical mirror of the WIP-limit heuristic `/flow-plan` is told to apply
+// when writing stories — a prompt-level rule the model can drift from over a
+// long session, so `doctor` re-checks it from the actual files on disk.
+function checkOversizedEpics(warnings) {
+  let epics;
+  try {
+    epics = getStorage(cwd, readConfig(cwd)).listEpics();
+  } catch {
+    return; // best-effort only — never block doctor on a storage read failure.
+  }
+
+  for (const epic of epics) {
+    if (epic.stories.length > EPIC_STORY_SOFT_LIMIT) {
+      warnings.push({
+        code: "epic_too_large",
+        file: epic.path,
+        message:
+          `${epic.name} has ${epic.stories.length} stories (soft limit ${EPIC_STORY_SOFT_LIMIT}) — ` +
+          "split the remainder into a follow-up epic; it also merges sooner once split",
+      });
+    }
+  }
 }
 
 function collectDoctorReport({ strict = false } = {}) {
@@ -206,6 +237,7 @@ function collectDoctorReport({ strict = false } = {}) {
   // fire on the `doctor` a user actually runs. A warning, never an error —
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
+  checkOversizedEpics(warnings);
 
   return {
     ok: errors.length === 0,
@@ -214,6 +246,12 @@ function collectDoctorReport({ strict = false } = {}) {
     strict,
     skillsMode,
     skills: skillNames,
+    // Not a warning: an npx-only workflow (the documented zero-install default)
+    // has this false on every run by design, so flagging it as an "issue" would
+    // be noise for the common case. It answers a different question — "will the
+    // short `ai-flow <command>` form work on THIS machine" — worth surfacing
+    // plainly, never worth failing the install over.
+    binaryOnPath: isCommandAvailable("ai-flow"),
     errors,
     warnings,
   };
@@ -244,6 +282,9 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
         log(`- ${warning.message}`);
       }
     }
+
+    log("");
+    log(binaryPathNote(report.binaryOnPath));
   } else {
     log("Coding Flow has installation issues:");
     for (const error of report.errors) {
@@ -260,6 +301,8 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
 
     log("");
     log("Run `ai-flow doctor --fix` to restore missing files.");
+    log("");
+    log(binaryPathNote(report.binaryOnPath));
   }
 
   if (!report.ok) {

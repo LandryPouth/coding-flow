@@ -37,7 +37,7 @@ Coding Flow rests on four blocks:
 
 1. **The `ai-flow` CLI** — installs, updates, and checks the workflow files; scans existing projects; runs the security harness.
 2. **The context files** — `RULES.md` and `docs/` give the agent the rules and a durable map of the project.
-3. **The skills** — a small, flat set of reusable workflows, one per stage: `/flow-setup`, `/flow-plan`, `/flow-run`, `/flow-review`, `/flow-ship`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/flow-run` and `/flow-review`, not as separate skills. There is no orchestration at runtime.
+3. **The skills** — a small, flat set of reusable workflows, one per stage: `/flow-setup`, `/flow-plan`, `/flow-run`, `/flow-review`, `/flow-ship` — plus two read-only lookups you can reach for any time, `/flow-status` and `/flow-next`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/flow-run` and `/flow-review`, not as separate skills. There is no orchestration at runtime.
 4. **The security harness** — a set of **CLI checks over your repo and story files** (not a sandbox): secrets, sensitive files, a story's risk level, rollback notes, and JSON evidence in `.coding-flow/runs/`.
 
 The daily loop:
@@ -126,7 +126,7 @@ The skills can reach you through either layer — the plugin (as `coding-flow:fl
 
 ## Skills Catalog
 
-A small, flat set — one skill per stage of the workflow. You pick any of them directly; there is no macro/atomic hierarchy to chain by hand.
+A small, flat set. You pick any of them directly; there is no macro/atomic hierarchy to chain by hand.
 
 | Skill | Use |
 | --- | --- |
@@ -134,12 +134,20 @@ A small, flat set — one skill per stage of the workflow. You pick any of them 
 | `/flow-plan` | Turn an objective into a vertical epic and implementation-ready stories. Includes opt-in sections for clarifying fuzzy requirements and bootstrapping a brownfield codebase. |
 | `/flow-run` | Execute one story end-to-end. Picks QUICK/FAST/STANDARD/STRICT by risk; STRICT adds security validation. Context scout and TDD are inline modes. |
 | `/flow-review` | Findings-first pre-merge review. Each dimension (architecture, tests, security, quality, E2E) has an opt-in deep section for high-risk work. |
-| `/flow-ship` | Push the branch and open/update one PR, with the latest verify evidence attached. |
+| `/flow-ship` | Commit a dirty tree, push the branch, and open/update one PR, with the latest verify evidence attached. |
+
+The five above follow the workflow stage by stage. Two more are read-only lookups,
+not tied to any stage — reach for them any time, in parallel with everything else:
+
+| Skill | Use |
+| --- | --- |
+| `/flow-status` | Where every epic and story actually stands — proof-derived state, worktree links, branch policy. |
+| `/flow-next` | The one command worth running right now, ranked from that same state. |
 
 The depth that used to live in separate `agent-*` and `*-check` skills — the deep
 validators, the multi-agent worker roles, the context scout, TDD — is **not gone**;
 it moved into opt-in sections of `/flow-run` and `/flow-review`, so nothing capable was lost
-while the front door shrank from thirty skills to five.
+while the front door shrank from thirty skills to seven.
 
 **Why no `verify` skill?** Because verification is not a decision you make — it is
 something the machine owes you. `/flow-run` runs it on every story, `ai-flow status`
@@ -155,7 +163,7 @@ The harness turns *advisory* guardrails into *executed* ones, attached to an ide
 - **`guard` — deterministic enforcement.** A PreToolUse hook refuses writing a `.env`, a key, or content containing a secret **before** it reaches the disk (exit 2). Wired into `.claude/settings.json` by `init`; also travels with the plugin. It runs the package's own binary, resolved locally at install — no `npx` in the write path, so enforcement costs milliseconds.
 - **`verify` — executed proof.** Runs the declared validation commands (config `validation.commands`, the `## Commands` block of `plan.md`, or `package.json` scripts), captures their exit codes verbatim into `.coding-flow/runs/*-verify.json`, and fails if one breaks or none ran. Declare `validation.quality` (lint, format-check, `jscpd`) and it runs in the same pass. Each proof binds to a content token of the working tree and a toolchain fingerprint, so a green run that no longer matches the code reads as `stale` until re-verified.
 - **`run` — one report over many stories.** `ai-flow run` (all stories, one `--epic`, or one `--story`) verifies each story for real, writes its per-story proof, and emits one aggregated `*-run.json` report. It orchestrates; an executor *driver* runs the work — today only `none` (verify what's already implemented), with agent drivers a reserved, pluggable seam. Afterward `status` reflects the fresh proof.
-- **`audit` / `trace` / `ship` / `ci`.** `audit` aggregates proofs into an append-only ledger (`--export` writes `docs/AUDIT.md`, `--check` is the "no merge without a green verify" gate); `trace` walks story → commits → PR → evidence → tests; `ship` injects the latest proof into the PR body; `ci init` scaffolds a clean-room workflow replaying the per-story `run` (or `verify`) + `audit --check`.
+- **`audit` / `trace` / `ship` / `ci`.** `audit` aggregates proofs into an append-only ledger (`--export` writes `docs/AUDIT.md`, `--check` is the "no merge without a green verify" gate); `audit --decisions` is a separate, read-only mode — a cross-epic view of every story's recorded `## Decisions`, `--export` writing `docs/DECISIONS.md` (generated, never hand-maintained); `trace` walks story → commits → PR → evidence → tests; `ship` injects the latest proof into the PR body; `ci init` scaffolds a clean-room workflow replaying the per-story `run` (or `verify`) + `audit --check`.
 
 **What the proof does and does not claim.** `verify` executes your declared commands and captures their real exit codes, so the agent **cannot lie about having run them or about the result** — a green story means the machine ran the checks and they passed. It does **not** prove the *code is correct*: the agent writes both the code and the tests, so a weak suite proves only that weak tests pass. The value is removing the "did you actually check?" trust gap, not certifying correctness.
 
@@ -165,7 +173,9 @@ We are validating this claim honestly with a small vanilla-vs-coding-flow benchm
 
 ## Working Day To Day
 
-**Story status** — `ai-flow status` (add `--json`) lists epics/stories and their state, backed by executed proof, not prose: an explicit `## Status` override wins, otherwise the latest `verify` (green → `verified`, red → `blocked`, code changed since → `stale`), and only then a fallback heuristic. So `verified` means the machine actually ran the validation and it passed.
+**Story status** — `ai-flow status` (add `--json`), or `/flow-status` without leaving Claude Code, lists epics/stories and their state, backed by executed proof, not prose: an explicit `## Status` override wins, otherwise the latest `verify` (green → `verified`, red → `blocked`, code changed since → `stale`), and only then a fallback heuristic. So `verified` means the machine actually ran the validation and it passed.
+
+**What to do next** — `status` describes state, `ai-flow next` (or `/flow-next`) decides: it ranks that same state (blocked stories first, then a "done" claim with no captured verify behind it, then stale proof, then a proven story with unshipped work, then a planned story with no worktree yet) and prints the one command worth running right now (`--all` for the whole ranked queue). It is read-only and scoped to the checkout it runs from — with several worktrees open in parallel, each terminal's `next` answers for *that* worktree, not a global view across all of them.
 
 **Parallel work (worktrees)** — *optional* support to develop genuinely independent features in parallel, each in its own Git worktree, without any runtime dependency:
 
@@ -178,12 +188,26 @@ ai-flow worktree remove feat/payments     # removes the worktree, keeps the bran
 
 Worktrees are placed as **siblings** (`../<repo>-worktrees/<name>`), not inside the repo, so tools like `tsc`/eslint/jest and `git clean -fdx` can't reach them. With `--story`, the worktree↔story mapping is stateless (resolved by branch name). Worktree concepts and trade-offs: [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md).
 
-**One PR per feature** — from a worktree or any feature branch, `ship` pushes and opens **one** idempotent PR against the base (via `gh` if available):
+**One PR per feature** — from a worktree or any feature branch, `ship` commits any
+dirty tree (behind the same secret scan as `harness check --quick`), pushes, and
+opens **one** idempotent PR against the base (via `gh` if available):
 
 ```bash
-ai-flow ship                       # push + PR to the default branch
+ai-flow ship                       # commit + push + PR to the default branch
 ai-flow ship --base develop --draft
+ai-flow ship --no-commit           # push existing commits only, old behavior
 ai-flow ship --dry-run
+```
+
+**Auto-merge** — off by default (`autoMergeEpic: false` in `.coding-flow/config.json`).
+When on, `ship` merges its PR itself via GitHub's native auto-merge, but only once
+every story in the current branch's epic has an actual captured green verify (a
+written `## Status: done` alone does not count — see Auto-Merge in the `/flow-ship`
+skill), and never on a draft PR or one that conflicts with the base:
+
+```bash
+ai-flow ship --auto-merge                          # force-enable for this run
+ai-flow ship --auto-merge --merge-method squash
 ```
 
 ## Context & Story Files
@@ -204,25 +228,33 @@ Stop and report instead of guessing when: the scope is ambiguous; acceptance cri
 
 ## CLI Commands
 
+The bare `ai-flow` form below resolves only if it is installed globally
+(`npm install -g @landry_pouth/coding-flow`); `init` itself never installs
+anything system-wide. Without a global install, run these via
+`npx @landry_pouth/coding-flow <command>` instead. `init`, `upgrade`, and
+`doctor` each print a `PATH:` line telling you which form works on the
+current machine.
+
 | Command | Use |
 | --- | --- |
 | `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the hook. |
 | `ai-flow upgrade` | Update installed files without overwriting local changes. |
 | `ai-flow doctor` | Check files, skills, frontmatter, manifest. `--fix` restores missing files, `--strict` adds checks. |
 | `ai-flow status` | List epics/stories, inferred status, and the linked worktree. |
+| `ai-flow next` | Rank that state and print the one command worth running now (`--all` for the whole queue). |
 | `ai-flow run [--epic\|--story <path>]` | Verify a batch of stories and emit one aggregated proof report. `--driver` is a reserved executor seam (only `none` today); `--dry-run` shows the plan. |
 | `ai-flow bootstrap --scan` | Scan an existing codebase into `docs/bootstrap-scan.md`. |
 | `ai-flow harness preflight\|check\|verify\|evidence --story <path>` | Estimate risk / scan secrets / run + capture validation / write evidence. |
 | `ai-flow guard` | PreToolUse hook: refuses (exit 2) writing a blocked path or secret, before the disk. |
-| `ai-flow audit [--export\|--check]` | Aggregate the append-only ledger; export `docs/AUDIT.md`; CI gate on the latest verify. |
+| `ai-flow audit [--export\|--check\|--decisions]` | Aggregate the append-only ledger; export `docs/AUDIT.md`; CI gate on the latest verify; `--decisions` is the cross-epic `## Decisions` view instead (`--export` → `docs/DECISIONS.md`). |
 | `ai-flow trace [--story <path>]` | Story → commits → PR → evidence → tests chain, with missing links. |
 | `ai-flow ci init` | Scaffold a clean-room GitHub Actions workflow (per-story `run` or `verify`, then `audit --check`). |
 | `ai-flow hook install\|uninstall\|status` | Opt-in local pre-push gate running `audit --check`. |
 | `ai-flow worktree add\|list\|remove` | Optional Git worktrees for parallel work. |
-| `ai-flow ship` | Push the current branch and open/update one PR against the base. |
+| `ai-flow ship` | Commit a dirty tree, push, and open/update one PR against the base; can auto-merge when the epic is done (opt-in). |
 | `ai-flow list-skills` / `commands` / `version` | Show skills / the useful project commands / the CLI version. |
 
-After `init`, shorter local scripts are available: `npm run flow:doctor`, `flow:check`, `flow:skills`, `flow:status`, `flow:harness`, `flow:commands`, `flow:upgrade`, `flow:fix`, `flow:uninstall`. All accept `-- --json` for CI.
+After `init`, shorter local scripts are available: `npm run flow:doctor`, `flow:check`, `flow:skills`, `flow:status`, `flow:next`, `flow:harness`, `flow:commands`, `flow:upgrade`, `flow:fix`, `flow:uninstall`. All accept `-- --json` for CI.
 
 ## Uninstall
 
