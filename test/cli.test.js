@@ -189,7 +189,15 @@ test('list-skills lists the available skills under their flow- names', (t) => {
 // serves: two names for the same thing is the confusion this whole seam exists
 // to remove.
 
-const SKILL_DIRS = ['flow-setup', 'flow-plan', 'flow-run', 'flow-review', 'flow-ship'];
+const SKILL_DIRS = [
+  'flow-setup',
+  'flow-plan',
+  'flow-run',
+  'flow-review',
+  'flow-ship',
+  'flow-status',
+  'flow-next',
+];
 
 function readConfigSkills(dir) {
   return JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'config.json'), 'utf8')).skills;

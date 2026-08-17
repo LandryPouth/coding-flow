@@ -18,12 +18,22 @@ Then, in Claude Code:
 /flow-run                                              # run the next story end-to-end
 ```
 
-Back in the terminal, when you want to see state or ship:
+Back in the terminal, when you want to see state, know what to do next, or ship:
 
 ```bash
 ai-flow status     # where each story stands: planned / verified / stale / blocked
+ai-flow next       # the one command worth running right now
 ai-flow ship       # push the branch and open (or update) the PR
 ```
+
+The bare `ai-flow` form above only resolves if it is installed globally
+(`npm install -g @landry_pouth/coding-flow`). `init` itself never installs
+anything system-wide — it only writes files into the current project — so on
+a fresh machine `ai-flow status` can fail with `command not found` even right
+after `init` succeeded. Without a global install, prefix every command with
+`npx` instead: `npx @landry_pouth/coding-flow status`. `init`, `upgrade`, and
+`doctor` all print a `PATH:` line telling you which form works on this
+machine, so you never have to guess.
 
 That is 95% of daily use.
 
@@ -39,6 +49,16 @@ That is 95% of daily use.
 
 The depth (STRICT mode, deep validators, context scout, TDD) lives as opt-in
 sections inside `/flow-run` and `/flow-review` — you don't chain separate skills by hand.
+
+## Two more, read-only, any time
+
+| Skill | When |
+| --- | --- |
+| `/flow-status` | Where every epic and story actually stands (proof, not prose). |
+| `/flow-next` | The one command worth running right now. |
+
+Not tied to a workflow stage — reach for them whenever, from inside Claude Code,
+without needing `ai-flow` on `PATH`.
 
 With the plugin installed, the same five answer to `coding-flow:flow-*` as well.
 The `flow-` prefix is deliberate: Claude Code has its own `/run` and `/review`,
@@ -59,7 +79,7 @@ the story (which re-verifies). You never have to ask the agent "did you check it
 ai-flow help          # the golden path (this, in the terminal)
 ai-flow help --all    # every command, grouped by role
 ai-flow commands      # the easiest commands for THIS project
-ai-flow list-skills   # the five skills, in workflow order
+ai-flow list-skills   # the skills, in workflow order (plus flow-status/flow-next)
 ```
 
 Verify a batch of stories at once and get one proof report:

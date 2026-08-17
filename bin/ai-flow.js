@@ -28,7 +28,7 @@ process.on("uncaughtException", (error) => {
 });
 
 const { cwd, invocationDir } = require("./lib/context");
-const { log, fail } = require("./lib/util");
+const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
 const {
   copyTemplates,
   ensureConvenienceFiles,
@@ -38,6 +38,7 @@ const {
 } = require("./lib/templates");
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
+const { nextCommand } = require("./lib/next");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { harnessCommand } = require("./lib/harness");
 const { guardCommand } = require("./lib/guard");
@@ -211,6 +212,12 @@ if (command === "init") {
   // function call, not an artifact: nothing is written, and the deliverable is
   // the pointer to /flow-plan — the expensive half of onboarding it cannot do.
   printProjectScanSummary(scanProject(), { dryRun: flags.has("--dry-run") });
+
+  // Right after install is exactly when "will the commands I'm about to be
+  // told to type actually work" matters most — answer it here instead of
+  // waiting for a `command not found` in a later terminal.
+  log("");
+  log(binaryPathNote(isCommandAvailable("ai-flow")));
 } else if (command === "upgrade") {
   // Migration: projects installed before the storage seam have no config.json.
   // We create it with the defaults without ever overwriting an existing choice.
@@ -255,6 +262,11 @@ if (command === "init") {
     includeSkills: skills === "project",
     skillsMode: skills,
   });
+
+  if (!flags.has("--json")) {
+    log("");
+    log(binaryPathNote(isCommandAvailable("ai-flow")));
+  }
 } else if (command === "doctor") {
   doctor({
     fix: flags.has("--fix"),
@@ -265,6 +277,8 @@ if (command === "init") {
   status({
     json: flags.has("--json"),
   });
+} else if (command === "next") {
+  nextCommand({ flags });
 } else if (command === "bootstrap") {
   if (!flags.has("--scan")) {
     fail("bootstrap currently requires --scan");

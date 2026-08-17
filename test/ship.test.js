@@ -121,3 +121,43 @@ test('ship on a non-GitHub remote pushes without managing a PR', (t) => {
   assert.equal(code, 0);
   assert.match(output, /non-GitHub/i, 'on a non-GitHub remote, no PR is attempted');
 });
+
+test('ship commits a dirty tree before pushing it', (t) => {
+  const { originDir, repo } = repoWithOrigin(t, { withFeature: false });
+  sh(repo, 'git', ['checkout', '-b', 'feat/dirty']);
+  fs.writeFileSync(path.join(repo, 'feature.txt'), 'work\n');
+
+  const { code, output } = run(repo, []);
+  assert.equal(code, 0, `ship must succeed (${output})`);
+  assert.match(output, /Committed:/i, 'ship must report the automatic commit');
+  assert.ok(originHasBranch(originDir, 'feat/dirty'), 'the auto-committed work must reach origin');
+
+  const status = sh(repo, 'git', ['status', '--porcelain']).trim();
+  assert.equal(status, '', 'the working tree must be clean after the auto-commit');
+});
+
+test('ship --dry-run reports the auto-commit it would make, without committing', (t) => {
+  const { repo } = repoWithOrigin(t, { withFeature: false });
+  sh(repo, 'git', ['checkout', '-b', 'feat/dirty']);
+  fs.writeFileSync(path.join(repo, 'feature.txt'), 'work\n');
+
+  const { code, output } = run(repo, ['--dry-run']);
+  assert.equal(code, 0);
+  assert.match(output, /would commit the dirty tree/i);
+
+  const status = sh(repo, 'git', ['status', '--porcelain']).trim();
+  assert.notEqual(status, '', '--dry-run must not actually commit');
+});
+
+test('ship --no-commit leaves a dirty tree uncommitted and pushes only existing commits', (t) => {
+  const { repo } = repoWithOrigin(t);
+  fs.writeFileSync(path.join(repo, 'extra.txt'), 'uncommitted\n');
+
+  const { code, output } = run(repo, ['--no-commit']);
+  assert.equal(code, 0, `ship must succeed (${output})`);
+  assert.match(output, /dirty working tree/i);
+  assert.doesNotMatch(output, /Committed:/i, '--no-commit must not auto-commit');
+
+  const status = sh(repo, 'git', ['status', '--porcelain']).trim();
+  assert.match(status, /extra\.txt/, 'the extra file must remain uncommitted');
+});

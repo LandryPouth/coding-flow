@@ -6,6 +6,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const { cwd } = require("./context");
 
@@ -31,6 +32,30 @@ function fail(message) {
 
 function toPortable(filePath) {
   return filePath.split(path.sep).join("/");
+}
+
+// Whether a command resolves on PATH right now, checked by actually invoking
+// it rather than `which`/`command -v` (no separate shell dependency, and it
+// works the same on Windows) — the same technique `ship.js` already uses for
+// `gh`. Used to tell a user whether the short `ai-flow <command>` form will
+// work on this machine, or whether they need `npx @landry_pouth/coding-flow`.
+function isCommandAvailable(name, versionFlag = "--version") {
+  try {
+    execFileSync(name, [versionFlag], { stdio: ["ignore", "pipe", "pipe"] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// One message, reused by `doctor` and by `init`/`upgrade`'s end-of-run summary,
+// so a user sees the identical answer to "will the short form work here"
+// whichever command told them.
+function binaryPathNote(onPath) {
+  return onPath
+    ? "PATH: `ai-flow` resolves directly on this machine — the short form works."
+    : "PATH: `ai-flow` is not on this machine's PATH — use `npx @landry_pouth/coding-flow <command>` " +
+        "(works with no install), or run `npm install -g @landry_pouth/coding-flow` once for the short form.";
 }
 
 function normalizePortable(filePath) {
@@ -302,6 +327,8 @@ module.exports = {
   log,
   fail,
   toPortable,
+  isCommandAvailable,
+  binaryPathNote,
   normalizePortable,
   walkFiles,
   hashBuffer,

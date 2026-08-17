@@ -57,6 +57,7 @@ const flowScripts = {
   "flow:fix": `${npxCommand} doctor --fix`,
   "flow:skills": `${npxCommand} list-skills`,
   "flow:status": `${npxCommand} status`,
+  "flow:next": `${npxCommand} next`,
   "flow:check": `${npxCommand} doctor --strict`,
   "flow:harness": `${npxCommand} harness check --quick`,
   "flow:commands": `${npxCommand} commands`,

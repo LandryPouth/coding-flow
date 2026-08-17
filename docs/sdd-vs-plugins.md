@@ -115,11 +115,11 @@ discipline. That is the **foundation**, not what disappeared.
 
 ## 5. Current state
 
-Published as **`@landry_pouth/coding-flow`** on npm (0.5.2) and installable as a
+Published as **`@landry_pouth/coding-flow`** on npm (0.6.0) and installable as a
 native Claude Code plugin. The evidence & governance spine is live end-to-end:
 `guard` (deterministic write refusal), `verify` (executed proof), `audit`
 (append-only ledger + `docs/AUDIT.md` export + `--check` gate), `trace`, `ship`,
-and `ci init`. The plugin ships the six skills plus the `guard` hook, and `guard`
+and `ci init`. The plugin ships the seven skills plus the `guard` hook, and `guard`
 runs the package's own binary resolved locally — bundled with the plugin
 (`${CLAUDE_PLUGIN_ROOT}/bin/ai-flow.js`) or pinned to the installed version by
 `init` — so the write path never shells out to `npx`.

@@ -38,13 +38,13 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | --- | --- |
 | `lib/context.js` | Shared constants (root, templates, cwd, npm scripts) |
 | `lib/util.js` | Generic helpers (I/O, hash, JSON, paths, glob, file walking) |
-| `lib/config.js` | Project config `.coding-flow/config.json` (storage, branchPerEpic, validation) |
+| `lib/config.js` | Project config `.coding-flow/config.json` (storage, branchPerEpic, autoMergeEpic, validation) |
 | `lib/templates.js` | Installation, manifest, scripts, cheat-sheet, `upgrade` |
 | `lib/harness.js` | Security, scan of secrets/sensitive files, preflight/check/`verify`/evidence |
 | `lib/identity.js` | Git provenance (commit, branch, author, dirty, PR) injected into every proof |
 | `lib/guard.js` | Deterministic PreToolUse hook (refusal of blocked paths / secrets before write) |
 | `lib/settings.js` | Idempotent merge/upgrade of the `guard` hook into `.claude/settings.json` (resolved binary, npx fallback) |
-| `lib/audit.js` | Append-only ledger, `docs/AUDIT.md` export, `--check` gate |
+| `lib/audit.js` | Append-only ledger, `docs/AUDIT.md` export, `--check` gate, `--decisions` cross-epic ADR view (`docs/DECISIONS.md` export) |
 | `lib/trace.js` | Story → commits → PR → evidence → tests chain |
 | `lib/ci.js` | Scaffolder of the clean-room CI workflow (`verify` + `audit`) |
 | `lib/plugin.js` | Native plugin channel: sync/check of the skills vs templates |
@@ -54,6 +54,7 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/skills.js` | `list-skills` |
 | `lib/claude-plugin.js` | Best-effort detection of an installed coding-flow plugin (decides the `init` default for the skills channel) |
 | `lib/status.js` | State of the epics/stories (via the seam) + worktrees + policy |
+| `lib/next.js` | `next`: ranks that same state (proof, not labels) into the one command worth running now |
 | `lib/bootstrap.js` | Brownfield scan |
 | `lib/uninstall.js` | Uninstall preserving `epics/` |
 | `lib/worktree.js` | Optional Git worktrees (parallel work) |

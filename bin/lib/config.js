@@ -31,6 +31,12 @@ function defaultConfig() {
     version: 1,
     storage: "local",
     branchPerEpic: true,
+    // Whether `ship` merges its PR on its own once every story of the epic is
+    // done and the PR is conflict-free (via GitHub's own auto-merge, so it still
+    // waits on required checks). Off by default: merging to the base branch is
+    // an outward side effect, and existing projects should not get it for free
+    // on an upgrade. `ship --auto-merge` / `--no-auto-merge` override this per run.
+    autoMergeEpic: false,
     // "project" is the fallback on purpose: a config written before this field
     // existed described an install that DID copy the skills, and doctor must
     // keep requiring them for those projects.
@@ -82,6 +88,8 @@ function readConfig(cwd) {
     skills,
     branchPerEpic:
       typeof existing.branchPerEpic === "boolean" ? existing.branchPerEpic : defaults.branchPerEpic,
+    autoMergeEpic:
+      typeof existing.autoMergeEpic === "boolean" ? existing.autoMergeEpic : defaults.autoMergeEpic,
     validation,
   };
 }

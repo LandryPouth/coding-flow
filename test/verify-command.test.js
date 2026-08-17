@@ -349,12 +349,20 @@ test('a closed pipe ends the command instead of crashing it', (t) => {
   assert.doesNotMatch(output, /node:internal/);
 });
 
-test('list-skills reports the five remaining skills', (t) => {
+test('list-skills reports the seven remaining skills', (t) => {
   const dir = initProject(t, 'verify-skills');
 
   const { code, output } = run(dir, ['list-skills', '--json']);
   assert.equal(code, 0, output);
 
   const names = JSON.parse(output).map((skill) => skill.name);
-  assert.deepEqual(names, ['flow-setup', 'flow-plan', 'flow-run', 'flow-review', 'flow-ship']);
+  assert.deepEqual(names, [
+    'flow-setup',
+    'flow-plan',
+    'flow-run',
+    'flow-review',
+    'flow-ship',
+    'flow-next',
+    'flow-status',
+  ]);
 });

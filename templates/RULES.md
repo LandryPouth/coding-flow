@@ -24,6 +24,9 @@ These constrain all agent work in this repository.
 - Prefer deep modules with clear APIs over many tiny abstractions.
 - Do not introduce speculative abstractions.
 - Document meaningful architecture decisions in the active story plan (Decisions section).
+- In a larger repo, treat each epic as one bounded context: do not reach into
+  another epic's internal modules, tables, or types directly. Integrate through
+  an explicit interface (a function, an API, an event) instead.
 
 ### Code Quality
 
@@ -33,7 +36,7 @@ These constrain all agent work in this repository.
 - Avoid `any` unless it is justified in code or story notes.
 - Keep functions small and intention-revealing.
 - Prefer duplication over the wrong abstraction: apply the rule of three, and only unify cases that are the same concept and will change together.
-- Run deterministic quality checks (lint, format, duplication) as validation; declare them in `.coding-flow/config.json` under `validation.quality` so they are executed and captured, not asserted.
+- Run deterministic quality checks (lint, format, duplication) as validation; declare them in `.coding-flow/config.json` under `validation.quality` so they are executed and captured, not asserted. For STRICT-risk changes, a project may opt into mutation testing (Stryker/PIT) the same way — it is expensive, so it stays a project's explicit choice, never a default `/flow-run` adds on its own.
 - Do not silently modify unrelated files.
 
 ### Validation

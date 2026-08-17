@@ -24,6 +24,8 @@ Excluded:
 
 ## Stories
 
+Backbone: audit the hardcoded section → render it from a real content source
+
 - [ ] story-01-01-audit-hardcoded-content
 - [ ] story-01-02-render-dynamic-content
 

@@ -30,8 +30,10 @@ function buildWorktreeIndex() {
   return { isRepo, byBranch, entries };
 }
 
-function status({ json = false } = {}) {
-  const config = readConfig(cwd);
+// The read model behind `status` — epics/stories enriched with their linked
+// worktree, loose worktrees, and the branch policy. Extracted so other reporting
+// commands (`next`) can read the exact same state without re-deriving it.
+function buildStatusModel(config) {
   const storage = getStorage(cwd, config);
   const wt = buildWorktreeIndex();
   const mappedBranches = new Set();
@@ -60,13 +62,20 @@ function status({ json = false } = {}) {
 
   const policy = evaluateBranchPolicy(cwd, config);
 
+  return { epics, looseWorktrees, worktreesActive: wt.isRepo, policy };
+}
+
+function status({ json = false } = {}) {
+  const config = readConfig(cwd);
+  const { epics, looseWorktrees, worktreesActive, policy } = buildStatusModel(config);
+
   if (json) {
     log(
       JSON.stringify(
         {
           storage: config.storage,
           epics,
-          worktrees: { active: wt.isRepo, loose: looseWorktrees },
+          worktrees: { active: worktreesActive, loose: looseWorktrees },
           policy: {
             branchPerEpic: policy.enforced,
             branch: policy.branch,
@@ -118,4 +127,4 @@ function status({ json = false } = {}) {
   }
 }
 
-module.exports = { status };
+module.exports = { status, buildStatusModel };
