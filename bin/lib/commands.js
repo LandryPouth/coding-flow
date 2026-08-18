@@ -161,6 +161,9 @@ Daily (you run these):
                --story also accepts a Spec Kit feature (specs/<name>); with no --story in a
                .specify/ project, the active feature is used and the output says where from.
   bootstrap    Write docs/bootstrap-scan.md for a brownfield project (init already scans; this is the artifact).
+  report       Collect what went wrong into one sendable file: guard denials, verify failures,
+               risk and coverage distribution, install health. Redacted by default (--raw to keep
+               absolute paths, --json for machines, --out FILE to write it).
 
 Machinery (usually run FOR you by the skills, CI, or the git hook):
   harness      Run security checks (check), execute declared validation commands (verify), write evidence.

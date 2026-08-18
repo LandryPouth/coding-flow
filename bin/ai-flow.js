@@ -65,6 +65,7 @@ const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
 const {
   copyTemplates,
   ensureConvenienceFiles,
+  ensureFrictionLog,
   printConvenienceSummary,
   printPrunedSkills,
   upgrade,
@@ -82,6 +83,7 @@ const { worktreeCommand } = require("./lib/worktree");
 const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
+const { reportCommand } = require("./lib/report");
 const {
   ensureConfig,
   readConfig,
@@ -174,10 +176,12 @@ if (command === "init") {
       install: "minimal",
     });
     const harnessCreated = ensureHarnessConfig({ dryRun });
+    const frictionLog = ensureFrictionLog({ dryRun });
 
     log(dryRun ? "Dry run complete." : "Coding Flow installed (minimal).");
     log(`Config: ${configResult.created ? (dryRun ? "would create" : "created") : "unchanged"}`);
     log(`Harness config: ${harnessCreated ? (dryRun ? "would create" : "created") : "unchanged"}`);
+    log(`Friction log: docs/DOGFOODING.md ${frictionLog}`);
 
     if (!flags.has("--no-guard")) {
       const hook = ensureHookSettings({ dryRun });
@@ -185,8 +189,9 @@ if (command === "init") {
     }
 
     log("");
-    log("Installed: the guard hook and the proof layer. No RULES.md, no docs/, no epics/, no skills.");
+    log("Installed: the guard hook, the proof layer, and the friction log. No RULES.md, no epics/, no skills.");
     log("Next: `ai-flow verify` on a branch — it needs no story and no scaffolding.");
+    log("When something goes wrong: `ai-flow report` collects it into one file you can send.");
     log("Later: `ai-flow init` (without --minimal) lays down the full workflow when you want it.");
     log("");
     log(binaryPathNote(isCommandAvailable("ai-flow")));
@@ -362,6 +367,8 @@ if (command === "init") {
   // preflight/check/evidence, which nobody types by hand; verify is the one a
   // user reaches for — re-proving a story that went `stale` after a small edit.
   harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
+} else if (command === "report") {
+  reportCommand({ getFlagValue, flags });
 } else if (command === "audit") {
   auditCommand({ getFlagValue, flags });
 } else if (command === "trace") {

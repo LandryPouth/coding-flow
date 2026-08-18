@@ -1,0 +1,8 @@
+node_modules/
+
+# The self-install: the config and the guard wiring are tracked on purpose, so
+# this repository proves itself the same way it asks other repositories to. What
+# a run produced is local evidence, not source.
+.coding-flow/runs/
+.coding-flow/denials.jsonl
+.coding-flow/manifest.json

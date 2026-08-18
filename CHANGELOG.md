@@ -11,6 +11,36 @@ tool was wrong about one thing and slow about another. The first was costing who
 hours per story; the second was costing milliseconds. Both are fixed, and the log
 now says which was which.
 
+### Added
+
+- **`ai-flow report` — one file a user can send back.** Guard denials, verify
+  failures with the lines that explain them, the risk/coverage/mode distribution,
+  and install health, collected from what the harness already recorded. It exists
+  because the alternative is a description: someone who hits a bad gate remembers
+  that "it blocked something", not which pattern fired on which path — and a tool
+  whose argument is that executed proof beats assertion cannot collect its own bug
+  reports by assertion. **Redacted by default**: paths are relative to the project,
+  the home directory and username are masked, and no secret value is ever recorded
+  (only the name of the pattern that matched). `--raw` keeps everything for your own
+  repositories, `--json` for machines, `--out FILE` to write it.
+- **Guard denials are recorded.** A refusal used to be exit 2, a line on stderr,
+  and then nothing — so the one event most worth keeping, the guard being *wrong*,
+  left no artifact to argue with. One redacted JSONL line per denial in
+  `.coding-flow/denials.jsonl`, capped, and best-effort by construction: it cannot
+  throw, cannot delay the decision, and cannot change it. A test asserts the
+  refusal and the allow both survive an unwritable log.
+- **The friction log ships with the enforcement layer.** `docs/DOGFOODING.md` was
+  full-install only, on the reasoning that `--minimal` promises no files beyond the
+  guard and the harness. That held while the only user was the author. An
+  enforcement layer handed to someone else with no return channel is a gate they
+  can only switch off, never argue with — so the manual half (the log) now ships
+  wherever the automatic half (`report`) does. `--minimal` still lays down no
+  `RULES.md`, no `epics/`, no skills, and no other `docs/`.
+- **Coding Flow is installed on Coding Flow.** The config existed but declared no
+  validation commands and had never produced a run, which is worse than not
+  installing it: it looked like dogfooding. It now declares `npm test`, and the
+  first real verify caught a regression that the per-file runs had missed.
+
 ### Fixed
 
 - **Prose no longer forces STRICT.** `scoreStoryRisk` substring-matched 17 terms

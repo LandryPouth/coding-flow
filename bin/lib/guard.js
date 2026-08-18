@@ -335,6 +335,54 @@ function decideBash(toolInput, root) {
   return { decision: "allow", reason: "no blocked write target or secret detected" };
 }
 
+// A denial used to be exit 2 and a line on stderr, and then nothing. That is
+// the one event most worth keeping: when the guard is *wrong*, the person it
+// blocked has no artifact to send and no way to show what happened — and a gate
+// nobody can argue with is a gate they turn off. One JSONL line per denial, read
+// back by `ai-flow report`.
+//
+// Three properties this must never lose, because it runs inside the hot path of
+// a security check: it never throws (a full disk must not turn a deny into a
+// crash), it never delays the decision (the write already happened by the time
+// we exit), and it never records the secret itself — `decide` reports the
+// pattern's name, never the matched text.
+const DENIAL_LOG_MAX_BYTES = 256 * 1024;
+
+function recordDenial({ root, hook, result }) {
+  try {
+    const dir = path.join(root, ".coding-flow");
+
+    if (!fs.existsSync(dir)) {
+      return;
+    }
+
+    const logPath = path.join(dir, "denials.jsonl");
+
+    // Bounded on purpose: this is a diagnostic tail, not an audit ledger. The
+    // audit ledger is `ai-flow audit`, and it is opt-in.
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > DENIAL_LOG_MAX_BYTES) {
+      const kept = fs.readFileSync(logPath, "utf8").split("\n").filter(Boolean).slice(-200);
+      fs.writeFileSync(logPath, kept.length ? `${kept.join("\n")}\n` : "");
+    }
+
+    const target = result.path || (hook && hook.tool_input && hook.tool_input.file_path) || null;
+
+    fs.appendFileSync(
+      logPath,
+      `${JSON.stringify({
+        at: new Date().toISOString(),
+        tool: (hook && hook.tool_name) || null,
+        // Relative when it is inside the project, so the log carries no home
+        // directory and no username. `report` redacts anything left over.
+        path: target ? normalizePortable(path.isAbsolute(target) ? path.relative(root, target) : target) : null,
+        reason: result.reason,
+      })}\n`,
+    );
+  } catch {
+    // Diagnostics are never worth failing a security decision over.
+  }
+}
+
 function guardCommand({ getFlagValue, flags }) {
   const inputFile = getFlagValue("--input", null);
   const raw = readHookInput({ inputFile });
@@ -358,6 +406,7 @@ function guardCommand({ getFlagValue, flags }) {
       })}\n`,
     );
     process.stderr.write(`coding-flow guard: ${result.reason}\n`);
+    recordDenial({ root, hook, result });
     process.exit(2);
   }
 

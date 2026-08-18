@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "storage": "local",
+  "branchPerEpic": true,
+  "autoMergeEpic": false,
+  "skills": "plugin",
+  "install": "minimal",
+  "validation": {
+    "commands": [
+      "npm test"
+    ],
+    "quality": []
+  }
+}
