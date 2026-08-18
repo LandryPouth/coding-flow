@@ -112,12 +112,43 @@ npm publish     # publishes @landry_pouth/coding-flow@<version>
 | Doc | Subject |
 | --- | --- |
 | [`QUICKSTART.md`](QUICKSTART.md) | The whole loop on one screen: the front door you use day to day |
+| [`agent-contract.md`](agent-contract.md) | What Coding Flow expects from an agent, agent-neutral — the protocol each integration translates |
+| [`DOGFOODING.md`](DOGFOODING.md) | The friction log: where the tool cost more than it returned, and what came of it |
 | [`migration.md`](migration.md) | Migrating an existing project to a new version: `upgrade` vs re-install, what is protected, and the gotchas |
 | [`sdd-vs-plugins.md`](sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed and why |
 | [`git-worktree-bare.md`](git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |
 | [`plans/multi-agent-install.md`](plans/multi-agent-install.md) | Planned per-agent install targeting (Claude/Codex, no shared mirror) |
 | [`plans/storage-backends.md`](plans/storage-backends.md) | Storage seam, project config, branch policy (github backend deferred) |
 | [`experiments/reliability-benchmark.md`](experiments/reliability-benchmark.md) | The (in-progress) benchmark validating the reliability claim |
+
+## What belongs in the core
+
+The failure mode for a tool like this one is not a missing feature. It is
+becoming a large, admired, fragile framework nobody trusts with a `--force`.
+Six checks that always hold their word beat twenty-five that mostly do.
+
+So every proposed feature answers one question first:
+
+> **If I don't implement it, does Coding Flow fail at its mission?**
+
+The mission is guardrails and evidence for AI coding agents. `verify`, the
+`guard` hook, the risk score, and the coverage gate all fail that question
+without them — a longitudinal report of past runs does not, however useful it
+would be. That is the difference between the core and a good idea.
+
+Two rules that follow from it:
+
+- **Prefer an adapter, a config key, or an external integration over a new core
+  subsystem.** [`bin/lib/speckit.js`](../bin/lib/speckit.js) is the shape to
+  copy: ~160 lines, nothing imported from Spec Kit, Spec Kit need not be
+  installed, and deleting the file removes a capability without breaking one.
+- **Do not abstract before the second real case.** `measurePatchCoverage(...)`
+  ships as a function. It becomes an interface the day a second implementation
+  actually exists, not the day one is imagined.
+
+The project is currently in a **feature freeze**: bugs, DX, performance,
+security, documentation, and tests only. New capabilities wait for real users to
+ask for them.
 
 ## Roadmap
 

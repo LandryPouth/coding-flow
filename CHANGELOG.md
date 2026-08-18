@@ -4,6 +4,133 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-08-18
+
+Gaps between what this tool promised and what it enforced, closed. Each was a
+place where the README made a stronger claim than the code: a guard that only
+watched one of the two write paths, detectors nobody could tune, and a `verified`
+label that a change with no test could earn. Then two things that decide whether
+any of it gets adopted at all — the smallest install is now the enforcement layer
+alone, and the enforcement layer reads somebody else's spec format as readily as
+its own.
+
+### Added
+
+- **The guard watches shell writes too.** The PreToolUse hook now matches `Bash`
+  alongside the editing tools, and refuses a command that would write to a blocked
+  path through a redirection or heredoc (`> .env`, `cat > .env <<EOF`), `tee`,
+  `sed -i`, `cp`/`mv`/`ln`/`install`, or `dd of=`. A real credential format in the
+  command text is refused as well. It parses shell text, not program semantics —
+  a write buried inside `python -c` is still out of reach, and the README now says
+  so instead of claiming a leak "can't happen". Existing projects gain the wider
+  matcher on the next `init`/`upgrade`, but only if their matcher is one *we*
+  shipped; a matcher you customized is left alone.
+- **Secret detectors live in `harness.json`.** The patterns are written out in
+  full, so a project can read, edit, extend, or delete them. Each carries a
+  `precision`: `exact` matches a credential *format* (Stripe, AWS, GitHub, a
+  private-key block) and applies everywhere, always; `heuristic` matches a *shape*
+  (`password: "…"`) and is relaxed on the paths in `secretScanAllowlist` — docs,
+  story files, tests, and fixtures by default. So an example in your documentation
+  stops being refused, while an AWS key in that same file still is. A pattern
+  written wrong is reported by `harness check` (`scans nothing`) rather than
+  silently matching nothing, and never breaks the hook.
+- **A coverage gate on `verify`.** On a medium/high-risk story, a green suite is
+  no longer accepted as proof on its own: if the branch's diff changes behavior and
+  no test file moved, `verify` reports `NOT PROVEN` and exits 1. Executing the
+  commands proved they ran; it never proved they covered *this* change, and a suite
+  that was already green before the edit says nothing about it. The evidence now
+  separates `commandsOk` from `coverage`, and `ship` carries the coverage line into
+  the PR body. Narrow by design: low-risk stories, docs/story/lockfile-only diffs,
+  and repos where the diff cannot be read never trip it. A change that genuinely
+  cannot carry a test declares a `## Test Exemption` section in its story, or
+  `--test-exemption "<reason>"` on the command — the reason is copied verbatim into
+  the evidence and the PR, so the escape hatch is a recorded claim rather than a
+  silent bypass. `requireTestChange: false` disables the gate project-wide.
+- **Risk is scored on the diff, not only on the story text.** `highRiskPaths` in
+  `harness.json` (auth, migrations, schemas, payments, secrets, webhooks) raises the
+  risk on its own, and `preflight`, the recommended mode, and the coverage gate all
+  take the higher of the two sources. This closes a hole the previous entry left
+  open: risk read only from story prose is risk the agent controls, since it wrote
+  the prose — a change to `src/auth/session.js` described as "update the login page"
+  used to score low and skip every gate keyed on it. It also decouples the two
+  layers: because a diff needs no story to be read as risky, the gate applies to
+  work with no story at all, and the proof layer becomes usable on a branch that
+  never adopted the `epics/` layout.
+- **Line-level patch coverage.** When the validation commands leave a coverage
+  report behind, `verify` stops asking the weak question ("did a test file move?")
+  and asks the real one: are the lines this change *added* actually executed. LCOV
+  (`coverage/lcov.info`) and Istanbul JSON (`coverage-final.json`) are read with no
+  dependency, and the uncovered lines are named — `src/auth.js: lines 4-10 not
+  executed` — so the failure is actionable rather than a percentage. Under
+  `minPatchCoverage` (default 80) the run reports `NOT PROVEN`. The measurement
+  degrades honestly instead of guessing: no report, an unparseable one, or one
+  written *before* the run started falls back to the test-file heuristic, and a
+  stale report is treated as no report at all. Every verdict now records which
+  question it answered (`coverage.mode`: `diff-lines`, `test-file`, or `none`).
+- **`ai-flow init --minimal`.** The enforcement layer alone — guard hook, harness
+  policy, `verify` — with no `RULES.md`, no `epics/`, no skills, and no `package.json`
+  edits. The full workflow was the smallest thing you could adopt, which made the
+  proof layer unreachable for anyone who did not also want the methodology.
+  `doctor` judges a minimal install against what it chose to install rather than
+  reporting the absent scaffold as damage, and refuses to `--fix` a workflow into
+  existence. A later plain `init` promotes it to `full`, once, and says so.
+- **Spec Kit features are read as stories.** A Spec Kit feature directory holds
+  `spec.md` / `plan.md` / `tasks.md` — the same three roles this tool already
+  resolves — so `verify --story specs/003-albums` works, and in a project with a
+  `.specify/` directory `verify` with no `--story` scopes itself to the active
+  feature. The feature is resolved the way Spec Kit resolves it
+  (`SPECIFY_FEATURE_DIRECTORY`, then `.specify/feature.json`), falling back to the
+  branch name and then the most recently edited feature — and the output always
+  names which source it used, because a scope that was inferred has to say so.
+  Nothing is imported from Spec Kit and it need not be installed. This is an
+  adapter, not an integration: the tool does not care how you define the work, only
+  whether the execution can be checked.
+- **The coverage verdict says how strong it is.** Every result now carries a named
+  rung — `verified` (the added lines were measured and enough of them executed),
+  `evidence` (a test file moved alongside the change, nothing measured it),
+  `exempted` (a declared reason carried it), `not-required`, `missing` — printed by
+  `verify`, recorded in the evidence JSON as `coverage.tier`, and carried into the
+  PR body and the `run` report. The gate always had these rungs; only `coverage.mode`
+  exposed them, so the terminal printed a proxy and a measurement in the same voice,
+  and the PR body ticked `✅ 1 test file(s) changed with this story` for a change
+  nothing had measured. A tool whose argument is that asserted proof and executed
+  proof differ cannot blur that line in its own report. An `evidence` pass also says
+  how to earn the stronger word: emit `lcov.info` or `coverage-final.json` from the
+  suite the run already executes. Older evidence, written before the field existed,
+  is named correctly on read rather than promoted.
+- **`docs/agent-contract.md`.** What Coding Flow expects from an agent, stated once
+  and agent-neutral: inspect the work item, obey the repository's rules, run
+  verification and read what it says, hand over the evidence. Every integration —
+  the Claude Code skills today, others later — is a translation of that protocol,
+  not a second place to put behaviour. Written now, while there is exactly one
+  integration and the coupling is still cheap to see; the test it has to keep
+  passing is that deleting every skill changes nothing about what is enforced.
+- **`docs/DOGFOODING.md`, installed into every project.** The friction log the
+  feature freeze exists to fill: one row per moment the tool cost more than it
+  returned. `init` lays it down (`--minimal` does not — it is documentation, and
+  minimal installs none), and a new **Tooling Friction** rule in `RULES.md` says
+  the row is written *in the same pass*, not reconstructed at the end of a week
+  from the two incidents anyone still remembers. `/flow-run` raises it at the
+  moment it happens. The row the rule insists on is the one for **disabling,
+  relaxing, or exempting a check to keep going** — a gate that gets switched off
+  protects nothing, and the switching-off is the measurement, not the thing to
+  hide. Ordinary failures stay out: a red suite, or a gate that rightly demanded
+  a test, is the tool working. The log is manifest-tracked, so `upgrade` never
+  overwrites the rows written into it. This repository keeps its own log the same
+  way, seeded with the two entries this release fixes.
+
+### Fixed
+
+- **The coverage gate no longer blocks on changes a test suite cannot execute.**
+  Type declarations (`*.d.ts`), build and tool config, SQL and migrations, and
+  generated code are now `nonBehaviorGlobs`. A `*.d.ts` was the worst case: erased
+  before anything runs, so it could never appear in a coverage report, while its
+  `.ts` extension made the report look like it should have covered it — a block
+  the developer could only clear with a fake test or by turning the gate off. These
+  paths still raise the risk level and still appear in the evidence; they are only
+  exempt from "prove a unit test executed these lines", which no coverage tool can
+  answer for a DDL file.
+
 ## [0.6.0] - 2026-08-17
 
 `ship` used to stop one step short of shipping, and knowing what to do next meant
@@ -437,6 +564,8 @@ agent's hands. Distributed as a native Claude Code plugin and published on npm.
 - The GitHub storage backend (issues/sub-issues) is a proven seam with a clean
   `fail()`; implementation stays deferred until a real need appears.
 
+[0.7.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.7.0
+[0.6.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.6.0
 [0.5.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.1
 [0.5.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.0
 [0.4.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.4.1
