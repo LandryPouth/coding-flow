@@ -3,12 +3,16 @@
 // Generic helpers with no business logic: terminal I/O, hashing, JSON, paths,
 // glob, file walking. Reused by every command.
 
-const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
 
 const { cwd } = require("./context");
+
+// `crypto` (OpenSSL bindings) and `child_process` are the two expensive requires
+// in this file — together ~20 ms, measured — and the two that `guard` never
+// reaches: it uses the pure string helpers only. Loading them where they are
+// used keeps that cost off the one command Claude Code runs before every tool
+// call. Node caches the module, so the repeat calls in a hashing loop are free.
 
 // `ai-flow status | head` closes the pipe under us, and an unhandled EPIPE on
 // stdout crashes Node with a stack trace over whatever the user was reading.
@@ -41,7 +45,7 @@ function toPortable(filePath) {
 // work on this machine, or whether they need `npx @landry_pouth/coding-flow`.
 function isCommandAvailable(name, versionFlag = "--version") {
   try {
-    execFileSync(name, [versionFlag], { stdio: ["ignore", "pipe", "pipe"] });
+    require("child_process").execFileSync(name, [versionFlag], { stdio: ["ignore", "pipe", "pipe"] });
     return true;
   } catch {
     return false;
@@ -84,7 +88,7 @@ function walkFiles(dir) {
 }
 
 function hashBuffer(buffer) {
-  return crypto.createHash("sha256").update(buffer).digest("hex");
+  return require("crypto").createHash("sha256").update(buffer).digest("hex");
 }
 
 function hashFile(filePath) {

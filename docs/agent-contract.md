@@ -133,6 +133,34 @@ covers only what the integration has to *say*.
 Step 4 is the one that matters. It is also the architectural check: anything that
 turns out to be hard to enforce without the agent is coupling that was hiding.
 
+## The core stays boring
+
+Two proposals recur, from opposite directions, and both are refused for the same
+reason. They add state or indirection to the part whose whole value is being dumb
+and deterministic.
+
+**The guard stays one process per decision.** Making it a resident daemon that
+the hook pings over a socket would take it from ~70 ms to ~3 ms. It is still
+refused: the guard is fail-open by design, so a daemon that is dead, hung, or
+serving a cached `harness.json` stops protecting *silently*, which is strictly
+worse than the latency it saves. Add worktree-scoped socket lifecycles and a
+locally reachable "may I write this?" endpoint and the security surface grows to
+buy back time that is spent between two LLM turns anyway. Optimising the guard is
+welcome; changing its execution model is not. The cheap wins — dispatching it
+before the other modules load, keeping `crypto` off its path — are the shape this
+is allowed to take.
+
+**Policy never moves into a `SKILL.md`.** It is tempting to declare a skill's
+expectations in its frontmatter (`evidence:`, `exit_conditions:`,
+`min_patch_coverage:`) and have the CLI read them. That inverts this document: a
+`SKILL.md` is agent-facing text the agent can edit, so an agent that lowers its
+own threshold has defeated the gate while staying inside the rules. Thresholds
+live in `.coding-flow/harness.json`, which is project configuration, not prompt.
+
+The boundary in one line: **skills are behaviour, `harness.json` is policy.**
+Behaviour is advisory and may be reworded freely; policy is enforced and changes
+deliberately.
+
 ## Stability
 
 The contract is stable and changes only with a deliberate, documented decision.

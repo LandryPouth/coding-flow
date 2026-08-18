@@ -150,6 +150,23 @@ The project is currently in a **feature freeze**: bugs, DX, performance,
 security, documentation, and tests only. New capabilities wait for real users to
 ask for them.
 
+## Writing a skill
+
+Skills are structured prompts, and their length is a bill the user pays on every
+trigger. Two rules, both enforced by `test/ceremony.test.js`:
+
+- **A `SKILL.md` stays under 500 lines.** Past that, move the opt-in depth (a deep
+  review dimension, a mode that rarely fires) into a sibling file the skill links
+  to, so it loads only when it is needed. Link one level deep — from `SKILL.md`
+  straight to the file, never through an intermediate.
+- **Both trees change together.** `skills/` is what the Claude Code plugin serves;
+  `templates/.claude/skills/` is what `ai-flow init` copies into a project. They
+  are byte-identical, and a test fails if they drift.
+
+Prefer extracting the prose you already have over adding more. A "Common
+Rationalizations" table earns its lines because it answers an excuse at the moment
+the agent reaches for it; a second explanation of something stated above does not.
+
 ## Roadmap
 
 - `ai-flow add-epic`, `ai-flow add-story`

@@ -4,6 +4,51 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Thirteen days of real use on another project (`imob`, 110 recorded runs) said the
+tool was wrong about one thing and slow about another. The first was costing whole
+hours per story; the second was costing milliseconds. Both are fixed, and the log
+now says which was which.
+
+### Fixed
+
+- **Prose no longer forces STRICT.** `scoreStoryRisk` substring-matched 17 terms
+  over the whole story text, and one hit meant `high` — so `auth` fired on
+  "author", `token` on "design tokens", and `migration` on a story titled *color
+  migration*. Because `combineRisk` takes the higher of the two scores, the story
+  side was pinned at `high` and the diff-derived score could never win: 39 of 39
+  recorded evidence records ran at STRICT, paying TDD, Security Questions and a
+  mandatory deep review for hero recompositions and video players. Matching is now
+  whole-word, and prose tops out at `medium`; only `scoreDiffRisk` — which reads
+  what the change actually touches — can reach `high`. Replayed over the same 39
+  records, STRICT drops from 100% to 31%, and the 12 that remain are genuine
+  (`schema.prisma`, `migration.sql`, `auth.controller.ts`). A story that names a
+  risk still raises a quiet change to `medium`, so the coverage gate keeps firing
+  exactly where it fired before.
+
+### Changed
+
+- **The guard dispatches before the rest of the CLI loads.** It runs before every
+  Write, Edit and Bash, so it paid for all 21 lib modules — `ship`, `worktree`,
+  `doctor`, `templates` — plus `crypto` (OpenSSL bindings) reached through
+  `util.js`, none of which it uses. Argument parsing moved above the requires and
+  `guard` now returns from its own branch; `crypto` and `child_process` load where
+  they are called. Overhead above bare Node startup: 67.8 ms → 26.2 ms, measured
+  interleaved. `test/guard.test.js` pins the module graph so it cannot creep back.
+- **`flow-run` and `flow-review` carry a Common Rationalizations table**, and
+  `flow-run` a Red Flags section — the anti-excuse prose that was already spread
+  through both skills, gathered where an agent reaches for the excuse.
+- **`docs/agent-contract.md` states what the core refuses**: the guard stays one
+  process per decision (no resident daemon), and policy never moves into a
+  `SKILL.md` frontmatter. Skills are behaviour; `harness.json` is policy.
+
+### Added
+
+- **`skills/` and `templates/.claude/skills/` are checked for drift.** Two shipped
+  copies of the same seven skills, and nothing compared them until now. Plus a
+  500-line ceiling per `SKILL.md`, documented in `docs/contributing.md`.
+
 ## [0.7.0] - 2026-08-18
 
 Gaps between what this tool promised and what it enforced, closed. Each was a

@@ -114,6 +114,17 @@ stable selectors, and behavior-level assertions over visual detail. Verify the
 persisted or user-visible result, not just a click sequence. Record commands and
 expected results in `plan.md`.
 
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "The suite is green, so the tests are fine." | A green run proves the commands passed, not that the tests would catch a regression. For each critical criterion, require demonstrated negative evidence. |
+| "The author says it was tested." | Never trust a reported result. Run `ai-flow verify --story <dir>` yourself and read the captured evidence. |
+| "These two blocks are identical, extract them." | Two similar blocks are not yet a pattern. Apply the rule of three, and prefer duplication over the wrong abstraction unless the cases are one concept that will change together. |
+| "There is no test for this, so it is a blocker." | Only if the behavior carries risk. Copy, layout, and static content do not earn a test; permissions, validation, and money do. |
+| "The diff is clean, I can approve without reading the surrounding code." | Drift is visible only against what was already there. Judge the change against this project's architecture, not against a generic ideal. |
+| "I'll flag the style issues too, they're quick." | Deterministic quality runs as executed proof through `ai-flow verify`. Your findings are the judgment a linter cannot make; style noise buries them. |
+
 ## Review Bias
 
 - Prefer concrete behavioral issues over style opinions.

@@ -538,17 +538,33 @@ function readStoryBundle(storyFullPath) {
   return files;
 }
 
+// Whole words only. A naked `includes` made "auth" fire on "author", "token" on
+// "design tokens", and "migration" on a story titled "color migration" — terms
+// are configurable, so the pattern is escaped before it becomes a regex.
+function mentionsTerm(text, term) {
+  const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+
+  return new RegExp(`\\b${escaped}\\b`, "i").test(text);
+}
+
+// Prose is a weak signal and it tops out at `medium` on purpose. A story names
+// what it is *near* as readily as what it changes — "does not touch auth", a
+// list of files, an acceptance criterion — so scanning it for scary words
+// escalated 39 of 39 real stories to STRICT and left `scoreDiffRisk` unable to
+// matter. Only the diff can reach `high`; the story can still raise a quiet
+// change to `medium` (the coverage gate keeps firing), never to STRICT ceremony.
 function scoreStoryRisk(storyText, config) {
-  const lower = storyText.toLowerCase();
-  const matchedTerms = config.highRiskTerms.filter((term) => lower.includes(term.toLowerCase()));
+  const matchedTerms = config.highRiskTerms.filter((term) => mentionsTerm(storyText, term));
   const mediumTerms = ["api", "crud", "form", "persistence", "integration", "config", "settings"]
-    .filter((term) => lower.includes(term));
+    .filter((term) => mentionsTerm(storyText, term));
 
   if (matchedTerms.length > 0) {
     return {
-      level: "high",
+      level: "medium",
       matchedTerms,
-      reason: "Security-sensitive or trust-boundary terms were found.",
+      reason:
+        "Security-sensitive terms appear in the story text. Wording alone does not prove the " +
+        "change reaches a trust boundary — the diff decides that.",
     };
   }
 
@@ -625,9 +641,12 @@ function buildHarnessPreflight({ story = null } = {}) {
       .map(([name]) => normalizePortable(path.relative(cwd, path.join(storyDir, name))));
   }
 
-  // Both sources, highest wins: before implementing, the diff is usually empty
-  // and the story decides; afterwards the files can only raise the score. So the
-  // mode a story recommends cannot be talked down by how it was worded.
+  // Both sources, highest wins — but they do not have the same ceiling. The
+  // diff is the only one that can say `high`, because it is the only one that
+  // shows what the change actually reaches; the story can raise a quiet change
+  // to `medium`. So wording a story mildly still cannot talk the score down,
+  // and wording it dramatically can no longer buy STRICT ceremony for a
+  // heading change.
   const risk = combineRisk(
     scoreStoryRisk(storyText, config),
     scoreDiffRisk(currentTreeToken(cwd) ? changedFilesForCoverage() : [], config),
