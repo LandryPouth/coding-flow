@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-18
 
 Gaps between what this tool promised and what it enforced, closed. Each was a
 place where the README made a stronger claim than the code: a guard that only
@@ -564,6 +564,8 @@ agent's hands. Distributed as a native Claude Code plugin and published on npm.
 - The GitHub storage backend (issues/sub-issues) is a proven seam with a clean
   `fail()`; implementation stays deferred until a real need appears.
 
+[0.7.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.7.0
+[0.6.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.6.0
 [0.5.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.1
 [0.5.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.0
 [0.4.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.4.1
