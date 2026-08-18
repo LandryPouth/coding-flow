@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-08-18
+
+### Fixed
+
+- **A test file that only got weaker no longer counts as "a test changed."** The
+  `evidence` rung is earned when a behaviour file and a test file both appear in the
+  diff, and the *direction* of the test change was never read — so the cheapest way
+  past the gate was to touch a test, and deleting an assertion, adding `.skip`, or
+  removing the file outright all count as touching one. An agent does not have to be
+  adversarial to land there: "the test was failing, so I removed the assertion" is an
+  ordinary move.
+
+  Three signals are now read over the diff of files matching `testGlobs`: a test file
+  **deleted**, **skip/only markers added** (`.skip(`, `.only(`, `xit(`,
+  `@pytest.mark.skip`, `t.Skip(`, `#[ignore]`, …), and a **net decrease in assertion
+  count**. `.only` counts as weakening because it does not skip the test it marks —
+  it silently skips every other test in the file.
+
+  The fix is deliberately narrow. It is **not a new gate and adds no configuration**:
+  a diff whose test changes are exclusively weakening lands exactly where a diff with
+  no test change lands (`NOT PROVEN`, same `## Test Exemption` escape), and it rides
+  on `requireTestChange` so there is no second switch to turn off. Neutral edits — a
+  rename, a typo — still count as strengthening: this reads direction, not effort.
+
+  Weakening is **reported at every rung, including `verified` and including under a
+  declared exemption**, in the terminal and in the evidence JSON. A measured 92%
+  standing next to three deleted tests is still three deleted tests; letting a good
+  number hide that would be the dishonesty the coverage rungs exist to prevent.
+
+  These are regexes over a diff, not a parse: they cannot distinguish a weakened test
+  from a legitimately refactored one, which is exactly why the finding informs the
+  rung and reports itself rather than blocking on its own. See
+  [`docs/design-decisions.md`](docs/design-decisions.md) entry 8.
+
 ## [0.8.0] - 2026-08-18
 
 **The first release decided by evidence rather than by judgement.** Thirteen days
@@ -642,6 +676,7 @@ agent's hands. Distributed as a native Claude Code plugin and published on npm.
 - The GitHub storage backend (issues/sub-issues) is a proven seam with a clean
   `fail()`; implementation stays deferred until a real need appears.
 
+[0.8.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.8.1
 [0.8.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.8.0
 [0.7.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.7.0
 [0.6.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.6.0

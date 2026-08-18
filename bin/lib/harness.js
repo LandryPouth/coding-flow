@@ -1268,6 +1268,7 @@ function printVerify(evidence, outputPath) {
         (coverage.behaviorFiles.length > 5 ? ` (+${coverage.behaviorFiles.length - 5} more)` : ""));
     }
 
+    printWeakenedTests(coverage);
     log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
     log('  or re-run with --test-exemption "<reason>" if there is no story.');
   } else if (evidence.ok) {
@@ -1290,8 +1291,14 @@ function printVerify(evidence, outputPath) {
         log("  this change. Emit lcov.info or coverage-final.json to get 'verified'.");
       }
     }
+
+    // Printed at every rung, including `verified`. A measured 92% next to three
+    // deleted tests is still three deleted tests, and the reader decides what that
+    // means — this only refuses to let a good number hide it.
+    printWeakenedTests(coverage);
   } else {
     log("Harness verify FAILED.");
+    printWeakenedTests(coverage);
   }
 
   // Which commands ran, and why those. The silent fallback from a config that was
@@ -1567,6 +1574,181 @@ function evaluatePatchCoverage({ config, behaviorFiles, startedAt }) {
   };
 }
 
+// --- Weakened tests -------------------------------------------------------
+//
+// The `evidence` rung is earned when a behaviour file and a test file both appear
+// in the diff. Until now the *direction* of the test change was never read, so the
+// cheapest way past the gate was to touch a test — and deleting an assertion,
+// adding `.skip`, or removing the file outright all count as touching one. That is
+// a hole in the proof, not a missing feature, and an agent does not have to be
+// adversarial to fall into it: "the test was failing, so I removed the assertion"
+// is an ordinary move.
+//
+// These are regexes over a diff, not a parse. They cannot tell a weakened test
+// from a legitimately refactored one, which is why the result never blocks on its
+// own — it only withholds the `evidence` rung from a diff whose test changes are
+// *exclusively* weakening, and reports what it saw at every other rung.
+
+// `.only` is deliberately in this list. It does not skip the test it marks; it
+// silently skips every other test in the file, which is worse and easier to spot.
+const SKIP_MARKERS = [
+  /\.skip\s*\(/,
+  /\.only\s*\(/,
+  /\b(?:xit|xdescribe|xtest|xcontext)\s*\(/,
+  /\b(?:it|test|describe)\.todo\s*\(/,
+  /@pytest\.mark\.skip/,
+  /@unittest\.skip/,
+  /#\[ignore\]/,
+  /\bt\.Skip(?:Now)?\s*\(/,
+  /@(?:Ignore|Disabled)\b/,
+];
+
+const ASSERTION_MARKERS = [
+  /\bexpect\s*\(/,
+  /\bassert(?:_\w+|[A-Z]\w*)?\s*[(.]/,
+  /\bshould\b/,
+  /\bXCTAssert\w*\s*\(/,
+  /\b(?:EXPECT|ASSERT)_\w+\s*\(/,
+  /\brequire\.\w+\s*\(/,
+  /\bt\.(?:is|deepEqual|throws|truthy|falsy)\s*\(/,
+];
+
+const countMatching = (lines, patterns) =>
+  lines.filter((line) => patterns.some((pattern) => pattern.test(line))).length;
+
+// Added and removed line *text* per file. `parseAddedLines` returns line numbers
+// for coverage; here the content is what matters, and both directions do.
+function parseChangedText(diffText) {
+  const byFile = {};
+  let current = null;
+
+  for (const line of diffText.split(/\r?\n/)) {
+    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
+
+    if (fileMatch) {
+      current = fileMatch[1] === "dev/null" ? null : normalizePortable(fileMatch[1]);
+
+      if (current && !byFile[current]) {
+        byFile[current] = { added: [], removed: [] };
+      }
+
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      byFile[current].added.push(line.slice(1));
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      byFile[current].removed.push(line.slice(1));
+    }
+  }
+
+  return byFile;
+}
+
+function deletedFilesInDiff() {
+  const deleted = new Set();
+  const base = defaultBranch(cwd);
+  const sources = [["diff", "--name-status"], ["diff", "--cached", "--name-status"]];
+
+  for (const ref of [base, `origin/${base}`]) {
+    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
+
+    if (mergeBase) {
+      sources.push(["diff", "--name-status", mergeBase]);
+      break;
+    }
+  }
+
+  for (const argsForGit of sources) {
+    for (const line of runGitText(argsForGit).split(/\r?\n/)) {
+      const match = line.match(/^D\s+(.+)$/);
+
+      if (match) {
+        deleted.add(normalizePortable(match[1].trim()));
+      }
+    }
+  }
+
+  return [...deleted];
+}
+
+// Per test file: did this diff make it stronger, weaker, or neither?
+function scanTestWeakening(config) {
+  const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
+  const byFile = {};
+  const base = defaultBranch(cwd);
+  const diffs = [["diff"], ["diff", "--cached"]];
+
+  for (const ref of [base, `origin/${base}`]) {
+    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
+
+    if (mergeBase) {
+      diffs.push(["diff", mergeBase]);
+      break;
+    }
+  }
+
+  for (const argsForGit of diffs) {
+    for (const [file, change] of Object.entries(parseChangedText(runGitText(argsForGit)))) {
+      if (!isTest(file)) {
+        continue;
+      }
+
+      if (!byFile[file]) {
+        byFile[file] = { added: [], removed: [] };
+      }
+
+      byFile[file].added.push(...change.added);
+      byFile[file].removed.push(...change.removed);
+    }
+  }
+
+  const findings = [];
+
+  for (const file of deletedFilesInDiff()) {
+    if (isTest(file)) {
+      findings.push({ file, signal: "deleted", detail: "the test file was removed" });
+      delete byFile[file];
+    }
+  }
+
+  const strengthened = [];
+
+  for (const [file, change] of Object.entries(byFile)) {
+    const skipsAdded = countMatching(change.added, SKIP_MARKERS) - countMatching(change.removed, SKIP_MARKERS);
+    const assertionDelta =
+      countMatching(change.added, ASSERTION_MARKERS) - countMatching(change.removed, ASSERTION_MARKERS);
+
+    if (skipsAdded > 0) {
+      findings.push({
+        file,
+        signal: "skipped",
+        detail: `${skipsAdded} skip/only marker(s) added`,
+      });
+    }
+
+    if (assertionDelta < 0) {
+      findings.push({
+        file,
+        signal: "assertions-removed",
+        detail: `${Math.abs(assertionDelta)} more assertion(s) removed than added`,
+      });
+    }
+
+    // Neutral counts as strengthened: renaming a test or fixing a typo is not a
+    // weakening, and the gate is about direction, not about effort.
+    if (skipsAdded <= 0 && assertionDelta >= 0) {
+      strengthened.push(file);
+    }
+  }
+
+  return { findings, strengthened, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
+}
+
 function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }) {
   const skip = (reason) => ({ required: false, ok: true, reason, changedFiles: [], testFiles: [] });
 
@@ -1614,6 +1796,13 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
       testFiles,
     };
   }
+
+  // Read once and attach to every outcome below, including the green ones. A
+  // measured 92% next to three deleted tests is a fact the reader needs; hiding
+  // it because the number was good is the dishonesty the rungs exist to prevent.
+  const weakening = scanTestWeakening(config);
+  const withWeakening = (result) =>
+    weakening.findings.length ? { ...result, weakenedTests: weakening.findings } : result;
 
   // Line-level proof when the suite produced a coverage report, the test-file
   // heuristic otherwise. The stronger measure always supersedes the weaker one:
@@ -1667,8 +1856,25 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
     };
   }
 
-  if (testFiles.length > 0) {
-    return {
+  // The direction of the test change decides. A diff whose test files were only
+  // weakened — assertions dropped, `.skip` added, the file deleted — has not shown
+  // that anything covers this change, so it lands exactly where a diff with no test
+  // change lands, and reaches the same exemption path. Neutral edits (a rename, a
+  // typo) count as strengthening: this reads direction, not effort.
+  if (weakening.strengthened.length > 0) {
+    return withWeakening({
+      required: true,
+      ok: true,
+      mode: "test-file",
+      reason: `${weakening.strengthened.length} test file(s) strengthened alongside ${behaviorFiles.length} behavior file(s)`,
+      riskSource: risk.source,
+      changedFiles,
+      testFiles,
+    });
+  }
+
+  if (testFiles.length > 0 && weakening.findings.length === 0) {
+    return withWeakening({
       required: true,
       ok: true,
       mode: "test-file",
@@ -1676,7 +1882,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
       riskSource: risk.source,
       changedFiles,
       testFiles,
-    };
+    });
   }
 
   // Two ways to declare the same thing: a section in the story (the normal path)
@@ -1685,7 +1891,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   const declared = readTestExemption(storyDir) || (exemption && exemption.trim() ? exemption.trim() : null);
 
   if (declared) {
-    return {
+    return withWeakening({
       required: true,
       ok: true,
       mode: "test-file",
@@ -1695,22 +1901,44 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
       changedFiles,
       testFiles,
       behaviorFiles,
-    };
+    });
   }
 
-  return {
+  return withWeakening({
     required: true,
     ok: false,
     mode: "test-file",
-    reason:
-      `${behaviorFiles.length} behavior file(s) changed and no test file did. A green suite ` +
-      "that was already green proves nothing about this change.",
+    reason: weakening.findings.length
+      ? `${behaviorFiles.length} behavior file(s) changed and every test file in the diff was ` +
+        "weakened. Touching a test is not the same as covering a change."
+      : `${behaviorFiles.length} behavior file(s) changed and no test file did. A green suite ` +
+        "that was already green proves nothing about this change.",
     riskSource: risk.source,
     riskPaths: risk.matchedPaths,
     changedFiles,
     testFiles,
     behaviorFiles,
-  };
+  });
+}
+
+// Reported, never silently swallowed. These are regexes over a diff, so the
+// wording stays descriptive — "assertions removed", not "test weakened on purpose".
+function printWeakenedTests(coverage) {
+  const findings = (coverage && coverage.weakenedTests) || [];
+
+  if (!findings.length) {
+    return;
+  }
+
+  log(`  Tests weakened in this diff (${findings.length}):`);
+
+  for (const finding of findings.slice(0, 5)) {
+    log(`    - ${finding.file}: ${finding.detail}`);
+  }
+
+  if (findings.length > 5) {
+    log(`    - … and ${findings.length - 5} more`);
+  }
 }
 
 // The verdict, plus the name of the rung it landed on. Stamped in one place so
