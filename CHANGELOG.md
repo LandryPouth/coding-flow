@@ -4,12 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0] - 2026-08-18
 
-Thirteen days of real use on another project (`imob`, 110 recorded runs) said the
-tool was wrong about one thing and slow about another. The first was costing whole
-hours per story; the second was costing milliseconds. Both are fixed, and the log
-now says which was which.
+**The first release decided by evidence rather than by judgement.** Thirteen days
+of real use on a project this tool did not design (`imob`, 110 recorded runs) said
+it was wrong about one thing and slow about another. The wrong thing was costing
+whole hours per story; the slow thing was costing milliseconds. Everything below
+follows from reading `.coding-flow/runs/` instead of reasoning about it — which is
+also why the release adds the command that makes those runs readable by somebody
+who is not the author, and why the tool is finally installed on itself.
 
 ### Added
 
@@ -639,6 +642,7 @@ agent's hands. Distributed as a native Claude Code plugin and published on npm.
 - The GitHub storage backend (issues/sub-issues) is a proven seam with a clean
   `fail()`; implementation stays deferred until a real need appears.
 
+[0.8.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.8.0
 [0.7.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.7.0
 [0.6.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.6.0
 [0.5.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.1
