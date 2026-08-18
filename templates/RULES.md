@@ -102,6 +102,15 @@ around the work, never these constraints.
 - The story's `## Result` section stores what was actually changed, tests run, issues, follow-ups, and remaining risks.
 - Only update `project-context.md` when the project's current state, target architecture, domains, roles, workflows, constraints, risks, roadmap, or decision summary changes.
 
+### Tooling Friction
+
+When Coding Flow itself is the obstacle — a gate nothing legitimate can satisfy,
+a check that fires on a non-risk or misses a real one, a message that does not
+say what to do next — add a row to `docs/DOGFOODING.md` in the same pass.
+**Always add one when a check is disabled, relaxed, or exempted to keep going**,
+reason included. A failing test, or a gate that rightly demanded one, is the tool
+working — that stays out.
+
 ### Communication
 
 - Summarize what changed.

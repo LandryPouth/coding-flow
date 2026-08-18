@@ -44,6 +44,44 @@ a phase, not an extra — the story is not finished until it has run. Fix real
 failures; never weaken tests to pass. Re-running an unchanged story replays the
 existing proof instead of re-executing, so calling it again is cheap.
 
+**A green suite is not the same claim as "this change is covered."** When the work
+is risky, `verify` also checks that the diff contains a test. If behavior changed
+and no test file moved, it reports `NOT PROVEN` — every command passed, and the
+proof still does not reach this change, because a suite that was already green
+before your edit says nothing about it. That is not a failing test to hunt; it is
+a missing one to write. Two legitimate answers:
+
+- add the test that would fail without this change (the answer in nearly every case);
+- if the change genuinely cannot carry one — a vendor bump, a config-only cutover —
+  add a `## Test Exemption` section to the story stating why (or pass
+  `--test-exemption "<reason>"` when there is no story). It is copied verbatim into
+  the evidence and into the PR body, so it is a recorded claim, not a way to make
+  the gate quiet.
+
+**Whenever the tooling is the obstacle, log it before moving on.** Add a row to
+`docs/DOGFOODING.md` when a gate blocks a change that has no legitimate way to
+satisfy it, when a check fires on something that was never a risk, or when an
+error message does not say what to do next — and **always** when you disable,
+relax, or exempt a check to keep going, the exemption reason included. Write it
+in the same pass, not at the end. A failing test or a gate that correctly asked
+for one is not friction; that is the tool working, and it stays out of the log.
+
+**A pass names how strong it is — report the rung you got.** `verify` prints
+`Coverage: verified` when it measured the added lines and enough of them ran,
+`Coverage: evidence` when all it saw was a test file moving alongside the change,
+and `Coverage: exempted` when a declared reason carried it. `evidence` is a proxy,
+not a measurement: never summarize one as "the change is covered". If the project
+emits a coverage report (`lcov.info`, `coverage-final.json`) from the command it
+already runs, say so — that is what turns `evidence` into `verified`.
+
+**Risk is read from the diff, not only from the story.** Touching an auth path, a
+migration, a payment or secret path raises the risk whatever the story text says —
+so wording a story mildly does not lower the bar, and the gate applies to work with
+no story at all. The corollary matters for you: if you find yourself editing those
+paths while running QUICK, that is the signal to switch up, not to keep going.
+
+Never disable the gate (`requireTestChange`) to finish a story.
+
 Everything else is machinery, and scales with intensity:
 
 - QUICK/FAST: `verify` only. One command.
@@ -70,6 +108,8 @@ that — keep it honest:
 - Write `## Status: done` **only after** a green `ai-flow verify` for this story is
   captured. A passing verify is the precondition, not your assertion.
 - On a red or partial verify, write `## Status: blocked` and record what failed.
+- `NOT PROVEN` (commands green, coverage gate blocked) is not `done` either. The
+  story stays `in-progress` until a test covers it or an exemption is declared.
 - Before implementation is finished, or when verify could not run, leave
   `## Status: in-progress` (or `planned`) — never `done`.
 
