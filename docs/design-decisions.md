@@ -192,3 +192,80 @@ The corollary that stung: `coding-flow` itself had `.coding-flow/` present with
 `validation.commands: []` and **zero runs** — an install that looked like dogfooding
 and proved nothing. Fixed in 0.8.0, and the first real `verify` immediately caught a
 regression that per-file test runs had missed.
+
+---
+
+## 8. A test file that only got weaker does not count as "a test changed"
+
+**Decided 2026-08-18. In progress.**
+
+The coverage gate's weaker rung, `evidence`, is earned when a behaviour file and a
+test file both appear in the diff. **The direction of the test change is never
+read.** So the cheapest way past the gate is to touch a test — and deleting
+assertions, adding `.skip`, or removing a test file outright all touch a test.
+
+That is a hole in the proof, not a missing feature: `evidence` already claims less
+than `verified`, but it is currently satisfiable by a diff that made the suite
+*worse*. An agent does not need to be adversarial to land there — "the test was
+failing, so I removed the assertion" is an ordinary, well-meaning move.
+
+**The fix is narrow on purpose.** It is not a new gate:
+
+- A test file whose diff is **only** weakening does not count toward `evidence`.
+  A diff whose test changes are all weakening lands exactly where a diff with no
+  test change lands — `NOT PROVEN`, with the existing `## Test Exemption` escape.
+- Weakening is **always reported**, at every rung, including `verified`. Measuring
+  92% patch coverage while three tests were deleted is a fact the human must see;
+  suppressing it because the number was green would be the same dishonesty the
+  coverage rungs exist to prevent.
+- **No new blocking configuration.** It rides on `requireTestChange`. Adding a
+  second switch would mean a second thing to turn off.
+
+**Detection, and its honest limits.** Three signals over the diff of files matching
+`testGlobs`, in descending confidence: a test file **deleted**; **skip/only markers
+added** (`.skip(`, `.only(`, `xit(`, `@pytest.mark.skip`, `t.Skip(`, `#[ignore]`, …);
+and **net assertion count decreased**. The third is a heuristic over regexes, not a
+parse — it cannot tell a weakened test from a legitimately refactored one.
+
+That limit is why it reports rather than blocks on its own, and why `.only(` is
+treated as weakening: it does not skip the test it marks, it silently skips every
+*other* test in the file, which is worse and trivially detectable.
+
+**Prior art:** Shipmoor (`shipmoor.dev`) advertises detection of "deleted or gutted
+tests" as part of its verdict. Same hole, independently found — which is the useful
+signal here, not the feature.
+
+---
+
+## 9. Binding acceptance criteria to evidence — designed, not built
+
+**Written 2026-08-18. Not started, and not scheduled.**
+
+Today a story's acceptance criteria are prose, and the thing that decides whether
+they are met is the agent that wrote the code. `verify` proves the *commands* ran
+and passed; nothing connects criterion 3 to the test that would fail if criterion 3
+regressed. The gap is real: a story can be `verified` with every criterion
+unimplemented, provided the suite is green.
+
+The shape that would close it — freeze each criterion into an obligation, bind each
+obligation to a named piece of evidence, and emit a verdict per obligation rather
+than per story — is what Shipmoor calls Claim Check (`READY` / `READY WITH GAPS` /
+`BLOCKED` / `INCONCLUSIVE`).
+
+**It is not being built, for two reasons.**
+
+First, the binding has to come from somewhere, and every available source is the
+agent: the agent writes the criteria, names the tests, and would declare the
+mapping. A binding an agent authors is a binding an agent controls — the same
+objection that killed policy in `SKILL.md` frontmatter (entry 4). A version that is
+actually enforced needs a source of truth the agent does not write, and there isn't
+one yet. Without that, this is `evidence`-grade proof wearing a `verified` label,
+which is the exact failure the coverage rungs were built to prevent.
+
+Second, it is a new subsystem, not a config key — squarely what the freeze exists to
+refuse, and "a competitor ships it" is not a change of premise (see entry 6).
+
+**The honest smaller step, if this is ever picked up:** report which acceptance
+criteria have *no* named validation at all. That is derivable from the story files
+alone, it blocks nothing, and it would tell a human where to look. Start there, and
+only there, and see whether anyone uses it before building the verdict machinery.
