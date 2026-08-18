@@ -5,21 +5,39 @@
 // the targeted file matches a blocked path in the harness policy, or if the
 // written content contains a secret. This is the move from the *advisory*
 // guardrail (harness check, after the fact) to the *in-code* guardrail (at the
-// tool boundary, before the write): a secret CANNOT leak, we no longer merely
-// hope it won't.
+// tool boundary, before the write).
 //
-// Fail-open by design: empty/unreadable stdin, non-write tool, or missing config
+// SCOPE, stated precisely, because a security control that is described as
+// absolute stops being checked:
+//
+//   - Covered: the editing tools (Write/Edit/MultiEdit/NotebookEdit), and the
+//     common shell write forms in a `Bash` call — redirections (`> .env`,
+//     heredocs), `tee`, `sed -i`, `cp`/`mv`/`ln`/`install`, `dd of=`.
+//   - NOT covered: a write performed inside an interpreter the guard cannot
+//     read, e.g. `python -c "open('.env','w')…"`, a compiled binary, or a
+//     script fetched and executed. Shell text is parsed, program semantics are
+//     not.
+//
+// So: this makes the common leak paths impossible, not every leak path. The
+// harness scan (`ai-flow harness check`) remains the after-the-fact net.
+//
+// Fail-open by design: empty/unreadable stdin, unrelated tool, or missing config
 // ⇒ allow. A hook must never break a legitimate use; it only blocks on a
 // deterministic and explicit match.
 
 const fs = require("fs");
 const path = require("path");
 
-const { defaultHarnessConfig, getSecretPatterns } = require("./harness");
+const {
+  defaultHarnessConfig,
+  getSecretPatterns,
+  findSecretsInContent,
+  isHeuristicAllowlisted,
+} = require("./harness");
 const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./util");
 
-// Tools that write to disk. The others (Read, Bash, Grep…) are not our business
-// here: immediate allow.
+// Tools that write to disk through a structured file_path. The others (Read,
+// Grep…) are not our business here: immediate allow.
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 function readHookInput({ inputFile = null } = {}) {
@@ -78,6 +96,7 @@ function writtenContent(toolName, toolInput) {
 
 // Loads the harness policy from the resolved root, without depending on the
 // module's cwd (the hook provides its own cwd). Missing/corrupt config ⇒ defaults.
+// A project that never ran `harness init` is still guarded.
 function loadPolicy(root) {
   const defaults = defaultHarnessConfig();
   const configFile = path.join(root, ".coding-flow", "harness.json");
@@ -91,10 +110,128 @@ function loadPolicy(root) {
     config = null;
   }
 
-  const blockedPaths =
-    config && Array.isArray(config.blockedPaths) ? config.blockedPaths : defaults.blockedPaths;
+  const pick = (key) =>
+    config && Array.isArray(config[key]) ? config[key] : defaults[key];
 
-  return { blockedPaths };
+  return {
+    blockedPaths: pick("blockedPaths"),
+    secretPatterns: pick("secretPatterns"),
+    secretScanAllowlist: pick("secretScanAllowlist"),
+  };
+}
+
+// --- shell write detection ------------------------------------------------
+//
+// Extracts the paths a shell command would WRITE to. Conservative: a target we
+// fail to recognise is simply not checked (fail-open), never guessed at.
+
+// Commands whose last non-flag argument is the destination.
+const DESTINATION_LAST = new Set(["cp", "mv", "ln", "install", "rsync"]);
+
+function unquote(token) {
+  if (token.length >= 2) {
+    const first = token[0];
+    const last = token[token.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return token.slice(1, -1);
+    }
+  }
+  return token;
+}
+
+function tokenize(segment) {
+  const tokens = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match;
+
+  while ((match = pattern.exec(segment)) !== null) {
+    tokens.push(match[1] !== undefined ? match[1] : match[2] !== undefined ? match[2] : match[3]);
+  }
+
+  return tokens;
+}
+
+// Not a file: flags, fd duplications, and the null sink.
+function isCandidatePath(token) {
+  if (!token || token.startsWith("-") || token.startsWith("&") || token.startsWith("$")) {
+    return false;
+  }
+
+  return token !== "/dev/null" && !token.startsWith("/dev/");
+}
+
+function shellWriteTargets(command) {
+  if (typeof command !== "string" || !command.trim()) {
+    return [];
+  }
+
+  const targets = new Set();
+
+  // Redirections: `> file`, `>> file`, `2> file`. `2>&1` and `>&2` duplicate a
+  // descriptor and write to no path — the (?!&) drops them.
+  const redirection = /(?:^|[\s;&|(])\d?>{1,2}\s*(?!&)("[^"]+"|'[^']+'|[^\s;&|<>()]+)/g;
+  let match;
+
+  while ((match = redirection.exec(command)) !== null) {
+    const value = unquote(match[1]);
+    if (isCandidatePath(value)) {
+      targets.add(value);
+    }
+  }
+
+  // Command-specific destinations, per pipeline segment.
+  for (const segment of command.split(/\|\||&&|[;|\n]/)) {
+    const tokens = tokenize(segment.trim());
+
+    if (tokens.length === 0) {
+      continue;
+    }
+
+    // `sudo cp …`, `env FOO=1 tee …`: step over the wrapper to reach the verb.
+    let index = 0;
+    while (index < tokens.length && (tokens[index] === "sudo" || tokens[index].includes("="))) {
+      index += 1;
+    }
+
+    const name = path.basename(tokens[index] || "");
+    const args = tokens.slice(index + 1);
+    const files = args.filter(isCandidatePath);
+
+    if (name === "tee") {
+      for (const file of files) {
+        targets.add(file);
+      }
+    } else if (name === "sed" && args.some((arg) => arg === "-i" || arg.startsWith("-i"))) {
+      // sed -i '<script>' <files…>: the script is the first non-flag argument.
+      for (const file of files.slice(1)) {
+        targets.add(file);
+      }
+    } else if (DESTINATION_LAST.has(name) && files.length >= 2) {
+      targets.add(files[files.length - 1]);
+    } else if (name === "dd") {
+      for (const arg of args) {
+        if (arg.startsWith("of=")) {
+          targets.add(arg.slice(3));
+        }
+      }
+    }
+  }
+
+  return [...targets];
+}
+
+// Whether writing to this path is refused by policy. Returns the matched pattern,
+// or null.
+function blockedPathHit(relative, policy) {
+  if (isAllowedEnvExample(relative)) {
+    return null;
+  }
+
+  return policy.blockedPaths.find((pattern) => matchesPattern(relative, pattern)) || null;
+}
+
+function toRelative(root, filePath) {
+  return normalizePortable(path.relative(root, path.resolve(root, filePath)));
 }
 
 // Pure decision: from the hook input + root, returns allow/deny + reason.
@@ -104,50 +241,98 @@ function decide(hook, root) {
   }
 
   const toolName = hook.tool_name;
+  const toolInput = hook.tool_input;
+
+  if (toolName === "Bash") {
+    return decideBash(toolInput, root);
+  }
 
   if (!WRITE_TOOLS.has(toolName)) {
     return { decision: "allow", reason: `tool ${toolName || "?"} is not a write tool` };
   }
 
-  const toolInput = hook.tool_input;
+  const policy = loadPolicy(root);
   const filePath = targetPath(toolInput);
+  const relative = filePath ? toRelative(root, filePath) : null;
 
   // Check 1 — path blocked by the policy.
-  if (filePath) {
-    const relative = normalizePortable(path.relative(root, path.resolve(root, filePath)));
+  if (relative) {
+    const hit = blockedPathHit(relative, policy);
 
-    if (!isAllowedEnvExample(relative)) {
-      const { blockedPaths } = loadPolicy(root);
-      const hit = blockedPaths.find((pattern) => matchesPattern(relative, pattern));
-
-      if (hit) {
-        return {
-          decision: "deny",
-          reason: `${relative} matches a blocked harness path (${hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
-          path: relative,
-        };
-      }
+    if (hit) {
+      return {
+        decision: "deny",
+        reason: `${relative} matches a blocked harness path (${hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
+        path: relative,
+      };
     }
   }
 
-  // Check 2 — secret in the written content.
+  // Check 2 — secret in the written content. On an allowlisted path (docs,
+  // fixtures, story files) only the exact credential formats apply: a
+  // placeholder in an example is not a leak, an AWS key in one still is.
   const content = writtenContent(toolName, toolInput);
 
   if (content) {
-    const patterns = getSecretPatterns();
-    const line = content.split(/\r?\n/).find((row) => patterns.some((p) => p.regex.test(row)));
+    const found = findSecretsInContent(content, getSecretPatterns(policy), {
+      skipHeuristics: relative ? isHeuristicAllowlisted(relative, policy) : false,
+      first: true,
+    })[0];
 
-    if (line) {
-      const match = patterns.find((p) => p.regex.test(line));
+    if (found) {
       return {
         decision: "deny",
-        reason: `Potential secret detected in written content (${match.name}). Refused before it can reach the disk.`,
-        path: filePath ? normalizePortable(path.relative(root, path.resolve(root, filePath))) : null,
+        reason: `Potential secret detected in written content (${found.name}). Refused before it can reach the disk.`,
+        path: relative,
       };
     }
   }
 
   return { decision: "allow", reason: "no blocked path or secret detected" };
+}
+
+// A shell call is checked on what it would WRITE, and on the credential formats
+// visible in the command text. Heuristic patterns are not applied to a command
+// line: `psql "password=…"` and `export TOKEN=$(…)` are normal, and a guard that
+// cries wolf on them is a guard people route around.
+function decideBash(toolInput, root) {
+  const command = toolInput && typeof toolInput.command === "string" ? toolInput.command : "";
+
+  if (!command.trim()) {
+    return { decision: "allow", reason: "no command to inspect" };
+  }
+
+  const policy = loadPolicy(root);
+
+  for (const target of shellWriteTargets(command)) {
+    const relative = toRelative(root, target);
+    const hit = blockedPathHit(relative, policy);
+
+    if (hit) {
+      return {
+        decision: "deny",
+        reason:
+          `this command writes to ${relative}, which matches a blocked harness path (${hit}). ` +
+          "Shell redirection is not a way around the policy.",
+        path: relative,
+      };
+    }
+  }
+
+  const found = findSecretsInContent(command, getSecretPatterns(policy), {
+    skipHeuristics: true,
+    first: true,
+  })[0];
+
+  if (found) {
+    return {
+      decision: "deny",
+      reason: `Potential secret detected in the command itself (${found.name}). Refused before it can reach the disk.`,
+      path: null,
+    };
+  }
+
+  return { decision: "allow", reason: "no blocked write target or secret detected" };
 }
 
 function guardCommand({ getFlagValue, flags }) {
@@ -188,4 +373,4 @@ function guardCommand({ getFlagValue, flags }) {
   process.exit(0);
 }
 
-module.exports = { guardCommand, decide };
+module.exports = { guardCommand, decide, shellWriteTargets };

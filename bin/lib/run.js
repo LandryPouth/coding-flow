@@ -32,6 +32,7 @@ const {
   captureEnvironment,
   harnessRunsDir,
 } = require("./harness");
+const { coverageTier } = require("./coverage");
 
 // Executors. "none" is the only one implemented; the rest are reserved names for
 // the pluggable-driver seam (an agent that implements each story before verify).
@@ -132,7 +133,20 @@ function printReport(report, reportPath) {
     }
 
     const duration = entry.results.reduce((sum, item) => sum + (item.durationMs || 0), 0);
-    log(`- [${entry.ok ? "pass" : "FAIL"}] ${entry.story} (${entry.commandsFound} cmd(s), ${duration}ms)`);
+    // A story blocked by the coverage gate passed every command it declared:
+    // calling that "FAIL" would send someone looking for a broken test.
+    const coverageBlocked = entry.commandsOk && entry.coverage && !entry.coverage.ok;
+    const label = entry.ok ? "pass" : coverageBlocked ? "no proof" : "FAIL";
+    // Ten stories that all say "pass" hide which of them were measured and which
+    // merely moved a test file. Over a batch that difference is the whole report.
+    const tier = entry.coverage ? coverageTier(entry.coverage) : "not-required";
+    const proof = entry.ok && tier !== "not-required" ? ` — coverage: ${tier}` : "";
+    log(`- [${label}] ${entry.story} (${entry.commandsFound} cmd(s), ${duration}ms)${proof}`);
+
+    if (coverageBlocked) {
+      log(`    ${entry.coverage.reason}`);
+      continue;
+    }
 
     if (!entry.ok) {
       const firstFail = entry.results.find((item) => !item.ok);
@@ -201,6 +215,8 @@ function run({ story = null, epic = null, driver = "none", json = false, dryRun 
       commandSource: evidence.commandSource,
       commandsFound: evidence.commandsFound,
       executed,
+      commandsOk: evidence.commandsOk,
+      coverage: evidence.coverage,
       ok: evidence.ok,
       results: evidence.results,
       evidencePath: evidencePath ? normalizePortable(path.relative(cwd, evidencePath)) : null,

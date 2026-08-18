@@ -40,7 +40,7 @@ const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
-const { harnessCommand } = require("./lib/harness");
+const { harnessCommand, ensureHarnessConfig } = require("./lib/harness");
 const { guardCommand } = require("./lib/guard");
 const { auditCommand } = require("./lib/audit");
 const { traceCommand } = require("./lib/trace");
@@ -52,8 +52,10 @@ const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
 const {
   ensureConfig,
+  readConfig,
   readConfigSkillsChoice,
   writeConfigSkills,
+  writeConfigInstall,
   STORAGE_BACKENDS,
 } = require("./lib/config");
 const { detectPlugin } = require("./lib/claude-plugin");
@@ -111,6 +113,24 @@ function resolveSkillsMode() {
     : { mode: "project", reason: "no plugin detected" };
 }
 
+// One wording for the hook outcome, shared by the minimal and the full install
+// so the same status never reads two different ways.
+function describeHookStatus(status, dryRun) {
+  if (status === "created") {
+    return dryRun ? "would create .claude/settings.json" : "wired in .claude/settings.json";
+  }
+  if (status === "merged") {
+    return dryRun ? "would merge into .claude/settings.json" : "merged into .claude/settings.json";
+  }
+  if (status === "upgraded") {
+    return dryRun ? "would upgrade to the resolved binary" : "upgraded to the resolved binary";
+  }
+  if (status === "unchanged") {
+    return "already wired";
+  }
+  return "skipped (.claude/settings.json is not valid JSON — wire `guard` manually)";
+}
+
 function describeSkillsMode(mode, reason) {
   return mode === "plugin"
     ? `Skills: served by the plugin as coding-flow:flow-* — no project copy (${reason})`
@@ -122,6 +142,45 @@ if (command === "init") {
 
   if (!STORAGE_BACKENDS.includes(storage)) {
     fail(`unknown --storage "${storage}". Use one of: ${STORAGE_BACKENDS.join(", ")}.`);
+  }
+
+  // --minimal: the enforcement layer alone. The smallest thing worth adopting is
+  // "stop me from committing a secret and refuse to call an untested change
+  // proven" — and that should not require taking on a story format, a docs tree,
+  // and a set of skills first. Everything the full install adds can be laid down
+  // later with a plain `init`.
+  if (flags.has("--minimal")) {
+    if (flags.has("--with-skills")) {
+      fail("--minimal and --with-skills are contradictory: a minimal install lays down no skills.");
+    }
+
+    const dryRun = flags.has("--dry-run");
+    const configResult = ensureConfig(cwd, {
+      dryRun,
+      storage,
+      branchPerEpic: !flags.has("--no-branch-per-epic"),
+      skills: "plugin",
+      install: "minimal",
+    });
+    const harnessCreated = ensureHarnessConfig({ dryRun });
+
+    log(dryRun ? "Dry run complete." : "Coding Flow installed (minimal).");
+    log(`Config: ${configResult.created ? (dryRun ? "would create" : "created") : "unchanged"}`);
+    log(`Harness config: ${harnessCreated ? (dryRun ? "would create" : "created") : "unchanged"}`);
+
+    if (!flags.has("--no-guard")) {
+      const hook = ensureHookSettings({ dryRun });
+      log(`Guard hook: ${describeHookStatus(hook.status, dryRun)}`);
+    }
+
+    log("");
+    log("Installed: the guard hook and the proof layer. No RULES.md, no docs/, no epics/, no skills.");
+    log("Next: `ai-flow verify` on a branch — it needs no story and no scaffolding.");
+    log("Later: `ai-flow init` (without --minimal) lays down the full workflow when you want it.");
+    log("");
+    log(binaryPathNote(isCommandAvailable("ai-flow")));
+
+    process.exit(0);
   }
 
   if (storage !== "local") {
@@ -179,19 +238,15 @@ if (command === "init") {
   // paths refused BEFORE the write). Non-destructive merge into settings.json.
   if (!flags.has("--no-guard")) {
     const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
-    const dry = flags.has("--dry-run");
+    log(`Guard hook: ${describeHookStatus(hook.status, flags.has("--dry-run"))}`);
+  }
 
-    if (hook.status === "created") {
-      log(dry ? "Guard hook: would create .claude/settings.json" : "Guard hook: wired in .claude/settings.json");
-    } else if (hook.status === "merged") {
-      log(dry ? "Guard hook: would merge into .claude/settings.json" : "Guard hook: merged into .claude/settings.json");
-    } else if (hook.status === "upgraded") {
-      log(dry ? "Guard hook: would upgrade to the resolved binary" : "Guard hook: upgraded to the resolved binary");
-    } else if (hook.status === "unchanged") {
-      log("Guard hook: already wired");
-    } else if (hook.status === "unparseable") {
-      log("Guard hook: skipped (.claude/settings.json is not valid JSON — wire `guard` manually)");
-    }
+  // A plain `init` over a project that started minimal is how it grows into the
+  // full workflow. The files were just laid down; the record has to follow, or
+  // doctor keeps judging it as a minimal install forever.
+  if (!flags.has("--dry-run") && readConfig(cwd).install === "minimal") {
+    writeConfigInstall(cwd, "full");
+    log("Install: promoted from minimal to full");
   }
 
   printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });

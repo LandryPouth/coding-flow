@@ -12,7 +12,18 @@ const { spawnSync } = require("child_process");
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
 const { captureIdentity, currentTreeToken } = require("./identity");
+const { defaultBranch, currentBranch } = require("./policy");
+const {
+  loadCoverageReport,
+  measurePatchCoverage,
+  coverageTier,
+  DEFAULT_REPORT_PATHS,
+} = require("./coverage");
 const { PART_FILES, readStoryPart, storyPartPath } = require("./story");
+const {
+  detectFeature: detectSpecKitFeature,
+  isFeatureOf: isSpecKitFeatureOf,
+} = require("./speckit");
 const {
   fail,
   log,
@@ -34,10 +45,187 @@ function harnessRunsDir() {
   return path.join(cwd, ".coding-flow", "runs");
 }
 
+// Secret detectors, serialized as strings so a project can read, edit, extend, or
+// delete them in .coding-flow/harness.json — the policy has to be inspectable to
+// be trusted, and a hard-coded regex is neither.
+//
+// `precision` is the load-bearing field. An "exact" pattern matches a real
+// credential FORMAT (a Stripe live key looks like nothing else), so it applies
+// everywhere, always — no allowlist relaxes it. A "heuristic" pattern matches a
+// SHAPE (`password: "…"`), which is exactly what documentation, fixtures, and
+// story files legitimately contain; those are the ones `secretScanAllowlist`
+// switches off, per path. Without the split, the only two options are a scanner
+// that blocks every example in the docs or one that stops looking for AWS keys in
+// test files. Both are wrong.
+function defaultSecretPatterns() {
+  return [
+    { name: "Stripe live key", pattern: "\\bsk_live_[A-Za-z0-9_]{12,}\\b", precision: "exact" },
+    { name: "OpenAI-style API key", pattern: "\\bsk-[A-Za-z0-9_-]{32,}\\b", precision: "exact" },
+    { name: "GitHub token", pattern: "\\bgh[pousr]_[A-Za-z0-9_]{20,}\\b", precision: "exact" },
+    { name: "AWS access key", pattern: "\\bAKIA[0-9A-Z]{16}\\b", precision: "exact" },
+    {
+      name: "Private key block",
+      pattern: "-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----",
+      precision: "exact",
+    },
+    {
+      name: "Long assigned credential",
+      pattern: "\\b(api[_-]?key|secret|token|password)\\b\\s*[:=]\\s*[\"'][^\"']{20,}[\"']",
+      flags: "i",
+      precision: "heuristic",
+    },
+  ];
+}
+
+// Where a placeholder credential is the normal, correct thing to write. Only the
+// heuristic patterns are skipped here; a real key format still blocks.
+function defaultSecretScanAllowlist() {
+  return [
+    "docs/**",
+    "epics/**",
+    "**/*.md",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/fixtures/**",
+    "**/*.example.*",
+    "**/*.sample.*",
+    "**/*.template.*",
+  ];
+}
+
+// What counts as a test file for the coverage gate (see verifyStoryOnce). Broad
+// on purpose across ecosystems; a project with another convention overrides it.
+function defaultTestGlobs() {
+  return [
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/*_test.*",
+    "**/test_*.py",
+    "**/*Test.java",
+    "**/*Tests.cs",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/spec/**",
+    "**/e2e/**",
+    "**/cypress/**",
+    "**/*.feature",
+  ];
+}
+
+// Paths whose contents ARE the risk, whatever the story says about them. The
+// list mirrors the four STRICT triggers the run skill states: an authorization
+// decision, a persistence schema, a payment or secret path, a new
+// externally-reachable boundary.
+//
+// This exists because story text is written by the agent, and a risk score read
+// only from that text is a score the agent controls: describe an auth change as
+// "update the login page" and every gate keyed on risk quietly stands down. A
+// path is not a claim, it is a fact about the diff.
+function defaultHighRiskPaths() {
+  return [
+    "**/auth/**",
+    "**/*auth.*",
+    "**/*authoriz*",
+    "**/*permission*",
+    "**/*session*",
+    "**/*rbac*",
+    "**/*acl.*",
+    "**/policies/**",
+    "**/*policy.*",
+    "**/middleware.*",
+    "**/migrations/**",
+    "**/migrate/**",
+    "**/*.sql",
+    "**/schema.prisma",
+    "**/*.schema.*",
+    "**/payments/**",
+    "**/*payment*",
+    "**/billing/**",
+    "**/*stripe*",
+    "**/*checkout*",
+    "**/*credential*",
+    "**/*secret*",
+    "**/webhooks/**",
+    "**/*webhook*",
+  ];
+}
+
+// Changes that cannot be covered by a test because they are not behavior:
+// documentation, the story files themselves, and the evidence directory. A story
+// that only touches these never trips the coverage gate.
+// Files that carry no executable behavior of their own. Excluding them is not a
+// weakening of the gate — it is what keeps the gate believable. A change that
+// only adds a type declaration or a build config CANNOT be executed by a test
+// suite, so demanding coverage for it produces a block the developer can only
+// clear by lying (a fake test) or by turning the tool off. Every entry below is
+// a case where "not covered" carries no information.
+//
+// Note the asymmetry with `highRiskPaths`: a migration is still high-risk, and
+// still shows up in the risk reason and in the ship evidence. It is only exempt
+// from "prove a unit test executes these lines", which no coverage tool can
+// answer for a DDL file.
+function defaultNonBehaviorGlobs() {
+  return [
+    "docs/**",
+    "epics/**",
+    "specs/**",
+    ".specify/**",
+    ".coding-flow/**",
+    // The coverage report is an output of the run, not behavior the run covers.
+    "coverage/**",
+    "**/coverage/**",
+    "**/*.md",
+    ".gitignore",
+    "**/*.lock",
+    "**/package-lock.json",
+    "**/pnpm-lock.yaml",
+    "**/yarn.lock",
+    // Type declarations are erased before anything runs. They can never appear
+    // in a coverage report, and a .ts extension makes the report LOOK like it
+    // should have covered them — the exact shape of a false block.
+    "**/*.d.ts",
+    // Build and tool configuration: executed by the toolchain, not by the suite.
+    "**/*.config.js",
+    "**/*.config.cjs",
+    "**/*.config.mjs",
+    "**/*.config.ts",
+    "**/tsconfig*.json",
+    "**/.eslintrc*",
+    "**/.prettierrc*",
+    // Schema and migration files: the risk is real, the unit test is not.
+    "**/migrations/**",
+    "**/*.sql",
+    // Generated code is proven by whatever generated it.
+    "**/generated/**",
+    "**/__generated__/**",
+    "**/*.gen.*",
+    "**/*.generated.*",
+  ];
+}
+
 function defaultHarnessConfig() {
   return {
     version: 1,
     mode: "standard",
+    // Refuse a green verify on a medium/high-risk story whose diff adds no test.
+    // Executing the suite proves the commands ran; it does not prove the change
+    // is covered. See verifyStoryOnce.
+    requireTestChange: true,
+    // Where to look for a coverage report, and how much of the change's added
+    // lines it must show as executed. When no report is found the gate falls
+    // back to "did a test file change?" — the weaker question, asked only while
+    // the stronger one cannot be.
+    coverageReports: DEFAULT_REPORT_PATHS,
+    minPatchCoverage: 80,
+    secretPatterns: defaultSecretPatterns(),
+    secretScanAllowlist: defaultSecretScanAllowlist(),
+    highRiskPaths: defaultHighRiskPaths(),
+    testGlobs: defaultTestGlobs(),
+    nonBehaviorGlobs: defaultNonBehaviorGlobs(),
     blockedPaths: [
       ".env",
       ".env.*",
@@ -100,6 +288,29 @@ function readHarnessConfig() {
       sensitiveGlobs: Array.isArray(config.sensitiveGlobs) ? config.sensitiveGlobs : defaults.sensitiveGlobs,
       requiredChecks: Array.isArray(config.requiredChecks) ? config.requiredChecks : defaults.requiredChecks,
       highRiskTerms: Array.isArray(config.highRiskTerms) ? config.highRiskTerms : defaults.highRiskTerms,
+      // A config written before these fields existed has none of them, and the
+      // defaults must apply — an older project gets the new policy, not a
+      // silently disarmed one. An empty array, on the other hand, is a real
+      // choice ("scan nothing here") and is honoured.
+      secretPatterns: Array.isArray(config.secretPatterns) ? config.secretPatterns : defaults.secretPatterns,
+      secretScanAllowlist: Array.isArray(config.secretScanAllowlist)
+        ? config.secretScanAllowlist
+        : defaults.secretScanAllowlist,
+      highRiskPaths: Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaults.highRiskPaths,
+      testGlobs: Array.isArray(config.testGlobs) ? config.testGlobs : defaults.testGlobs,
+      nonBehaviorGlobs: Array.isArray(config.nonBehaviorGlobs)
+        ? config.nonBehaviorGlobs
+        : defaults.nonBehaviorGlobs,
+      requireTestChange:
+        typeof config.requireTestChange === "boolean"
+          ? config.requireTestChange
+          : defaults.requireTestChange,
+      coverageReports: Array.isArray(config.coverageReports)
+        ? config.coverageReports
+        : defaults.coverageReports,
+      minPatchCoverage: Number.isFinite(config.minPatchCoverage)
+        ? config.minPatchCoverage
+        : defaults.minPatchCoverage,
     },
   };
 }
@@ -117,18 +328,81 @@ function ensureHarnessConfig({ dryRun = false } = {}) {
   return true;
 }
 
-function getSecretPatterns() {
-  return [
-    { name: "Stripe live key", regex: /\bsk_live_[A-Za-z0-9_]{12,}\b/ },
-    { name: "OpenAI-style API key", regex: /\bsk-[A-Za-z0-9_-]{32,}\b/ },
-    { name: "GitHub token", regex: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/ },
-    { name: "AWS access key", regex: /\bAKIA[0-9A-Z]{16}\b/ },
-    { name: "Private key block", regex: /-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/ },
-    {
-      name: "Long assigned credential",
-      regex: /\b(api[_-]?key|secret|token|password)\b\s*[:=]\s*["'][^"']{20,}["']/i,
-    },
-  ];
+// Compiles the configured detectors. A pattern the project wrote wrong is
+// reported, never thrown: an unparseable regex in a config file must not take
+// down the PreToolUse hook on every single write. The rest keep working.
+function compileSecretPatterns(config = null) {
+  const source =
+    config && Array.isArray(config.secretPatterns) ? config.secretPatterns : defaultSecretPatterns();
+  const patterns = [];
+  const invalid = [];
+
+  for (const entry of source) {
+    if (!entry || typeof entry !== "object" || typeof entry.pattern !== "string") {
+      invalid.push({ name: (entry && entry.name) || "(unnamed)", reason: "missing a string `pattern`" });
+      continue;
+    }
+
+    const name = typeof entry.name === "string" && entry.name ? entry.name : entry.pattern;
+
+    try {
+      patterns.push({
+        name,
+        regex: new RegExp(entry.pattern, typeof entry.flags === "string" ? entry.flags : ""),
+        // Anything not explicitly "exact" is treated as a heuristic: a custom
+        // pattern a project adds is far likelier to be a shape than a format,
+        // and the safe default for an unknown detector is the one the allowlist
+        // can silence.
+        precision: entry.precision === "exact" ? "exact" : "heuristic",
+      });
+    } catch (error) {
+      invalid.push({ name, reason: error.message });
+    }
+  }
+
+  return { patterns, invalid };
+}
+
+function getSecretPatterns(config = null) {
+  return compileSecretPatterns(config).patterns;
+}
+
+// Whether this path is a place where a placeholder credential is expected. Only
+// ever consulted for heuristic patterns.
+function isHeuristicAllowlisted(relativePath, config) {
+  const allowlist = config && Array.isArray(config.secretScanAllowlist)
+    ? config.secretScanAllowlist
+    : defaultSecretScanAllowlist();
+
+  return allowlist.some((pattern) => matchesPattern(relativePath, pattern));
+}
+
+// The single scanning primitive, shared by the after-the-fact scan (`harness
+// check`) and the at-the-boundary one (`guard`). One implementation means the
+// hook and the report can never disagree about what counts as a secret.
+function findSecretsInContent(content, patterns, { skipHeuristics = false, first = false } = {}) {
+  const active = skipHeuristics ? patterns.filter((p) => p.precision === "exact") : patterns;
+  const found = [];
+
+  if (active.length === 0 || !content) {
+    return found;
+  }
+
+  const lines = content.split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = active.find((pattern) => pattern.regex.test(lines[index]));
+
+    if (match) {
+      found.push({ name: match.name, precision: match.precision, line: index + 1 });
+
+      if (first) {
+        return found;
+      }
+    }
+  }
+
+  return found;
 }
 
 function checkSensitivePaths(files, config, report) {
@@ -161,7 +435,18 @@ function checkSensitivePaths(files, config, report) {
 }
 
 function checkSecrets(files, report) {
-  const patterns = getSecretPatterns();
+  const { patterns, invalid } = compileSecretPatterns(report.config);
+
+  // A detector the project wrote wrong is not scanning anything, and silence is
+  // the one thing a security scanner must never do quietly.
+  for (const entry of invalid) {
+    addIssue(
+      report.errors,
+      "invalid_secret_pattern",
+      `secretPatterns entry "${entry.name}" is not a usable regex and scans nothing: ${entry.reason}`,
+      ".coding-flow/harness.json",
+    );
+  }
 
   for (const filePath of files) {
     const relativePath = normalizePortable(path.relative(cwd, filePath));
@@ -171,21 +456,18 @@ function checkSecrets(files, report) {
       continue;
     }
 
-    const lines = content.split(/\r?\n/);
+    const found = findSecretsInContent(content, patterns, {
+      skipHeuristics: isHeuristicAllowlisted(relativePath, report.config),
+    });
 
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      const match = patterns.find((pattern) => pattern.regex.test(line));
-
-      if (match) {
-        addIssue(
-          report.errors,
-          "secret_candidate",
-          `Potential secret detected by pattern: ${match.name}`,
-          relativePath,
-          index + 1,
-        );
-      }
+    for (const hit of found) {
+      addIssue(
+        report.errors,
+        "secret_candidate",
+        `Potential secret detected by pattern: ${hit.name}`,
+        relativePath,
+        hit.line,
+      );
     }
   }
 }
@@ -285,6 +567,48 @@ function scoreStoryRisk(storyText, config) {
   };
 }
 
+// Risk read from the diff itself. Independent of any prose, so it holds on a
+// change with no story at all — which is also what lets the proof layer work
+// outside `epics/`.
+function scoreDiffRisk(changedFiles, config) {
+  const patterns = Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaultHighRiskPaths();
+  const matchedPaths = changedFiles.filter((file) =>
+    patterns.some((pattern) => matchesPattern(file, pattern)),
+  );
+
+  if (matchedPaths.length === 0) {
+    return { level: "low", matchedPaths: [], reason: "no sensitive path in the diff." };
+  }
+
+  return {
+    level: "high",
+    matchedPaths,
+    reason: `the diff touches ${matchedPaths.slice(0, 3).join(", ")}${matchedPaths.length > 3 ? ", …" : ""}.`,
+  };
+}
+
+const RISK_RANK = { low: 0, medium: 1, high: 2 };
+
+// The higher of the two wins, and both reasons are kept. A story that undersells
+// what it touches cannot lower the score below what the files say; a story that
+// declares a risk the paths do not show still counts, because intent the author
+// stated is evidence too.
+function combineRisk(storyRisk, diffRisk) {
+  const storyWins = RISK_RANK[storyRisk.level] >= RISK_RANK[diffRisk.level];
+  const winner = storyWins ? storyRisk : diffRisk;
+
+  return {
+    level: winner.level,
+    source: storyWins ? (diffRisk.level === winner.level ? "story and diff" : "story") : "diff",
+    matchedTerms: storyRisk.matchedTerms || [],
+    matchedPaths: diffRisk.matchedPaths || [],
+    reason:
+      diffRisk.level === "high" && !storyWins
+        ? `Sensitive paths changed: ${diffRisk.reason}`
+        : winner.reason,
+  };
+}
+
 function buildHarnessPreflight({ story = null } = {}) {
   const { config, exists } = readHarnessConfig();
   const resolvedStory = resolveProjectPath(story);
@@ -301,7 +625,13 @@ function buildHarnessPreflight({ story = null } = {}) {
       .map(([name]) => normalizePortable(path.relative(cwd, path.join(storyDir, name))));
   }
 
-  const risk = scoreStoryRisk(storyText, config);
+  // Both sources, highest wins: before implementing, the diff is usually empty
+  // and the story decides; afterwards the files can only raise the score. So the
+  // mode a story recommends cannot be talked down by how it was worded.
+  const risk = combineRisk(
+    scoreStoryRisk(storyText, config),
+    scoreDiffRisk(currentTreeToken(cwd) ? changedFilesForCoverage() : [], config),
+  );
   const mode = risk.level === "high" ? "strict" : risk.level === "medium" ? "standard" : "fast";
   const requiredChecks = [...config.requiredChecks];
 
@@ -859,12 +1189,88 @@ function resultStatus(item) {
   return item.timedOut ? "timeout" : `exit ${item.exitCode}`;
 }
 
+// 41,42,43,47 -> "41-43, 47". Uncovered lines come in runs, and a run printed as
+// a range is one glance instead of four.
+function formatLineRanges(lines) {
+  const ranges = [];
+  let start = null;
+  let previous = null;
+
+  for (const line of lines) {
+    if (start === null) {
+      start = line;
+    } else if (line !== previous + 1) {
+      ranges.push(start === previous ? `${start}` : `${start}-${previous}`);
+      start = line;
+    }
+
+    previous = line;
+  }
+
+  if (start !== null) {
+    ranges.push(start === previous ? `${start}` : `${start}-${previous}`);
+  }
+
+  return `lines ${ranges.join(", ")} not executed`;
+}
+
 function printVerify(evidence, outputPath) {
+  const coverage = evidence.coverage || { required: false, ok: true };
+  const coverageBlocked = evidence.commandsOk && !coverage.ok;
+
   if (evidence.commandsFound === 0) {
     log("Harness verify: no validation commands found.");
     log("Declare them in plan.md under '## Commands', or in config.validation.commands.");
+  } else if (coverageBlocked) {
+    // Every command passed. The proof still does not hold, and saying "FAILED"
+    // here would send someone hunting a broken test that does not exist.
+    log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, coverage gate blocked.`);
+    log(`  ${coverage.reason}`);
+
+    // Naming WHY this counted as risky matters: "the diff touches src/auth.js"
+    // is checkable, "the story mentioned auth" is arguable.
+    if (coverage.riskSource === "diff" && coverage.riskPaths && coverage.riskPaths.length > 0) {
+      log(`  Risk read from the diff, not the story: ${coverage.riskPaths.slice(0, 3).join(", ")}`);
+    }
+
+    // Line-level: name the lines. "80% of the diff is uncovered" sends someone
+    // reading the whole change; "src/auth.js:41-46" sends them to the code.
+    if (coverage.patch) {
+      log(`  Measured from ${coverage.patch.report.path} (${coverage.patch.report.format}).`);
+
+      for (const entry of coverage.patch.uncovered.slice(0, 5)) {
+        const detail = entry.absentFromReport
+          ? "not executed at all (absent from the report)"
+          : formatLineRanges(entry.lines);
+        log(`  - ${entry.file}: ${detail}`);
+      }
+    } else if (coverage.behaviorFiles) {
+      log(`  Changed without a test: ${coverage.behaviorFiles.slice(0, 5).join(", ")}` +
+        (coverage.behaviorFiles.length > 5 ? ` (+${coverage.behaviorFiles.length - 5} more)` : ""));
+    }
+
+    log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
+    log('  or re-run with --test-exemption "<reason>" if there is no story.');
   } else if (evidence.ok) {
     log(`Harness verify passed (${evidence.results.length} command(s)).`);
+
+    // Name the rung before the sentence. "Coverage: evidence — 1 test file(s)
+    // changed" and "Coverage: verified — 92% of the added lines ran" now read as
+    // the different claims they are; before this they read as one.
+    const tier = coverage.tier || coverageTier(coverage);
+
+    if (coverage.exemption) {
+      log(`  Coverage: exempted — "${coverage.exemption.split(/\r?\n/)[0]}"`);
+    } else if (coverage.required) {
+      log(`  Coverage: ${tier} — ${coverage.reason}`);
+
+      // The one rung worth explaining: it passed on a proxy, and the way to earn
+      // the stronger word is a coverage report this run actually produced.
+      if (tier === "evidence") {
+        log("  A test file moved; no fresh coverage report was found, so nothing measured");
+        log("  this change. Emit lcov.info or coverage-final.json to get 'verified'.");
+      }
+    }
   } else {
     log("Harness verify FAILED.");
   }
@@ -930,17 +1336,393 @@ function captureEnvironment() {
   };
 }
 
+// --- coverage gate: a green suite is not evidence that the change is covered --
+//
+// Executing the declared commands proves they ran and passed. It does NOT prove
+// they prove anything about THIS story: a change that adds no test rides on a
+// suite that was already green before it, and comes out `verified`. That is the
+// gap between "the tests passed" and "the change is tested", and it is the whole
+// reason a story can be shipped with a proof behind it and no coverage in it.
+//
+// So: on a medium/high-risk story, a green run whose diff touches behavior but no
+// test is NOT ok. It is not a failure of the suite either — it is a proof that
+// does not reach far enough, reported as its own thing.
+//
+// Deliberately narrow, because a gate that fires wrongly gets disabled:
+// - low-risk stories never trip it (copy, styling — the QUICK path stays free);
+// - a diff of docs/story/lockfile-only changes trips nothing (no behavior moved);
+// - outside git, or with no visible diff, the gate cannot see and stays silent.
+
+// Everything this branch contributes, not just what is uncommitted: a story whose
+// tests are already committed must not read as "no test changed". Falls back to
+// the working tree when there is no base to compare against.
+function changedFilesForCoverage() {
+  const files = new Set();
+  const base = defaultBranch(cwd);
+
+  for (const ref of [base, `origin/${base}`]) {
+    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
+
+    if (mergeBase) {
+      for (const file of runGitList(["diff", "--name-only", mergeBase])) {
+        files.add(file);
+      }
+      break;
+    }
+  }
+
+  for (const file of getChangedFiles()) {
+    files.add(file);
+  }
+
+  // A brand-new test file is untracked, and it is the single most important case
+  // this gate must see.
+  for (const file of runGitList(["ls-files", "--others", "--exclude-standard"])) {
+    files.add(file);
+  }
+
+  return [...files].map(normalizePortable).sort();
+}
+
+// The lines this change ADDED, per file. Only added lines: a deleted line has no
+// coverage to have, and asking a test to execute code that no longer exists is
+// nonsense. `--unified=0` makes every hunk header exact, so no context line is
+// mistaken for a change.
+//
+// Hunk header: @@ -<oldStart>,<oldCount> +<newStart>,<newCount> @@
+function parseAddedLines(diffText) {
+  const byFile = {};
+  let current = null;
+  let nextLine = 0;
+
+  for (const line of diffText.split(/\r?\n/)) {
+    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
+
+    if (fileMatch) {
+      current = fileMatch[1] === "dev/null" ? null : normalizePortable(fileMatch[1]);
+      continue;
+    }
+
+    const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
+
+    if (hunkMatch) {
+      nextLine = Number.parseInt(hunkMatch[1], 10);
+      continue;
+    }
+
+    if (!current || !line.startsWith("+") || line.startsWith("+++")) {
+      continue;
+    }
+
+    if (!byFile[current]) {
+      byFile[current] = [];
+    }
+
+    byFile[current].push(nextLine);
+    nextLine += 1;
+  }
+
+  return byFile;
+}
+
+function runGitText(argsForGit) {
+  try {
+    const childProcess = require("child_process");
+    return childProcess.execFileSync("git", argsForGit, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch {
+    return "";
+  }
+}
+
+// Added lines across the whole contribution: the branch's commits, the working
+// tree, and untracked files (every line of which is new by definition).
+function changedLinesForCoverage() {
+  const byFile = {};
+
+  const merge = (source) => {
+    for (const [file, lines] of Object.entries(source)) {
+      byFile[file] = [...new Set([...(byFile[file] || []), ...lines])].sort((a, b) => a - b);
+    }
+  };
+
+  const base = defaultBranch(cwd);
+
+  for (const ref of [base, `origin/${base}`]) {
+    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
+
+    if (mergeBase) {
+      merge(parseAddedLines(runGitText(["diff", "--unified=0", mergeBase])));
+      break;
+    }
+  }
+
+  merge(parseAddedLines(runGitText(["diff", "--unified=0"])));
+  merge(parseAddedLines(runGitText(["diff", "--unified=0", "--cached"])));
+
+  for (const file of runGitList(["ls-files", "--others", "--exclude-standard"])) {
+    const fullPath = path.join(cwd, file);
+
+    try {
+      const lineCount = fs.readFileSync(fullPath, "utf8").split(/\r?\n/).length;
+      merge({ [normalizePortable(file)]: Array.from({ length: lineCount }, (_, index) => index + 1) });
+    } catch {
+      // Binary or unreadable: nothing to cover.
+    }
+  }
+
+  return byFile;
+}
+
+// An escape hatch that leaves a mark. Some real changes cannot carry a test (a
+// config-only cutover, a vendor bump); refusing them outright would only teach
+// people to turn the gate off globally. So the story may declare an exemption —
+// and it is copied verbatim into the evidence, printed on the verify, and carried
+// into the PR body. The machine cannot judge the reason; it can make sure the
+// claim is permanent and visible instead of silent.
+function readTestExemption(storyDir) {
+  if (!storyDir) {
+    return null;
+  }
+
+  const bundle = readStoryBundle(storyDir);
+  const text = extractSection(Object.values(bundle).join("\n\n"), "Test Exemption");
+
+  return text.trim() ? text.trim() : null;
+}
+
+// The line-level verdict, or null when it cannot be established — in which case
+// the caller keeps the test-file heuristic. Never guesses: a missing report, an
+// unparseable one, or one written before this run all mean "no line-level
+// answer", not "uncovered".
+function evaluatePatchCoverage({ config, behaviorFiles, startedAt }) {
+  const report = loadCoverageReport(cwd, {
+    candidates: Array.isArray(config.coverageReports) && config.coverageReports.length > 0
+      ? config.coverageReports
+      : DEFAULT_REPORT_PATHS,
+  });
+
+  if (!report) {
+    return null;
+  }
+
+  // A report older than the run proves something about code from before it. The
+  // most dangerous failure mode here is a months-old lcov quietly waving every
+  // change through, so an out-of-date report is treated as no report at all.
+  if (startedAt && report.generatedAt && report.generatedAt < startedAt) {
+    return null;
+  }
+
+  const changedLines = changedLinesForCoverage();
+  const scoped = {};
+
+  for (const file of behaviorFiles) {
+    if (changedLines[file]) {
+      scoped[file] = changedLines[file];
+    }
+  }
+
+  if (Object.keys(scoped).length === 0) {
+    return null;
+  }
+
+  const measured = measurePatchCoverage({ report, changedLinesByFile: scoped });
+
+  // Nothing executable changed (comments, formatting) — no line-level claim to
+  // make, so defer to the heuristic rather than report a vacuous 100%.
+  if (measured.totalLines === 0) {
+    return null;
+  }
+
+  const min = Number.isFinite(config.minPatchCoverage) ? config.minPatchCoverage : 80;
+
+  return {
+    ...measured,
+    min,
+    ok: measured.percent >= min,
+    report: { path: report.path, format: report.format },
+  };
+}
+
+function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }) {
+  const skip = (reason) => ({ required: false, ok: true, reason, changedFiles: [], testFiles: [] });
+
+  if (!config.requireTestChange) {
+    return skip("disabled by harness config (requireTestChange: false)");
+  }
+
+  if (!currentTreeToken(cwd)) {
+    return skip("not a git repository; the diff cannot be read");
+  }
+
+  const changedFiles = changedFilesForCoverage();
+
+  if (changedFiles.length === 0) {
+    return skip("no diff visible against the base branch or the working tree");
+  }
+
+  // No story is not "no risk". The diff answers on its own, which is what makes
+  // this usable on a branch that never adopted the epics/ layout.
+  const storyRisk = storyDir
+    ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
+    : { level: "low", matchedTerms: [], reason: "no story to read." };
+  const risk = combineRisk(storyRisk, scoreDiffRisk(changedFiles, config));
+
+  if (risk.level === "low") {
+    return skip(`risk is low (${risk.reason})`);
+  }
+
+  const testFiles = changedFiles.filter((file) =>
+    config.testGlobs.some((pattern) => matchesPattern(file, pattern)),
+  );
+  const behaviorFiles = changedFiles.filter(
+    (file) =>
+      !config.nonBehaviorGlobs.some((pattern) => matchesPattern(file, pattern)) &&
+      !testFiles.includes(file),
+  );
+
+  if (behaviorFiles.length === 0) {
+    return {
+      required: true,
+      ok: true,
+      mode: "none",
+      reason: "no behavior file changed (docs, story, or lockfile only)",
+      changedFiles,
+      testFiles,
+    };
+  }
+
+  // Line-level proof when the suite produced a coverage report, the test-file
+  // heuristic otherwise. The stronger measure always supersedes the weaker one:
+  // "a test file moved" is a proxy for "the change is covered", and a proxy is
+  // only worth using while the real thing is unavailable.
+  const patch = evaluatePatchCoverage({ config, behaviorFiles, startedAt });
+
+  if (patch) {
+    if (patch.ok) {
+      return {
+        required: true,
+        ok: true,
+        mode: "diff-lines",
+        reason: `${patch.percent}% of the ${patch.totalLines} added line(s) are executed by the suite (min ${patch.min}%)`,
+        riskSource: risk.source,
+        changedFiles,
+        testFiles,
+        patch,
+      };
+    }
+
+    const declaredForPatch = readTestExemption(storyDir) || (exemption && exemption.trim() ? exemption.trim() : null);
+
+    if (declaredForPatch) {
+      return {
+        required: true,
+        ok: true,
+        mode: "diff-lines",
+        reason: "declared test exemption",
+        exemption: declaredForPatch,
+        riskSource: risk.source,
+        changedFiles,
+        testFiles,
+        patch,
+      };
+    }
+
+    return {
+      required: true,
+      ok: false,
+      mode: "diff-lines",
+      reason:
+        `only ${patch.percent}% of the ${patch.totalLines} added line(s) are executed by the suite ` +
+        `(min ${patch.min}%). The suite ran; it did not reach this change.`,
+      riskSource: risk.source,
+      riskPaths: risk.matchedPaths,
+      changedFiles,
+      testFiles,
+      behaviorFiles,
+      patch,
+    };
+  }
+
+  if (testFiles.length > 0) {
+    return {
+      required: true,
+      ok: true,
+      mode: "test-file",
+      reason: `${testFiles.length} test file(s) changed alongside ${behaviorFiles.length} behavior file(s)`,
+      riskSource: risk.source,
+      changedFiles,
+      testFiles,
+    };
+  }
+
+  // Two ways to declare the same thing: a section in the story (the normal path)
+  // or `--test-exemption` on the command (the path for work with no story). Both
+  // end up recorded verbatim in the evidence — that is the whole point.
+  const declared = readTestExemption(storyDir) || (exemption && exemption.trim() ? exemption.trim() : null);
+
+  if (declared) {
+    return {
+      required: true,
+      ok: true,
+      mode: "test-file",
+      reason: "declared test exemption",
+      exemption: declared,
+      riskSource: risk.source,
+      changedFiles,
+      testFiles,
+      behaviorFiles,
+    };
+  }
+
+  return {
+    required: true,
+    ok: false,
+    mode: "test-file",
+    reason:
+      `${behaviorFiles.length} behavior file(s) changed and no test file did. A green suite ` +
+      "that was already green proves nothing about this change.",
+    riskSource: risk.source,
+    riskPaths: risk.matchedPaths,
+    changedFiles,
+    testFiles,
+    behaviorFiles,
+  };
+}
+
+// The verdict, plus the name of the rung it landed on. Stamped in one place so
+// no return path can forget it, and so `mode` stays what it has always been —
+// how the answer was obtained — while `tier` says how strong the answer is.
+function evaluateCoverage(options) {
+  const result = evaluateCoverageResult(options);
+
+  return { ...result, tier: coverageTier(result) };
+}
+
 // Executes the declared validation commands for one story and returns the
 // evidence. Pure: it runs the commands and captures their results verbatim but
 // writes nothing — the caller decides whether to persist it (writeVerifyEvidence)
 // and what a red result means for its own flow. Shared by `harness verify` (a
 // single story) and `run` (a batch), so both produce identical evidence.
-function verifyStoryOnce({ story = null } = {}) {
+function verifyStoryOnce({ story = null, exemption = null } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
   const resolution = resolveValidationCommands({ storyDir });
+  // Captured before the commands run: a coverage report older than this was not
+  // produced by this run, and must not be read as if it were.
+  const startedAt = Date.now();
   const results = resolution.commands.map((command) => runValidationCommand(command));
-  const ok = results.length > 0 && results.every((item) => item.ok);
+  const commandsOk = results.length > 0 && results.every((item) => item.ok);
+  const { config } = readHarnessConfig();
+  // Only evaluated on a green suite: a red one is already not a proof, and
+  // telling someone their failing story also lacks tests is noise.
+  const coverage = commandsOk
+    ? evaluateCoverage({ storyDir, config, exemption, startedAt })
+    : { required: false, ok: true, reason: "not evaluated (commands did not pass)", changedFiles: [], testFiles: [] };
 
   return {
     generatedAt: new Date().toISOString(),
@@ -953,7 +1735,9 @@ function verifyStoryOnce({ story = null } = {}) {
     commandsFingerprint: commandsFingerprint(resolution.commands),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
     environment: captureEnvironment(),
-    ok,
+    commandsOk,
+    coverage,
+    ok: commandsOk && coverage.ok,
     results,
   };
 }
@@ -1068,17 +1852,52 @@ function requireStoryScope(story) {
 
   const relative = normalizePortable(path.relative(cwd, storyDir));
 
-  if (!relative.startsWith("epics/")) {
-    fail(`--story "${story}" is not under epics/. Verify proves stories, not arbitrary directories.`);
+  // A Spec Kit feature directory is a story directory: spec.md / plan.md /
+  // tasks.md are the same three roles under a different parent. Accepting it here
+  // is the whole of the adapter — nothing downstream needs to know which layout
+  // produced the work item.
+  if (!relative.startsWith("epics/") && !isSpecKitFeatureOf(cwd, storyDir)) {
+    fail(
+      `--story "${story}" is not under epics/ or specs/. Verify proves stories, not arbitrary directories.`,
+    );
   }
 }
 
-function harnessVerify({ json = false, dryRun = false, story = null, noCache = false } = {}) {
+// With no --story, a Spec Kit project still has an active feature. Reading it
+// costs nothing and makes the proof layer usable without adopting epics/.
+// The source is always reported: a scope we guessed must say it guessed.
+function detectStoryScope() {
+  const feature = detectSpecKitFeature(cwd, { branch: currentBranch(cwd) });
+
+  return feature
+    ? { story: normalizePortable(path.relative(cwd, feature.dir)), source: feature.source }
+    : null;
+}
+
+function harnessVerify({ json = false, dryRun = false, story = null, noCache = false, exemption = null } = {}) {
   if (story !== null) {
     requireStoryScope(story);
   }
 
+  // No --story, but a Spec Kit project knows which feature is active. Scoping to
+  // it is what lets a Spec Kit user run `ai-flow verify` and get the spec's risk
+  // read and plan.md's commands, with no epics/ directory anywhere.
+  let scopeNote = null;
+
+  if (story === null) {
+    const detected = detectStoryScope();
+
+    if (detected) {
+      story = detected.story;
+      scopeNote = `Story: ${detected.story} (Spec Kit feature, from ${detected.source})`;
+    }
+  }
+
   const resolvedStory = story ? resolveProjectPath(story) : null;
+
+  if (scopeNote && !json) {
+    log(scopeNote);
+  }
 
   if (dryRun) {
     const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
@@ -1135,7 +1954,7 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
     }
   }
 
-  const evidence = verifyStoryOnce({ story });
+  const evidence = verifyStoryOnce({ story, exemption });
   const outputPath = writeVerifyEvidence(evidence);
 
   if (json) {
@@ -1186,11 +2005,21 @@ function harnessCommand({ commandArgs, getFlagValue, flags }) {
       story,
     });
   } else if (subcommand === "verify") {
+    const exemption = getFlagValue("--test-exemption", null);
+
+    // An exemption with no reason is the one form this must never accept: the
+    // reason IS the artifact. A bare flag is a typo or an attempt to wave the
+    // gate through, and both deserve the same answer.
+    if (flags.has("--test-exemption") && !exemption) {
+      fail('--test-exemption requires a reason, e.g. --test-exemption "vendor SDK bump, no behavior change".');
+    }
+
     harnessVerify({
       json: flags.has("--json"),
       dryRun: flags.has("--dry-run"),
       story,
       noCache: flags.has("--no-cache"),
+      exemption,
     });
   } else {
     fail(`unknown harness command "${subcommand}". Use init, preflight, check, verify, or evidence.`);
@@ -1206,6 +2035,13 @@ module.exports = {
   collectHarnessReport,
   parseTestsCommands,
   getSecretPatterns,
+  compileSecretPatterns,
+  findSecretsInContent,
+  isHeuristicAllowlisted,
+  defaultSecretPatterns,
+  evaluateCoverage,
+  scoreDiffRisk,
+  combineRisk,
   harnessCommand,
   // Reused by `run` (batch orchestration) so it shares the single-story verify
   // execution path instead of duplicating it.

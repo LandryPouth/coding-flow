@@ -20,6 +20,7 @@ const { execFileSync } = require("child_process");
 const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { collectHarnessReport } = require("./harness");
+const { coverageTier } = require("./coverage");
 const { latestVerifyByStoryDir } = require("./audit");
 
 // Idempotent markers: the evidence section is replaced between them, never the
@@ -185,6 +186,30 @@ function buildEvidenceBlock(evidence) {
     lines.push(`**Toolchain:** ${env.node} · ${env.platform}/${env.arch}${lock}`);
   }
   lines.push(`**When:** ${evidence.generatedAt || "n/a"}`);
+
+  // The coverage claim travels with the proof. An exemption especially: it is a
+  // human decision to ship a risky change without a test, and the place it has to
+  // be readable is the PR, in front of the reviewer, not only in a JSON file.
+  //
+  // The tier is named here for the same reason it is named in the terminal: a
+  // green tick next to "1 test file(s) changed with this story" told a reviewer
+  // the change was covered, when all anyone knew was that a test file had moved.
+  const coverage = evidence.coverage;
+  if (coverage && coverage.required !== false) {
+    const tier = coverage.tier || coverageTier(coverage);
+    const reason = coverage.reason || "";
+
+    if (tier === "exempted") {
+      lines.push(`**Coverage:** ⚠️ exempted — ${(coverage.exemption || reason).split(/\r?\n/)[0]}`);
+    } else if (tier === "verified") {
+      lines.push(`**Coverage:** ✅ verified — ${reason}`);
+    } else if (tier === "evidence") {
+      lines.push(`**Coverage:** 🟡 evidence — ${reason}; no report measured this change`);
+    } else if (tier === "missing") {
+      lines.push(`**Coverage:** ❌ not proven — ${reason}`);
+    }
+  }
+
   lines.push("");
 
   const results = Array.isArray(evidence.results) ? evidence.results : [];

@@ -145,6 +145,183 @@ test('guard denies a secret inside a MultiEdit new_string', (t) => {
   assert.equal(res.code, 2);
 });
 
+// Well-formed fake credentials, assembled at runtime. Written as single literals
+// they would be refused by the very guard these tests exercise — which is the
+// intended behavior for an "exact" detector, and the reason security suites build
+// their fixtures instead of pasting them.
+const FAKE_STRIPE_KEY = `sk_${'live'}_0123456789abcdefghijkl`;
+const FAKE_AWS_KEY = `AK${'IA'}ABCDEFGHIJKLMNOP`;
+const FAKE_PLACEHOLDER = `token: "${'a'.repeat(28)}"`;
+
+// --- the other door: shell writes ------------------------------------------
+//
+// The editing tools were never the only way to put a secret on disk. A hook that
+// watches Write but not `cat > .env` does not enforce a policy, it announces one.
+
+test('guard denies a shell redirection into a blocked path', (t) => {
+  const dir = project(t, 'guard-bash-redirect');
+  const res = guard(dir, {
+    tool_name: 'Bash',
+    tool_input: { command: 'echo "API_KEY=live" > .env' },
+  });
+  assert.equal(res.code, 2, 'redirection must not be a way around the policy');
+  assert.match(JSON.parse(res.stdout).systemMessage, /\.env/);
+});
+
+test('guard denies a heredoc written into a blocked path', (t) => {
+  const dir = project(t, 'guard-bash-heredoc');
+  const res = guard(dir, {
+    tool_name: 'Bash',
+    tool_input: { command: "cat > .env <<'EOF'\nAPI_KEY=live\nEOF" },
+  });
+  assert.equal(res.code, 2);
+});
+
+test('guard denies tee, sed -i, cp, and dd onto a blocked path', (t) => {
+  const dir = project(t, 'guard-bash-family');
+
+  for (const command of [
+    'echo x | tee .env',
+    "sed -i 's/a/b/' config/tls/server.pem",
+    'cp /tmp/leak.txt .env.production',
+    'dd if=/dev/zero of=id_rsa',
+  ]) {
+    const res = guard(dir, { tool_name: 'Bash', tool_input: { command } });
+    assert.equal(res.code, 2, `must deny: ${command}`);
+  }
+});
+
+test('guard denies a real credential format inside the command itself', (t) => {
+  const dir = project(t, 'guard-bash-secret');
+  const res = guard(dir, {
+    tool_name: 'Bash',
+    tool_input: { command: `echo "key=${FAKE_STRIPE_KEY}" > src/config.js` },
+  });
+  assert.equal(res.code, 2);
+  assert.match(JSON.parse(res.stdout).systemMessage, /command itself/);
+});
+
+test('guard allows ordinary shell work', (t) => {
+  const dir = project(t, 'guard-bash-ok');
+
+  for (const command of [
+    'npm test',
+    'npm test > /tmp/out.log 2>&1',
+    'grep -r foo src/ > results.txt',
+    'git commit -m "wip"',
+    'echo "done" >&2',
+    'psql "password=localdevonly" -c "select 1"',
+    'cp src/a.ts src/b.ts',
+  ]) {
+    const res = guard(dir, { tool_name: 'Bash', tool_input: { command } });
+    assert.equal(res.code, 0, `must allow: ${command} (got ${res.stderr})`);
+  }
+});
+
+// --- precision: what an allowlist may and may not relax ---------------------
+
+test('a placeholder credential in docs is allowed, a real key format is not', (t) => {
+  const dir = project(t, 'guard-allowlist');
+
+  const placeholder = guard(dir, {
+    tool_name: 'Write',
+    tool_input: {
+      file_path: 'docs/auth.md',
+      content: 'Example:\n\npassword: "change-me-in-production-please"\n',
+    },
+  });
+  assert.equal(placeholder.code, 0, 'documentation must be allowed to show an example');
+
+  const real = guard(dir, {
+    tool_name: 'Write',
+    tool_input: { file_path: 'docs/auth.md', content: `oops: ${FAKE_AWS_KEY}\n` },
+  });
+  assert.equal(real.code, 2, 'an allowlist relaxes heuristics, never a real key format');
+});
+
+test('a placeholder in a test fixture is allowed; the same line in source is not', (t) => {
+  const dir = project(t, 'guard-fixture');
+  const content = `export const USER = { ${FAKE_PLACEHOLDER} };\n`;
+
+  assert.equal(
+    guard(dir, { tool_name: 'Write', tool_input: { file_path: 'src/user.test.ts', content } }).code,
+    0,
+  );
+  assert.equal(
+    guard(dir, { tool_name: 'Write', tool_input: { file_path: 'src/user.ts', content } }).code,
+    2,
+  );
+});
+
+test('a project can tune the detectors in harness.json', (t) => {
+  const dir = project(t, 'guard-config');
+  fs.mkdirSync(path.join(dir, '.coding-flow'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.coding-flow', 'harness.json'),
+    JSON.stringify({
+      secretPatterns: [{ name: 'Internal ticket key', pattern: 'ACME-[0-9]{6}', precision: 'exact' }],
+      secretScanAllowlist: [],
+    }),
+  );
+
+  // The project's own detector applies…
+  assert.equal(
+    guard(dir, {
+      tool_name: 'Write',
+      tool_input: { file_path: 'src/a.ts', content: 'const t = "ACME-123456";' },
+    }).code,
+    2,
+  );
+
+  // …and the built-in it chose to drop no longer fires.
+  assert.equal(
+    guard(dir, {
+      tool_name: 'Write',
+      tool_input: { file_path: 'src/a.ts', content: `const k = "${FAKE_STRIPE_KEY}";` },
+    }).code,
+    0,
+  );
+});
+
+test('an unparseable detector disables itself, never the hook', (t) => {
+  const dir = project(t, 'guard-badregex');
+  fs.mkdirSync(path.join(dir, '.coding-flow'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.coding-flow', 'harness.json'),
+    JSON.stringify({
+      secretPatterns: [
+        { name: 'Broken', pattern: '([unclosed', precision: 'exact' },
+        { name: 'AWS access key', pattern: '\\bAKIA[0-9A-Z]{16}\\b', precision: 'exact' },
+      ],
+    }),
+  );
+
+  const res = guard(dir, {
+    tool_name: 'Write',
+    tool_input: { file_path: 'src/a.ts', content: `const k = "${FAKE_AWS_KEY}";` },
+  });
+  assert.equal(res.code, 2, 'the valid detectors keep working');
+
+  const ok = guard(dir, {
+    tool_name: 'Write',
+    tool_input: { file_path: 'src/a.ts', content: 'export const x = 1;' },
+  });
+  assert.equal(ok.code, 0, 'a broken config must never crash the write path');
+});
+
+test('harness check reports a detector that scans nothing', (t) => {
+  const dir = project(t, 'guard-badregex-report');
+  runCli(dir, ['init']);
+  const harnessPath = path.join(dir, '.coding-flow', 'harness.json');
+  const harness = JSON.parse(fs.readFileSync(harnessPath, 'utf8'));
+  harness.secretPatterns = [{ name: 'Broken', pattern: '([unclosed' }];
+  fs.writeFileSync(harnessPath, JSON.stringify(harness, null, 2));
+
+  const res = runCli(dir, ['harness', 'check', '--quick']);
+  assert.equal(res.code, 1);
+  assert.match(res.output, /scans nothing/);
+});
+
 test('init wires the guard hook into .claude/settings.json, idempotently', (t) => {
   const dir = project(t, 'guard-init');
   runCli(dir, ['init']);
@@ -213,6 +390,54 @@ test('the wired hook runs the resolved binary directly (fast path, no npx)', (t)
   });
   assert.equal(deny.code, 2, 'the fast path must deny a blocked path');
   assert.equal(JSON.parse(deny.stdout).hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('upgrading widens a matcher we shipped, and only one we shipped', (t) => {
+  const dir = project(t, 'guard-matcher');
+  fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.claude', 'settings.json'),
+    JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          {
+            // The default we shipped before the guard covered shell writes.
+            matcher: 'Write|Edit|MultiEdit|NotebookEdit',
+            hooks: [{ type: 'command', command: 'npx --yes @landry_pouth/coding-flow guard' }],
+          },
+        ],
+      },
+    }),
+  );
+
+  runCli(dir, ['init']);
+  const settings = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
+  assert.match(
+    settings.hooks.PreToolUse[0].matcher,
+    /Bash/,
+    'a project installed before this release must not keep the narrower coverage forever',
+  );
+
+  // A matcher the user wrote is a decision, and survives.
+  const custom = project(t, 'guard-matcher-custom');
+  fs.mkdirSync(path.join(custom, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(custom, '.claude', 'settings.json'),
+    JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: 'Write',
+            hooks: [{ type: 'command', command: 'npx --yes @landry_pouth/coding-flow guard' }],
+          },
+        ],
+      },
+    }),
+  );
+
+  runCli(custom, ['init']);
+  const kept = JSON.parse(fs.readFileSync(path.join(custom, '.claude', 'settings.json'), 'utf8'));
+  assert.equal(kept.hooks.PreToolUse[0].matcher, 'Write', 'a customized matcher is never rewritten');
 });
 
 test('init upgrades an existing npx-based guard hook to the resolved binary', (t) => {

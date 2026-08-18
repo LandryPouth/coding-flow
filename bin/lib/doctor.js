@@ -184,13 +184,61 @@ function checkDuplicateNumbering(warnings) {
   }
 }
 
+// A minimal install owns exactly two things: the harness policy and the guard
+// wiring. Judging it against the full template list would report a correct
+// project as broken and push the user to "fix" it by installing a workflow they
+// deliberately declined.
+function collectMinimalReport({ strict = false } = {}) {
+  const errors = [];
+  const warnings = [];
+
+  if (!fs.existsSync(path.join(cwd, ".coding-flow", "harness.json"))) {
+    errors.push({
+      code: "missing_file",
+      file: ".coding-flow/harness.json",
+      message: ".coding-flow/harness.json is missing",
+    });
+  }
+
+  if (strict) {
+    const harnessReport = collectHarnessReport({ quick: true, strict: false });
+
+    for (const issue of harnessReport.errors) {
+      errors.push({
+        code: `harness_${issue.code}`,
+        file: issue.file || ".coding-flow/harness.json",
+        message: issue.message,
+      });
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    root: cwd,
+    version: packageJson.version,
+    strict,
+    install: "minimal",
+    skillsMode: "plugin",
+    skills: [],
+    binaryOnPath: isCommandAvailable("ai-flow"),
+    errors,
+    warnings,
+  };
+}
+
 function collectDoctorReport({ strict = false } = {}) {
+  const config = readConfig(cwd);
+
+  if (config.install === "minimal") {
+    return collectMinimalReport({ strict });
+  }
+
   ensureTemplatesExist();
 
   // The install recorded which channel serves its skills. Doctor must judge the
   // project against THAT decision, not against whether this particular machine
   // happens to have the plugin.
-  const skillsMode = readConfig(cwd).skills;
+  const skillsMode = config.skills;
   const includeSkills = skillsMode === "project";
   const skillNames = listTemplateSkillNames();
   const required = [
@@ -324,6 +372,7 @@ function collectDoctorReport({ strict = false } = {}) {
     root: cwd,
     version: packageJson.version,
     strict,
+    install: "full",
     skillsMode,
     skills: skillNames,
     // Not a warning: an npx-only workflow (the documented zero-install default)
@@ -338,6 +387,14 @@ function collectDoctorReport({ strict = false } = {}) {
 }
 
 function doctor({ fix = false, json = false, strict = false } = {}) {
+  // `--fix` restores the templates, which a minimal install never had. Silently
+  // laying them down would turn a diagnostic into an unasked-for upgrade.
+  if (fix && readConfig(cwd).install === "minimal") {
+    log("Minimal install: nothing to restore (no templates were laid down).");
+    log("Run `ai-flow init` to lay down the full workflow.");
+    fix = false;
+  }
+
   if (fix) {
     copyTemplates({
       force: false,
@@ -353,7 +410,11 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
   if (json) {
     log(JSON.stringify(report, null, 2));
   } else if (report.ok) {
-    log("Coding Flow is installed correctly.");
+    log(
+      report.install === "minimal"
+        ? "Coding Flow is installed correctly (minimal: guard + proof layer only)."
+        : "Coding Flow is installed correctly.",
+    );
 
     if (report.warnings.length > 0) {
       log("");

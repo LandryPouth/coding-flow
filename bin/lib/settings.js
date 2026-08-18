@@ -19,8 +19,20 @@ const path = require("path");
 const { cwd, packageJson } = require("./context");
 const { readJson, writeJson } = require("./util");
 
-// Write tools the guard must intercept (Claude Code matcher regex).
-const GUARD_MATCHER = "Write|Edit|MultiEdit|NotebookEdit";
+// Tools the guard must intercept (Claude Code matcher regex). `Bash` is in the
+// list because a shell redirection writes to disk exactly like the Write tool
+// does, and a policy that only watches one of the two doors is not a policy.
+const GUARD_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash";
+
+// Matchers WE have shipped as the default in an earlier version. An existing
+// hook carrying one of these was never a user decision, so upgrading it to the
+// current default is a fix, not an override — otherwise every project installed
+// before this release would silently keep the narrower coverage forever. A
+// matcher we never shipped IS a user decision and is left alone.
+const KNOWN_DEFAULT_MATCHERS = new Set([
+  "Write|Edit|MultiEdit|NotebookEdit",
+  GUARD_MATCHER,
+]);
 
 // Hook timeout, in seconds. The resolved-binary fast path finishes in well under
 // a second; 60s is insurance for the npx fallback's rare first download on a
@@ -86,7 +98,7 @@ function guardHookEntry() {
 // invokes `guard` on our package — tolerant of matcher variants. This is what
 // lets ensureHookSettings UPGRADE an existing (older-format) guard hook in
 // place instead of treating it as "already wired".
-function findGuardHook(settings) {
+function findGuardEntry(settings) {
   const pre = settings && settings.hooks && Array.isArray(settings.hooks.PreToolUse)
     ? settings.hooks.PreToolUse
     : [];
@@ -103,10 +115,15 @@ function findGuardHook(settings) {
         (h.command.includes(packageJson.name) || h.command.includes("coding-flow")),
     );
     if (hook) {
-      return hook;
+      return { entry, hook };
     }
   }
   return null;
+}
+
+function findGuardHook(settings) {
+  const found = findGuardEntry(settings);
+  return found ? found.hook : null;
 }
 
 function hasGuardHook(settings) {
@@ -131,19 +148,28 @@ function ensureHookSettings({ dryRun = false } = {}) {
 
   const next = settings && typeof settings === "object" ? settings : {};
 
-  const existing = findGuardHook(next);
+  const found = findGuardEntry(next);
 
-  if (existing) {
+  if (found) {
+    const { entry, hook: existing } = found;
     const current = guardCommandString();
+    // Only a matcher we ourselves shipped is rewritten; a customized one is the
+    // user's call and survives untouched.
+    const matcherIsOurs = KNOWN_DEFAULT_MATCHERS.has(entry.matcher);
+    const matcherStale = matcherIsOurs && entry.matcher !== GUARD_MATCHER;
 
-    if (existing.command === current && existing.timeout === GUARD_TIMEOUT) {
+    if (existing.command === current && existing.timeout === GUARD_TIMEOUT && !matcherStale) {
       return { status: "unchanged", path: target };
     }
 
-    // Upgrade in place: replace the command and timeout, keep the matcher and
-    // every other hook untouched.
+    // Upgrade in place: replace the command and timeout, keep every other hook
+    // untouched.
     existing.command = current;
     existing.timeout = GUARD_TIMEOUT;
+
+    if (matcherStale) {
+      entry.matcher = GUARD_MATCHER;
+    }
 
     if (!dryRun) {
       writeJson(target, next);
@@ -172,6 +198,7 @@ module.exports = {
   ensureHookSettings,
   hasGuardHook,
   findGuardHook,
+  findGuardEntry,
   guardCommandString,
   guardBinaryPath,
   GUARD_MATCHER,

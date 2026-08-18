@@ -126,7 +126,7 @@ Usage:
   ai-flow status [--json]
   ai-flow next [--all] [--json]
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
-  ai-flow verify --story path [--json] [--dry-run]
+  ai-flow verify --story path [--json] [--dry-run] [--test-exemption "reason"]
   ai-flow bootstrap --scan [--force] [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
@@ -158,6 +158,8 @@ Daily (you run these):
   run          Verify a batch of stories (all, one --epic, or one --story) and emit one proof report.
   ship         Commit a dirty tree, push, and open/update one PR to the base (uses gh if available).
   verify       Re-prove one story: run its declared validation commands and capture the result.
+               --story also accepts a Spec Kit feature (specs/<name>); with no --story in a
+               .specify/ project, the active feature is used and the output says where from.
   bootstrap    Write docs/bootstrap-scan.md for a brownfield project (init already scans; this is the artifact).
 
 Machinery (usually run FOR you by the skills, CI, or the git hook):
@@ -201,6 +203,7 @@ Flags:
   --merge-method  Merge strategy for ship's auto-merge: merge (default), squash, or rebase.
   --export   Write docs/AUDIT.md from the audit ledger, or docs/DECISIONS.md with --decisions.
   --check    Exit non-zero if the latest verify per story is failing or missing (CI gate).
+  --test-exemption  Reason a verified change carries no test; recorded verbatim in the evidence.
   --since    Filter audit entries to those generated at or after an ISO timestamp.
   --decisions  Aggregate every story's ## Decisions section instead of the run-evidence ledger.
   --epic     Scope run to every story in one epic (matched by name).
