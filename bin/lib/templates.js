@@ -466,6 +466,22 @@ function copyFileToTarget(source, targetRel, { force = false, dryRun = false } =
   return targetExists ? "updated" : "copied";
 }
 
+// The friction log is the one piece of documentation a minimal install still
+// lays down. It is not there to explain the tool — it is the return channel: the
+// only place a user who is not the author records a gate that fired on a
+// non-risk, and the companion to the machine-collected `ai-flow report`. An
+// enforcement layer installed with no way to argue back is how a gate gets
+// switched off instead of fixed.
+function ensureFrictionLog({ dryRun = false } = {}) {
+  const source = path.join(templatesRoot, "docs", "DOGFOODING.md");
+
+  if (!fs.existsSync(source)) {
+    return "skipped";
+  }
+
+  return copyFileToTarget(source, path.join("docs", "DOGFOODING.md"), { dryRun });
+}
+
 // Skill files this project installed that the templates no longer expect —
 // either because the skill was renamed, or because the project switched to the
 // plugin as its skills channel. Only files that still match their manifest hash
@@ -659,6 +675,7 @@ module.exports = {
   detectProjectPackageJson,
   copyTemplates,
   ensureConvenienceFiles,
+  ensureFrictionLog,
   printConvenienceSummary,
   ensurePackageScripts,
   removePackageScripts,

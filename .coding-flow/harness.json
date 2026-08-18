@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "mode": "standard",
+  "requireTestChange": true,
+  "coverageReports": [
+    "coverage/lcov.info",
+    "coverage/lcov/lcov.info",
+    "lcov.info",
+    "coverage/coverage-final.json",
+    "coverage/coverage.json",
+    ".coverage/lcov.info"
+  ],
+  "minPatchCoverage": 80,
+  "secretPatterns": [
+    {
+      "name": "Stripe live key",
+      "pattern": "\\bsk_live_[A-Za-z0-9_]{12,}\\b",
+      "precision": "exact"
+    },
+    {
+      "name": "OpenAI-style API key",
+      "pattern": "\\bsk-[A-Za-z0-9_-]{32,}\\b",
+      "precision": "exact"
+    },
+    {
+      "name": "GitHub token",
+      "pattern": "\\bgh[pousr]_[A-Za-z0-9_]{20,}\\b",
+      "precision": "exact"
+    },
+    {
+      "name": "AWS access key",
+      "pattern": "\\bAKIA[0-9A-Z]{16}\\b",
+      "precision": "exact"
+    },
+    {
+      "name": "Private key block",
+      "pattern": "-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----",
+      "precision": "exact"
+    },
+    {
+      "name": "Long assigned credential",
+      "pattern": "\\b(api[_-]?key|secret|token|password)\\b\\s*[:=]\\s*[\"'][^\"']{20,}[\"']",
+      "flags": "i",
+      "precision": "heuristic"
+    }
+  ],
+  "secretScanAllowlist": [
+    "docs/**",
+    "epics/**",
+    "**/*.md",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/fixtures/**",
+    "**/*.example.*",
+    "**/*.sample.*",
+    "**/*.template.*"
+  ],
+  "highRiskPaths": [
+    "**/auth/**",
+    "**/*auth.*",
+    "**/*authoriz*",
+    "**/*permission*",
+    "**/*session*",
+    "**/*rbac*",
+    "**/*acl.*",
+    "**/policies/**",
+    "**/*policy.*",
+    "**/middleware.*",
+    "**/migrations/**",
+    "**/migrate/**",
+    "**/*.sql",
+    "**/schema.prisma",
+    "**/*.schema.*",
+    "**/payments/**",
+    "**/*payment*",
+    "**/billing/**",
+    "**/*stripe*",
+    "**/*checkout*",
+    "**/*credential*",
+    "**/*secret*",
+    "**/webhooks/**",
+    "**/*webhook*"
+  ],
+  "testGlobs": [
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/*_test.*",
+    "**/test_*.py",
+    "**/*Test.java",
+    "**/*Tests.cs",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/spec/**",
+    "**/e2e/**",
+    "**/cypress/**",
+    "**/*.feature"
+  ],
+  "nonBehaviorGlobs": [
+    "docs/**",
+    "epics/**",
+    "specs/**",
+    ".specify/**",
+    ".coding-flow/**",
+    "coverage/**",
+    "**/coverage/**",
+    "**/*.md",
+    ".gitignore",
+    "**/*.lock",
+    "**/package-lock.json",
+    "**/pnpm-lock.yaml",
+    "**/yarn.lock",
+    "**/*.d.ts",
+    "**/*.config.js",
+    "**/*.config.cjs",
+    "**/*.config.mjs",
+    "**/*.config.ts",
+    "**/tsconfig*.json",
+    "**/.eslintrc*",
+    "**/.prettierrc*",
+    "**/migrations/**",
+    "**/*.sql",
+    "**/generated/**",
+    "**/__generated__/**",
+    "**/*.gen.*",
+    "**/*.generated.*"
+  ],
+  "blockedPaths": [
+    ".env",
+    ".env.*",
+    ".ssh/**",
+    "**/id_rsa",
+    "**/id_ed25519",
+    "**/*.pem",
+    "**/*.key",
+    "node_modules/**"
+  ],
+  "sensitiveGlobs": [
+    "**/.env*",
+    "**/*secret*",
+    "**/*credential*",
+    "**/*private-key*",
+    "**/*service-account*"
+  ],
+  "requiredChecks": [
+    "secrets",
+    "sensitive-files",
+    "story-evidence",
+    "rollback"
+  ],
+  "highRiskTerms": [
+    "auth",
+    "authorization",
+    "permission",
+    "role",
+    "admin",
+    "payment",
+    "stripe",
+    "secret",
+    "token",
+    "password",
+    "upload",
+    "migration",
+    "database",
+    "sensitive",
+    "private data",
+    "external api",
+    "webhook"
+  ]
+}

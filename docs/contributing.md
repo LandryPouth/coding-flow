@@ -113,11 +113,12 @@ npm publish     # publishes @landry_pouth/coding-flow@<version>
 | --- | --- |
 | [`QUICKSTART.md`](QUICKSTART.md) | The whole loop on one screen: the front door you use day to day |
 | [`agent-contract.md`](agent-contract.md) | What Coding Flow expects from an agent, agent-neutral — the protocol each integration translates |
+| [`design-decisions.md`](design-decisions.md) | What was decided and what was refused, with the measurements — read before re-proposing a guard daemon, a Go rewrite, or policy in skill frontmatter |
 | [`DOGFOODING.md`](DOGFOODING.md) | The friction log: where the tool cost more than it returned, and what came of it |
 | [`migration.md`](migration.md) | Migrating an existing project to a new version: `upgrade` vs re-install, what is protected, and the gotchas |
 | [`sdd-vs-plugins.md`](sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed and why |
 | [`git-worktree-bare.md`](git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |
-| [`plans/multi-agent-install.md`](plans/multi-agent-install.md) | Planned per-agent install targeting (Claude/Codex, no shared mirror) |
+| [`plans/multi-agent-install.md`](plans/multi-agent-install.md) | Per-agent install targeting, plus a verified capability table: what Claude Code, Codex and OpenCode can each actually enforce |
 | [`plans/storage-backends.md`](plans/storage-backends.md) | Storage seam, project config, branch policy (github backend deferred) |
 | [`experiments/reliability-benchmark.md`](experiments/reliability-benchmark.md) | The (in-progress) benchmark validating the reliability claim |
 
@@ -149,6 +150,23 @@ Two rules that follow from it:
 The project is currently in a **feature freeze**: bugs, DX, performance,
 security, documentation, and tests only. New capabilities wait for real users to
 ask for them.
+
+## Writing a skill
+
+Skills are structured prompts, and their length is a bill the user pays on every
+trigger. Two rules, both enforced by `test/ceremony.test.js`:
+
+- **A `SKILL.md` stays under 500 lines.** Past that, move the opt-in depth (a deep
+  review dimension, a mode that rarely fires) into a sibling file the skill links
+  to, so it loads only when it is needed. Link one level deep — from `SKILL.md`
+  straight to the file, never through an intermediate.
+- **Both trees change together.** `skills/` is what the Claude Code plugin serves;
+  `templates/.claude/skills/` is what `ai-flow init` copies into a project. They
+  are byte-identical, and a test fails if they drift.
+
+Prefer extracting the prose you already have over adding more. A "Common
+Rationalizations" table earns its lines because it answers an excuse at the moment
+the agent reaches for it; a second explanation of something stated above does not.
 
 ## Roadmap
 

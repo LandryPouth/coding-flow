@@ -4,6 +4,84 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-08-18
+
+**The first release decided by evidence rather than by judgement.** Thirteen days
+of real use on a project this tool did not design (`imob`, 110 recorded runs) said
+it was wrong about one thing and slow about another. The wrong thing was costing
+whole hours per story; the slow thing was costing milliseconds. Everything below
+follows from reading `.coding-flow/runs/` instead of reasoning about it — which is
+also why the release adds the command that makes those runs readable by somebody
+who is not the author, and why the tool is finally installed on itself.
+
+### Added
+
+- **`ai-flow report` — one file a user can send back.** Guard denials, verify
+  failures with the lines that explain them, the risk/coverage/mode distribution,
+  and install health, collected from what the harness already recorded. It exists
+  because the alternative is a description: someone who hits a bad gate remembers
+  that "it blocked something", not which pattern fired on which path — and a tool
+  whose argument is that executed proof beats assertion cannot collect its own bug
+  reports by assertion. **Redacted by default**: paths are relative to the project,
+  the home directory and username are masked, and no secret value is ever recorded
+  (only the name of the pattern that matched). `--raw` keeps everything for your own
+  repositories, `--json` for machines, `--out FILE` to write it.
+- **Guard denials are recorded.** A refusal used to be exit 2, a line on stderr,
+  and then nothing — so the one event most worth keeping, the guard being *wrong*,
+  left no artifact to argue with. One redacted JSONL line per denial in
+  `.coding-flow/denials.jsonl`, capped, and best-effort by construction: it cannot
+  throw, cannot delay the decision, and cannot change it. A test asserts the
+  refusal and the allow both survive an unwritable log.
+- **The friction log ships with the enforcement layer.** `docs/DOGFOODING.md` was
+  full-install only, on the reasoning that `--minimal` promises no files beyond the
+  guard and the harness. That held while the only user was the author. An
+  enforcement layer handed to someone else with no return channel is a gate they
+  can only switch off, never argue with — so the manual half (the log) now ships
+  wherever the automatic half (`report`) does. `--minimal` still lays down no
+  `RULES.md`, no `epics/`, no skills, and no other `docs/`.
+- **Coding Flow is installed on Coding Flow.** The config existed but declared no
+  validation commands and had never produced a run, which is worse than not
+  installing it: it looked like dogfooding. It now declares `npm test`, and the
+  first real verify caught a regression that the per-file runs had missed.
+
+### Fixed
+
+- **Prose no longer forces STRICT.** `scoreStoryRisk` substring-matched 17 terms
+  over the whole story text, and one hit meant `high` — so `auth` fired on
+  "author", `token` on "design tokens", and `migration` on a story titled *color
+  migration*. Because `combineRisk` takes the higher of the two scores, the story
+  side was pinned at `high` and the diff-derived score could never win: 39 of 39
+  recorded evidence records ran at STRICT, paying TDD, Security Questions and a
+  mandatory deep review for hero recompositions and video players. Matching is now
+  whole-word, and prose tops out at `medium`; only `scoreDiffRisk` — which reads
+  what the change actually touches — can reach `high`. Replayed over the same 39
+  records, STRICT drops from 100% to 31%, and the 12 that remain are genuine
+  (`schema.prisma`, `migration.sql`, `auth.controller.ts`). A story that names a
+  risk still raises a quiet change to `medium`, so the coverage gate keeps firing
+  exactly where it fired before.
+
+### Changed
+
+- **The guard dispatches before the rest of the CLI loads.** It runs before every
+  Write, Edit and Bash, so it paid for all 21 lib modules — `ship`, `worktree`,
+  `doctor`, `templates` — plus `crypto` (OpenSSL bindings) reached through
+  `util.js`, none of which it uses. Argument parsing moved above the requires and
+  `guard` now returns from its own branch; `crypto` and `child_process` load where
+  they are called. Overhead above bare Node startup: 67.8 ms → 26.2 ms, measured
+  interleaved. `test/guard.test.js` pins the module graph so it cannot creep back.
+- **`flow-run` and `flow-review` carry a Common Rationalizations table**, and
+  `flow-run` a Red Flags section — the anti-excuse prose that was already spread
+  through both skills, gathered where an agent reaches for the excuse.
+- **`docs/agent-contract.md` states what the core refuses**: the guard stays one
+  process per decision (no resident daemon), and policy never moves into a
+  `SKILL.md` frontmatter. Skills are behaviour; `harness.json` is policy.
+
+### Added
+
+- **`skills/` and `templates/.claude/skills/` are checked for drift.** Two shipped
+  copies of the same seven skills, and nothing compared them until now. Plus a
+  500-line ceiling per `SKILL.md`, documented in `docs/contributing.md`.
+
 ## [0.7.0] - 2026-08-18
 
 Gaps between what this tool promised and what it enforced, closed. Each was a
@@ -564,6 +642,7 @@ agent's hands. Distributed as a native Claude Code plugin and published on npm.
 - The GitHub storage backend (issues/sub-issues) is a proven seam with a clean
   `fail()`; implementation stays deferred until a real need appears.
 
+[0.8.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.8.0
 [0.7.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.7.0
 [0.6.0]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.6.0
 [0.5.1]: https://github.com/LandryPouth/coding-flow/releases/tag/v0.5.1

@@ -97,3 +97,23 @@ Optional hardening, only if you want it:
 ai-flow ci init       # a GitHub Actions gate: no merge without a green, fresh verify
 ai-flow hook install  # a local pre-push gate that runs the same check
 ```
+
+## When the tool is the problem
+
+Two things to reach for, and they are not the same.
+
+```bash
+ai-flow report                    # what the machine saw: denials, failures, install health
+ai-flow report --out cf-report.md # write it to a file you can send
+```
+
+The report is redacted: paths are relative to the project, your home directory and
+username are masked, and a detected secret is never written down — only the name of
+the pattern that matched. Read it before you send it; `--raw` keeps everything if
+the repository is your own.
+
+The other half is `docs/DOGFOODING.md`, laid down by every install. The report knows
+a gate fired; only you know it fired on something that was never a risk. **Write the
+row in the same pass, especially when you disabled or exempted a check to keep
+going** — a gate nobody can argue with is a gate that eventually gets switched off,
+and that protects nothing.

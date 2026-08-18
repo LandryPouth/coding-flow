@@ -479,3 +479,52 @@ test('init upgrades an existing npx-based guard hook to the resolved binary', (t
     'the npx fallback stays pinned to the installed version',
   );
 });
+
+// The guard runs before every Write, Edit and Bash, so its module graph is a
+// budget, not an implementation detail. The entry point used to require all 21
+// lib modules before looking at argv — ~40 ms of ship.js, worktree.js and
+// doctor.js per tool call — and util.js pulled in crypto (OpenSSL bindings) and
+// child_process for helpers the guard never calls. This pins both fixes: the
+// only way to regress them is to reintroduce an eager require, and the only way
+// to satisfy the test dishonestly is to actually keep the graph small.
+test('guard loads only the modules it needs', () => {
+  const probe = `
+    process.argv[2] = 'guard';
+    require(${JSON.stringify(path.join(__dirname, '..', 'bin', 'lib', 'guard.js'))});
+    const libs = Object.keys(require.cache)
+      .filter((key) => key.includes(${JSON.stringify(`${path.sep}bin${path.sep}lib${path.sep}`)}))
+      .map((key) => path.basename(key));
+    process.stdout.write(JSON.stringify({
+      libs,
+      crypto: Boolean(require.cache[require.resolve('crypto')]),
+      childProcess: Boolean(require.cache[require.resolve('child_process')]),
+    }));
+  `;
+  const raw = execFileSync(process.execPath, ['-e', `const path = require('path');${probe}`], {
+    encoding: 'utf8',
+  });
+  const loaded = JSON.parse(raw);
+
+  for (const heavy of ['ship.js', 'worktree.js', 'doctor.js', 'templates.js', 'bootstrap.js', 'audit.js']) {
+    assert.ok(!loaded.libs.includes(heavy), `guard must not load ${heavy}`);
+  }
+
+  assert.ok(!loaded.crypto, 'util.js must not pull in crypto on the guard path');
+  assert.ok(!loaded.childProcess, 'util.js must not pull in child_process on the guard path');
+  assert.ok(loaded.libs.length <= 12, `guard's module graph grew to ${loaded.libs.length}: ${loaded.libs.join(', ')}`);
+});
+
+// `guard` returns before the dispatch chain, so it never reaches the block that
+// prints the resolved project root. That branch must not come back for a hook
+// that runs tens of times per session: stderr noise on every allowed tool call.
+test('guard stays silent on stderr when it allows', (t) => {
+  const dir = project(t, 'guard-quiet');
+  const res = guard(dir, {
+    tool_name: 'Write',
+    tool_input: { file_path: path.join(dir, 'src', 'hello.js'), content: 'export const a = 1;\n' },
+    cwd: dir,
+  });
+
+  assert.equal(res.code, 0, 'an ordinary write is allowed');
+  assert.equal(res.stderr, '', 'an allowed write must print nothing to stderr');
+});

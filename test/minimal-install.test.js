@@ -34,7 +34,12 @@ function project(t, prefix) {
   return dir;
 }
 
-const WORKFLOW_FILES = ['RULES.md', 'CLAUDE.md', 'docs', 'epics', '.claude/skills'];
+// `docs/` used to be on this list. It came off when the friction log started
+// shipping with the enforcement layer: --minimal promises no *workflow*, and
+// docs/DOGFOODING.md is not workflow, it is the return channel for a gate that
+// fired wrongly. Everything else on the list is still the promise.
+const WORKFLOW_FILES = ['RULES.md', 'CLAUDE.md', 'epics', '.claude/skills'];
+const MINIMAL_DOCS = ['docs/DOGFOODING.md'];
 
 test('a minimal install lays down the enforcement layer and nothing else', (t) => {
   const dir = project(t, 'min-install');
@@ -52,6 +57,14 @@ test('a minimal install lays down the enforcement layer and nothing else', (t) =
       `${file} must not be laid down by a minimal install`,
     );
   }
+
+  for (const file of MINIMAL_DOCS) {
+    assert.ok(fs.existsSync(path.join(dir, file)), `${file} ships with the enforcement layer`);
+  }
+
+  // The rest of docs/ is workflow documentation and still does not come.
+  assert.equal(fs.existsSync(path.join(dir, 'docs', 'architecture.md')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'docs', 'conventions.md')), false);
 
   const config = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'config.json'), 'utf8'));
   assert.equal(config.install, 'minimal', 'the choice is recorded, not re-derived later');

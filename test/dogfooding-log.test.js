@@ -68,13 +68,23 @@ test('the log is tracked, so upgrade never overwrites what was written in it', (
   assert.match(read(dir, LOG), /2026-08-18 \| guard \| noise/, 'the row survived the upgrade');
 });
 
-test('a minimal install still installs nothing but the enforcement layer', (t) => {
-  // The log is documentation. `--minimal` promises the guard and the harness and
-  // no files beyond them, and a friction log does not get to be the exception.
+test('a minimal install lays down the friction log too', (t) => {
+  // This used to assert the opposite: the log was documentation, and `--minimal`
+  // promised no files beyond the enforcement layer. That reasoning held while
+  // the only user was the author. It stops holding the moment the tool is handed
+  // to someone else — an enforcement layer with no return channel is a gate its
+  // user can only switch off, never argue with. The log is the manual half of
+  // that channel and `ai-flow report` is the automatic half; the layer that
+  // blocks people ships with both.
   const dir = project(t, 'dog-minimal');
   assert.equal(run(dir, ['init', '--minimal']).code, 0);
 
-  assert.equal(fs.existsSync(path.join(dir, LOG)), false);
+  assert.ok(fs.existsSync(path.join(dir, LOG)), 'the friction log ships wherever the guard ships');
+
+  // Still no workflow: the promise --minimal actually makes.
+  assert.equal(fs.existsSync(path.join(dir, 'RULES.md')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'epics')), false);
+  assert.equal(fs.existsSync(path.join(dir, '.claude', 'skills')), false);
 });
 
 // --- the rule that fills it -------------------------------------------------

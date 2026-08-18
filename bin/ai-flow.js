@@ -27,43 +27,8 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
-const { cwd, invocationDir } = require("./lib/context");
-const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
-const {
-  copyTemplates,
-  ensureConvenienceFiles,
-  printConvenienceSummary,
-  printPrunedSkills,
-  upgrade,
-} = require("./lib/templates");
-const { doctor } = require("./lib/doctor");
-const { status } = require("./lib/status");
-const { nextCommand } = require("./lib/next");
-const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
-const { harnessCommand, ensureHarnessConfig } = require("./lib/harness");
-const { guardCommand } = require("./lib/guard");
-const { auditCommand } = require("./lib/audit");
-const { traceCommand } = require("./lib/trace");
-const { ciCommand } = require("./lib/ci");
-const { pluginCommand } = require("./lib/plugin");
-const { worktreeCommand } = require("./lib/worktree");
-const { shipCommand } = require("./lib/ship");
-const { runCommand } = require("./lib/run");
-const { hookCommand } = require("./lib/hook");
-const {
-  ensureConfig,
-  readConfig,
-  readConfigSkillsChoice,
-  writeConfigSkills,
-  writeConfigInstall,
-  STORAGE_BACKENDS,
-} = require("./lib/config");
-const { detectPlugin } = require("./lib/claude-plugin");
-const { ensureHookSettings } = require("./lib/settings");
-const { listSkills } = require("./lib/skills");
-const { uninstall } = require("./lib/uninstall");
-const { printCommands, printHelp } = require("./lib/commands");
-
+// Argument parsing depends on nothing but `process.argv`, so it sits above the
+// requires and lets `guard` dispatch before them.
 const args = process.argv.slice(2);
 const command = args[0] || "help";
 const commandArgs = args.slice(1);
@@ -84,6 +49,54 @@ function getFlagValue(name, fallback = null) {
 
   return fallback;
 }
+
+// `guard` is the only command on a hot path: Claude Code runs it before every
+// Write, Edit and Bash, so its cost is paid tens of times per session while
+// every other command is typed by hand. Loading the other twenty modules to
+// answer it measured ~40 ms of pure waste per tool call. It returns here rather
+// than falling through to the dispatch chain below.
+if (command === "guard") {
+  require("./lib/guard").guardCommand({ getFlagValue, flags });
+  return;
+}
+
+const { cwd, invocationDir } = require("./lib/context");
+const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
+const {
+  copyTemplates,
+  ensureConvenienceFiles,
+  ensureFrictionLog,
+  printConvenienceSummary,
+  printPrunedSkills,
+  upgrade,
+} = require("./lib/templates");
+const { doctor } = require("./lib/doctor");
+const { status } = require("./lib/status");
+const { nextCommand } = require("./lib/next");
+const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
+const { harnessCommand, ensureHarnessConfig } = require("./lib/harness");
+const { auditCommand } = require("./lib/audit");
+const { traceCommand } = require("./lib/trace");
+const { ciCommand } = require("./lib/ci");
+const { pluginCommand } = require("./lib/plugin");
+const { worktreeCommand } = require("./lib/worktree");
+const { shipCommand } = require("./lib/ship");
+const { runCommand } = require("./lib/run");
+const { hookCommand } = require("./lib/hook");
+const { reportCommand } = require("./lib/report");
+const {
+  ensureConfig,
+  readConfig,
+  readConfigSkillsChoice,
+  writeConfigSkills,
+  writeConfigInstall,
+  STORAGE_BACKENDS,
+} = require("./lib/config");
+const { detectPlugin } = require("./lib/claude-plugin");
+const { ensureHookSettings } = require("./lib/settings");
+const { listSkills } = require("./lib/skills");
+const { uninstall } = require("./lib/uninstall");
+const { printCommands, printHelp } = require("./lib/commands");
 
 // Commands operate on the project, not on the directory the user stood in. When
 // those differ, say so once: a silently relocated root is how a verify ends up
@@ -163,10 +176,12 @@ if (command === "init") {
       install: "minimal",
     });
     const harnessCreated = ensureHarnessConfig({ dryRun });
+    const frictionLog = ensureFrictionLog({ dryRun });
 
     log(dryRun ? "Dry run complete." : "Coding Flow installed (minimal).");
     log(`Config: ${configResult.created ? (dryRun ? "would create" : "created") : "unchanged"}`);
     log(`Harness config: ${harnessCreated ? (dryRun ? "would create" : "created") : "unchanged"}`);
+    log(`Friction log: docs/DOGFOODING.md ${frictionLog}`);
 
     if (!flags.has("--no-guard")) {
       const hook = ensureHookSettings({ dryRun });
@@ -174,8 +189,9 @@ if (command === "init") {
     }
 
     log("");
-    log("Installed: the guard hook and the proof layer. No RULES.md, no docs/, no epics/, no skills.");
+    log("Installed: the guard hook, the proof layer, and the friction log. No RULES.md, no epics/, no skills.");
     log("Next: `ai-flow verify` on a branch — it needs no story and no scaffolding.");
+    log("When something goes wrong: `ai-flow report` collects it into one file you can send.");
     log("Later: `ai-flow init` (without --minimal) lays down the full workflow when you want it.");
     log("");
     log(binaryPathNote(isCommandAvailable("ai-flow")));
@@ -351,8 +367,8 @@ if (command === "init") {
   // preflight/check/evidence, which nobody types by hand; verify is the one a
   // user reaches for — re-proving a story that went `stale` after a small edit.
   harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
-} else if (command === "guard") {
-  guardCommand({ getFlagValue, flags });
+} else if (command === "report") {
+  reportCommand({ getFlagValue, flags });
 } else if (command === "audit") {
   auditCommand({ getFlagValue, flags });
 } else if (command === "trace") {

@@ -238,6 +238,38 @@ default.
 
 In STRICT, `/flow-review` is required. An independent pass is the point of STRICT.
 
+## Common Rationalizations
+
+Every row below is an excuse this skill has already answered somewhere above. It
+is repeated here because the moment you reach for one is the moment you are not
+re-reading the prose.
+
+| Rationalization | Reality |
+|---|---|
+| "Verify is green, so the change is covered." | Green means the commands passed. It says nothing about whether proof reaches *your* diff — the suite was green before you started. Read the `Coverage:` rung. |
+| "`Coverage: evidence` is good enough." | `evidence` means a test file moved. That is a proxy, not a measurement. Never summarize it as "the change is covered". |
+| "The story is worded as a small UI change, so QUICK." | Risk is read from the diff. If you are editing an auth path, a migration, or a secret path, switch up — the wording does not lower the bar. |
+| "This story mentions auth, so it must be STRICT." | A story names what it is *near* as readily as what it changes. The diff decides; prose can only raise a quiet change to STANDARD. |
+| "I'll declare a test exemption to keep moving." | The reason is copied verbatim into the evidence and into the PR body. It is a recorded claim, not a mute button. |
+| "The gate is wrong here, I'll turn `requireTestChange` off." | Then the gate protects nothing from here on. Never disable it to finish a story — and if it genuinely fired on a non-risk, that is a `docs/DOGFOODING.md` row, written in the same pass. |
+| "I'll write `## Status: done`, the tests obviously pass." | `done` means a green verify for this story is already captured. A written status is not proof; `/flow-next` will surface it as `unproven`. |
+| "Let me run verify once more to be sure." | An unchanged story replays the existing proof. Re-running without an intervening edit tells you nothing you did not already have. |
+| "It is faster to read the whole module than to search." | Past ~8 files or ~5 searches without clear edit points, you are not being thorough, you are burning the budget that was meant for the change. Do a scout pass. |
+
+## Red Flags
+
+Signs you have already drifted — distinct from Stop Conditions, which are cases
+where you stop and hand back. These are cases where you correct course yourself:
+
+- You are editing an auth path, a migration, or a payment path while running QUICK.
+- You have read more than ~8 files and still cannot name the edit point.
+- You are about to write `## Status: done` without having read a verify result.
+- You added a test exemption and did not add the `docs/DOGFOODING.md` row.
+- You ran the same validation command twice with no edit between the two runs.
+- You are changing a test so it passes, rather than changing the code it guards.
+- You are touching files no acceptance criterion asked for.
+- You reported "tests pass" from the agent's own run instead of from `ai-flow verify`.
+
 ## Stop Conditions
 
 Stop and report — do not push through — when:

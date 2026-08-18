@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "R='/home/landry_pouth/dev/tools/coding-flow/bin/ai-flow.js'; if [ -f \"$R\" ]; then node \"$R\" guard; else npx --yes @landry_pouth/coding-flow@0.8.0 guard; fi",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

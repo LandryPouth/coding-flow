@@ -73,20 +73,64 @@ test('harness check tolerates .env.example', (t) => {
   assert.equal(code, 0, '.env.example is a safe example and must not block');
 });
 
-test('harness preflight classifies a payment story as high risk', (t) => {
-  const dir = freshProject(t);
-  const storyDir = path.join(dir, 'epics', 'epic-01-pay', 'story-01-01-stripe');
-  fs.mkdirSync(storyDir, { recursive: true });
-  fs.writeFileSync(path.join(storyDir, 'spec.md'), '# Payment\n\nStripe payment and webhook integration.\n');
-
-  const { code, output } = run(dir, [
-    'harness', 'preflight',
-    '--story', 'epics/epic-01-pay/story-01-01-stripe',
-    '--json',
-  ]);
+// Prose tops out at medium. Thirteen days of real runs scored 39 of 39 stories
+// `high` — a hero recomposition matched "token" (design tokens), a landing page
+// matched "auth" (author) — so STRICT stopped meaning anything and the
+// diff-derived score could never win the max. See coverage-gate.test.js for the
+// other half of the contract: a diff that touches src/auth/ still reaches high.
+function preflight(dir, rel) {
+  const { code, output } = run(dir, ['harness', 'preflight', '--story', rel, '--json']);
   assert.equal(code, 0, 'preflight must exit 0');
-  const contract = JSON.parse(output);
-  assert.equal(contract.risk.level, 'high', 'a Stripe/payment story must be high risk');
+  return JSON.parse(output);
+}
+
+function storySpec(dir, rel, spec) {
+  fs.mkdirSync(path.join(dir, rel), { recursive: true });
+  fs.writeFileSync(path.join(dir, rel, 'spec.md'), spec);
+  return rel;
+}
+
+test('a payment story with no payment diff is medium, not high', (t) => {
+  const dir = freshProject(t);
+  const rel = storySpec(
+    dir,
+    'epics/epic-01-pay/story-01-01-stripe',
+    '# Payment\n\nStripe payment and webhook integration.\n',
+  );
+
+  const contract = preflight(dir, rel);
+
+  assert.equal(contract.risk.level, 'medium', 'wording alone cannot prove a trust boundary');
+  assert.equal(contract.recommendedMode, 'standard', 'and it must not buy STRICT ceremony');
+  assert.ok(contract.risk.matchedTerms.includes('payment'), 'the term is still reported');
+});
+
+test('a term inside a longer word does not score at all', (t) => {
+  const dir = freshProject(t);
+  const rel = storySpec(
+    dir,
+    'epics/epic-02-ui/story-02-01-hero',
+    '# Hero\n\nRecompose the hero using the brand design tokens. Credit the author in the footer.\n',
+  );
+
+  const contract = preflight(dir, rel);
+
+  assert.equal(contract.risk.level, 'low', '"author" is not "auth" and "tokens" is not "token"');
+  assert.deepEqual(contract.risk.matchedTerms, []);
+});
+
+test('a story that names a high-risk term as a whole word still scores', (t) => {
+  const dir = freshProject(t);
+  const rel = storySpec(
+    dir,
+    'epics/epic-03-acl/story-03-01-roles',
+    '# Roles\n\nThe admin role gates this screen.\n',
+  );
+
+  const contract = preflight(dir, rel);
+
+  assert.equal(contract.risk.level, 'medium', 'a stated risk is evidence, just not proof');
+  assert.ok(contract.risk.matchedTerms.includes('admin'));
 });
 
 test('harness evidence writes a run file', (t) => {

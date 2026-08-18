@@ -102,3 +102,41 @@ test('verify stays non-skippable at every intensity', () => {
   assert.match(run, /Required at every intensity, non-skippable/);
   assert.match(run, /ai-flow verify --story/);
 });
+
+// Two shipped copies of the same seven skills: skills/ is what the Claude Code
+// plugin serves, templates/.claude/skills/ is what `ai-flow init` copies into a
+// project. Nothing compared them, so a one-sided edit shipped a plugin that
+// disagreed with the scaffold and no test noticed. They are identical today;
+// this keeps them that way.
+test('the plugin and the scaffold ship the same skills', () => {
+  const PLUGIN = path.join(__dirname, '..', 'skills');
+
+  const names = (dir) =>
+    fs
+      .readdirSync(dir)
+      .filter((name) => fs.existsSync(path.join(dir, name, 'SKILL.md')))
+      .sort();
+
+  assert.deepEqual(names(PLUGIN), names(SKILLS), 'both trees must carry the same skill set');
+
+  for (const name of names(PLUGIN)) {
+    assert.equal(
+      read(PLUGIN, name, 'SKILL.md'),
+      read(SKILLS, name, 'SKILL.md'),
+      `${name}/SKILL.md differs between skills/ and templates/.claude/skills/ — edit both`,
+    );
+  }
+});
+
+// Context is the budget these skills spend on the user's behalf. 500 lines is
+// the point where a SKILL.md should be pushing its opt-in depth into files that
+// load only when they are needed, rather than on every trigger.
+test('no SKILL.md outgrows its context budget', () => {
+  for (const file of skillFiles()) {
+    const lines = fs.readFileSync(file, 'utf8').split('\n').length;
+    assert.ok(
+      lines <= 500,
+      `${path.basename(path.dirname(file))}/SKILL.md is ${lines} lines: move the opt-in depth into a reference file`,
+    );
+  }
+});
