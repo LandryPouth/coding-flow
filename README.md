@@ -6,6 +6,8 @@
 
 **Evidence-based guardrails around AI coding agents.** Coding Flow checks that agent-generated changes are safe, tested, and reviewable *before* they ship: it runs your tests itself and shows `verified` only when they **actually** passed — not when the agent says they did.
 
+**Who this is for.** If you supervise every run and press Enter on `npm test` yourself, you do not need captured proof — be honest about that. It earns its keep the moment you are *not* in the loop: reviewing a PR an agent opened while you were elsewhere, a batch run over several stories, a CI gate deciding without you watching. In those cases *"the agent said the tests passed"* is worth nothing.
+
 Your CI already tells you whether the repository is green. Coding Flow answers the narrower question — *is **this change** proven?* — and answers it before the secret is written, not after the push.
 
 > **Claude Code only, for now.** The skills, the plugin, and the `guard` hook are wired for Claude Code. The CLI itself is host-agnostic — `verify`, `report`, `ship` and the harness work from any terminal — but the *deterministic* part of the promise, the guard refusing a write before it lands, exists only where a pre-tool hook does. Codex and OpenCode can both carry it now (their blocking gaps were fixed in April 2026); the wiring is not written yet. See [`docs/plans/multi-agent-install.md`](docs/plans/multi-agent-install.md) for what each host actually supports.
@@ -178,7 +180,7 @@ The harness turns *advisory* guardrails into *executed* ones, attached to an ide
 
 **What the proof does and does not claim.** `verify` executes your declared commands and captures their real exit codes, so the agent **cannot lie about having run them or about the result** — a green story means the machine ran the checks and they passed. The coverage gate adds the next link: on a risky story, a green run that added no test is not accepted as proof, so "verified" can no longer mean "rode along on a suite that was already passing." It still does **not** prove the *code is correct*: the agent writes both the code and the tests, so a weak suite proves only that weak tests pass, and the agent still chooses which commands `plan.md` declares. The value is removing the "did you actually check?" trust gap and forcing the change to be covered — not certifying correctness.
 
-**Where this actually pays off.** If you supervise every run and press Enter on `npm test` yourself, you don't need captured proof — be honest about that. The proof earns its keep the moment you are *not* in the loop: a batch `ai-flow run` that verifies several stories and hands you one proof report, a CI gate that decides without you watching, or a teammate reviewing a PR who wasn't there when it ran. In those cases "the agent said the tests passed" is worth nothing and an executed, provenance-stamped result is worth everything.
+**Where this actually pays off** (see *Who this is for* above): a batch `ai-flow run` that verifies several stories and hands you one proof report, a CI gate that decides without you watching, a teammate reviewing a PR who wasn't there when it ran. An executed, provenance-stamped result is the only thing that survives the handover.
 
 We are validating this claim honestly with a small vanilla-vs-coding-flow benchmark on five escalating tasks — methodology and (pending) numbers in [`docs/experiments/reliability-benchmark.md`](docs/experiments/reliability-benchmark.md).
 
