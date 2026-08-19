@@ -1,0 +1,109 @@
+diff --git a/src/actor.js b/src/actor.js
+new file mode 100644
+index 0000000..9b8c9d2
+--- /dev/null
++++ b/src/actor.js
+@@ -0,0 +1,21 @@
++'use strict';
++
++const { getUser } = require('./users');
++
++// The one place an actor is resolved. Callers get a user or an error; they never
++// repeat the two checks.
++function resolveActor(actorId) {
++  const actor = getUser(actorId);
++
++  if (!actor) {
++    throw new Error(`unknown actor: ${actorId}`);
++  }
++
++  if (!actor.role) {
++    throw new Error(`actor has no role: ${actorId}`);
++  }
++
++  return actor;
++}
++
++module.exports = { resolveActor };
+diff --git a/src/approvals.js b/src/approvals.js
+index 77fdadc..b342376 100644
+--- a/src/approvals.js
++++ b/src/approvals.js
+@@ -1,17 +1,10 @@
+ 'use strict';
+ 
+ const { getUser } = require('./users');
++const { resolveActor } = require('./actor');
+ 
+ function approveExpense(store, { actorId, expenseId }) {
+-  const actor = getUser(actorId);
+-
+-  if (!actor) {
+-    throw new Error(`unknown actor: ${actorId}`);
+-  }
+-
+-  if (!actor.role) {
+-    throw new Error(`actor has no role: ${actorId}`);
+-  }
++  const actor = resolveActor(actorId);
+ 
+   const expense = store.get(expenseId);
+ 
+diff --git a/src/expenses.js b/src/expenses.js
+index 2021c18..b4fc3aa 100644
+--- a/src/expenses.js
++++ b/src/expenses.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const { getUser } = require('./users');
++const { resolveActor } = require('./actor');
+ const { parseAmount } = require('./money');
+ const { requireFields, rejectUnknownFields } = require('./validate');
+ 
+@@ -8,15 +8,7 @@ const CATEGORIES = ['travel', 'meals', 'software', 'hardware'];
+ const FIELDS = ['actorId', 'description', 'amount', 'category', 'spentOn'];
+ 
+ function createExpense(store, payload) {
+-  const actor = getUser(payload.actorId);
+-
+-  if (!actor) {
+-    throw new Error(`unknown actor: ${payload.actorId}`);
+-  }
+-
+-  if (!actor.role) {
+-    throw new Error(`actor has no role: ${payload.actorId}`);
+-  }
++  const actor = resolveActor(payload.actorId);
+ 
+   rejectUnknownFields(payload, FIELDS);
+   requireFields(payload, FIELDS);
+diff --git a/src/routes.js b/src/routes.js
+index 1d061e1..3301d9a 100644
+--- a/src/routes.js
++++ b/src/routes.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const { getUser } = require('./users');
++const { resolveActor } = require('./actor');
+ const { createExpense, updateExpense, listExpenses } = require('./expenses');
+ const { approveExpense, rejectExpense } = require('./approvals');
+ 
+@@ -17,15 +17,7 @@ function createRouter(store, reporter) {
+   return {
+     'POST /expenses': (req) =>
+       handle(() => {
+-        const actor = getUser(req.actorId);
+-
+-        if (!actor) {
+-          throw new Error(`unknown actor: ${req.actorId}`);
+-        }
+-
+-        if (!actor.role) {
+-          throw new Error(`actor has no role: ${req.actorId}`);
+-        }
++        resolveActor(req.actorId);
+ 
+         const created = createExpense(store, req);
+         reporter.invalidate();

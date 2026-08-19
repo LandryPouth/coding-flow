@@ -1,0 +1,17 @@
+diff --git a/src/report.js b/src/report.js
+index 3f9e18e..e9eb9d8 100644
+--- a/src/report.js
++++ b/src/report.js
+@@ -11,6 +11,12 @@ function createReporter(store) {
+     const grouped = new Map();
+ 
+     for (const expense of store.all()) {
++      // A rejected expense was never paid, so it is not spend. The reporter
++      // predates rejection, which is why it used to count them.
++      if (expense.status === 'rejected') {
++        continue;
++      }
++
+       const bucket = grouped.get(expense.category) || [];
+       bucket.push(expense.amountCents);
+       grouped.set(expense.category, bucket);

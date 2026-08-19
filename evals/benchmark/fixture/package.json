@@ -1,0 +1,11 @@
+{
+  "name": "ledger",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Expense reporting for a small company.",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test spec/money.spec.js spec/expenses.spec.js spec/approvals.spec.js spec/report.spec.js"
+  },
+  "engines": { "node": ">=18" }
+}

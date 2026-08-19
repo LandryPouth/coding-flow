@@ -97,12 +97,31 @@ property of the tool.
 
 Model: _record here_ · Date: _record here_ · coding-flow version: _record here_
 
-## What is still missing before a run
+## The fixture and the prompts
 
-Only one thing, and it is a product decision rather than an engineering one: the
-**fixture repo and the five prompts**. Everything downstream — measurement, the
-re-prompt protocol, the acceptance grading — is settled above. Pick a repo real
-enough that task 5 can genuinely span two modules; a toy app makes every arm win.
+Both exist: [`evals/benchmark/`](../../evals/benchmark/README.md).
+
+`fixture/` is **Ledger**, a zero-dependency expense-reporting app whose own 17-test
+suite is **green and wrong** — two defects ship in the baseline that no existing
+test can reach. A fixture whose suite already catches its bugs measures typing
+speed, not reliability.
+
+Each of the five tasks carries a verbatim `PROMPT.md`, an `accept.spec.js` grader
+copied in only *after* the run, a `REFERENCE.md` naming the traps and what is
+hand-graded, and a `reference.patch` verified to pass.
+
+```bash
+WORKSPACE=$(node evals/benchmark/run.js setup 05-cross-module)
+cat evals/benchmark/tasks/05-cross-module/PROMPT.md
+# ... the arm works in $WORKSPACE ...
+node evals/benchmark/run.js accept "$WORKSPACE" 05-cross-module
+```
+
+The harness is itself validated against two arms: a run that does nothing fails all
+five tasks, and `reference.patch` passes all five with the regression suite green.
+
+**What remains is the runs.** Ten sessions, five tasks in two arms, with the model
+pinned and recorded.
 
 ## Honesty rules
 

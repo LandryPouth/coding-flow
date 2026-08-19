@@ -1,0 +1,20 @@
+diff --git a/src/money.js b/src/money.js
+index da5a213..bbdf135 100644
+--- a/src/money.js
++++ b/src/money.js
+@@ -24,10 +24,12 @@ function parseAmount(input) {
+ }
+ 
+ function formatAmount(cents) {
+-  const whole = Math.trunc(cents / 100);
+-  const fraction = Math.abs(cents % 100);
++  const sign = cents < 0 ? '-' : '';
++  const magnitude = Math.abs(cents);
++  const whole = Math.trunc(magnitude / 100);
++  const fraction = magnitude % 100;
+ 
+-  return `$${whole}.${String(fraction).padStart(2, '0')}`;
++  return `${sign}$${whole}.${String(fraction).padStart(2, '0')}`;
+ }
+ 
+ function sumCents(amounts) {
