@@ -20,7 +20,7 @@ const os = require("os");
 const path = require("path");
 
 const { cwd } = require("./context");
-const { log, readJson, normalizePortable } = require("./util");
+const { log, readJson, normalizePortable, selectFailureLines } = require("./util");
 
 const MAX_DENIALS = 40;
 const MAX_FAILURES = 15;
@@ -106,16 +106,27 @@ function readDenials(root) {
 }
 
 // The interesting part of a failed command is the part that names the failure,
-// not the hundred lines of progress output before it. Keep the lines that look
-// like errors; fall back to the tail when nothing matches, because a silent
-// failure is itself the signal.
+// not the hundred lines of progress output around it.
+//
+// `failureLines` is the good source: selected at capture time from the whole
+// output, before all but the last 4 KB was thrown away. Runs recorded before
+// that existed only have the tail, so the same selection is applied to it as a
+// fallback — worse input, same rule. When neither yields anything, the raw tail
+// goes in, because a failure that printed no recognisable reason is itself
+// what the reader needs to see.
 function failureTail(result) {
-  const text = `${result.stdoutTail || ""}\n${result.stderrTail || ""}`;
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  const errors = lines.filter((line) => /error|fail|✕|✗|✘|assert|expected|exception|cannot|not found/i.test(line));
-  const chosen = (errors.length ? errors : lines).slice(-MAX_TAIL_LINES);
+  if (Array.isArray(result.failureLines) && result.failureLines.length) {
+    return result.failureLines.slice(-MAX_TAIL_LINES);
+  }
 
-  return chosen;
+  const text = `${result.stdoutTail || ""}\n${result.stderrTail || ""}`;
+  const selected = selectFailureLines(text, { limit: MAX_TAIL_LINES });
+
+  if (selected.length) {
+    return selected;
+  }
+
+  return text.split(/\r?\n/).filter((line) => line.trim()).slice(-MAX_TAIL_LINES);
 }
 
 function countBy(items, pick) {

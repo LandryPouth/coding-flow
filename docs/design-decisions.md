@@ -237,35 +237,74 @@ signal here, not the feature.
 
 ---
 
-## 9. Binding acceptance criteria to evidence — designed, not built
+## 9. Acceptance criteria are surfaced, never bound
 
-**Written 2026-08-18. Not started, and not scheduled.**
+**Decided 2026-08-18. Shipped 2026-08-19, after the objection below was overridden,
+re-examined, and upheld.**
 
-Today a story's acceptance criteria are prose, and the thing that decides whether
-they are met is the agent that wrote the code. `verify` proves the *commands* ran
-and passed; nothing connects criterion 3 to the test that would fail if criterion 3
-regressed. The gap is real: a story can be `verified` with every criterion
-unimplemented, provided the suite is green.
+`verify` proves that the declared commands ran and passed. It has never had
+anything to say about the story's acceptance criteria, so a story could go green
+with every criterion unimplemented and nothing on screen would hint at it. That
+gap is real.
 
-The shape that would close it — freeze each criterion into an obligation, bind each
-obligation to a named piece of evidence, and emit a verdict per obligation rather
-than per story — is what Shipmoor calls Claim Check (`READY` / `READY WITH GAPS` /
-`BLOCKED` / `INCONCLUSIVE`).
+**What was built** is the smallest thing that closes the *visibility* half of it:
+on a green verify, the criteria still unticked in `spec.md` are printed under the
+verdict. No new syntax, no new configuration, no new vocabulary, and it can never
+change `ok` — a test asserts that. On a red verify it prints nothing, because the
+failing command is already the message.
 
-**It is not being built, for two reasons.**
+**What was not built** is Claim Check: freezing each criterion into an obligation,
+binding each obligation to a named piece of evidence, and emitting a per-obligation
+verdict (`READY` / `READY WITH GAPS` / `BLOCKED` / `INCONCLUSIVE`) — the shape
+Shipmoor sells.
 
-First, the binding has to come from somewhere, and every available source is the
-agent: the agent writes the criteria, names the tests, and would declare the
-mapping. A binding an agent authors is a binding an agent controls — the same
-objection that killed policy in `SKILL.md` frontmatter (entry 4). A version that is
-actually enforced needs a source of truth the agent does not write, and there isn't
-one yet. Without that, this is `evidence`-grade proof wearing a `verified` label,
-which is the exact failure the coverage rungs were built to prevent.
+### The argument that does not work
 
-Second, it is a new subsystem, not a config key — squarely what the freeze exists to
-refuse, and "a competitor ships it" is not a change of premise (see entry 6).
+The first version of this entry rejected Claim Check because *"a binding an agent
+authors is a binding an agent controls"*, by analogy with policy in `SKILL.md`
+frontmatter (entry 4).
 
-**The honest smaller step, if this is ever picked up:** report which acceptance
-criteria have *no* named validation at all. That is derivable from the story files
-alone, it blocks nothing, and it would tell a human where to look. Start there, and
-only there, and see whether anyone uses it before building the verdict machinery.
+**That argument is wrong, and it has to be recorded as wrong.** `## Test Exemption`
+is already prose the agent writes, accepted at face value, and it ships. The
+acceptance criteria themselves are written by the agent. If agent authorship
+disqualified a declaration, the exemption would have to go too.
+
+### The argument that works: direction
+
+What separates the two is **which way the declaration moves the claim** — the same
+thing entry 8 reads on a test diff.
+
+| Declaration | Moves the claim | Worst case |
+|---|---|---|
+| `## Test Exemption` | **down** — declares an absence of proof | recorded, visible, and the rung already says `exempted` |
+| criterion → test binding | **up** — declares a presence of proof | a silent promotion from "the suite is green" to "criterion 3 is proven" |
+
+The tool can accept a declaration that lowers what it asserts. It must not accept
+one that raises it without a source of truth the agent does not write. There isn't
+one, so a binding would be `evidence`-grade proof wearing a `verified` label — the
+exact failure the coverage rungs exist to prevent.
+
+### And the invariant that collapses the rest
+
+Implementation of the full version was started and abandoned within the hour, on a
+finding neither of us had before reading the code:
+
+**Apply the honest invariant — Claim Check may lower a verdict, never raise it —
+and the subsystem has nothing left to do.** If a binding can never strengthen what
+the tool asserts, then the obligations, the named bindings and the four-state
+verdict enforce nothing. What remains is a report. Which is the two dozen lines
+above, plus roughly three hundred lines of vocabulary.
+
+Two further findings, worth as much as the principle:
+
+- `printVerify` already carries coverage rungs, weakened tests, exemptions and the
+  risk source. A per-obligation verdict on top produces screens that read
+  `Harness verify passed` and `BLOCKED` at once — two verdict vocabularies for one
+  question, in a tool whose stated first risk is discoverability.
+- **Nobody asked for it.** The measured user complaint was 1h30 per story, whose
+  cause was 39/39 `STRICT` (entry 1). Claim Check came from a competitor's product
+  page, not from a run.
+
+**If it is ever revisited**, the premise that must have changed is the missing one:
+a source of truth for the binding that the coding agent does not author. Until then,
+the answer is not "later", it is "no".
