@@ -46,6 +46,15 @@ Useful flags:
   text is not enough to reach tier 4 (`ready-to-ship`) — it needs an actual
   captured green verify first, otherwise it surfaces as tier 2 (`unproven`).
 
+## Verification
+
+- [ ] `ai-flow next` actually ran. The recommendation is its output, not your own
+      reading of the project.
+- [ ] The tier and the reason it ranked there were reported, not just the command
+      to run.
+- [ ] The recommended command was **not** run without asking first. `next`
+      recommends; acting on it is a separate decision.
+
 ## Output
 
 Report the top recommendation (or the full ranked queue with `--all`): what it is,

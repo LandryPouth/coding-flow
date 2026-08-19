@@ -207,6 +207,25 @@ shippable slice.
 - Update `project-context.md` only when the durable project state changes.
 - Do not create documents that no agent will read.
 
+## Verification
+
+Before reporting the plan as done:
+
+- [ ] Every story file named under `## Generated Files` exists on disk — checked,
+      not assumed.
+- [ ] Story 01 is a walking skeleton: it delivers end-to-end value on its own
+      rather than being one horizontal layer of several.
+- [ ] Each story's acceptance criteria are `- [ ]` checklist items in
+      Given/When/Then form. Criteria written as prose are invisible to `verify`,
+      which lists the unticked ones back on every green run and cannot see these.
+- [ ] `ai-flow doctor` ran and reports no duplicate story numbering and no
+      oversized epic.
+- [ ] No implementation happened. Planning writes story files; `/flow-run` writes
+      code.
+
+A criterion with no observable outcome cannot be verified and cannot be reviewed.
+Rewrite it here, where it is cheap, rather than handing it to `/flow-run`.
+
 ## Output
 
 ```md

@@ -72,9 +72,15 @@ The dependency graph is acyclic:
 - **Native Claude Code plugin** — delivers the skills and the `guard` hook globally,
   updated through the marketplace.
 
-The plugin's `skills/` are materialized from `templates/.claude/skills/` by
-`ai-flow plugin sync` and kept drift-free by `ai-flow plugin check` (enforced in
-tests/CI). **Any skill add/remove/rename must happen in both trees.**
+**Edit `templates/.claude/skills/`. Never `skills/`.** The plugin's `skills/` is a
+generated tree: `ai-flow plugin sync` overwrites it from `templates/.claude/skills/`
+and silently discards whatever was there. `ai-flow plugin check` keeps the two
+drift-free (enforced in tests/CI) but does not say which side wins, so editing the
+wrong one costs the work — see the 2026-08-19 row in `DOGFOODING.md`. Adds, removes
+and renames go through `templates/`, then `sync`.
+
+Every skill also needs `evals/cases/<name>.json` in the same commit — see
+[`../evals/README.md`](../evals/README.md). `npm test` fails without it.
 
 A project must never receive the skills from both channels at once — that is two
 names for the same skill. `lib/claude-plugin.js` detects an installed plugin and
@@ -115,6 +121,7 @@ npm publish     # publishes @landry_pouth/coding-flow@<version>
 | [`agent-contract.md`](agent-contract.md) | What Coding Flow expects from an agent, agent-neutral — the protocol each integration translates |
 | [`design-decisions.md`](design-decisions.md) | What was decided and what was refused, with the measurements — read before re-proposing a guard daemon, a Go rewrite, or policy in skill frontmatter |
 | [`DOGFOODING.md`](DOGFOODING.md) | The friction log: where the tool cost more than it returned, and what came of it |
+| [`../evals/README.md`](../evals/README.md) | How the skills are tested: the two deterministic tiers, the case format, the routing floor, and why there is no behavioural tier |
 | [`migration.md`](migration.md) | Migrating an existing project to a new version: `upgrade` vs re-install, what is protected, and the gotchas |
 | [`sdd-vs-plugins.md`](sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed and why |
 | [`git-worktree-bare.md`](git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |

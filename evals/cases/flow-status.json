@@ -1,0 +1,14 @@
+{
+  "skill": "flow-status",
+  "trigger": {
+    "positive": [
+      { "prompt": "show me every epic and how far along each story is", "top_k": 1 },
+      { "prompt": "which stories are proven and which ones went stale", "top_k": 2 },
+      { "prompt": "give me the whole board, I want to see where the project stands", "top_k": 2 }
+    ],
+    "negative": [
+      { "prompt": "just tell me the single thing worth doing right now", "owner": "flow-next" },
+      { "prompt": "scaffold the workflow into this repository", "owner": "flow-setup" }
+    ]
+  }
+}

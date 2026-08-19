@@ -1,0 +1,14 @@
+{
+  "skill": "flow-ship",
+  "trigger": {
+    "positive": [
+      { "prompt": "open a pull request for this branch", "top_k": 1 },
+      { "prompt": "the story is verified, get it up for review with the evidence attached", "top_k": 2 },
+      { "prompt": "push this and update the PR description", "top_k": 2 }
+    ],
+    "negative": [
+      { "prompt": "review it properly before it goes out", "owner": "flow-review" },
+      { "prompt": "what is left to do on this project", "owner": "flow-next" }
+    ]
+  }
+}

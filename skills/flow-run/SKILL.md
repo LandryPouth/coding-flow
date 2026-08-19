@@ -1,6 +1,6 @@
 ---
 name: flow-run
-description: Execute one prepared story end-to-end — plan the edit, implement, add tests, and verify — at an intensity that matches its risk. Use QUICK/FAST for small UI, copy, or isolated bug fixes; STANDARD for normal CRUD, features, and integration; STRICT only when the change alters an authorization decision, a persistence schema, a payment or secret path, or creates a new externally-reachable trust boundary. This is the daily driver; it runs the verify automatically and only marks a story done when a green verify proves it.
+description: Implement one story end-to-end — write the code, add the tests that protect it, and prove it with an executed verify. Use whenever the user asks to build, implement, code, or fix something: a copy tweak or an isolated bug fix as readily as a feature touching auth, permissions, payments, or a database migration. The daily driver. It picks its own intensity from the risk in the diff, and marks a story done only once a green verify proves it.
 ---
 
 # Run
@@ -291,6 +291,25 @@ manual cleanup steps if validation fails. Record them in the story `## Result` �
 
 A QUICK change that is reverted by `git revert` needs no rollback plan — say so by
 omitting the section rather than writing "n/a".
+
+## Verification
+
+Before reporting the story as done:
+
+- [ ] `ai-flow verify --story <dir>` ran and its result was read. The verdict is
+      that command's output, never the agent's own test run.
+- [ ] The `Coverage:` rung was reported as printed, and `evidence` was not
+      summarized as "the change is covered".
+- [ ] Any `NOT PROVEN` was resolved by writing the missing test or by declaring a
+      `## Test Exemption` — never by lowering or disabling the gate.
+- [ ] `## Status: done` was written only against a captured green verify.
+      Otherwise it reads `blocked` or `in-progress`.
+- [ ] Any gate relaxed, exempted, or disabled has its `docs/DOGFOODING.md` row,
+      written in the same pass rather than at the end.
+- [ ] STANDARD/STRICT: `harness check` and `harness evidence` ran. STRICT also ran
+      `harness preflight` before implementing.
+
+A box you cannot point at command output for is not ticked.
 
 ## Output
 

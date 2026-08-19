@@ -1,6 +1,6 @@
 {
   "name": "@landry_pouth/coding-flow",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "AI-native engineering workflow that makes Claude Code reliable on real projects: plan, implement, and verify with executed proof that the tests actually ran and passed — not the agent's word. Optional evidence & audit layer for teams that need governance. (Codex support planned.)",
   "license": "MIT",
   "author": "Landry Pouth",
