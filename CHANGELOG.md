@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.4] - 2026-08-19
+
+### Added
+
+- **Epic `index.md` carries a story dependency tree instead of a `Parallel-safe:`
+  line.** The flat line named which stories could run in parallel; the tree makes
+  the dependency structure itself visible — sibling branches are the parallel
+  stories (one worktree each), and a `──┴──` merge is where one story consolidates
+  several. `/flow-plan` teaches and writes the tree with short `s<number>` labels;
+  zero CLI.
+
 ## [0.8.3] - 2026-08-19
 
 ### Added
