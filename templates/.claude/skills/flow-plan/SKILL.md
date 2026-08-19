@@ -77,6 +77,36 @@ across the whole backbone. Every later story deepens one step of it — reorderi
 a story should mean moving it to a different point on the stated journey, never
 just renumbering.
 
+### Story dependency tree (optional)
+
+The Backbone line orders the journey; it does not say which stories build on
+which. When stories have real dependencies — one story lands files or behavior
+another story assumes — record them as an ASCII tree in the epic `index.md`,
+directly under the Backbone line:
+
+```text
+s1
+├── s2 ──┐
+├── s3 ──┤
+└── s4 ──┴── s5
+```
+
+Use the short `s<number>` label (matching the numbered `## Stories` list), not
+the full story name — the tree stays scannable. Story 01 (the walking skeleton)
+is the root; every later story hangs off the story it builds on. Two stories on
+sibling branches have no edge between them and run in parallel, each in its own
+worktree — `ai-flow worktree add --story <dir>`, then a `/flow-run` per
+worktree. An edge is a real build-on relationship: before leaving two stories
+unconnected, check their likely files/dirs (from their Implementation Context)
+are disjoint — a missing edge claims parallel-safety, and parallel-safety is
+checked, not assumed.
+
+A story that consolidates several others (verification, rollout, cleanup)
+merges its dependents with `──┴──`, as `s5` above. Write the tree when the
+dependency structure goes beyond story order — any branching or merging. For a
+plain chain the Backbone already carries the order; omit the tree rather than
+drawing a straight line.
+
 ## Story File Contract
 
 The shape follows the story's size. Leave the `## Result` section empty for
@@ -220,6 +250,8 @@ Before reporting the plan as done:
       which lists the unticked ones back on every green run and cannot see these.
 - [ ] `ai-flow doctor` ran and reports no duplicate story numbering and no
       oversized epic.
+- [ ] Any story dependency tree written has its edges backed by real
+      build-on relationships — checked, not assumed.
 - [ ] No implementation happened. Planning writes story files; `/flow-run` writes
       code.
 

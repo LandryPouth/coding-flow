@@ -103,6 +103,20 @@ test('verify stays non-skippable at every intensity', () => {
   assert.match(run, /ai-flow verify --story/);
 });
 
+test('flow-plan records story dependencies as a tree so parallelism is visible', () => {
+  const plan = read(SKILLS, 'flow-plan', 'SKILL.md');
+
+  // The epic index carries a dependency tree, not a flat parallel-safe line:
+  // branches with no edge between them are the stories that can run in
+  // parallel, and a merge is where one story consolidates several. A missing
+  // edge is a claim of parallel-safety, so the skill checks disjoint files.
+  assert.match(plan, /### Story dependency tree/);
+  assert.match(plan, /├──/);
+  assert.match(plan, /──┴──/);
+  assert.match(plan, /ai-flow worktree add --story/);
+  assert.doesNotMatch(plan, /Parallel-safe/);
+});
+
 // Two shipped copies of the same seven skills: skills/ is what the Claude Code
 // plugin serves, templates/.claude/skills/ is what `ai-flow init` copies into a
 // project. Nothing compared them, so a one-sided edit shipped a plugin that
