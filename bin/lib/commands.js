@@ -121,7 +121,7 @@ user you mainly need: init, status, next, ship (and the /flow-plan, /flow-run sk
 
 Usage:
   ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
-  ai-flow upgrade [--with-skills|--no-skills] [--force] [--dry-run] [--json]
+  ai-flow upgrade [--with-skills|--no-skills] [--no-guard] [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
   ai-flow next [--all] [--json]

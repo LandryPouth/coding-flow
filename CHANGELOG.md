@@ -4,6 +4,53 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.2] - 2026-08-19
+
+### Fixed
+
+- **`upgrade` now re-wires the guard hook.** The hook command hard-codes the absolute
+  path of the binary that wrote it, so upgrading the package left that path pointing
+  at the *old* copy — an npx cache directory keyed to the old version keeps existing
+  and keeps working. `init` refreshed the wiring; `upgrade` never did. The effect was
+  that an installed project silently kept enforcing with the version it was set up
+  with, forever, and **every guard fix would ship to npm and reach nobody**. Found by
+  reading a real project's `settings.json`: it was executing 0.7.0 two releases later,
+  with the pre-`Bash` matcher, so shell redirections were not intercepted at all.
+
+  `upgrade` also promotes a matcher we shipped as a default before it covered `Bash`.
+  A matcher you customised is still your decision and survives untouched. Opt out with
+  `upgrade --no-guard`.
+
+- **`report` no longer buries the failure it exists to carry.** The output filter
+  matched `/fail/`, and test names are prose: `ok 395 - verify in an uninitialised
+  directory fails cleanly` is a **pass**, and it was being promoted to the top of the
+  bug report while the real failure was nowhere on the page. Passing lines, progress
+  lines and zero counters are now excluded — and `not ok`, TAP's actual failure
+  marker, was missing from the signal list entirely, so the one line naming the broken
+  test was dropped from every report ever generated.
+
+- **The failure is selected from the whole output, not from the tail.** Only the last
+  4 KB of a command's output was retained, and a verbose runner pushes the failure out
+  of that window long before the end — the report would honestly say `# fail 1` and
+  nothing else. Failing runs now record the lines that name the failure, chosen while
+  the full stream is still in memory. Older evidence files fall back to the same
+  selection over the tail. `verify` prints them too, instead of the tail of `stderr`,
+  which is empty for every runner that reports on stdout.
+
+### Added
+
+- **A green verify lists the acceptance criteria still unticked.** `verify` proves
+  that the declared commands ran and passed; it has never had anything to say about
+  the story's own claims, so a story could go green with every criterion
+  unimplemented. The unticked ones are now printed under the verdict.
+
+  This is information, not a gate: it adds no configuration, cannot change the exit
+  code, and prints nothing on a red run or a fully ticked story. It deliberately does
+  **not** bind a criterion to a named test — that binding would be authored by the
+  same agent that writes the code, so it could only raise what the tool asserts on the
+  agent's own word. See `docs/design-decisions.md` entry 9, which also records why the
+  full Claim Check subsystem was started and abandoned.
+
 ## [0.8.1] - 2026-08-18
 
 ### Fixed

@@ -327,6 +327,67 @@ function findDirectories(dir, predicate, maxDepth = 3, depth = 0) {
   return matches;
 }
 
+// --- failure lines ----------------------------------------------------------
+//
+// A failed command's useful output is a handful of lines that name the failure,
+// scattered anywhere inside tens of thousands of lines of progress output.
+// Keeping the tail is the obvious approach and it is wrong for any verbose
+// runner: with node:test's TAP output the failure scrolls off long before the
+// end, and the last 4 KB are the summary counters. Selecting by content instead
+// of by position is what makes a report readable by someone who was not there.
+
+// A line a runner emits to say a test PASSED, whatever the test is called.
+// Checked first, because test names are prose and prose contains the word
+// "fail": `ok 395 - verify in an uninitialised directory fails cleanly` is a
+// pass, and a naive /fail/ filter promotes it to the top of a bug report while
+// burying the failure it was supposed to surface.
+const PASSING_LINE = /^\s*(?:ok\b|✓|√|PASS\b|# Subtest:|\d+\s*passing\b)/i;
+
+// Counters are not failures either, but `# fail 1` carries the only count in a
+// TAP summary, so it stays — unless it reports zero.
+const ZERO_COUNTER = /^\s*#?\s*(?:fail|failing|failures?|errors?)\s*[:=]?\s*0\s*$/i;
+
+// `not ok` is TAP's failure marker and was missing from this list entirely, so
+// the one line that names the broken test — `not ok 396 - the cart totals VAT`
+// — was dropped from every report while the assertion under it survived. It is
+// anchored, because "not ok" in the middle of a sentence is prose.
+const FAILURE_SIGNAL = /^\s*not ok\b|error|fail|✕|✗|✘|assert|expected|exception|cannot|not found/i;
+
+const MAX_FAILURE_LINES = 12;
+const MAX_FAILURE_LINE_CHARS = 500;
+
+function looksLikeFailure(line) {
+  return FAILURE_SIGNAL.test(line) && !PASSING_LINE.test(line) && !ZERO_COUNTER.test(line);
+}
+
+// Lines that name a failure, in order, bounded in both count and width.
+// Returns [] when nothing matches — an empty result means "no line said why",
+// which the caller reports as such rather than papering over it with the tail.
+function selectFailureLines(text, { limit = MAX_FAILURE_LINES } = {}) {
+  if (!text) {
+    return [];
+  }
+
+  const kept = [];
+
+  for (const line of String(text).split(/\r?\n/)) {
+    if (!line.trim() || !looksLikeFailure(line)) {
+      continue;
+    }
+
+    kept.push(line.trim().slice(0, MAX_FAILURE_LINE_CHARS));
+
+    // Keep the LAST `limit` matches. A suite that fails 200 times usually has
+    // one cause, and the closing failures sit nearest the summary a reader
+    // recognises — the opening ones are as likely to be collateral.
+    if (kept.length > limit) {
+      kept.shift();
+    }
+  }
+
+  return kept;
+}
+
 module.exports = {
   log,
   fail,
@@ -351,4 +412,6 @@ module.exports = {
   addIssue,
   walkProjectFiles,
   findDirectories,
+  selectFailureLines,
+  looksLikeFailure,
 };

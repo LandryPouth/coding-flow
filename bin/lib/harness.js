@@ -35,6 +35,7 @@ const {
   isAllowedEnvExample,
   readTextFileSafely,
   walkProjectFiles,
+  selectFailureLines,
 } = require("./util");
 
 function harnessConfigPath() {
@@ -1184,15 +1185,23 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
       ? `could not be executed (${result.error.code || result.error.message})`
       : null;
 
+  const ok = !toolError && exitCode === 0;
+
   return {
     command,
     exitCode: toolError ? null : exitCode,
-    ok: !toolError && exitCode === 0,
+    ok,
     timedOut,
     toolError,
     durationMs: Date.now() - started,
     stdoutTail: (result.stdout || "").slice(-cap),
     stderrTail: (result.stderr || "").slice(-cap),
+    // Selected from the WHOLE output, which only exists here: by the time anyone
+    // reads the evidence file, all that survives is the 4 KB tail above, and a
+    // verbose runner pushes the failure out of it long before the end. Recorded
+    // only on a failure — a green run has nothing to name, and the evidence
+    // ledger is append-only.
+    ...(ok ? {} : { failureLines: selectFailureLines(`${result.stdout || ""}\n${result.stderr || ""}`) }),
   };
 }
 
@@ -1296,6 +1305,7 @@ function printVerify(evidence, outputPath) {
     // deleted tests is still three deleted tests, and the reader decides what that
     // means — this only refuses to let a good number hide it.
     printWeakenedTests(coverage);
+    printOpenCriteria(evidence);
   } else {
     log("Harness verify FAILED.");
     printWeakenedTests(coverage);
@@ -1316,9 +1326,20 @@ function printVerify(evidence, outputPath) {
       log(`    ${item.toolError}`);
     }
 
-    if (!item.ok && item.stderrTail.trim()) {
-      const tail = item.stderrTail.trim().split(/\r?\n/).slice(-3).join("\n    ");
-      log(`    ${tail}`);
+    // Prefer the lines that name the failure over the tail of stderr. A runner
+    // that reports on stdout — node:test, vitest, pytest — leaves stderr empty,
+    // so the old branch printed nothing at all for the most common case and the
+    // reader had to re-run the command to find out what broke.
+    if (!item.ok) {
+      const named = Array.isArray(item.failureLines) && item.failureLines.length
+        ? item.failureLines.slice(-3)
+        : item.stderrTail.trim()
+          ? item.stderrTail.trim().split(/\r?\n/).slice(-3)
+          : [];
+
+      for (const line of named) {
+        log(`    ${line}`);
+      }
     }
   }
 
@@ -1519,6 +1540,51 @@ function readTestExemption(storyDir) {
   const text = extractSection(Object.values(bundle).join("\n\n"), "Test Exemption");
 
   return text.trim() ? text.trim() : null;
+}
+
+// A story's acceptance criteria are its claims. `verify` proves that the
+// commands ran and passed; it has never had anything to say about the claims,
+// so a story can go green with every criterion unimplemented. This does not fix
+// that — it makes it visible. No gate, no verdict, no new configuration: the
+// unticked claims are printed next to the green checkmark, and the reader
+// decides.
+//
+// Deliberately NOT a binding from a criterion to a named test. That binding
+// would be written by the same agent that writes the code, so it could only
+// ever raise what the tool asserts on the agent's own word. The tool can accept
+// a declaration that lowers its claim (`## Test Exemption`); it must not accept
+// one that raises it. See docs/design-decisions.md entry 9.
+function readAcceptanceCriteria(storyDir) {
+  if (!storyDir) {
+    return null;
+  }
+
+  const section = extractSection(readStoryPart(storyDir, "spec"), "Acceptance Criteria");
+
+  if (!section.trim()) {
+    return null;
+  }
+
+  const items = [];
+
+  for (const line of section.split(/\r?\n/)) {
+    const match = line.match(/^\s*[-*]\s*\[([ xX])\]\s*(.+?)\s*$/);
+
+    if (match) {
+      items.push({ done: match[1].toLowerCase() === "x", text: match[2] });
+    }
+  }
+
+  // A criteria section written as prose rather than as a checklist is not a
+  // defect to report — there is simply nothing countable in it.
+  if (items.length === 0) {
+    return null;
+  }
+
+  return {
+    total: items.length,
+    unchecked: items.filter((item) => !item.done).map((item) => item.text),
+  };
 }
 
 // The line-level verdict, or null when it cannot be established — in which case
@@ -1941,6 +2007,34 @@ function printWeakenedTests(coverage) {
   }
 }
 
+// Only on a green verify, and only when something is still unticked. On a red
+// one the failing command is the message, and on a fully ticked story there is
+// nothing to say. The closing line is not filler: without it, a list printed
+// under a passing verdict reads like a new gate, and the next thing someone
+// does is look for the flag that turns it off.
+function printOpenCriteria(evidence) {
+  const criteria = evidence.acceptanceCriteria;
+
+  if (!criteria || criteria.unchecked.length === 0) {
+    return;
+  }
+
+  const ticked = criteria.total - criteria.unchecked.length;
+
+  log(`  Acceptance criteria: ${ticked}/${criteria.total} ticked in the story. Still open:`);
+
+  for (const text of criteria.unchecked.slice(0, 5)) {
+    log(`    - [ ] ${text}`);
+  }
+
+  if (criteria.unchecked.length > 5) {
+    log(`    - … and ${criteria.unchecked.length - 5} more`);
+  }
+
+  log("  The commands passed. These are the story's own claims, unproven either way —");
+  log("  this changes no verdict and blocks nothing.");
+}
+
 // The verdict, plus the name of the rung it landed on. Stamped in one place so
 // no return path can forget it, and so `mode` stays what it has always been —
 // how the answer was obtained — while `tier` says how strong the answer is.
@@ -1984,6 +2078,8 @@ function verifyStoryOnce({ story = null, exemption = null } = {}) {
     environment: captureEnvironment(),
     commandsOk,
     coverage,
+    // Recorded, never consulted: `ok` below does not read it, and must not.
+    acceptanceCriteria: readAcceptanceCriteria(storyDir),
     ok: commandsOk && coverage.ok,
     results,
   };

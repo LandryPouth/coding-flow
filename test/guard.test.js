@@ -528,3 +528,64 @@ test('guard stays silent on stderr when it allows', (t) => {
   assert.equal(res.code, 0, 'an ordinary write is allowed');
   assert.equal(res.stderr, '', 'an allowed write must print nothing to stderr');
 });
+
+// The hook command hard-codes the absolute path of the binary that wrote it, so
+// the wiring has to be refreshed whenever the package moves. `init` did that;
+// `upgrade` did not, which meant an installed project kept enforcing with the
+// version it was set up with forever — every guard fix would ship to npm and
+// reach nobody. Found by reading a real project's settings.json: it pointed at
+// an npx cache directory holding a two-releases-old copy.
+test('upgrade re-points the hook at the current binary', (t) => {
+  const dir = project(t, 'guard-upgrade-path');
+  runCli(dir, ['init']);
+
+  const settingsFile = path.join(dir, '.claude', 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  const stale = "R='/nonexistent/old-version/bin/ai-flow.js'; if [ -f \"$R\" ]; then node \"$R\" guard; else npx --yes @landry_pouth/coding-flow@0.5.3 guard; fi";
+  settings.hooks.PreToolUse[0].hooks[0].command = stale;
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+
+  const res = runCli(dir, ['upgrade']);
+
+  assert.equal(res.code, 0, res.output);
+
+  const after = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  const command = after.hooks.PreToolUse[0].hooks[0].command;
+
+  assert.ok(!command.includes('/nonexistent/old-version/'), 'the stale path must not survive an upgrade');
+  assert.ok(command.includes(CLI), 'the hook must point at the binary that ran the upgrade');
+  assert.match(res.output, /Guard hook:/, 'and the outcome must be reported, not silent');
+});
+
+test('upgrade widens a matcher we shipped before it covered Bash', (t) => {
+  const dir = project(t, 'guard-upgrade-matcher');
+  runCli(dir, ['init']);
+
+  const settingsFile = path.join(dir, '.claude', 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  settings.hooks.PreToolUse[0].matcher = 'Write|Edit|MultiEdit|NotebookEdit';
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+
+  runCli(dir, ['upgrade']);
+
+  const after = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  assert.match(after.hooks.PreToolUse[0].matcher, /Bash/, 'a shell redirection writes to disk like Write does');
+});
+
+test('upgrade --no-guard leaves the hook alone, and --json stays pure JSON', (t) => {
+  const dir = project(t, 'guard-upgrade-optout');
+  runCli(dir, ['init']);
+
+  const settingsFile = path.join(dir, '.claude', 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  settings.hooks.PreToolUse[0].hooks[0].command = 'echo mine';
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+
+  runCli(dir, ['upgrade', '--no-guard']);
+
+  const after = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  assert.equal(after.hooks.PreToolUse[0].hooks[0].command, 'echo mine', '--no-guard must mean what it says');
+
+  const json = runCli(dir, ['upgrade', '--json']);
+  assert.doesNotThrow(() => JSON.parse(json.output), 'the hook line must not leak into --json output');
+});

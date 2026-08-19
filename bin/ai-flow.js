@@ -334,6 +334,21 @@ if (command === "init") {
     skillsMode: skills,
   });
 
+  // The hook command hard-codes the absolute path of the binary that wrote it
+  // (see settings.js). Upgrading the package leaves that path pointing at the
+  // OLD copy — an npx cache directory keyed to the old version keeps existing
+  // and keeps working — so without this the project silently keeps enforcing
+  // with the version it was installed with, forever. Every guard fix would ship
+  // to npm and reach nobody. Re-wiring here also promotes a matcher we shipped
+  // as a default before it covered `Bash`.
+  if (!flags.has("--no-guard")) {
+    const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
+
+    if (!flags.has("--json")) {
+      log(`Guard hook: ${describeHookStatus(hook.status, flags.has("--dry-run"))}`);
+    }
+  }
+
   if (!flags.has("--json")) {
     log("");
     log(binaryPathNote(isCommandAvailable("ai-flow")));

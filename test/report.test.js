@@ -181,3 +181,111 @@ test('--out writes the file the user is meant to send', (t) => {
   assert.match(output, /Report written to coding-flow-report\.md/);
   assert.match(fs.readFileSync(path.join(dir, 'coding-flow-report.md'), 'utf8'), /npm test/);
 });
+
+// --- naming the failure, not the noise around it ------------------------------
+//
+// Found by running `report` on this repo's own red run. The tail filter matched
+// /fail/, node:test names tests in prose, and prose says "fails": the report led
+// with `ok 395 - verify in an uninitialised directory fails cleanly` — a PASSING
+// line — while the actual failure was nowhere on the page.
+
+function writeVerifyWithOutput(dir, results) {
+  fs.writeFileSync(
+    path.join(dir, '.coding-flow', 'runs', '2026-08-18T11-00-00-000Z-verify.json'),
+    JSON.stringify({
+      generatedAt: '2026-08-18T11:00:00.000Z',
+      root: dir,
+      ok: false,
+      results,
+    }),
+  );
+}
+
+test('a passing line whose test name contains "fail" is not reported as a failure', (t) => {
+  const dir = project(t, 'report-passing-line');
+  writeVerifyWithOutput(dir, [
+    {
+      command: 'npm test',
+      exitCode: 1,
+      ok: false,
+      durationMs: 100,
+      stdoutTail: [
+        'ok 395 - verify in an uninitialised directory fails cleanly',
+        '# Subtest: worktree remove refuses a dirty worktree',
+        'not ok 396 - the cart totals VAT',
+        "  AssertionError: expected 3 got 0",
+        '# fail 1',
+      ].join('\n'),
+      stderrTail: '',
+    },
+  ]);
+
+  const { output } = run(dir, ['report']);
+
+  assert.match(output, /not ok 396 - the cart totals VAT/, 'the real failure must be in the file');
+  assert.match(output, /expected 3 got 0/);
+  assert.doesNotMatch(output, /ok 395/, 'a pass must not be listed under failures');
+  assert.doesNotMatch(output, /# Subtest:/, 'nor must a progress line');
+});
+
+test('a zero counter is not a failure, a non-zero one is', (t) => {
+  const dir = project(t, 'report-counters');
+  writeVerifyWithOutput(dir, [
+    {
+      command: 'npm test',
+      exitCode: 1,
+      ok: false,
+      durationMs: 100,
+      stdoutTail: ['# fail 0', '# errors 0', 'not ok 12 - boom', '# fail 1'].join('\n'),
+      stderrTail: '',
+    },
+  ]);
+
+  const { output } = run(dir, ['report']);
+
+  assert.match(output, /not ok 12 - boom/);
+  assert.match(output, /# fail 1/, 'the count of failures is worth keeping');
+  assert.doesNotMatch(output, /# fail 0/, 'a zero count says nothing failed');
+});
+
+test('failureLines recorded at capture time win over the truncated tail', (t) => {
+  const dir = project(t, 'report-failurelines');
+  writeVerifyWithOutput(dir, [
+    {
+      command: 'npm test',
+      exitCode: 1,
+      ok: false,
+      durationMs: 100,
+      // What the harness now records: chosen from the whole stream, before all
+      // but the last 4 KB was discarded.
+      failureLines: ['not ok 42 - the discount applies twice', '  AssertionError: expected 10 got 20'],
+      // What survives in the tail of a verbose runner: the summary, and nothing
+      // that says which test broke.
+      stdoutTail: '# tests 410\n# pass 409\n# fail 1\n',
+      stderrTail: '',
+    },
+  ]);
+
+  const { output } = run(dir, ['report']);
+
+  assert.match(output, /the discount applies twice/, 'the recorded lines are what the reader needs');
+  assert.match(output, /expected 10 got 20/);
+});
+
+test('a failure that printed no recognisable reason still shows its output', (t) => {
+  const dir = project(t, 'report-silent');
+  writeVerifyWithOutput(dir, [
+    {
+      command: 'make build',
+      exitCode: 2,
+      ok: false,
+      durationMs: 100,
+      stdoutTail: 'linking objects\nwriting artifact\n',
+      stderrTail: '',
+    },
+  ]);
+
+  const { output } = run(dir, ['report']);
+
+  assert.match(output, /writing artifact/, 'a silent failure is itself the signal, so the tail goes in');
+});
