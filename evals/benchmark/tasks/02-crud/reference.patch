@@ -1,0 +1,156 @@
+diff --git a/package.json b/package.json
+index 7a0aef5..308444c 100644
+--- a/package.json
++++ b/package.json
+@@ -5,7 +5,9 @@
+   "description": "Expense reporting for a small company.",
+   "type": "commonjs",
+   "scripts": {
+-    "test": "node --test spec/money.spec.js spec/expenses.spec.js spec/approvals.spec.js spec/report.spec.js"
++    "test": "node --test spec/money.spec.js spec/expenses.spec.js spec/approvals.spec.js spec/report.spec.js spec/vendors.spec.js"
+   },
+-  "engines": { "node": ">=18" }
+-}
++  "engines": {
++    "node": ">=18"
++  }
++}
+\ No newline at end of file
+diff --git a/spec/vendors.spec.js b/spec/vendors.spec.js
+new file mode 100644
+index 0000000..81dd1b4
+--- /dev/null
++++ b/spec/vendors.spec.js
+@@ -0,0 +1,39 @@
++'use strict';
++
++const { test } = require('node:test');
++const assert = require('node:assert');
++const { createStore } = require('../src/store');
++const { createVendor, updateVendor, listVendors } = require('../src/vendors');
++
++test('a vendor is created with a name and a country', () => {
++  const store = createStore();
++  const vendor = createVendor(store, { name: 'Trainline', country: 'FR' });
++
++  assert.equal(vendor.name, 'Trainline');
++  assert.equal(listVendors(store).length, 1);
++});
++
++test('a blank name, a missing country and an unknown field are refused', () => {
++  const store = createStore();
++
++  assert.throws(() => createVendor(store, { name: '', country: 'FR' }), /missing field: name/);
++  assert.throws(() => createVendor(store, { name: 'X' }), /missing field: country/);
++});
++
++test('names are unique, on create and on edit', () => {
++  const store = createStore();
++  createVendor(store, { name: 'Trainline', country: 'FR' });
++  const other = createVendor(store, { name: 'Eurostar', country: 'BE' });
++
++  assert.throws(() => createVendor(store, { name: 'Trainline', country: 'BE' }), /already exists/);
++  assert.throws(() => updateVendor(store, other.id, { name: 'Trainline' }), /already exists/);
++});
++
++test('a vendor keeps its identity when edited', () => {
++  const store = createStore();
++  const vendor = createVendor(store, { name: 'Trainline', country: 'FR' });
++  const updated = updateVendor(store, vendor.id, { country: 'BE' });
++
++  assert.equal(updated.id, vendor.id);
++  assert.equal(listVendors(store).length, 1);
++});
+diff --git a/src/routes.js b/src/routes.js
+index 1d061e1..1beb500 100644
+--- a/src/routes.js
++++ b/src/routes.js
+@@ -3,9 +3,15 @@
+ const { getUser } = require('./users');
+ const { createExpense, updateExpense, listExpenses } = require('./expenses');
+ const { approveExpense, rejectExpense } = require('./approvals');
++const { createVendor, updateVendor, listVendors } = require('./vendors');
++const { createStore } = require('./store');
+ 
+ // Thin transport layer: no business rules live here, only shaping.
+ function createRouter(store, reporter) {
++  // Vendors live in their own collection: they are not expenses and must never
++  // reach the expense report.
++  const vendors = createStore();
++
+   function handle(fn) {
+     try {
+       return { status: 200, body: fn() };
+@@ -55,6 +61,12 @@ function createRouter(store, reporter) {
+         return decided;
+       }),
+ 
++    'GET /vendors': () => handle(() => listVendors(vendors)),
++
++    'POST /vendors': (req) => handle(() => createVendor(vendors, req)),
++
++    'PATCH /vendors': (req) => handle(() => updateVendor(vendors, req.id, req)),
++
+     'GET /report': () => handle(() => reporter.totalsByCategory()),
+   };
+ }
+diff --git a/src/vendors.js b/src/vendors.js
+new file mode 100644
+index 0000000..9c9bde0
+--- /dev/null
++++ b/src/vendors.js
+@@ -0,0 +1,54 @@
++'use strict';
++
++const { requireFields, rejectUnknownFields } = require('./validate');
++
++const FIELDS = ['name', 'country'];
++
++function createVendor(store, payload) {
++  const fields = { name: payload.name, country: payload.country };
++
++  rejectUnknownFields(fields, FIELDS);
++  requireFields(fields, FIELDS);
++
++  if (store.all().some((vendor) => vendor.name === fields.name)) {
++    throw new Error(`vendor already exists: ${fields.name}`);
++  }
++
++  return store.insert({ name: String(fields.name), country: String(fields.country) });
++}
++
++function updateVendor(store, id, payload) {
++  const vendor = store.get(id);
++
++  if (!vendor) {
++    throw new Error(`no such vendor: ${id}`);
++  }
++
++  const changes = {};
++
++  if (payload.name !== undefined) {
++    if (payload.name === '') {
++      throw new Error('missing field: name');
++    }
++
++    if (store.all().some((other) => other.id !== id && other.name === payload.name)) {
++      throw new Error(`vendor already exists: ${payload.name}`);
++    }
++
++    changes.name = String(payload.name);
++  }
++
++  if (payload.country !== undefined) {
++    if (payload.country === '') {
++      throw new Error('missing field: country');
++    }
++
++    changes.country = String(payload.country);
++  }
++
++  return store.update(id, changes);
++}
++
++const listVendors = (store) => store.all();
++
++module.exports = { createVendor, updateVendor, listVendors };

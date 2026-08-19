@@ -1,0 +1,31 @@
+diff --git a/src/approvals.js b/src/approvals.js
+index 77fdadc..f04b31a 100644
+--- a/src/approvals.js
++++ b/src/approvals.js
+@@ -1,6 +1,9 @@
+ 'use strict';
+ 
+ const { getUser } = require('./users');
++const { formatAmount } = require('./money');
++
++const MANAGER_THRESHOLD_CENTS = 50000;
+ 
+ function approveExpense(store, { actorId, expenseId }) {
+   const actor = getUser(actorId);
+@@ -23,6 +26,16 @@ function approveExpense(store, { actorId, expenseId }) {
+     throw new Error(`cannot approve a ${expense.status} expense`);
+   }
+ 
++  // Enforced here, not in the router: an approval that only the transport layer
++  // guards is not enforced at all.
++  if (expense.ownerId === actor.id) {
++    throw new Error('nobody may approve their own expense');
++  }
++
++  if (expense.amountCents >= MANAGER_THRESHOLD_CENTS && actor.role !== 'manager') {
++    throw new Error(`expenses of ${formatAmount(MANAGER_THRESHOLD_CENTS)} or more need a manager`);
++  }
++
+   return store.update(expenseId, { status: 'approved', decidedBy: actor.id });
+ }
+ 

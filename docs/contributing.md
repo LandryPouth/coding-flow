@@ -129,6 +129,7 @@ npm publish     # publishes @landry_pouth/coding-flow@<version>
 | [`plans/multi-agent-install.md`](plans/multi-agent-install.md) | Per-agent install targeting, plus a verified capability table: what Claude Code, Codex and OpenCode can each actually enforce |
 | [`plans/storage-backends.md`](plans/storage-backends.md) | Storage seam, project config, branch policy (github backend deferred) |
 | [`experiments/reliability-benchmark.md`](experiments/reliability-benchmark.md) | The (in-progress) benchmark validating the reliability claim |
+| [`../evals/benchmark/README.md`](../evals/benchmark/README.md) | The benchmark's fixture app and five tasks: what each one traps, how the grader works, and how the harness was validated |
 
 ## What belongs in the core
 
