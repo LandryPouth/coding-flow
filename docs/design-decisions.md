@@ -122,33 +122,64 @@ changes deliberately.
 
 ## 5. What was taken from `addyosmani/agent-skills`, and what was not
 
-Reviewed 2026-08-18 (88k stars, 24 skills, MIT). The most useful thing about it is
-what it proves: **a skills layer is a commodity.** Their `## Verification` section
-is a checklist an agent ticks for itself; ours is `ai-flow verify` returning
-`NOT PROVEN`. That difference is the product.
+Reviewed 2026-08-18, revisited 2026-08-19 (88k stars, 24 skills, MIT). The most
+useful thing about it is what it proves: **a skills layer is a commodity.** Nothing
+in their catalog can fail; every claim in it is the agent's own. The enforcement is
+the product.
 
-**Taken** — all of it prose-level, all of it net-neutral or negative in line count:
+The first pass took prose only and claimed to be net-neutral in line count. The
+second broke that, once — the eval harness. It earns the freeze exception by adding
+no command and no user-facing surface: `evals/` and `scripts/` never ship to npm.
+It tests the part of the product that had none.
 
-- `## Common Rationalizations` tables in `flow-run` and `flow-review`. Their real
-  invention: pre-writing the rebuttal to the excuse, so an agent reaching for one
-  meets an answer instead of reasoning. Ours were *extracted* from prose already in
-  the skills, not added.
-- `## Red Flags` in `flow-run` — signals you have already drifted, distinct from
-  Stop Conditions, which are where you stop and hand back.
-- A **500-line ceiling** per `SKILL.md` with progressive disclosure, one level deep.
-  Enforced by `test/ceremony.test.js`.
+**Taken:**
 
-**Not taken**:
+- `## Common Rationalizations` in `flow-run` and `flow-review`. Their real invention:
+  pre-writing the rebuttal, so an agent reaching for an excuse meets an answer instead
+  of reasoning. Ours were *extracted* from prose already in the skills, not added.
+- `## Red Flags` — signals you have already drifted, distinct from Stop Conditions,
+  where you stop and hand back.
+- A **500-line ceiling** per `SKILL.md`, one level of disclosure. Enforced by
+  `test/ceremony.test.js`.
+- **Their eval harness, tiers 1 and 2** (0.8.3): an anatomy lint, a lexical routing
+  check, and the `owner` field that stops a negative case from passing vacuously.
+  Rewritten zero-dependency. This was the real find, and the first review missed it
+  by rejecting the tier we still do not want. It paid immediately: on the first run,
+  untuned, *"code this story, this one touches permissions"* routed to `flow-status`,
+  because `flow-run` said "alters an authorization decision" and never "permissions".
+  Rank-1 went 77.3% → 86.4% on two description edits. See `evals/README.md`.
+- `## Verification` in all seven skills (0.8.3). The first review rejected this as
+  "a checklist an agent ticks for itself" — the right objection to their version, the
+  wrong reason to skip ours. **Every box is anchored to output that already exists:**
+  the `Coverage:` rung as printed, a captured green verify, a `docs/DOGFOODING.md`
+  row. The lint fails the build if a skill drops the section.
+- **One sentence from `doubt-driven-development`**, a skill we otherwise refuse — a
+  3-cycle adversarial loop with cross-model escalation is the ceremony the freeze
+  exists to prevent. The sentence is worth more than the skill around it: *pass the
+  artifact and the contract, never the claim, because a reviewer given your conclusion
+  returns your conclusion.* It lands in `/flow-review` as `## Reviewing Your Own Diff`,
+  which is the case that skill actually runs in most — `/flow-run` routes into it
+  minutes after the same agent wrote the code. One section, no new skill.
 
-- **24 skills, 8 phases, a 16-step lifecycle.** That is the "second BMAD" failure the
-  freeze exists to prevent. Seven flat skills is a choice.
-- **Specialist agent personas.** Runtime orchestration, which this tool refuses.
-- **Their `definition-of-done.md`.** Seductive, but it is an honour-system checklist —
-  the degraded form of `ai-flow verify`. Importing it would dilute the argument.
-- **Behavioural evals with an LLM in the loop.** Non-deterministic, dependency-heavy,
-  and they sample what `verify` already guarantees mechanically. The useful residue
-  was a deterministic test: `skills/` and `templates/.claude/skills/` are two shipped
-  copies that must stay byte-identical, and nothing compared them until 0.8.0.
+**Not taken:**
+
+- **24 skills, 8 phases, a 16-step lifecycle.** The "second BMAD" failure the freeze
+  exists to prevent. Seven flat skills is a choice.
+- **Specialist agent personas**, and **a router meta-skill** (`using-agent-skills`).
+  Runtime orchestration, which this tool refuses; with seven skills `/flow-next`
+  already routes, from executed proof rather than a prose decision tree.
+- **Their `definition-of-done.md`.** An honour-system checklist — the degraded form
+  of `ai-flow verify`. Importing it would dilute the argument.
+- **Behavioural evals** (their tier 3). Token-priced, non-deterministic, unrunnable
+  in CI without flaking or being ignored. A decision with a trigger, not a backlog
+  item: revisit only if a skill regresses in a way tiers 1 and 2 could not catch.
+- **`docs/skill-anatomy.md` as a document.** The rules worth having are executable in
+  `scripts/skill-evals.js`; a prose copy would be a second source of truth nothing
+  checks. One rule resisted automation and is written down instead: *a description
+  must not summarize the workflow, or the agent follows the summary instead of loading
+  the skill.* No mechanical test for it — but it caught a real defect. `/flow-run`'s
+  description carried the whole QUICK/STANDARD/STRICT rule, so an agent could pick a
+  mode and never learn that risk is read from the diff. Fixed in 0.8.3.
 - **Their multi-agent packaging.** They ship no enforcement layer, so there is nothing
   to port for the only hard part. See `docs/plans/multi-agent-install.md`.
 

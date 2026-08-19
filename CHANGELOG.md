@@ -4,6 +4,45 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.3] - 2026-08-19
+
+### Added
+
+- **The skills are tested now.** The CLI had 433 tests; the seven skills had none —
+  nothing proved that `flow-status` wins *"show me every epic"* while losing *"what
+  should I do next"* to `flow-next`. `evals/` adds two deterministic, zero-dependency
+  tiers inside the existing `npm test`: an anatomy lint (frontmatter, naming,
+  description budget, a required `## Verification` section, one case file per skill)
+  and a lexical routing check (a prompt must rank its owner first, must not be won by
+  a neighbour, and no two descriptions may near-collide). Nothing here ships to npm.
+  See [`evals/README.md`](evals/README.md).
+
+- **A `## Verification` section in all seven skills**, anchored to output rather than
+  judgment: `/flow-run`'s boxes are the `Coverage:` rung as printed and a captured
+  green verify; `/flow-plan`'s notes that criteria written as prose are invisible to
+  `verify`. A box you cannot point at output for is not ticked. The lint fails the
+  build if a skill drops the section.
+
+- **`/flow-review` now handles its most common case:** reviewing a diff the same agent
+  wrote minutes earlier, where re-reading the reasoning that produced the defect
+  reproduces the same conclusion. New *Reviewing Your Own Diff* section — write the
+  contract before opening the diff, re-derive instead of recall, findings before
+  verdict, and when delegating pass the artifact and the contract only, never your
+  conclusion. Plus `## Red Flags` and three rationalization rows.
+
+### Changed
+
+- **`/flow-run`'s description no longer carries the intensity decision rule.** It
+  spelled out the whole QUICK/STANDARD/STRICT rule, so an agent could pick a mode from
+  the description and never load the skill — missing that risk is read from the diff,
+  that `requireTestChange` must not be disabled, and what the coverage rungs mean.
+
+- **`/flow-run` and `/flow-review` descriptions carry the words users say.** The eval
+  found *"code this story, this one touches permissions"* routing to `flow-status`,
+  because `flow-run` said "alters an authorization decision" and never "permissions".
+  *"is this diff safe to ship"* lost to `flow-ship`, because `flow-review` never said
+  "diff". Routing rank-1 went 77.3% → 86.4%.
+
 ## [0.8.2] - 2026-08-19
 
 ### Fixed

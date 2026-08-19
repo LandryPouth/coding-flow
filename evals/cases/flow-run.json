@@ -1,0 +1,15 @@
+{
+  "skill": "flow-run",
+  "trigger": {
+    "positive": [
+      { "prompt": "implement story-01-02 end to end", "top_k": 1 },
+      { "prompt": "build the password reset feature and make sure the tests actually pass", "top_k": 2 },
+      { "prompt": "code this story, this one touches permissions so be careful", "top_k": 2 },
+      { "prompt": "fix this copy typo on the pricing page", "top_k": 3 }
+    ],
+    "negative": [
+      { "prompt": "slice this request into stories before we build anything", "owner": "flow-plan" },
+      { "prompt": "go over the diff and flag anything blocking before I merge", "owner": "flow-review" }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "skill": "flow-plan",
+  "trigger": {
+    "positive": [
+      { "prompt": "break this feature request into vertical stories", "top_k": 1 },
+      { "prompt": "we want multi-tenant billing, write the epic and slice it up", "top_k": 2 },
+      { "prompt": "this is an existing codebase with no specs, bootstrap it into epics", "top_k": 2 }
+    ],
+    "negative": [
+      { "prompt": "implement story 02-01 now", "owner": "flow-run" },
+      { "prompt": "push the branch and open the pull request", "owner": "flow-ship" }
+    ]
+  }
+}

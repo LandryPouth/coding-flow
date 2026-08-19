@@ -1,0 +1,14 @@
+{
+  "skill": "flow-review",
+  "trigger": {
+    "positive": [
+      { "prompt": "go over this change before I merge it", "top_k": 1 },
+      { "prompt": "is this diff safe to ship, anything blocking", "top_k": 2 },
+      { "prompt": "check the implementation against the acceptance criteria and the security rules", "top_k": 2 }
+    ],
+    "negative": [
+      { "prompt": "push it and open the pull request with the proof attached", "owner": "flow-ship" },
+      { "prompt": "write the task breakdown for this epic", "owner": "flow-plan" }
+    ]
+  }
+}

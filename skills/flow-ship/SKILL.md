@@ -81,6 +81,20 @@ builds on has landed — `ship` waits for that earlier PR to merge first instead
   attached evidence reflects a passing run. Do not ship a red or unproven story.
 - Confirm you are on the feature branch for this work, not the base branch.
 
+## Verification
+
+Before reporting the story as shipped:
+
+- [ ] A green `ai-flow verify` for this story exists — checked, not assumed.
+- [ ] `ai-flow ship` ran and its output was read.
+- [ ] The PR URL was reported, or the compare URL when `gh` was unavailable.
+- [ ] Whether verify evidence was attached was stated either way, rather than
+      left for the reviewer to notice.
+
+If the secret scan stopped the auto-commit, the story is **not** shipped. Report
+the finding; committing by hand to get around the scan defeats the only check
+standing between a secret and a public branch.
+
 ## Output
 
 Report what happened: the branch pushed, the PR URL (opened or updated), and whether

@@ -38,6 +38,17 @@ Useful flags:
 - Loose worktrees (checked out but not linked to any story) are listed separately,
   useful when several features are in flight in parallel.
 
+## Verification
+
+- [ ] `ai-flow status` actually ran. Nothing here is reported from memory or from
+      reading story files by hand — the whole point is that the state is derived,
+      not narrated.
+- [ ] Every story is listed by name with its state; none were summarized away.
+- [ ] The branch policy reminder was relayed if the command printed one.
+
+There is nothing else to prove: this skill has no side effects, so running the
+command and reporting all of it is the entire contract.
+
 ## Output
 
 Report the epics and their stories with each status, any worktree link, loose

@@ -1,0 +1,14 @@
+{
+  "skill": "flow-next",
+  "trigger": {
+    "positive": [
+      { "prompt": "what should I do next", "top_k": 1 },
+      { "prompt": "I don't know what to pick up, choose for me", "top_k": 2 },
+      { "prompt": "give me the one command worth running right now", "top_k": 2 }
+    ],
+    "negative": [
+      { "prompt": "list all the epics and every story under them", "owner": "flow-status" },
+      { "prompt": "now actually implement it", "owner": "flow-run" }
+    ]
+  }
+}

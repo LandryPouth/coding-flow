@@ -44,6 +44,20 @@ then `/flow-setup`.
 5. Report what was created, then point to the next step: `/flow-plan` to turn an
    objective into implementation-ready stories, followed by `/flow-run`.
 
+## Verification
+
+Before reporting the setup as done:
+
+- [ ] `init` ran, and its output was read rather than assumed — including its
+      brownfield verdict, which is relayed either way.
+- [ ] `doctor` ran and reported the install as correct.
+- [ ] `RULES.md`, `epics/`, and `.coding-flow/` exist in the project root.
+- [ ] The next step was named: `/flow-plan`.
+
+If `doctor` reported a problem, the setup is not done. Report the problem instead
+of the list of files `init` created — a scaffold that `doctor` rejects is worse
+than no scaffold, because it looks installed.
+
 ## Stop Conditions
 
 - The current directory is not the intended project root.

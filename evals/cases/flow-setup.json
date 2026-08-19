@@ -1,0 +1,14 @@
+{
+  "skill": "flow-setup",
+  "trigger": {
+    "positive": [
+      { "prompt": "I just installed the plugin, get it going in this repository", "top_k": 2 },
+      { "prompt": "scaffold coding flow into this project", "top_k": 1 },
+      { "prompt": "add the workflow files to my repo so I can start", "top_k": 3 }
+    ],
+    "negative": [
+      { "prompt": "what should I work on right now", "owner": "flow-next" },
+      { "prompt": "implement the login story and prove the tests pass", "owner": "flow-run" }
+    ]
+  }
+}
