@@ -125,6 +125,7 @@ npm publish     # publishes @landry_pouth/coding-flow@<version>
 | [`migration.md`](migration.md) | Migrating an existing project to a new version: `upgrade` vs re-install, what is protected, and the gotchas |
 | [`sdd-vs-plugins.md`](sdd-vs-plugins.md) | From the old SDD to a plugin + governance layer: what changed and why |
 | [`git-worktree-bare.md`](git-worktree-bare.md) | Git worktree & bare: concept, sharing `node_modules`/`.env`, when not to use it |
+| [`plans/plugin-directory-submission.md`](plans/plugin-directory-submission.md) | Submitting to the official Claude Code plugin directory: the channel, the payload, the prepared security answers, and the pre-submission install check |
 | [`plans/multi-agent-install.md`](plans/multi-agent-install.md) | Per-agent install targeting, plus a verified capability table: what Claude Code, Codex and OpenCode can each actually enforce |
 | [`plans/storage-backends.md`](plans/storage-backends.md) | Storage seam, project config, branch policy (github backend deferred) |
 | [`experiments/reliability-benchmark.md`](experiments/reliability-benchmark.md) | The (in-progress) benchmark validating the reliability claim |
