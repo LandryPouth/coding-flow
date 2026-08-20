@@ -58,6 +58,20 @@ function pythonProject(t, prefix) {
   return dir;
 }
 
+// A stack genuinely outside every detector below — no package.json, no go.mod,
+// no Cargo.toml, no pyproject.toml/requirements.txt, no pom.xml/build.gradle.
+// Kept distinct from pythonProject() on purpose: Python now has a real reader,
+// so a fixture that must still get the honest "we don't know" hedge needs a
+// stack that actually stays unread.
+function unknownStackProject(t, prefix) {
+  const dir = project(t, prefix);
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.mkdirSync(path.join(dir, 'tests'));
+  fs.writeFileSync(path.join(dir, 'src', 'app.rb'), 'def x; end\n');
+  fs.writeFileSync(path.join(dir, 'Gemfile'), "source 'https://rubygems.org'\n");
+  return dir;
+}
+
 function scan(dir) {
   const res = run(dir, ['bootstrap', '--scan', '--json']);
   assert.equal(res.code, 0, res.output);
@@ -74,14 +88,27 @@ test('scan classifies a JavaScript project as rich', (t) => {
   assert.deepEqual(Object.keys(data.scripts).sort(), ['build', 'test']);
 });
 
-test('scan flags a non-JavaScript project as empty but holding code', (t) => {
+test('scan detects a Python project through pyproject.toml', (t) => {
   const data = scan(pythonProject(t, 'scan-py'));
 
-  // The detectors are JS-only. A Python repo must not look like a fresh project:
-  // `empty` classification plus looksLikeCode is what makes init say so out loud.
-  assert.equal(data.classification, 'empty');
+  // A bare pyproject.toml carries no dependencies, so there is no framework to
+  // name — but the manifest itself is real signal, not an empty project.
+  assert.equal(data.foreignStack.ecosystem, 'python');
+  assert.equal(data.foreignStack.manifest, 'pyproject.toml');
+  assert.equal(data.classification, 'thin');
   assert.equal(data.looksLikeCode, true);
   assert.equal(data.hasProjectPackageJson, false);
+  assert.deepEqual(data.codeDirectories.sort(), ['src', 'tests']);
+});
+
+test('a genuinely unrecognized stack still reports empty but holding code', (t) => {
+  const data = scan(unknownStackProject(t, 'scan-unknown'));
+
+  // No detector here covers Ruby. `empty` classification plus looksLikeCode is
+  // what makes init say so out loud, instead of pretending the repo is fresh.
+  assert.equal(data.classification, 'empty');
+  assert.equal(data.looksLikeCode, true);
+  assert.equal(data.foreignStack, null);
   assert.deepEqual(data.codeDirectories.sort(), ['src', 'tests']);
 });
 
@@ -153,14 +180,22 @@ test('init says nothing about brownfield on a fresh repository', (t) => {
   assert.doesNotMatch(res.output, /flow-plan bootstrap/);
 });
 
-test('init warns loudly when the stack is outside the detectors', (t) => {
-  const res = run(pythonProject(t, 'init-python'), ['init']);
+test('init warns loudly when the stack is outside every detector', (t) => {
+  const res = run(unknownStackProject(t, 'init-unknown'), ['init']);
   assert.equal(res.code, 0, res.output);
 
   // The silent failure this closes: init creates a package.json when the repo has
   // none, so a bare existence check would have called this project JavaScript.
-  assert.match(res.output, /no JavaScript signal/);
-  assert.match(res.output, /Python, Go, Rust/);
+  assert.match(res.output, /no recognized signal/);
+  assert.match(res.output, /flow-plan bootstrap/);
+});
+
+test('init reports what it found when the stack is Python, not the JS hedge', (t) => {
+  const res = run(pythonProject(t, 'init-python'), ['init']);
+  assert.equal(res.code, 0, res.output);
+
+  assert.match(res.output, /Existing Python codebase detected \(pyproject\.toml\)/);
+  assert.doesNotMatch(res.output, /no recognized signal/);
   assert.match(res.output, /flow-plan bootstrap/);
 });
 
@@ -412,12 +447,151 @@ test('the member walk is capped', (t) => {
   assert.equal(scan(dir).workspace.memberCount, 50);
 });
 
-test('a Python repo still gets the loud foreign-stack warning', (t) => {
-  const res = run(pythonProject(t, 'ws-python-regression'), ['init']);
+test('a genuinely unknown stack still gets the loud foreign-stack warning', (t) => {
+  const res = run(unknownStackProject(t, 'ws-unknown-regression'), ['init']);
 
   // The fix must not mute the case the warning was written for.
-  assert.match(res.output, /no JavaScript signal/);
-  assert.match(res.output, /Python, Go, Rust/);
+  assert.match(res.output, /no recognized signal/);
+});
+
+// --- non-JS ecosystems -------------------------------------------------------
+
+test('scan detects a Go project through go.mod, framework included', (t) => {
+  const dir = project(t, 'go-single');
+  fs.mkdirSync(path.join(dir, 'cmd'));
+  fs.writeFileSync(
+    path.join(dir, 'go.mod'),
+    'module demo\n\ngo 1.21\n\nrequire github.com/gin-gonic/gin v1.9.1\n',
+  );
+
+  const data = scan(dir);
+  assert.equal(data.foreignStack.ecosystem, 'go');
+  assert.equal(data.foreignStack.manifest, 'go.mod');
+  assert.deepEqual(data.detectedFrameworks, ['Gin']);
+  assert.equal(data.classification, 'thin');
+});
+
+test('scan detects a Go workspace through go.work, union of member deps', (t) => {
+  const dir = project(t, 'go-workspace');
+  fs.mkdirSync(path.join(dir, 'api'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'worker'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'go.work'), 'go 1.21\n\nuse (\n\t./api\n\t./worker\n)\n');
+  fs.writeFileSync(
+    path.join(dir, 'api', 'go.mod'),
+    'module demo/api\n\ngo 1.21\n\nrequire github.com/gin-gonic/gin v1.9.1\n',
+  );
+  fs.writeFileSync(path.join(dir, 'worker', 'go.mod'), 'module demo/worker\n\ngo 1.21\n');
+
+  const data = scan(dir);
+  assert.equal(data.workspace.marker, 'go.work');
+  assert.equal(data.workspace.ecosystem, 'go');
+  assert.equal(data.workspace.memberCount, 2);
+  assert.deepEqual(data.detectedFrameworks, ['Gin']);
+});
+
+test('scan detects a Rust crate through Cargo.toml', (t) => {
+  const dir = project(t, 'rust-single');
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(
+    path.join(dir, 'Cargo.toml'),
+    '[package]\nname = "demo"\n\n[dependencies]\naxum = "0.7"\ntokio = "1"\n',
+  );
+
+  const data = scan(dir);
+  assert.equal(data.foreignStack.ecosystem, 'rust');
+  assert.deepEqual(data.detectedFrameworks.sort(), ['Axum', 'Tokio']);
+});
+
+test('scan detects a Rust workspace through Cargo.toml [workspace] members', (t) => {
+  const dir = project(t, 'rust-workspace');
+  fs.mkdirSync(path.join(dir, 'crates', 'api'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[workspace]\nmembers = ["crates/*"]\n');
+  fs.writeFileSync(
+    path.join(dir, 'crates', 'api', 'Cargo.toml'),
+    '[package]\nname = "api"\n\n[dependencies]\nactix-web = "4"\n',
+  );
+
+  const data = scan(dir);
+  assert.equal(data.workspace.marker, 'Cargo.toml');
+  assert.equal(data.workspace.ecosystem, 'rust');
+  assert.equal(data.workspace.memberCount, 1);
+  assert.deepEqual(data.detectedFrameworks, ['Actix Web']);
+});
+
+test('scan detects a Python project through pyproject.toml dependencies', (t) => {
+  const dir = project(t, 'py-deps');
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(
+    path.join(dir, 'pyproject.toml'),
+    '[project]\nname = "demo"\ndependencies = ["fastapi", "pydantic"]\n',
+  );
+
+  const data = scan(dir);
+  assert.equal(data.foreignStack.ecosystem, 'python');
+  assert.deepEqual(data.detectedFrameworks.sort(), ['FastAPI', 'Pydantic']);
+});
+
+test('scan detects a Python workspace through pyproject.toml [tool.uv.workspace]', (t) => {
+  const dir = project(t, 'py-workspace');
+  fs.mkdirSync(path.join(dir, 'packages', 'web'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'pyproject.toml'), '[tool.uv.workspace]\nmembers = ["packages/*"]\n');
+  fs.writeFileSync(
+    path.join(dir, 'packages', 'web', 'pyproject.toml'),
+    '[project]\nname = "web"\ndependencies = ["django"]\n',
+  );
+
+  const data = scan(dir);
+  assert.equal(data.workspace.marker, 'pyproject.toml');
+  assert.equal(data.workspace.ecosystem, 'python');
+  assert.equal(data.workspace.memberCount, 1);
+  assert.deepEqual(data.detectedFrameworks, ['Django']);
+});
+
+test('scan detects a plain Python project through requirements.txt', (t) => {
+  const dir = project(t, 'py-requirements');
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'requirements.txt'), 'flask==3.0.0\n# a comment\npytest>=7\n');
+
+  const data = scan(dir);
+  assert.equal(data.foreignStack.manifest, 'requirements.txt');
+  assert.deepEqual(data.detectedFrameworks.sort(), ['Flask', 'Pytest']);
+});
+
+test('scan detects a Java project through pom.xml, single and multi-module', (t) => {
+  const single = project(t, 'java-single');
+  fs.writeFileSync(
+    path.join(single, 'pom.xml'),
+    '<project><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>',
+  );
+  const singleData = scan(single);
+  assert.equal(singleData.foreignStack.ecosystem, 'java');
+  assert.deepEqual(singleData.detectedFrameworks, ['Spring Boot']);
+
+  const multi = project(t, 'java-multi');
+  fs.mkdirSync(path.join(multi, 'service'), { recursive: true });
+  fs.writeFileSync(path.join(multi, 'pom.xml'), '<project><modules><module>service</module></modules></project>');
+  fs.writeFileSync(
+    path.join(multi, 'service', 'pom.xml'),
+    '<project><dependencies><dependency><artifactId>junit-jupiter</artifactId></dependency></dependencies></project>',
+  );
+  const multiData = scan(multi);
+  assert.equal(multiData.workspace.marker, 'pom.xml');
+  assert.equal(multiData.workspace.ecosystem, 'java');
+  assert.equal(multiData.workspace.memberCount, 1);
+  assert.deepEqual(multiData.detectedFrameworks, ['JUnit']);
+});
+
+test('a real JS package.json always wins over a foreign manifest sitting next to it', (t) => {
+  // Documents the trade-off: a polyglot repo (e.g. a Tauri app, JS frontend +
+  // Rust backend) reports as JS only. One ecosystem per scan, same call every
+  // foreign detector above already makes for globs and nested workspaces.
+  const dir = jsProject(t, 'polyglot');
+  fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[package]\nname = "backend"\n\n[dependencies]\naxum = "0.7"\n');
+
+  const data = scan(dir);
+  assert.equal(data.foreignStack, null);
+  assert.ok(!data.detectedFrameworks.includes('Axum'));
+  assert.ok(data.detectedFrameworks.includes('Next.js'));
 });
 
 // --- init names what it kept ------------------------------------------------
