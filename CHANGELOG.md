@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.5] - 2026-08-20
+
+### Fixed
+
+- **`worktree add` no longer recommends `npm install` on a non-JS project.**
+  `installCommand()` defaulted to npm even when `detectPackageManager` found
+  zero JS signal (no package.json, no lockfile) — a Go/Rust/Python repo got
+  told to run a package manager it does not have. `pm === null` now maps to
+  its own `unknown` strategy that says so instead of guessing.
+
+### Added
+
+- **The brownfield scan reads Go, Rust, Python, and Java, not only
+  JavaScript.** `go.work`, `Cargo.toml [workspace]`, `pyproject.toml
+  [tool.uv/rye.workspace]`, and Maven/Gradle multi-module are detected and
+  their members read — same zero-dependency, bounded posture as the existing
+  pnpm reader (one level of glob, no recursion, capped). Single-project
+  detection (`go.mod`, `Cargo.toml`, `pyproject.toml`, `requirements.txt`,
+  `pom.xml`/`build.gradle`) also covers the non-monorepo case, which had no
+  detection at all before. A real `package.json` still always wins on a
+  polyglot repo — one ecosystem per scan. `FRAMEWORK_DETECTORS` grew from 10
+  to 27 JS entries along the way.
+
 ## [0.8.4] - 2026-08-19
 
 ### Added
