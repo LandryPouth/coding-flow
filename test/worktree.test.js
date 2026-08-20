@@ -128,6 +128,17 @@ test('worktree remove succeeds despite our own .env symlinks', (t) => {
   assert.ok(!fs.existsSync(worktreePath(base, 'feat-envrm')), 'the worktree must be deleted');
 });
 
+test('worktree add on a non-JS project never recommends npm install', (t) => {
+  const { base, repo } = freshRepo(t);
+  fs.writeFileSync(path.join(repo, 'go.mod'), 'module demo\n\ngo 1.21\n');
+
+  const { code, output } = run(repo, ['add', 'feat-go', '--dry-run']);
+  assert.equal(code, 0, output);
+  assert.doesNotMatch(output, /npm install/, 'no JS package manager was detected, so npm must not be guessed');
+  assert.match(output, /no known JS package manager detected/);
+  assert.ok(!fs.existsSync(worktreePath(base, 'feat-go')), '--dry-run must create no worktree');
+});
+
 test('worktree remove refuses a dirty worktree without --force', (t) => {
   const { base, repo } = freshRepo(t);
   run(repo, ['add', 'feat-dirty']);

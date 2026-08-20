@@ -161,6 +161,12 @@ function detectPackageManager(root) {
 // Decides what to do with node_modules. Symlinking node_modules is safe for a
 // simple project (npm) but BREAKS a pnpm/yarn monorepo (virtual store tied to
 // the workspace root): in that case we install instead.
+//
+// `pm === null` means detectPackageManager found no JS signal at all (no
+// package.json, no lockfile) — a Go/Rust/Python project opened with this tool.
+// That used to fall through to "recommend-install" and print "npm install" as
+// if this were a JS repo with no node_modules yet. `unknown` names what we
+// actually know: nothing, so we say nothing prescriptive.
 function resolveDepsStrategy(explicit, { pm, workspace }, hasNodeModules) {
   if (explicit) {
     if (!["install", "link", "skip"].includes(explicit)) {
@@ -168,15 +174,19 @@ function resolveDepsStrategy(explicit, { pm, workspace }, hasNodeModules) {
     }
     return explicit;
   }
+  if (pm === null) return "unknown";
   if (workspace || pm === "pnpm" || pm === "yarn") return "recommend-install";
   if (hasNodeModules) return "link";
   return "recommend-install";
 }
 
+// null when no JS package manager was detected — the caller must not default
+// to npm just because it needs to print something.
 function installCommand(pm) {
   if (pm === "pnpm") return "pnpm install";
   if (pm === "yarn") return "yarn install";
-  return "npm install";
+  if (pm === "npm") return "npm install";
+  return null;
 }
 
 function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
@@ -252,17 +262,18 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
 
 function describeStrategy(strategy, pm, hasNodeModules) {
   if (strategy === "link") return "symlink node_modules";
-  if (strategy === "install") return `${installCommand(pm)} in the worktree`;
+  if (strategy === "install") return `${installCommand(pm) || `${pm || "npm"} install`} in the worktree`;
   if (strategy === "skip") return "skipped (--deps skip)";
+  if (strategy === "unknown") return "no known JS package manager detected — install this project's dependencies manually";
   return `to install (${installCommand(pm)}) — monorepo/pnpm, symlink not advised`;
 }
 
 function applyDeps(strategy, { pm, root, dest, hasNodeModules }) {
-  if (strategy === "skip") return;
+  if (strategy === "skip" || strategy === "unknown") return;
 
   if (strategy === "link") {
     if (!hasNodeModules) {
-      log(`  node_modules absent at the root — nothing to link, run: ${installCommand(pm)}`);
+      log(`  node_modules absent at the root — nothing to link, run: ${installCommand(pm) || `${pm || "npm"} install`}`);
       return;
     }
     const status = makeLink(path.join(root, "node_modules"), path.join(dest, "node_modules"));
@@ -271,12 +282,12 @@ function applyDeps(strategy, { pm, root, dest, hasNodeModules }) {
   }
 
   if (strategy === "install") {
-    log(`  ${installCommand(pm)} ...`);
     const bin = pm || "npm";
+    log(`  ${installCommand(pm) || `${bin} install`} ...`);
     try {
       execFileSync(bin, ["install"], { cwd: dest, stdio: "inherit" });
     } catch {
-      log(`  "${installCommand(pm)}" failed — rerun it manually in the worktree.`);
+      log(`  "${installCommand(pm) || `${bin} install`}" failed — rerun it manually in the worktree.`);
     }
     return;
   }
