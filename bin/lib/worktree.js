@@ -2,10 +2,12 @@
 
 // Optional Git worktree support for parallel work.
 //
-// Three subcommands, all non-destructive by default:
+// Subcommands, all non-destructive by default:
 //   ai-flow worktree add <name> [--from <ref>] [--deps install|link|skip] [--dry-run]
 //   ai-flow worktree list
 //   ai-flow worktree remove <name> [--force] [--dry-run]
+//   ai-flow worktree lock --story <dir>
+//   ai-flow worktree unlock [--story <dir>] [--force]
 //
 // Project constraints: zero dependencies (only Node's built-in modules and the
 // `git` binary), Node >= 18. We shell out to git rather than reimplementing its
@@ -16,6 +18,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { hasStoryContent } = require("./story");
+const { readJson, writeJson } = require("./util");
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -423,6 +426,98 @@ function collectWorktrees(cwd) {
   return { isRepo: true, root: repoRoot, entries: parseWorktreesFrom(list.stdout) };
 }
 
+// The lock is scoped to the checkout it is written in: a worktree created by
+// `worktreeAdd` gets its own `.coding-flow/`, so this is naturally per-checkout
+// with no extra plumbing.
+const LOCK_GITIGNORE_LINE = ".coding-flow/active-story.json";
+
+function activeStoryLockPath(root) {
+  return path.join(root, ".coding-flow", "active-story.json");
+}
+
+// Whether an existing .gitignore line already covers the lock file — the exact
+// line, or a directory pattern for `.coding-flow` broad enough to include it.
+// Not a general gitignore engine: just the shapes this one file can plausibly
+// already be covered by.
+function gitignoreCoversLockFile(content) {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .some((line) => {
+      if (!line || line.startsWith("#")) return false;
+      const pattern = line.replace(/\/$/, "");
+      return pattern === LOCK_GITIGNORE_LINE || pattern === ".coding-flow" || pattern === ".coding-flow/*";
+    });
+}
+
+// Idempotently ensures the lock file is gitignored. It is runtime state, not
+// proof — unlike everything else already living under the tracked
+// `.coding-flow/` (runs/*.json, config.json) — so it must never be committed.
+// Mirrors harness.js's non-fatal spirit for a missing .gitignore: create one
+// rather than failing the lock over it.
+function ensureLockIgnored(root) {
+  const gitignorePath = path.join(root, ".gitignore");
+  const content = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, "utf8") : "";
+
+  if (gitignoreCoversLockFile(content)) {
+    return;
+  }
+
+  const withNewline = content.length && !content.endsWith("\n") ? `${content}\n` : content;
+  fs.writeFileSync(gitignorePath, `${withNewline}${LOCK_GITIGNORE_LINE}\n`);
+}
+
+function worktreeLock(story, { cwd }) {
+  const root = requireRepo(cwd);
+  if (!story) {
+    fail("missing --story. Example: ai-flow worktree lock --story epics/epic-01-x/story-01-01-y");
+  }
+  const resolved = resolveStory(root, cwd, story);
+  ensureLockIgnored(root);
+
+  const lockPath = activeStoryLockPath(root);
+  const existing = readJson(lockPath, null);
+
+  if (existing && existing.story === resolved.rel) {
+    log(`Already locked: ${resolved.rel}`);
+    return;
+  }
+
+  if (existing && existing.story) {
+    fail(
+      `checkout is occupied by "${existing.story}". Finish or isolate that story first, ` +
+        `or start this one in its own worktree: ai-flow worktree add --story ${resolved.rel}`,
+    );
+  }
+
+  writeJson(lockPath, { story: resolved.rel, startedAt: new Date().toISOString() });
+  log(`Locked: ${resolved.rel}`);
+}
+
+function worktreeUnlock({ cwd, story, force }) {
+  const root = requireRepo(cwd);
+  const lockPath = activeStoryLockPath(root);
+  const existing = readJson(lockPath, null);
+
+  if (!existing) {
+    log("No active lock.");
+    return;
+  }
+
+  if (story && !force) {
+    const resolved = resolveStory(root, cwd, story);
+    if (existing.story !== resolved.rel) {
+      fail(
+        `lock belongs to "${existing.story}", not "${resolved.rel}". ` +
+          "Use --force to clear it anyway.",
+      );
+    }
+  }
+
+  fs.unlinkSync(lockPath);
+  log(`Unlocked: ${existing.story}`);
+}
+
 // Extracts positional arguments, ignoring flags and the value of flags that take
 // one (--from/--deps/--story). Without this, `add --story x` would take
 // "--story" as the positional name.
@@ -452,8 +547,12 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
     worktreeList({ cwd });
   } else if (sub === "remove" || sub === "rm") {
     worktreeRemove(name, { force, dryRun, cwd });
+  } else if (sub === "lock") {
+    worktreeLock(story, { cwd });
+  } else if (sub === "unlock") {
+    worktreeUnlock({ cwd, story, force });
   } else {
-    fail(`unknown worktree subcommand: "${sub || ""}". Use add, list or remove.`);
+    fail(`unknown worktree subcommand: "${sub || ""}". Use add, list, remove, lock or unlock.`);
   }
 }
 

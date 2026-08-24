@@ -82,6 +82,22 @@ paths while running QUICK, that is the signal to switch up, not to keep going.
 
 Never disable the gate (`requireTestChange`) to finish a story.
 
+**Before any implementation, at every intensity, lock the story:**
+
+```bash
+ai-flow worktree lock --story <story-dir>
+```
+
+This defends against a different failure than story risk does: a second
+`/flow-run` starting on a checkout that already carries another story's
+unfinished work, mixing two stories' diffs on one tree before either is done.
+That risk does not correlate with how risky the story itself is, so the lock
+runs unconditionally, not gated behind STRICT's `harness preflight`. If it
+refuses — the checkout is occupied by a different story — stop and isolate
+first (`ai-flow worktree add --story <story-dir>`) rather than proceeding on
+the shared tree. With no story directory (see below), there is nothing to
+lock — skip this step.
+
 Everything else is machinery, and scales with intensity:
 
 - QUICK/FAST: `verify` only. One command.
@@ -106,7 +122,11 @@ as `verified`, a red one as `blocked`. A `## Status` line in the story overrides
 that — keep it honest:
 
 - Write `## Status: done` **only after** a green `ai-flow verify` for this story is
-  captured. A passing verify is the precondition, not your assertion.
+  captured. A passing verify is the precondition, not your assertion. At that
+  same point, and only that point, run
+  `ai-flow worktree unlock --story <story-dir>` — a `blocked` or
+  `in-progress` story still has real unlanded work the lock is correctly
+  protecting, so it stays locked.
 - On a red or partial verify, write `## Status: blocked` and record what failed.
 - `NOT PROVEN` (commands green, coverage gate blocked) is not `done` either. The
   story stays `in-progress` until a test covers it or an exemption is declared.

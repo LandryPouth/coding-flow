@@ -148,3 +148,150 @@ test('worktree remove refuses a dirty worktree without --force', (t) => {
   assert.notEqual(code, 0, 'remove must refuse while the worktree is dirty');
   assert.ok(fs.existsSync(worktreePath(base, 'feat-dirty')), 'the dirty worktree must stay intact');
 });
+
+// --- lock / unlock ----------------------------------------------------------
+
+function makeStory(repo, rel) {
+  const dir = path.join(repo, rel);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'story.md'), '# Story\n');
+  return dir;
+}
+
+function lockPath(repo) {
+  return path.join(repo, '.coding-flow', 'active-story.json');
+}
+
+function readLock(repo) {
+  return JSON.parse(fs.readFileSync(lockPath(repo), 'utf8'));
+}
+
+test('worktree lock creates the lock file for a fresh checkout', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+
+  const { code } = run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+  assert.equal(code, 0, 'lock must exit 0');
+
+  const lock = readLock(repo);
+  assert.equal(lock.story, 'epics/epic-01/story-01-01');
+  assert.ok(lock.startedAt, 'lock must record a timestamp');
+});
+
+test('worktree lock is a no-op when re-locking the same story', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+  const before = fs.readFileSync(lockPath(repo), 'utf8');
+
+  const { code } = run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+  assert.equal(code, 0, 're-locking the same story must exit 0');
+  assert.equal(fs.readFileSync(lockPath(repo), 'utf8'), before, 'the lock file must be unchanged');
+});
+
+test('worktree lock refuses a different story on an occupied checkout', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  makeStory(repo, 'epics/epic-01/story-01-02');
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+  const before = fs.readFileSync(lockPath(repo), 'utf8');
+
+  const { code, output } = run(repo, ['lock', '--story', 'epics/epic-01/story-01-02']);
+  assert.notEqual(code, 0, 'lock must refuse a conflicting story');
+  assert.match(output, /epics\/epic-01\/story-01-01/, 'the message must name the locked story');
+  assert.match(output, /worktree add --story epics\/epic-01\/story-01-02/, 'the message must suggest isolating the new story');
+  assert.equal(fs.readFileSync(lockPath(repo), 'utf8'), before, 'the lock file must be untouched');
+});
+
+test('worktree unlock removes a matching lock', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+
+  const { code } = run(repo, ['unlock', '--story', 'epics/epic-01/story-01-01']);
+  assert.equal(code, 0, 'unlock must exit 0');
+  assert.ok(!fs.existsSync(lockPath(repo)), 'the lock file must be removed');
+});
+
+test('worktree unlock refuses a mismatched story without --force', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  makeStory(repo, 'epics/epic-01/story-01-02');
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+
+  const { code } = run(repo, ['unlock', '--story', 'epics/epic-01/story-01-02']);
+  assert.notEqual(code, 0, 'unlock must refuse a mismatched story');
+  assert.ok(fs.existsSync(lockPath(repo)), 'the lock file must be untouched');
+});
+
+test('worktree unlock --force clears the lock regardless of which story it names', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  makeStory(repo, 'epics/epic-01/story-01-02');
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+
+  const { code } = run(repo, ['unlock', '--story', 'epics/epic-01/story-01-02', '--force']);
+  assert.equal(code, 0, '--force must clear a mismatched lock');
+  assert.ok(!fs.existsSync(lockPath(repo)), 'the lock file must be removed');
+});
+
+test('worktree lock adds the lock file to .gitignore when it is missing entirely', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  assert.ok(!fs.existsSync(path.join(repo, '.gitignore')));
+
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+  const gitignore = fs.readFileSync(path.join(repo, '.gitignore'), 'utf8');
+  assert.match(gitignore, /^\.coding-flow\/active-story\.json$/m);
+
+  const status = sh(repo, 'git', ['status', '--porcelain']);
+  assert.doesNotMatch(status, /active-story\.json/, 'the lock file must never show as untracked');
+});
+
+test('worktree lock appends to an existing .gitignore that does not yet cover the lock file', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules\n');
+
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+  const gitignore = fs.readFileSync(path.join(repo, '.gitignore'), 'utf8');
+  assert.equal(gitignore, 'node_modules\n.coding-flow/active-story.json\n');
+});
+
+test('worktree lock leaves an already-covering .gitignore byte-for-byte unchanged', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  const original = 'node_modules\n.coding-flow/active-story.json\n';
+  fs.writeFileSync(path.join(repo, '.gitignore'), original);
+
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+  assert.equal(fs.readFileSync(path.join(repo, '.gitignore'), 'utf8'), original);
+});
+
+test('worktree lock treats a broader .coding-flow pattern as already covering the lock file', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+  const original = '.coding-flow/\n';
+  fs.writeFileSync(path.join(repo, '.gitignore'), original);
+
+  run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
+  assert.equal(fs.readFileSync(path.join(repo, '.gitignore'), 'utf8'), original);
+});
+
+test('worktree lock refuses with no --story given', (t) => {
+  const { repo } = freshRepo(t);
+
+  const { code, output } = run(repo, ['lock']);
+  assert.notEqual(code, 0, 'lock must refuse without --story');
+  assert.match(output, /--story/, 'the message must mention the missing flag');
+  assert.ok(!fs.existsSync(lockPath(repo)), 'no lock file must be created');
+});
+
+test('worktree unlock is a no-op when no lock is present', (t) => {
+  const { repo } = freshRepo(t);
+  makeStory(repo, 'epics/epic-01/story-01-01');
+
+  const { code } = run(repo, ['unlock', '--story', 'epics/epic-01/story-01-01']);
+  assert.equal(code, 0, 'unlock with nothing to unlock must still exit 0');
+  assert.ok(!fs.existsSync(lockPath(repo)), 'there must still be no lock file');
+});
