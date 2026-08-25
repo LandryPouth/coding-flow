@@ -2393,4 +2393,7 @@ module.exports = {
   resolveValidationCommands,
   resolveStoryDir,
   captureEnvironment,
+  // Reused by `worktree land`'s post-merge re-verify so a failing command is
+  // reported in the exact shape `ai-flow verify` already reports one in.
+  printVerify,
 };

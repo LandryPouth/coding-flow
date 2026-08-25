@@ -308,14 +308,34 @@ function commitAll(cwd, message) {
 // A repo with one story dir (`epics/epic-01/story-01`) and a `shared.txt`
 // (so divergent/conflicting-edit tests have a file both sides can touch)
 // already committed, so `land` can resolve a worktree named after the story
-// back to it.
-function repoWithStory(t) {
+// back to it. Also declares a trivially-passing validation command, so `land`'s
+// post-merge re-verify (story-02-03) has something real to run — override
+// `command` to make that re-verify fail instead.
+function repoWithStory(t, { command = 'node -e "process.exit(0)"' } = {}) {
   const { base, repo } = freshRepo(t);
   fs.mkdirSync(path.join(repo, 'epics', 'epic-01', 'story-01'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'epics', 'epic-01', 'story-01', 'story.md'), '# Story\n');
   fs.writeFileSync(path.join(repo, 'shared.txt'), 'base\n');
-  commitAll(repo, 'add story + shared file');
+  fs.mkdirSync(path.join(repo, '.coding-flow'), { recursive: true });
+  fs.writeFileSync(
+    path.join(repo, '.coding-flow', 'config.json'),
+    JSON.stringify({ validation: { commands: [command] } }, null, 2),
+  );
+  commitAll(repo, 'add story + shared file + validation command');
   return { base, repo };
+}
+
+// Only the repo-scoped ("story: null") entries `land`'s own re-verify writes —
+// a merged-in story branch can carry its own story-scoped verify fixture into
+// the same runs directory, and that is not what these assertions are about.
+function verifyRunFiles(repo) {
+  const runsDir = path.join(repo, '.coding-flow', 'runs');
+  if (!fs.existsSync(runsDir)) return [];
+  return fs
+    .readdirSync(runsDir)
+    .filter((name) => name.endsWith('-verify.json'))
+    .map((name) => JSON.parse(fs.readFileSync(path.join(runsDir, name), 'utf8')))
+    .filter((entry) => entry.story === null);
 }
 
 function addStoryWorktree(base, repo, name = 'story-01') {
@@ -371,6 +391,11 @@ test('worktree land fast-forwards a clean, verified story and cleans up', (t) =>
 
   const merges = sh(repo, 'git', ['rev-list', '--merges', `${before}..HEAD`]);
   assert.equal(merges.trim(), '', 'a fast-forward must not create a merge commit when one was avoidable');
+
+  const runs = verifyRunFiles(repo);
+  assert.equal(runs.length, 1, 'the post-merge re-verify must be recorded as evidence on the target');
+  assert.equal(runs[0].ok, true, 'the recorded re-verify evidence must be green');
+  assert.equal(runs[0].story, null, 'the re-verify evidence is repo-scoped, not story-scoped');
 });
 
 test('worktree land rebases a diverged story onto the target and fast-forwards', (t) => {
@@ -533,4 +558,83 @@ test('worktree land refuses a worktree that does not exist', (t) => {
   const { code, output } = run(repo, ['land', 'nope']);
   assert.notEqual(code, 0, 'land must refuse an unknown worktree');
   assert.match(output, /worktree list/, 'the message must point at worktree list');
+});
+
+// --- post-land re-verify + rollback (story-02-03) ---------------------------
+
+test('worktree land rolls back the merge when the post-land re-verify fails, leaving the story worktree untouched', (t) => {
+  const { base, repo } = repoWithStory(t, { command: 'node -e "process.exit(1)"' });
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const before = sh(repo, 'git', ['rev-parse', 'HEAD']).trim();
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.notEqual(code, 0, 'land must fail when the post-land re-verify is red');
+  assert.match(output, /process\.exit\(1\)/, 'the failing command must be reported, the same way verify reports one');
+
+  const after = sh(repo, 'git', ['rev-parse', 'HEAD']).trim();
+  assert.equal(after, before, 'the target branch must be reset to its exact pre-merge commit');
+
+  const log = sh(repo, 'git', ['log', '--oneline']);
+  assert.doesNotMatch(log, /story: add feature/, "the story's commit must not remain on the target");
+
+  assert.ok(fs.existsSync(storyWt), 'the story worktree must be untouched after rollback');
+  const branches = sh(repo, 'git', ['branch', '--list', 'story-01']);
+  assert.notEqual(branches.trim(), '', 'the story branch must still exist after rollback');
+  assert.ok(fs.existsSync(path.join(storyWt, 'feature.txt')), "the story's own commit must survive in its worktree");
+
+  const runs = verifyRunFiles(repo);
+  assert.equal(runs.length, 1, 'the red re-verify must still be recorded as evidence on the target');
+  assert.equal(runs[0].ok, false, 'the recorded re-verify evidence must be red');
+});
+
+test('worktree land, retried after a rollback, lands cleanly once the target validation is fixed', (t) => {
+  const { base, repo } = repoWithStory(t, { command: 'node -e "process.exit(1)"' });
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const failed = run(repo, ['land', 'story-01']);
+  assert.notEqual(failed.code, 0, 'the first land must fail and roll back');
+
+  // Fix what made the re-verify fail, exactly as the failed attempt is meant to
+  // leave a retry able to do: a plain commit, no leftover state to work around.
+  fs.writeFileSync(
+    path.join(repo, '.coding-flow', 'config.json'),
+    JSON.stringify({ validation: { commands: ['node -e "process.exit(0)"'] } }, null, 2),
+  );
+  commitAll(repo, 'fix: repair the post-land validation command');
+
+  const retry = run(repo, ['land', 'story-01']);
+  assert.equal(retry.code, 0, retry.output);
+  assert.ok(!fs.existsSync(storyWt), 'the story worktree must be removed once the retried land succeeds');
+
+  const branches = sh(repo, 'git', ['branch', '--list', 'story-01']);
+  assert.equal(branches.trim(), '', 'the story branch must be deleted once the retried land succeeds');
+
+  const runs = verifyRunFiles(repo);
+  assert.equal(runs.length, 2, 'both the failed and the retried re-verify must be recorded');
+  assert.equal(runs[1].ok, true, 'the retried re-verify must be green');
+});
+
+test('worktree land rolls back a QUICK-tier story exactly like any other — the re-verify is not gated by story risk tier', (t) => {
+  const { base, repo } = repoWithStory(t, { command: 'node -e "process.exit(1)"' });
+  const storyWt = addStoryWorktree(base, repo);
+
+  // A QUICK story: a copy tweak, nothing that reads as risky on its own. The
+  // re-verify must still run and roll back — the risk it catches lives in the
+  // combination with the target, which no story's own tier reflects.
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'copy tweak\n');
+  commitAll(storyWt, 'story: QUICK copy tweak');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const before = sh(repo, 'git', ['rev-parse', 'HEAD']).trim();
+  const { code } = run(repo, ['land', 'story-01']);
+  assert.notEqual(code, 0, 'a QUICK-tier story must roll back on a red post-land re-verify just the same');
+  assert.equal(sh(repo, 'git', ['rev-parse', 'HEAD']).trim(), before, 'the target must be reset regardless of story tier');
 });

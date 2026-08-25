@@ -24,6 +24,7 @@ const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
+const { verifyStoryOnce, writeVerifyEvidence, printVerify } = require("./harness");
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -666,6 +667,11 @@ function worktreeLand(name, { cwd, story }) {
     );
   }
 
+  // Captured before any merge is attempted: a fast-forward moves the branch
+  // pointer with no merge commit of its own, so on a failed re-verify below
+  // this is the only thing to restore, not something to "revert".
+  const preMergeSha = git(root, ["rev-parse", "HEAD"]).stdout.trim();
+
   // Cheapest option first: ff-only either succeeds cleanly or fails fast with
   // no side effects.
   const ffOnly = git(root, ["merge", "--ff-only", branch], { allowFail: true });
@@ -696,6 +702,32 @@ function worktreeLand(name, { cwd, story }) {
           "merged, but its state changed; inspect it before retrying.",
       );
     }
+  }
+
+  // Two independently-green stories can still combine into something broken
+  // (the concrete worry: two migrations that never conflict as text but are
+  // incompatible once applied together) — no single story's own verify can see
+  // that, since it never ran against the merged result. Re-run the project's
+  // validation commands against the target checkout, unconditional on the
+  // story's own risk tier: the risk lives in the combination, not in either
+  // story alone. Uses the same evidence path `ai-flow verify` writes to, so a
+  // failed land is not just a terminal message — it shows up wherever a
+  // captured verify already does.
+  const evidence = verifyStoryOnce({ story: null });
+  const evidencePath = writeVerifyEvidence(evidence);
+  printVerify(evidence, evidencePath);
+
+  if (!evidence.ok) {
+    // Bounded and reversible by construction: only the merge commit `land` just
+    // created is undone. The story's own worktree, branch, and lock are never
+    // touched, so the fix happens where the story's commits already live and
+    // `land` can be retried once it is fixed.
+    git(root, ["reset", "--hard", preMergeSha]);
+    fail(
+      `post-land validation failed on the merged result. The target branch was reset to its pre-merge ` +
+        `commit (${preMergeSha.slice(0, 12)}). The story worktree, branch, and lock at ${match.path} are ` +
+        "untouched — fix it there and land again.",
+    );
   }
 
   landCleanup(root, match, branch);
