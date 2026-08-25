@@ -12,6 +12,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const { currentTreeToken } = require('../bin/lib/identity');
+
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
 function sh(cwd, cmd, args) {
@@ -294,4 +296,217 @@ test('worktree unlock is a no-op when no lock is present', (t) => {
   const { code } = run(repo, ['unlock', '--story', 'epics/epic-01/story-01-01']);
   assert.equal(code, 0, 'unlock with nothing to unlock must still exit 0');
   assert.ok(!fs.existsSync(lockPath(repo)), 'there must still be no lock file');
+});
+
+// --- land ------------------------------------------------------------------
+
+function commitAll(cwd, message) {
+  sh(cwd, 'git', ['add', '-A']);
+  sh(cwd, 'git', ['commit', '-m', message]);
+}
+
+// A repo with one story dir (`epics/epic-01/story-01`) and a `shared.txt`
+// (so divergent/conflicting-edit tests have a file both sides can touch)
+// already committed, so `land` can resolve a worktree named after the story
+// back to it.
+function repoWithStory(t) {
+  const { base, repo } = freshRepo(t);
+  fs.mkdirSync(path.join(repo, 'epics', 'epic-01', 'story-01'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'epics', 'epic-01', 'story-01', 'story.md'), '# Story\n');
+  fs.writeFileSync(path.join(repo, 'shared.txt'), 'base\n');
+  commitAll(repo, 'add story + shared file');
+  return { base, repo };
+}
+
+function addStoryWorktree(base, repo, name = 'story-01') {
+  const { code, output } = run(repo, ['add', name]);
+  assert.equal(code, 0, output);
+  return worktreePath(base, name);
+}
+
+// Writes a captured verify run file the same shape `harness verify` produces
+// (see audit.js's `entryFromRunFile`), then commits it so the worktree stays
+// clean — `.coding-flow/runs/*.json` is tracked content, not gitignored.
+function writeVerify(storyWt, storyRel, { ok = true, token } = {}) {
+  const runsDir = path.join(storyWt, '.coding-flow', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const treeToken = token !== undefined ? token : currentTreeToken(storyWt);
+  const file = path.join(runsDir, `${Date.now()}-${Math.random().toString(16).slice(2, 8)}-verify.json`);
+  fs.writeFileSync(
+    file,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        ok,
+        story: storyRel,
+        commandsFound: 1,
+        commandSource: 'test-fixture',
+        provenance: { git: { treeToken } },
+      },
+      null,
+      2,
+    ),
+  );
+  commitAll(storyWt, 'chore: capture verify evidence');
+}
+
+test('worktree land fast-forwards a clean, verified story and cleans up', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const before = sh(repo, 'git', ['rev-parse', 'HEAD']).trim();
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.equal(code, 0, output);
+
+  const log = sh(repo, 'git', ['log', '--oneline']);
+  assert.match(log, /story: add feature/, "the story's commits must land on the target branch");
+  assert.ok(!fs.existsSync(storyWt), 'the story worktree must be removed');
+
+  const branches = sh(repo, 'git', ['branch', '--list', 'story-01']);
+  assert.equal(branches.trim(), '', 'the story branch must be deleted after landing');
+
+  const merges = sh(repo, 'git', ['rev-list', '--merges', `${before}..HEAD`]);
+  assert.equal(merges.trim(), '', 'a fast-forward must not create a merge commit when one was avoidable');
+});
+
+test('worktree land rebases a diverged story onto the target and fast-forwards', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  // The target moves after the story branched, on an unrelated file.
+  fs.writeFileSync(path.join(repo, 'target-only.txt'), 'target work\n');
+  commitAll(repo, 'target: unrelated change');
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.equal(code, 0, output);
+
+  const log = sh(repo, 'git', ['log', '--oneline']);
+  assert.match(log, /story: add feature/, 'the rebased story commit must land');
+  assert.match(log, /target: unrelated change/, "the target's own commit must stay");
+  assert.ok(!fs.existsSync(storyWt), 'the story worktree must be removed after rebase+land');
+
+  const branches = sh(repo, 'git', ['branch', '--list', 'story-01']);
+  assert.equal(branches.trim(), '', 'the story branch must be deleted after landing');
+});
+
+test('worktree land stops on a real rebase conflict, leaving the target untouched', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'shared.txt'), 'story change\n');
+  commitAll(storyWt, 'story: change shared');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  fs.writeFileSync(path.join(repo, 'shared.txt'), 'target change\n');
+  commitAll(repo, 'target: change shared');
+  const targetHead = sh(repo, 'git', ['rev-parse', 'HEAD']).trim();
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.notEqual(code, 0, 'land must stop on a real conflict');
+  assert.match(output, /shared\.txt/, 'the message must name the conflicting file');
+  assert.match(output, /mid-rebase/, 'the message must say the worktree is left mid-rebase');
+
+  assert.equal(sh(repo, 'git', ['rev-parse', 'HEAD']).trim(), targetHead, 'the target branch must be untouched');
+  assert.ok(fs.existsSync(storyWt), 'the story worktree must be left in place for manual resolution');
+
+  const branches = sh(repo, 'git', ['branch', '--list', 'story-01']);
+  assert.notEqual(branches.trim(), '', 'the story branch must not be deleted');
+
+  try {
+    sh(storyWt, 'git', ['rebase', '--abort']);
+  } catch {
+    // best-effort: only matters so the fixture teardown does not fight git.
+  }
+});
+
+test('worktree land refuses a dirty story worktree', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+  fs.writeFileSync(path.join(storyWt, 'wip.txt'), 'uncommitted work');
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.notEqual(code, 0, 'land must refuse a dirty worktree');
+  assert.match(output, /wip\.txt/, 'the message must name the uncommitted file');
+  assert.ok(fs.existsSync(storyWt), 'the dirty worktree must stay intact');
+
+  const branches = sh(repo, 'git', ['branch', '--list', 'story-01']);
+  assert.notEqual(branches.trim(), '', 'the branch must not be deleted');
+});
+
+test('worktree land refuses when run from inside the story\'s own worktree', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const { code, output } = run(storyWt, ['land', 'story-01']);
+  assert.notEqual(code, 0, "land must refuse when run from the story's own worktree");
+  assert.match(output, /target checkout/, 'the message must point at the checkout to run it from instead');
+  assert.ok(fs.existsSync(storyWt), 'the worktree must be untouched');
+
+  const branches = sh(repo, 'git', ['branch', '--list', 'story-01']);
+  assert.notEqual(branches.trim(), '', 'the branch must not be deleted');
+});
+
+test('worktree land refuses when no verify is recorded for the story', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.notEqual(code, 0, 'land must refuse without a recorded verify');
+  assert.match(output, /epics\/epic-01\/story-01/, 'the message must name the story');
+  assert.ok(fs.existsSync(storyWt), 'the story worktree must be untouched');
+});
+
+test('worktree land refuses a stale verify', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  // The tree changes again after the verify was captured: the proof no
+  // longer describes the current code.
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work v2\n');
+  commitAll(storyWt, 'story: tweak feature');
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.notEqual(code, 0, 'land must refuse a stale verify');
+  assert.match(output, /stale/i, 'the message must say the proof is stale');
+  assert.ok(fs.existsSync(storyWt), 'the story worktree must be untouched');
+});
+
+test('worktree land treats a story with nothing new as already landed', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+  // No commits made in the story worktree: its branch is exactly the
+  // target's current tip.
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.equal(code, 0, 'land must not error on an already-landed story');
+  assert.match(output, /already landed/i);
+  assert.ok(!fs.existsSync(storyWt), 'the worktree must still be cleaned up');
+
+  const branches = sh(repo, 'git', ['branch', '--list', 'story-01']);
+  assert.equal(branches.trim(), '', 'the branch must still be deleted');
+});
+
+test('worktree land refuses a worktree that does not exist', (t) => {
+  const { repo } = repoWithStory(t);
+
+  const { code, output } = run(repo, ['land', 'nope']);
+  assert.notEqual(code, 0, 'land must refuse an unknown worktree');
+  assert.match(output, /worktree list/, 'the message must point at worktree list');
 });
