@@ -638,3 +638,30 @@ test('worktree land rolls back a QUICK-tier story exactly like any other — the
   assert.notEqual(code, 0, 'a QUICK-tier story must roll back on a red post-land re-verify just the same');
   assert.equal(sh(repo, 'git', ['rev-parse', 'HEAD']).trim(), before, 'the target must be reset regardless of story tier');
 });
+
+test('worktree land judges the post-land re-verify on its declared commands only, not the coverage gate scoped to the whole target-vs-main diff', (t) => {
+  const { base, repo } = repoWithStory(t);
+
+  // Simulate risk that already lives on the target's own history, unrelated to
+  // the story being landed now: an epic branch (not main) that already carries
+  // a sensitive-path change with no test file — exactly the kind of thing the
+  // coverage gate would flag if it re-ran here, and exactly what a repo-wide
+  // check must not re-litigate on every later, unrelated land onto that branch.
+  sh(repo, 'git', ['checkout', '-b', 'epic-01']);
+  fs.mkdirSync(path.join(repo, 'migrations'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'migrations', '001_init.sql'), 'create table users();\n');
+  commitAll(repo, 'feat: add migration (already on the target, no test file)');
+
+  const storyWt = addStoryWorktree(base, repo);
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.equal(code, 0, output);
+  assert.ok(!fs.existsSync(storyWt), 'a green land must still clean up the story worktree');
+
+  const runs = verifyRunFiles(repo);
+  assert.equal(runs.length, 1, 'the re-verify must still be recorded as evidence');
+  assert.equal(runs[0].ok, true, 'the re-verify must be green: the declared command decides, not a coverage gate scoped to unrelated, already-landed history');
+});

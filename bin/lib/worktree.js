@@ -713,7 +713,14 @@ function worktreeLand(name, { cwd, story }) {
   // story alone. Uses the same evidence path `ai-flow verify` writes to, so a
   // failed land is not just a terminal message — it shows up wherever a
   // captured verify already does.
-  const evidence = verifyStoryOnce({ story: null });
+  //
+  // skipCoverage: true — the coverage gate reads the diff from the default
+  // branch to HEAD, which after this merge is every story's accumulated diff
+  // since main, not just the one just landed, and it cannot see a story-scoped
+  // test exemption a landed story already earned. Judging the merged result on
+  // whether its commands pass, not on a heuristic scoped to the wrong diff, is
+  // what this re-verify is for; coverage stays a per-story concern.
+  const evidence = verifyStoryOnce({ story: null, skipCoverage: true });
   const evidencePath = writeVerifyEvidence(evidence);
   printVerify(evidence, evidencePath);
 

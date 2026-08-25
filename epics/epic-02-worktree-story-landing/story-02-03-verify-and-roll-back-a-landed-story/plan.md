@@ -66,6 +66,23 @@
   the rebase fallback too — a retry after rollback is not required to stay on
   whichever merge path the first attempt took.
 
+- **The re-verify calls `verifyStoryOnce({ story: null, skipCoverage: true })`
+  — the coverage/test-change gate is skipped, only the declared commands
+  decide.** Found in review: `evaluateCoverage`'s diff is `defaultBranch` (
+  `main`) to `HEAD`, i.e. after this merge, every story's accumulated diff on
+  the target branch since `main` — not the diff this land just introduced.
+  Landing story N onto a long-lived epic branch would re-litigate risk from
+  stories 1..N-1 on every land, and `readTestExemption` is story-scoped so it
+  cannot see an exemption an earlier, already-landed story legitimately used
+  — a rollback could fire on stale, unrelated, already-approved risk instead
+  of on the actual combination this story exists to catch. `skipCoverage`
+  (new option on `verifyStoryOnce`, `harness.js`) keeps this re-verify judging
+  exactly what the spec names — "validation commands" — and leaves coverage a
+  per-story concern, decided once, at the story's own `ai-flow verify --story`
+  time. Pinned by `test/worktree.test.js`'s coverage-gate-scope test: an
+  already-landed, no-test migration file on the target must not roll back an
+  otherwise-green land.
+
 ## Test plan
 
 - `test/worktree.test.js`, extending the `land` section: green re-verify →

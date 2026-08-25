@@ -74,3 +74,23 @@ of this diff — same pre-existing, unrelated failure, not a new one.
   designed stop condition): none needed on the target — the reset already
   restores it exactly. Fix the underlying failure in the story's own
   worktree (still present, untouched) and run `land` again.
+
+### Post-review correction
+
+`/flow-review` found the re-verify (`verifyStoryOnce({ story: null })`) pulled
+in the coverage/test-change gate by default, scoped to the diff from `main` to
+`HEAD` — every story's accumulated diff on the target branch, not just the one
+just landed — and unable to see a story-scoped test exemption an earlier,
+already-landed story had legitimately used. A later, unrelated land could roll
+back on stale risk instead of on the actual combination this story exists to
+catch, and none of the original 5 tests exercised it (the fixtures' `repo`
+never leaves `main`, so `changedFilesForCoverage` was always empty).
+
+Fixed: `verifyStoryOnce` gained a `skipCoverage` option (`bin/lib/harness.js`);
+`worktreeLand` now calls it with `skipCoverage: true`, so the re-verify judges
+only the declared commands — what the spec names — and leaves coverage a
+per-story concern. Added
+`test/worktree.test.js`'s "judges the post-land re-verify on its declared
+commands only" test: an already-landed migration file with no test file on
+the target must not roll back an otherwise-green land. Confirmed the test
+fails without `skipCoverage` and passes with it. `npm test`: 481/481 green.
