@@ -56,7 +56,31 @@
 
 ## Decisions
 
-_(filled during implementation)_
+- `computeTreeToken` is not exported from `identity.js` — only its wrapper
+  `currentTreeToken(cwd)` is (`module.exports = { captureIdentity,
+  currentTreeToken }`). Used `currentTreeToken` instead; same primitive, same
+  result, no new export needed.
+- `audit.js`'s `isStale` existed but was not in `module.exports`. Added it
+  (one line) rather than reimplementing the staleness comparison in
+  `worktree.js` — the plan explicitly calls for reusing `audit.js`'s own
+  semantics here, and a second copy of that comparison would be the thing
+  most likely to drift from it.
+- Story linkage (branch name → story dir, for the verify precondition) reuses
+  `ship.js`'s `findStoryAndEpic` pattern exactly: `getStorage(root,
+  config).listEpics()`, matched by `story.name === branch`. Not exported from
+  `ship.js` (and importing it from there would be an odd direction), so
+  `worktree.js` gets its own `findStoryForBranch` with the identical body.
+- Preconditions run in this order: dirty check → wrong-checkout check →
+  already-landed short-circuit → verify (green + non-stale) → merge
+  mechanism. The already-landed case intentionally skips the verify check
+  entirely (spec's edge case says "skip straight to cleanup", not "skip
+  straight to cleanup once also proven") — if the target already has
+  everything from the story, there is nothing left to prove before cleaning
+  up.
+- Conflict detection reuses the same `git status --porcelain` primitive
+  `realDirtyLines` already parses, filtered to the unmerged XY codes (`UU`,
+  `AA`, `AU`, `UA`, `DU`, `UD`, `DD`) instead of a separate mechanism, per the
+  plan's note not to invent a second way to read git's status output.
 
 ## Test plan
 

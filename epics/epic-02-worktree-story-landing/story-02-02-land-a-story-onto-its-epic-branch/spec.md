@@ -44,30 +44,30 @@ checkout, but it is the same failure shape).
 
 ## Acceptance criteria
 
-- [ ] Given a story worktree with uncommitted changes, when `ai-flow
+- [x] Given a story worktree with uncommitted changes, when `ai-flow
       worktree land <name>` runs, then it refuses, names the uncommitted
       files, and nothing is merged or removed.
-- [ ] Given `land` is run from inside the story's own worktree, when it
+- [x] Given `land` is run from inside the story's own worktree, when it
       runs, then it refuses with a message naming the correct checkout to
       run it from instead.
-- [ ] Given no green verify is recorded for the story, when `land` runs,
+- [x] Given no green verify is recorded for the story, when `land` runs,
       then it refuses, names the story, and nothing is merged.
-- [ ] Given a recorded verify is green but stale (the tree changed since),
+- [x] Given a recorded verify is green but stale (the tree changed since),
       when `land` runs, then it refuses the same way as "no verify" and
       says the proof is stale.
-- [ ] Given a clean, verified story worktree whose branch is a direct
+- [x] Given a clean, verified story worktree whose branch is a direct
       descendant of the target's current tip, when `land` runs, then a
       fast-forward merge lands it, the story worktree and branch are
       removed, and the lock file is cleared.
-- [ ] Given a clean, verified story worktree whose branch diverged because
+- [x] Given a clean, verified story worktree whose branch diverged because
       the target moved, when `land` runs, then the story branch is rebased
       onto the new tip and fast-forward-merged, with the same cleanup as
       the direct case.
-- [ ] Given a rebase in that divergent case hits a real conflict, when
+- [x] Given a rebase in that divergent case hits a real conflict, when
       `land` runs, then it stops, reports the conflicting files, leaves the
       story worktree mid-rebase, and does not remove anything or clear the
       lock.
-- [ ] Given `land` completes successfully, when the target branch's log is
+- [x] Given `land` completes successfully, when the target branch's log is
       inspected, then it contains the story's commits and no separate merge
       commit was force-created when a fast-forward was possible (history
       stays linear in the common case).
