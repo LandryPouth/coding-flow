@@ -679,9 +679,9 @@ function worktreeLand(name, { cwd, story }) {
   if (ffOnly.code !== 0) {
     // The target moved since the story branched: replay the story's commits
     // onto its current tip, INSIDE the story's own worktree — the target
-    // checkout is not touched until the retried ff-only merge below.
-    const targetTip = git(root, ["rev-parse", "HEAD"]).stdout.trim();
-    const rebase = git(match.path, ["rebase", targetTip], { allowFail: true });
+    // checkout is not touched until the retried ff-only merge below. A failed
+    // ff-only has no side effects, so the tip to rebase onto is still preMergeSha.
+    const rebase = git(match.path, ["rebase", preMergeSha], { allowFail: true });
 
     if (rebase.code !== 0) {
       const conflicts = conflictingFiles(match.path);
