@@ -46,23 +46,23 @@ sitting broken until someone notices.
 
 ## Acceptance criteria
 
-- [ ] Given a land whose merge succeeds and whose post-land validation
+- [x] Given a land whose merge succeeds and whose post-land validation
       commands all pass, when `land` finishes, then the target branch
       contains the story's commits, the story worktree/branch/lock are
       cleaned up, and a green evidence entry exists for the re-verify.
-- [ ] Given a land whose merge succeeds but a post-land validation command
+- [x] Given a land whose merge succeeds but a post-land validation command
       fails, when `land` finishes, then the target branch is back at its
       exact pre-merge commit, the story's worktree/branch/lock are
       untouched, and the failure (command + output) is reported to the
       caller.
-- [ ] Given that same rollback case, when `ai-flow status` or `ai-flow
+- [x] Given that same rollback case, when `ai-flow status` or `ai-flow
       audit` runs afterward, then the failed land shows up as recorded
       evidence, not silently.
-- [ ] Given the rollback has happened, when the story worktree is fixed and
+- [x] Given the rollback has happened, when the story worktree is fixed and
       `ai-flow worktree land <name>` is run again, then it proceeds exactly
       as a fresh land would — the earlier failed attempt does not block a
       retry.
-- [ ] Given a story whose own execution mode was QUICK, when it lands and
+- [x] Given a story whose own execution mode was QUICK, when it lands and
       the post-land validation fails, then the rollback still happens —
       confirming the re-verify is not gated by the story's own risk tier.
 

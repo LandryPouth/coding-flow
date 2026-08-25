@@ -49,7 +49,22 @@
 
 ## Decisions
 
-_(filled during implementation)_
+- **`printVerify` is exported from `harness.js` instead of reimplemented in
+  `worktree.js`.** It is the exact formatter `ai-flow verify` already uses to
+  report a failing command; the alternative (writing a second, `land`-specific
+  formatter) is exactly the "not a new failure format to invent" the spec
+  rules out.
+- **The already-landed short-circuit does not re-verify.** No merge runs on
+  that path (`git merge-base --is-ancestor` finds nothing new), so there is no
+  merged result to prove — re-verifying there would be re-running the suite
+  against an unchanged tree for no reason.
+- **The retry test fixes the target's own validation config, not the story
+  worktree, and lands through the rebase-replay path rather than a second
+  ff-only.** The story's diff plays no part in why the fixture's re-verify
+  fails, so the realistic fix is target-side; committing it moves the target
+  ahead of the still-unmerged story branch, so the retried `land` exercises
+  the rebase fallback too — a retry after rollback is not required to stay on
+  whichever merge path the first attempt took.
 
 ## Test plan
 
