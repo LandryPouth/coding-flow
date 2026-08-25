@@ -28,12 +28,23 @@ branch is already fully merged, which short-circuits straight to cleanup —
 a green, non-stale verify recorded for the story. On success the story
 worktree and branch are removed and the lock cleared.
 
-All 8 acceptance criteria are covered by 9 new tests in
+All 8 acceptance criteria are covered by 10 new tests in
 `test/worktree.test.js` (ff-only + cleanup + linear history, divergent
 rebase + cleanup, real conflict with target untouched, dirty refusal,
-wrong-checkout refusal, no-verify refusal, stale-verify refusal,
-already-landed short-circuit, unknown-worktree refusal), built against real
-temp git repos, no mocked `git`. Full suite: 476/476 passing.
+wrong-checkout refusal (single-candidate and multi-candidate), no-verify
+refusal, stale-verify refusal, already-landed short-circuit, unknown-worktree
+refusal), built against real temp git repos, no mocked `git`. Full suite:
+477/477 passing.
+
+**Post-review fix**: the wrong-checkout refusal originally named
+`entries[0]` (git's primary worktree) as "the target checkout" unconditionally.
+Reproduced live in this repo's own nested layout (story worktree inside the
+epic worktree inside the main checkout): the hint pointed at `main`, not the
+epic branch — the actual target. Fixed to name a specific checkout only when
+exactly one other worktree exists (the common, non-nested case, where it is
+provably correct); otherwise it lists every other checkout as a candidate
+instead of asserting a possibly-wrong one. Covered by a new test exercising
+the three-worktree case.
 
 `ai-flow verify --story epics/epic-02-worktree-story-landing/story-02-02-land-a-story-onto-its-epic-branch`
 is green (`npm test`, `Coverage: evidence`). `harness check`/`harness

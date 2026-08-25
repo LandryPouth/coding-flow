@@ -601,10 +601,21 @@ function worktreeLand(name, { cwd, story }) {
   }
 
   if (path.resolve(match.path) === path.resolve(root)) {
-    const main = entries[0];
+    // entries[0] (git's primary worktree) is not reliably "the target" once
+    // worktrees nest more than one level (e.g. a story worktree inside an
+    // epic worktree inside the main checkout) — naming it here would point
+    // at the wrong branch. Name it only when there is exactly one other
+    // worktree to choose from; otherwise list every candidate instead of
+    // guessing.
+    const others = entries.filter((e) => path.resolve(e.path) !== path.resolve(match.path));
+    const hint =
+      others.length === 1
+        ? `Run it from the target checkout instead (${others[0].path}).`
+        : "Run it from the checkout that has the branch you want to merge into checked out — candidates:\n" +
+          others.map((e) => `  ${e.path}${e.branch ? ` [${e.branch}]` : ""}`).join("\n");
     fail(
       `land must be run from the checkout you want to merge into, not from the story's own worktree ` +
-        `"${lookupName}". Run it from the target checkout instead (e.g. ${main.path}).`,
+        `"${lookupName}". ${hint}`,
     );
   }
 
@@ -679,7 +690,11 @@ function worktreeLand(name, { cwd, story }) {
 
     const retryFf = git(root, ["merge", "--ff-only", branch], { allowFail: true });
     if (retryFf.code !== 0) {
-      fail(`fast-forward merge still failed after rebasing "${branch}": ${retryFf.stderr.trim()}`);
+      fail(
+        `fast-forward merge still failed after rebasing "${branch}": ${retryFf.stderr.trim()}. ` +
+          `The story worktree at ${match.path} has already been rebased onto the new tip — nothing was ` +
+          "merged, but its state changed; inspect it before retrying.",
+      );
     }
   }
 

@@ -457,6 +457,30 @@ test('worktree land refuses when run from inside the story\'s own worktree', (t)
   assert.notEqual(branches.trim(), '', 'the branch must not be deleted');
 });
 
+test('worktree land, run from its own worktree with more than one other checkout, lists candidates instead of guessing', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo, 'story-01');
+  // A second, unrelated worktree exists alongside the repo root and story-01,
+  // so there is no single "other" checkout to name with confidence — naming
+  // one anyway risks pointing at the wrong branch (see story-02-02's
+  // wrong-checkout finding).
+  addStoryWorktree(base, repo, 'story-02');
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const { code, output } = run(storyWt, ['land', 'story-01']);
+  assert.notEqual(code, 0, "land must refuse when run from the story's own worktree");
+  assert.doesNotMatch(
+    output,
+    /Run it from the target checkout instead/,
+    'with more than one candidate the message must not assert a single specific checkout is correct',
+  );
+  assert.match(output, /candidates/, 'the message must list the other checkouts instead of guessing one');
+  assert.match(output, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the repo root must be one of the listed candidates');
+});
+
 test('worktree land refuses when no verify is recorded for the story', (t) => {
   const { base, repo } = repoWithStory(t);
   const storyWt = addStoryWorktree(base, repo);
