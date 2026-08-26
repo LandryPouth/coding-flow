@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-08-26
+
+### Added
+
+- **`ai-flow worktree lock`/`unlock`** — starting a second `/flow-run` on a
+  checkout that already has another story's unfinished work in it is now
+  refused, naming which story holds the checkout and how to isolate the new
+  one in its own worktree instead. The lock lives at
+  `.coding-flow/active-story.json`, gitignored automatically.
+- **`ai-flow worktree land`** — one command reconciles a finished, verified
+  story worktree back onto the branch the whole epic ships from, instead of
+  a manual merge/rebase per story.
+- **`worktree land` verifies the merged result and rolls back on failure.**
+  Two independently-green stories can still break once combined (the
+  canonical case: two migrations that never conflict as text but corrupt the
+  same table together). `land` re-runs the target's declared validation
+  commands after the merge and reverts to the pre-merge state if they fail,
+  so a broken combination never sits on the epic branch.
+
 ## [0.8.6] - 2026-08-26
 
 ### Added
