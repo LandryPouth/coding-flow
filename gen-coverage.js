@@ -1,7 +1,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const spec = {"covered":[1,2,3,4,5,6,7,8,9,10],"uncovered":[]};
+const spec = {"covered":[1],"uncovered":[2,3,4,5,6,7,8,9,10]};
 fs.mkdirSync("coverage", { recursive: true });
 const lines = ["TN:", "SF:" + path.resolve("src/auth.js")];
 for (const line of spec.covered) lines.push("DA:" + line + ",1");
