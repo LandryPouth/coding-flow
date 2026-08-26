@@ -4,7 +4,7 @@
   "branchPerEpic": true,
   "autoMergeEpic": false,
   "skills": "plugin",
-  "install": "full",
+  "install": "minimal",
   "validation": {
     "commands": [
       "node -e \"process.exit(0)\""
