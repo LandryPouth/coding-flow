@@ -8,7 +8,6 @@
   "validation": {
     "commands": [
       "node -e \"process.exit(0)\""
-    ],
-    "quality": []
+    ]
   }
 }
