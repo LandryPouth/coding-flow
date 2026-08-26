@@ -1,47 +1,17 @@
 {
-  "name": "@landry_pouth/coding-flow",
-  "version": "0.9.0",
-  "description": "AI-native engineering workflow that makes Claude Code reliable on real projects: plan, implement, and verify with executed proof that the tests actually ran and passed — not the agent's word. Optional evidence & audit layer for teams that need governance. (Codex support planned.)",
-  "license": "MIT",
-  "author": "Landry Pouth",
-  "type": "commonjs",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/LandryPouth/coding-flow.git"
-  },
-  "bugs": {
-    "url": "https://github.com/LandryPouth/coding-flow/issues"
-  },
-  "homepage": "https://github.com/LandryPouth/coding-flow#readme",
-  "bin": {
-    "coding-flow": "./bin/ai-flow.js",
-    "ai-flow": "./bin/ai-flow.js"
-  },
-  "files": [
-    "bin",
-    "templates",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
+  "private": true,
   "scripts": {
-    "test": "node --test",
-    "check": "node bin/ai-flow.js doctor",
-    "pack:dry": "npm pack --dry-run",
-    "prepublishOnly": "npm test"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "keywords": [
-    "ai",
-    "agents",
-    "claude-code",
-    "workflow",
-    "governance",
-    "evidence"
-  ]
+    "flow": "npx @landry_pouth/coding-flow",
+    "flow:init": "npx @landry_pouth/coding-flow init",
+    "flow:upgrade": "npx @landry_pouth/coding-flow upgrade",
+    "flow:doctor": "npx @landry_pouth/coding-flow doctor",
+    "flow:fix": "npx @landry_pouth/coding-flow doctor --fix",
+    "flow:skills": "npx @landry_pouth/coding-flow list-skills",
+    "flow:status": "npx @landry_pouth/coding-flow status",
+    "flow:next": "npx @landry_pouth/coding-flow next",
+    "flow:check": "npx @landry_pouth/coding-flow doctor --strict",
+    "flow:harness": "npx @landry_pouth/coding-flow harness check --quick",
+    "flow:commands": "npx @landry_pouth/coding-flow commands",
+    "flow:uninstall": "npx @landry_pouth/coding-flow uninstall"
+  }
 }
