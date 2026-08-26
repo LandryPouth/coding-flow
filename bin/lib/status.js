@@ -4,18 +4,24 @@
 // the worktree linked to each story and the branch policy. The story content
 // comes from storage; the worktree link and the policy are the git layer, orthogonal.
 
+const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
 const { log, toPortable } = require("./util");
-const { collectWorktrees } = require("./worktree");
+const { collectWorktrees, realDirtyLines } = require("./worktree");
+const { latestVerifyByStoryDir, isStale } = require("./audit");
+const { currentTreeToken } = require("./identity");
 const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
 const { evaluateBranchPolicy } = require("./policy");
 
 // Indexes the worktrees by branch name. The worktree<->story mapping is
 // stateless: `worktree add --story` names the branch after the story directory,
-// so we link a story to a worktree when branch === basename.
+// so we link a story to a worktree when branch === basename. Keeps both the
+// portable path (existing `worktree` field, display/JSON) and the absolute
+// path (needed to inspect that worktree's own lock file / dirty state / verify
+// evidence for `landReady`, all of which live inside it, not in `cwd`).
 function buildWorktreeIndex() {
   const { isRepo, entries } = collectWorktrees(cwd);
   const byBranch = new Map();
@@ -24,10 +30,38 @@ function buildWorktreeIndex() {
     if (entry.bare || !entry.branch) {
       continue;
     }
-    byBranch.set(entry.branch, toPortable(path.relative(cwd, entry.path)) || ".");
+    byBranch.set(entry.branch, {
+      path: toPortable(path.relative(cwd, entry.path)) || ".",
+      fullPath: entry.path,
+    });
   }
 
   return { isRepo, byBranch, entries };
+}
+
+// Whether a story's linked worktree is still active, ready to land, or not
+// there yet — the same preconditions `worktree land` itself checks (story-02-02):
+// no lock, a clean worktree, and a green, non-stale verify recorded *for that
+// worktree* (verify evidence lives under `<worktree>/.coding-flow/runs`, so it
+// is read from the worktree's own path, not from `cwd`).
+function computeLandReady(worktreePath, storyPath) {
+  const lockPath = path.join(worktreePath, ".coding-flow", "active-story.json");
+  if (fs.existsSync(lockPath)) {
+    return "active";
+  }
+
+  if (realDirtyLines(worktreePath).length > 0) {
+    return "unverified";
+  }
+
+  const verifyEntry = latestVerifyByStoryDir(worktreePath).get(storyPath);
+  const currentToken = currentTreeToken(worktreePath);
+
+  if (!verifyEntry || !verifyEntry.ok || isStale(verifyEntry, currentToken)) {
+    return "unverified";
+  }
+
+  return "landable";
 }
 
 // The read model behind `status` — epics/stories enriched with their linked
@@ -41,13 +75,15 @@ function buildStatusModel(config) {
   const epics = storage.listEpics().map((epic) => ({
     ...epic,
     stories: epic.stories.map((story) => {
-      const worktree = wt.byBranch.get(story.name) || null;
+      const wtEntry = wt.byBranch.get(story.name) || null;
 
-      if (worktree) {
+      if (wtEntry) {
         mappedBranches.add(story.name);
       }
 
-      return { ...story, worktree };
+      const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
+
+      return { ...story, worktree: wtEntry ? wtEntry.path : null, ...(wtEntry ? { landReady } : {}) };
     }),
   }));
 
@@ -102,7 +138,9 @@ function status({ json = false } = {}) {
       }
 
       for (const story of epic.stories) {
-        const wtSuffix = story.worktree ? `  → wt: ${story.worktree}` : "";
+        const wtSuffix = story.worktree
+          ? `  → wt: ${story.worktree} [${story.landReady}]`
+          : "";
         log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}`);
       }
       log("");

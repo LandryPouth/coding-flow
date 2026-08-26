@@ -457,4 +457,4 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
   }
 }
 
-module.exports = { worktreeCommand, collectWorktrees };
+module.exports = { worktreeCommand, collectWorktrees, realDirtyLines };
