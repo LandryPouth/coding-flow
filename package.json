@@ -28,7 +28,7 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --require ./scripts/test-env-guard.js --test",
     "check": "node bin/ai-flow.js doctor",
     "pack:dry": "npm pack --dry-run",
     "prepublishOnly": "npm test"
