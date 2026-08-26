@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# >>> coding-flow (managed) >>>
+# Opt-in pre-push gate installed by `ai-flow hook install`.
+# Blocks a push when a story's latest verify is red, missing, or stale.
+# Remove with `ai-flow hook uninstall`; bypass once with `git push --no-verify`.
+CF="${CODING_FLOW_CLI:-}"
+if [ -z "$CF" ]; then
+  if command -v ai-flow >/dev/null 2>&1; then CF="ai-flow";
+  elif command -v npx >/dev/null 2>&1; then CF="npx --no-install @landry_pouth/coding-flow";
+  fi
+fi
+if [ -z "$CF" ] || ! $CF version >/dev/null 2>&1; then
+  echo "coding-flow: CLI unavailable, skipping pre-push audit gate" >&2
+  exit 0
+fi
+if ! $CF audit --check; then
+  echo "coding-flow: push blocked — a story's latest verify is red, missing, or stale." >&2
+  echo "Re-run 'ai-flow verify --story <dir>', or bypass once with 'git push --no-verify'." >&2
+  exit 1
+fi
+# <<< coding-flow (managed) <<<

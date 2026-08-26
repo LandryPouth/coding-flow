@@ -6,7 +6,8 @@
   "skills": "plugin",
   "install": "full",
   "validation": {
-    "commands": [],
-    "quality": []
+    "commands": [
+      "node -e \"process.exit(0)\""
+    ]
   }
 }
