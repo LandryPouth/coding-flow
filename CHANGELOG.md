@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.6] - 2026-08-26
+
+### Added
+
+- **`ai-flow status` shows, per story, whether its worktree is landable.**
+  Stories with a linked worktree now carry a `landReady` field —
+  `"active"` (locked), `"landable"` (clean, green, non-stale verify), or
+  `"unverified"` — reusing the same collectors `worktree land` itself
+  will check as preconditions, instead of re-deriving that state.
+- **`status` flags `docs/plans/*.md` files no epic references yet**, with a
+  hint to run `/flow-plan` against them, so a written design decision
+  can't silently go forgotten.
+- **`doctor` detects a missing or stale guard hook wiring.** A stale
+  command still enforces via the npx fallback (warning); no PreToolUse
+  hook at all leaves writes completely unprotected (error).
+
 ## [0.8.5] - 2026-08-20
 
 ### Fixed

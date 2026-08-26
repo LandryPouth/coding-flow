@@ -339,3 +339,43 @@ Two further findings, worth as much as the principle:
 **If it is ever revisited**, the premise that must have changed is the missing one:
 a source of truth for the binding that the coding agent does not author. Until then,
 the answer is not "later", it is "no".
+
+---
+
+## 10. Multi-platform support — the second freeze exception
+
+**Decided 2026-08-23.** Planned as `epics/epic-01-multi-platform-support/`
+(five stories, not yet implemented).
+
+Entry 6 refused multi-agent support the same day it admitted `report`, on the
+same test: no users to differentiate for, and two exceptions in one day is the
+point at which a freeze stops existing. It left one door open — *"deferred
+until the new channel produces evidence that anyone wants it."*
+
+That evidence arrived directly: real users confirmed on platforms other than
+Claude Code. Unlike `report`, this did not need `ai-flow report` itself to
+surface it — the channel that produced it was simpler than the one entry 6
+anticipated, but the standing test is the same one, answered the same way:
+the premise of the original refusal changed, stated out loud, not a better
+argument for the same feature.
+
+**What makes this exception narrower than it looks.** A three-pass research
+spike before any code was written found that only Claude Code and Codex CLI
+have a write-enforcement mechanism that can actually be verified — Codex via
+an OS sandbox permission profile, not the `PreToolUse` hook
+`docs/plans/multi-agent-install.md` originally assumed (that plan's own
+capability table is stale as of this decision and needs updating alongside
+the epic). Gemini CLI, OpenCode, and Antigravity get commands only, with the
+gap stated in `doctor`/`report` output rather than a guessed mechanism —
+the same "silent failure is worse than no protection" reasoning behind
+entry 2's refusal of a resident guard daemon governs here too. The epic also
+adds something neither this project nor the sibling project it drew on had
+before: an automatic, no-user-action self-test of the Codex sandbox inside
+`doctor`/`init`, so a claimed guard is never asserted without having been
+executed and observed.
+
+**The precedent from entry 6 still holds and is reaffirmed, not loosened**:
+a freeze exception requires the premise to have changed, stated out loud —
+this is the second time that has happened, five days apart, on two
+unrelated proposals judged by the same test, not a pattern of exceptions
+accumulating.
