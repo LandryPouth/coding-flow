@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "storage": "local",
+  "branchPerEpic": true,
+  "autoMergeEpic": false,
+  "skills": "plugin",
+  "install": "full",
+  "validation": {
+    "commands": [
+      "node -e \"process.exit(0)\""
+    ],
+    "quality": []
+  }
+}
