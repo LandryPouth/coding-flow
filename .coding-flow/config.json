@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "storage": "local",
+  "branchPerEpic": true,
+  "autoMergeEpic": false,
+  "skills": "plugin",
+  "install": "minimal",
+  "validation": {
+    "commands": [
+      "node gen-coverage.js"
+    ],
+    "quality": []
+  }
+}
