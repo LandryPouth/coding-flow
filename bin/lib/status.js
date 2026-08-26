@@ -64,6 +64,40 @@ function computeLandReady(worktreePath, storyPath) {
   return "landable";
 }
 
+const PLANS_DIR = "docs/plans";
+
+// A design doc under docs/plans/ that no epic's index.md references yet — a
+// decision written down but never turned into work `ai-flow status` can show.
+// The link is deliberately loose: an epic "covers" a plan simply by
+// mentioning its path (`docs/plans/<name>.md`) anywhere in its index.md, the
+// way epic-01-multi-platform-support's index.md already references
+// docs/plans/multi-agent-install.md while explaining why it supersedes part
+// of it. No new frontmatter/convention to keep in sync by hand — one
+// substring check against text a human already writes for other reasons.
+function listUntrackedPlans(epics) {
+  const plansDir = path.join(cwd, PLANS_DIR);
+
+  if (!fs.existsSync(plansDir)) {
+    return [];
+  }
+
+  const planFiles = fs
+    .readdirSync(plansDir)
+    .filter((name) => name.endsWith(".md"))
+    .sort();
+
+  const epicText = epics
+    .map((epic) => {
+      const indexPath = path.join(cwd, epic.path, "index.md");
+      return fs.existsSync(indexPath) ? fs.readFileSync(indexPath, "utf8") : "";
+    })
+    .join("\n");
+
+  return planFiles
+    .filter((name) => !epicText.includes(`${PLANS_DIR}/${name}`))
+    .map((name) => toPortable(path.join(PLANS_DIR, name)));
+}
+
 // The read model behind `status` — epics/stories enriched with their linked
 // worktree, loose worktrees, and the branch policy. Extracted so other reporting
 // commands (`next`) can read the exact same state without re-deriving it.
@@ -97,13 +131,14 @@ function buildStatusModel(config) {
     }));
 
   const policy = evaluateBranchPolicy(cwd, config);
+  const untrackedPlans = listUntrackedPlans(epics);
 
-  return { epics, looseWorktrees, worktreesActive: wt.isRepo, policy };
+  return { epics, looseWorktrees, worktreesActive: wt.isRepo, policy, untrackedPlans };
 }
 
 function status({ json = false } = {}) {
   const config = readConfig(cwd);
-  const { epics, looseWorktrees, worktreesActive, policy } = buildStatusModel(config);
+  const { epics, looseWorktrees, worktreesActive, policy, untrackedPlans } = buildStatusModel(config);
 
   if (json) {
     log(
@@ -117,6 +152,7 @@ function status({ json = false } = {}) {
             branch: policy.branch,
             onBase: policy.onBase,
           },
+          untrackedPlans,
         },
         null,
         2,
@@ -161,6 +197,15 @@ function status({ json = false } = {}) {
       `Policy branchPerEpic: you are on "${policy.branch}" (base branch). ` +
         "Create one branch per epic (e.g. `ai-flow worktree add --story <dir>`) before coding.",
     );
+    log("");
+  }
+
+  if (untrackedPlans.length > 0) {
+    log("Docs not yet tracked by an epic:");
+    for (const plan of untrackedPlans) {
+      log(`- ${plan}`);
+    }
+    log("Run /flow-plan against one of these to turn it into stories.");
     log("");
   }
 }
