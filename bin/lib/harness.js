@@ -2049,7 +2049,17 @@ function evaluateCoverage(options) {
 // writes nothing — the caller decides whether to persist it (writeVerifyEvidence)
 // and what a red result means for its own flow. Shared by `harness verify` (a
 // single story) and `run` (a batch), so both produce identical evidence.
-function verifyStoryOnce({ story = null, exemption = null } = {}) {
+//
+// `skipCoverage`: for callers with no single story to attribute the change to
+// (`worktree land`'s post-merge re-verify, story: null). The coverage gate reads
+// the diff from the default branch to HEAD — for a re-verify run *after* a merge
+// onto a long-lived epic branch, that is every story's accumulated diff since
+// main, not just the one that was just landed, and `readTestExemption` cannot
+// find a story-scoped exemption a landed story already earned. Judging the
+// combined result on the commands it actually declares, not on a heuristic
+// scoped to the wrong diff, is what "the same source `ai-flow verify` reads"
+// (spec.md) means here — coverage stays a per-story concern.
+function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
   const resolution = resolveValidationCommands({ storyDir });
@@ -2061,9 +2071,11 @@ function verifyStoryOnce({ story = null, exemption = null } = {}) {
   const { config } = readHarnessConfig();
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.
-  const coverage = commandsOk
-    ? evaluateCoverage({ storyDir, config, exemption, startedAt })
-    : { required: false, ok: true, reason: "not evaluated (commands did not pass)", changedFiles: [], testFiles: [] };
+  const coverage = !commandsOk
+    ? { required: false, ok: true, reason: "not evaluated (commands did not pass)", changedFiles: [], testFiles: [] }
+    : skipCoverage
+      ? { required: false, ok: true, reason: "not evaluated (no single story to attribute this run to)", changedFiles: [], testFiles: [] }
+      : evaluateCoverage({ storyDir, config, exemption, startedAt });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -2393,4 +2405,7 @@ module.exports = {
   resolveValidationCommands,
   resolveStoryDir,
   captureEnvironment,
+  // Reused by `worktree land`'s post-merge re-verify so a failing command is
+  // reported in the exact shape `ai-flow verify` already reports one in.
+  printVerify,
 };

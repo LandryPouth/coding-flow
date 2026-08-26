@@ -22,6 +22,7 @@ const { collectHarnessReport } = require("./harness");
 const { readConfig } = require("./config");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
+const { findGuardEntry, guardCommandString } = require("./settings");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -184,6 +185,46 @@ function checkDuplicateNumbering(warnings) {
   }
 }
 
+// The guard is the one part of the install where "wired" and "wired correctly"
+// silently diverge: a stale command still runs (settings.js falls back to npx
+// when the resolved binary is gone) so it never crashes, and a project that
+// looks installed keeps looking installed. Nothing else in `doctor` would ever
+// catch that — this is the mechanical half of the imob incident recorded in
+// docs/design-decisions.md entry 2 ("a dead daemon stops protecting silently").
+// No PreToolUse hook at all is worse than stale: the write path is completely
+// unprotected while every other signal still says "installed correctly", so it
+// is an error, not a warning. A stale command still enforces, just via the
+// slower fallback — that one stays a warning.
+function checkGuardWiring(errors, warnings) {
+  const settings = readJson(path.join(cwd, ".claude", "settings.json"), null);
+
+  // No settings.json yet is init's job to create, not doctor's to flag — this
+  // runs after the required-file checks, which already catch a install that
+  // never ran `init` at all.
+  if (!settings) {
+    return;
+  }
+
+  const found = findGuardEntry(settings);
+
+  if (!found) {
+    errors.push({
+      code: "guard_not_wired",
+      file: ".claude/settings.json",
+      message: "no PreToolUse hook is wired to `guard` — writes are not protected; run `ai-flow upgrade`",
+    });
+    return;
+  }
+
+  if (found.hook.command !== guardCommandString()) {
+    warnings.push({
+      code: "guard_hook_stale",
+      file: ".claude/settings.json",
+      message: "the guard hook command does not match this install (still enforces via the npx fallback) — run `ai-flow upgrade` to re-wire it",
+    });
+  }
+}
+
 // A minimal install owns exactly two things: the harness policy and the guard
 // wiring. Judging it against the full template list would report a correct
 // project as broken and push the user to "fix" it by installing a workflow they
@@ -211,6 +252,8 @@ function collectMinimalReport({ strict = false } = {}) {
       });
     }
   }
+
+  checkGuardWiring(errors, warnings);
 
   return {
     ok: errors.length === 0,
@@ -366,6 +409,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkBrownfieldOnboarding(warnings);
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
+  checkGuardWiring(errors, warnings);
 
   return {
     ok: errors.length === 0,

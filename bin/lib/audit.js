@@ -501,6 +501,7 @@ module.exports = {
   collectAll,
   syncLedger,
   gate,
+  isStale,
   latestVerifyByStoryDir,
   buildAuditMarkdown,
   entryFromRunFile,

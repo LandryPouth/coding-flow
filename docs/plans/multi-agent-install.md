@@ -47,6 +47,40 @@ all three hosts are moving.
   to a **write** guard, so it does not block this plan, but it does mean "hook
   parity" is not a thing to claim.
 
+### Superseded, 2026-08-23: a verified alternative for Codex
+
+This plan's Codex row above assumes enforcement goes through the `PreToolUse`
+hook (`~/.codex/hooks.json`) — and that assumption carries the exact failure
+mode `docs/agent-contract.md` refuses under *the core stays boring*: hooks are
+silent no-ops unless `[features].codex_hooks = true` is set (see below), so a
+wiring built on it can succeed, print "guard wired", and protect nothing.
+
+A sibling project (`~/dev/tools/ai-learn`) independently found and manually
+verified a different mechanism: Codex's own `default_permissions` sandbox
+profile in `.codex/config.toml`, enforced by the OS itself (Landlock/bwrap on
+Linux, Seatbelt on macOS) — active the moment the file exists, no feature flag
+to remember, and it denies a write regardless of whether Codex performs it via
+`apply_patch` or a shell redirection. Verified with
+`codex sandbox --permissions-profile <name> -- <cmd>` (codex-cli 0.138.0,
+Linux/bwrap): a write into a denied path fails with `EPERM` regardless of
+technique, the rest of the workspace stays writable. Not yet verified inside a
+live interactive Codex session at the time of that finding — only the sandbox
+enforcement layer via the `codex sandbox` debug harness.
+
+Known limit, carried over honestly rather than glossed: the sandbox denies by
+**file path**, not by intention or which binary is running — a denial can't be
+scoped to "the agent, not a legitimate internal call," the way the hook's
+`tool_name` field could in principle allow.
+
+`epics/epic-01-multi-platform-support/` (see `docs/design-decisions.md` entry
+10) plans porting the sandbox-profile approach for Codex — not the hook this
+plan originally proposed — plus, new here, an automated self-test of that
+sandbox profile that runs inside `doctor`/`init` rather than relying on a
+one-time manual `codex sandbox` check the way the verification above was
+done. Gemini CLI and Antigravity are out of scope for any guard in that epic
+(no verified mechanism for either); OpenCode's `tool.execute.before` plugin
+route (row above) remains unbuilt there too.
+
 ### The one that must not be missed
 
 **Codex hooks are silent no-ops unless `[features].codex_hooks = true` is set in
@@ -85,9 +119,15 @@ JSON), so it forces the normaliser and the target detection while keeping one
 variable at a time. OpenCode second: a TypeScript plugin is a genuinely different
 shape and a far harder test of whether the contract holds.
 
-**Not started as of 0.8.0**, deliberately. There is no evidence yet that anyone
-using this tool wants Codex or OpenCode — and there is now a channel that would say
-so (`ai-flow report`, `docs/DOGFOODING.md`). Wait for it.
+**Started 2026-08-23** — the wait ended: real users on other platforms were
+confirmed directly, not through `ai-flow report`/`docs/DOGFOODING.md` (neither
+channel had produced a signal yet; the wait itself is still the right call for
+whichever candidate feature asks next). See `docs/design-decisions.md` entry
+10 and `epics/epic-01-multi-platform-support/`. The plan below (payload
+normalisation, three wiring emitters, per-host `doctor`) still describes the
+shape of the work; the epic sequences Codex via the sandbox-profile route in
+the addendum above rather than the `PreToolUse` hook, and does not build
+Gemini/Antigravity guard wiring at all (no verified mechanism for either).
 
 ---
 
