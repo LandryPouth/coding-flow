@@ -4,9 +4,11 @@
   "branchPerEpic": true,
   "autoMergeEpic": false,
   "skills": "plugin",
-  "install": "full",
+  "install": "minimal",
   "validation": {
-    "commands": [],
+    "commands": [
+      "node gen-coverage.js"
+    ],
     "quality": []
   }
 }
