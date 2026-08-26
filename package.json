@@ -1,0 +1,17 @@
+{
+  "private": true,
+  "scripts": {
+    "flow": "npx @landry_pouth/coding-flow",
+    "flow:init": "npx @landry_pouth/coding-flow init",
+    "flow:upgrade": "npx @landry_pouth/coding-flow upgrade",
+    "flow:doctor": "npx @landry_pouth/coding-flow doctor",
+    "flow:fix": "npx @landry_pouth/coding-flow doctor --fix",
+    "flow:skills": "npx @landry_pouth/coding-flow list-skills",
+    "flow:status": "npx @landry_pouth/coding-flow status",
+    "flow:next": "npx @landry_pouth/coding-flow next",
+    "flow:check": "npx @landry_pouth/coding-flow doctor --strict",
+    "flow:harness": "npx @landry_pouth/coding-flow harness check --quick",
+    "flow:commands": "npx @landry_pouth/coding-flow commands",
+    "flow:uninstall": "npx @landry_pouth/coding-flow uninstall"
+  }
+}
