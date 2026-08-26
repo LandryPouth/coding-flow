@@ -1,0 +1,84 @@
+{
+  "package": "@landry_pouth/coding-flow",
+  "version": "0.9.0",
+  "installedAt": "2026-08-26T05:49:28.378Z",
+  "updatedAt": "2026-08-26T05:49:28.379Z",
+  "packageJsonCreated": true,
+  "files": {
+    "CLAUDE.md": {
+      "source": "CLAUDE.md",
+      "hash": "112a415665ce98ee3b82c140977cefba6bac6644468a7a11157a591df0b15780",
+      "kind": "template"
+    },
+    "docs/architecture.md": {
+      "source": "docs/architecture.md",
+      "hash": "ff10328d0079489a094bee10fba670cd43038af284f2733d496f4f95743dd565",
+      "kind": "template"
+    },
+    "docs/conventions.md": {
+      "source": "docs/conventions.md",
+      "hash": "9710f7400150486f92a21e75e086699df26718d1b204de1cbbf38ac05a6cd557",
+      "kind": "template"
+    },
+    "docs/DOGFOODING.md": {
+      "source": "docs/DOGFOODING.md",
+      "hash": "61997859fe57184d76b8fe5f5bff51c3fbcf4ececb69e8ffbd123afab69765b1",
+      "kind": "template"
+    },
+    "docs/project-context.md": {
+      "source": "docs/project-context.md",
+      "hash": "95726e015995b13f8ac57e014f06383aaa19cc72ca5ae7ac22dcf92cc178ec47",
+      "kind": "template"
+    },
+    "docs/roadmap.md": {
+      "source": "docs/roadmap.md",
+      "hash": "d3de501716cf02a7c599f3e61087ad135b9162c6f1f5bcf2e2ed74c9a9844f72",
+      "kind": "template"
+    },
+    "epics/.gitkeep": {
+      "source": "epics/.gitkeep",
+      "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "template"
+    },
+    "examples/epic-01-example-admin-content/index.md": {
+      "source": "examples/epic-01-example-admin-content/index.md",
+      "hash": "b2a9d3d696f52cda7fa7712d6ef3e156bd14425eb0b513a96c3761bcdc47cbcf",
+      "kind": "template"
+    },
+    "examples/epic-01-example-admin-content/story-01-01-audit-hardcoded-content/plan.md": {
+      "source": "examples/epic-01-example-admin-content/story-01-01-audit-hardcoded-content/plan.md",
+      "hash": "03dbfccd80246b369585231f4fd47b0bb7a5bdbc2f8672ddd7300a2d02e6e38e",
+      "kind": "template"
+    },
+    "examples/epic-01-example-admin-content/story-01-01-audit-hardcoded-content/spec.md": {
+      "source": "examples/epic-01-example-admin-content/story-01-01-audit-hardcoded-content/spec.md",
+      "hash": "52b47f5b5e7c2b71e21469c6f1c6250a6002ba664a345c06454f29d305b54994",
+      "kind": "template"
+    },
+    "examples/epic-01-example-admin-content/story-01-01-audit-hardcoded-content/tasks.md": {
+      "source": "examples/epic-01-example-admin-content/story-01-01-audit-hardcoded-content/tasks.md",
+      "hash": "cb65348f84baefc97cdd06037c5ffdf6d67637b12a0b137915158f4dfe9c50bd",
+      "kind": "template"
+    },
+    "examples/epic-01-example-admin-content/story-01-02-render-dynamic-content/plan.md": {
+      "source": "examples/epic-01-example-admin-content/story-01-02-render-dynamic-content/plan.md",
+      "hash": "c739929a73c92cb42aa2dfffc9d5972a88e9998ea71eee3f6b753bd17f2d9fba",
+      "kind": "template"
+    },
+    "examples/epic-01-example-admin-content/story-01-02-render-dynamic-content/spec.md": {
+      "source": "examples/epic-01-example-admin-content/story-01-02-render-dynamic-content/spec.md",
+      "hash": "6f1860bc2de68b7b48351817568bfed9f3e8fa9e4c9b7218ac002d5d73f5ca90",
+      "kind": "template"
+    },
+    "examples/epic-01-example-admin-content/story-01-02-render-dynamic-content/tasks.md": {
+      "source": "examples/epic-01-example-admin-content/story-01-02-render-dynamic-content/tasks.md",
+      "hash": "c05b68c6e23fc8ba4eaa70f6b4c7607de90f513f7313b1a3f70f958ea47c2d3a",
+      "kind": "template"
+    },
+    "RULES.md": {
+      "source": "RULES.md",
+      "hash": "cc66a02047ebcdc2e24a4b70c8f8e4536e5c9925c9c8c02a33f441fe3e5f232c",
+      "kind": "template"
+    }
+  }
+}
