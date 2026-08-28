@@ -88,7 +88,9 @@ Never disable the gate (`requireTestChange`) to finish a story.
 ai-flow worktree place --epic <epic-dir> --story <story-dir>
 ```
 
-Reads the epic's Backbone/dependency-tree in its `index.md` and decides
+`<epic-dir>` is `<story-dir>`'s parent directory (`epics/epic-NN-name/`, per
+the Conventions above). Reads the epic's Backbone/dependency-tree in its
+`index.md` and decides
 whether this story continues wherever its chain already lives, or opens a
 new worktree because it starts a chain parallel to what is already
 running — the isolation `/flow-plan`'s own contract already promises for

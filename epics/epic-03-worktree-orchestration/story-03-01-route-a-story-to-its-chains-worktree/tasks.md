@@ -341,6 +341,18 @@ non-blocking improvements from the same review, applied and committed:
   worktree directory). `npm test`: 535/535 green (unchanged count — extended
   an existing test rather than adding a new one).
 
+**Post-review fixes (`/flow-review`, eighth pass, 2026-08-28)**: independent
+re-review (fresh contract from spec.md/plan.md, not the prior passes' own
+reasoning) found no new correctness/security/test-coverage issues — confirmed
+by running `npm test` (535/535), parsing this repo's own real `index.md`
+directly, and exercising `ai-flow worktree place` end-to-end against a
+disposable sandbox repo (in-place root, sibling worktree with `Reason:` line,
+re-invocation reuse — all matched the acceptance criteria exactly). One
+non-blocking doc gap: `templates/.claude/skills/flow-run/SKILL.md`'s new
+placement step named `<epic-dir>` without saying how to derive it from
+`<story-dir>`. Fixed: one line stating `<epic-dir>` is `<story-dir>`'s parent
+directory, synced to `skills/flow-run/SKILL.md` via `ai-flow plugin sync`.
+
 ## Test Exemption
 
 None — new behavior is covered directly (`test/backbone.test.js`,
