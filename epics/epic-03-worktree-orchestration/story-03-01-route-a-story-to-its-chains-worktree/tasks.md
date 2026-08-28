@@ -225,6 +225,57 @@ jitter, not a contrived timing hack:
   waiting. `npm test`: 530/530 green (unchanged count; no new test needed,
   this is a non-functional swap the existing race test already exercises).
 
+**Post-review fixes (`/flow-review`, fifth pass, 2026-08-28)**:
+
+- Closed the real gap the fourth pass's own review missed: `buildChainIds`
+  (`bin/lib/backbone.js`) silently placed a story listed in `## Stories` but
+  never mentioned anywhere in the dependency tree as its own lone chain — the
+  "vice versa" half of the spec's own correctness edge case ("a story
+  referenced by the dependency tree but missing from `## Stories` (or vice
+  versa) — placement must fail loudly rather than guess a location").
+  Reproduced directly (a 3-story epic whose tree only covers `s1 ── s2`, `s3`
+  never mentioned): parsed clean with no error, `s3` silently became its own
+  chain/worktree candidate — exactly the authoring-drift scenario (a story
+  added to `## Stories` and forgotten in the hand-drawn tree, or vice versa)
+  this edge case exists to catch. New `validateAgainstStories` (`backbone.js`)
+  checks both directions from the raw tree text before any edge is trusted: a
+  label the tree mentions that is not a real story (already covered, now
+  checked earlier and reused for this), and a real story the tree never
+  mentions at all (the new check). `buildChainIds`'s own now-redundant
+  edge-based "outside ## Stories" check was removed — the invariant is
+  established upstream in `parseBackbone` before `buildChainIds` ever runs.
+- Fixed a stale `docs/DOGFOODING.md` entry the same diff had introduced: the
+  2026-08-27 row's Resolution still read "Open. Proposed direction (not yet
+  planned or coded)" despite this story being exactly that direction, shipped;
+  the row also referenced a second "2026-08-27 entry above" (the epic-19
+  incident) that was never actually added as its own row. Folded the epic-19
+  detail into the same row's Problem text and updated Resolution to point at
+  this story.
+- Re-examined the residual concurrency note from the third/fourth pass ("a
+  different dependent story of the same not-yet-placed chain... `result.path`
+  ... the only realistic outcome is already-recorded"): confirmed correct on
+  closer reading — `worktreeAdd`'s target directory is keyed by the
+  *triggering* story's own name, not the shared chain id, so two different
+  dependent stories of the same chain create two different directories and
+  never collide on `worktreeAdd`'s `fs.existsSync(dest)` guard; the loser's
+  own freshly-created worktree is left orphaned on disk (already documented,
+  already accepted — no file-locking gap here). The only way to actually hit
+  the `fs.existsSync` crash is the literal same story invoked twice
+  concurrently, a degenerate duplicate-invocation case that failing loud on is
+  correct behavior, not a design gap. No code change; noted here so it is not
+  re-litigated.
+- New tests: `test/backbone.test.js` gained a story-missing-from-tree case
+  (fails loudly) and a standalone-paragraph case (epic-03's own `s3` shape —
+  confirms mentioning a story as its own lone line in the tree is *not*
+  treated as missing). `npm test`: 532/532 green (was 530/530).
+- Verified end-to-end against a disposable throwaway git repo (created,
+  exercised, and deleted in this pass, not committed anywhere): the drift
+  scenario fails loudly through the real `ai-flow worktree place` CLI with a
+  clear message; after fixing the tree, root/dependent/sibling placement and
+  re-invocation-from-scratch all behaved exactly as the acceptance criteria
+  require (in place, reused, new worktree with a `Reason:` line, and no
+  duplicate worktree on a second call).
+
 ## Test Exemption
 
 None — new behavior is covered directly (`test/backbone.test.js`,

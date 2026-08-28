@@ -143,6 +143,44 @@ function parseIndented(lines) {
   return edges;
 }
 
+// Every `s<N>` token that literally appears in the tree text, regardless of
+// shape or whether it takes part in an edge — a standalone single-story
+// paragraph (epic-03's own `s3`, mentioned but with no edges) counts as
+// "mentioned" too. Used to validate `## Stories` against the tree in both
+// directions before any edge is trusted.
+function extractMentionedLabels(treeText) {
+  return new Set(treeText.match(/s\d+/g) || []);
+}
+
+// A tree and a `## Stories` list are two independently hand-maintained
+// pieces of the same epic file — nothing stops them drifting apart (a story
+// added to one and forgotten in the other). Checked in both directions
+// before any edge is trusted, so a bad reference fails loudly instead of
+// silently guessing a placement (the same principle a merge point or an
+// out-of-range edge already gets): a label the tree mentions that is not a
+// real story, and — the gap a prior review missed — a real story the tree
+// never mentions at all, which would otherwise fall through to `parents.length
+// === 0` in `buildChainIds` and get silently placed as its own lone chain,
+// indistinguishable from a label genuinely authored as standalone.
+function validateAgainstStories(treeText, labels) {
+  const mentioned = extractMentionedLabels(treeText);
+  const validLabels = new Set(labels);
+
+  const outside = [...mentioned].find((label) => !validLabels.has(label));
+  if (outside) {
+    throw new Error(`dependency tree references a story label outside ## Stories: "${outside}"`);
+  }
+
+  const missing = labels.filter((label) => !mentioned.has(label));
+  if (missing.length > 0) {
+    throw new Error(
+      `## Stories includes ${missing.length === 1 ? "a story" : "stories"} the dependency tree never mentions: ` +
+        `${missing.join(", ")} — add ${missing.length === 1 ? "it" : "them"} to the tree (even as its own ` +
+        "standalone line) rather than leaving placement to guess where it belongs.",
+    );
+  }
+}
+
 function parseEdges(treeText) {
   if (/[┴┤]/.test(treeText)) {
     throw new Error(
@@ -182,10 +220,10 @@ function buildChainIds(edges, storyLabels) {
     childrenOf.set(label, []);
   }
 
+  // Every edge's `from`/`to` is guaranteed to be a valid story label here —
+  // `parseBackbone` already ran `validateAgainstStories` against the same
+  // tree text edges are parsed from, before this function is ever called.
   for (const { from, to } of edges) {
-    if (!parentsOf.has(from) || !parentsOf.has(to)) {
-      throw new Error(`dependency tree references a story label outside ## Stories: "${!parentsOf.has(from) ? from : to}"`);
-    }
     parentsOf.get(to).push(from);
     childrenOf.get(from).push(to);
   }
@@ -222,6 +260,11 @@ function parseBackbone(indexMdText) {
   const storyDirs = parseStoryDirs(indexMdText);
   const labels = storyDirs.map((_, i) => `s${i + 1}`);
   const treeText = extractTreeBlock(indexMdText);
+
+  if (treeText) {
+    validateAgainstStories(treeText, labels);
+  }
+
   const edges = treeText ? parseEdges(treeText) : implicitChainEdges(storyDirs.length);
   const chainId = buildChainIds(edges, labels);
 

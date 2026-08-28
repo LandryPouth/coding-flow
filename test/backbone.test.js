@@ -104,6 +104,25 @@ test("a dependency tree referencing a label outside ## Stories fails loudly", ()
   assert.throws(() => parseBackbone(indexMd({ stories: dirs, tree })), /outside ## Stories/);
 });
 
+test("a story listed in ## Stories but never mentioned anywhere in the tree fails loudly, not silently guessed", () => {
+  const dirs = ["story-x-01-a", "story-x-02-b", "story-x-03-c"];
+  const tree = "s1 ── s2";
+
+  assert.throws(
+    () => parseBackbone(indexMd({ stories: dirs, tree })),
+    /## Stories includes a story the dependency tree never mentions: s3/,
+  );
+});
+
+test("a story mentioned only as its own standalone paragraph (epic-03's own s3) is NOT treated as missing", () => {
+  const dirs = ["story-x-01-a", "story-x-02-b", "story-x-03-c"];
+  const tree = "s1 ── s2\n\ns3";
+
+  const { chainId } = parseBackbone(indexMd({ stories: dirs, tree }));
+
+  assert.equal(chainId.get("s3"), "s3");
+});
+
 test("labelForDir / dirForLabel round-trip", () => {
   const dirs = ["story-03-01-a", "story-03-02-b", "story-03-03-c"];
 
