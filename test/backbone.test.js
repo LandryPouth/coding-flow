@@ -123,6 +123,26 @@ test("a story mentioned only as its own standalone paragraph (epic-03's own s3) 
   assert.equal(chainId.get("s3"), "s3");
 });
 
+test("a reversed edge (child before parent in ## Stories order) fails loudly, not silently as undefined", () => {
+  const dirs = ["story-x-01-a", "story-x-02-b"];
+  const tree = "s2 ── s1";
+
+  assert.throws(
+    () => parseBackbone(indexMd({ stories: dirs, tree })),
+    /out of order/,
+  );
+});
+
+test("a reversed edge in the indented tree shape also fails loudly", () => {
+  const dirs = ["story-x-01-a", "story-x-02-b"];
+  const tree = "s2\n└── s1";
+
+  assert.throws(
+    () => parseBackbone(indexMd({ stories: dirs, tree })),
+    /out of order/,
+  );
+});
+
 test("labelForDir / dirForLabel round-trip", () => {
   const dirs = ["story-03-01-a", "story-03-02-b", "story-03-03-c"];
 

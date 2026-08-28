@@ -276,6 +276,71 @@ jitter, not a contrived timing hack:
   require (in place, reused, new worktree with a `Reason:` line, and no
   duplicate worktree on a second call).
 
+**Post-review fixes (`/flow-review`, sixth pass, 2026-08-28)**:
+
+- `buildChainIds` (`bin/lib/backbone.js`) trusted the tree's edges to already
+  run parent-before-child in `## Stories` order, which the hand-authored tree
+  text has no way to guarantee: a reversed edge (`s2 ── s1` typed instead of
+  `s1 ── s2`) made the chain-id loop look up `chainId.get(parent)` before
+  `parent` had been visited, silently producing `undefined` for the child
+  instead of failing — exactly the "guess a placement" failure this parser
+  exists to avoid. New `validateEdgeOrder` checks every edge against `##
+  Stories`' own order before any edge is trusted, alongside the existing
+  `validateAgainstStories` checks. New tests: a reversed edge in both the
+  flat and indented tree shapes fails loudly with a message naming the
+  out-of-order pair.
+- `decidePlacement` (`bin/lib/worktree-plan.js`) now fails loudly instead of
+  silently reporting success when a freshly created worktree's own
+  deterministic path is already recorded in the placement state for a
+  *different* chain — only reachable via stale state (that chain's worktree
+  was removed outside `ai-flow worktree` without clearing its recorded
+  location, and this call's dest happened to land on the same path).
+  Self-review of this same pass caught that the first version of this fix
+  left the newly created, never-recorded worktree on disk when it threw,
+  which would have silently blocked every later `worktreeAdd` at that exact
+  path (its own `fs.existsSync` guard, which exits the process) — turning
+  the error's own advice ("clear the stale entry and retry") into something
+  that crashes instead of recovering. Fixed by removing the orphaned
+  worktree (`git worktree remove --force`) before throwing, so the placement
+  state is the only thing left for the caller to fix; if that cleanup itself
+  fails, the error says so explicitly and gives the manual `git worktree
+  remove` command instead of pretending the state edit alone will unblock
+  the retry.
+- New tests: `test/backbone.test.js` gained the two reversed-edge cases
+  above. `test/worktree-plan.test.js`'s stale-placement-conflict test now
+  also asserts the orphaned worktree directory is gone after the throw, and
+  that clearing only the stale state entry (per the error's own advice) lets
+  an immediate retry succeed and create a real worktree at the same path —
+  proving the recovery path actually works, not just that the first call
+  fails loudly. `npm test`: 535/535 green (was 532/532).
+
+**Post-review fixes (`/flow-review`, seventh pass, 2026-08-28)**: two
+non-blocking improvements from the same review, applied and committed:
+
+- `worktreeAdd` (`bin/lib/worktree.js`) now returns `branchCreated` alongside
+  `path`/`branch`/`root` (additive). The stale-placement-conflict cleanup in
+  `decidePlacement` (`bin/lib/worktree-plan.js`) removed the orphaned
+  worktree it had just created but left its branch behind — `git worktree
+  remove` deliberately keeps branches (no commit lost), which is right for a
+  worktree someone was actually using, but wrong for a branch this call
+  alone created seconds earlier for a worktree that was never recorded
+  anywhere and is now gone too: left behind, every stale-state conflict for
+  the same story would accumulate one more throwaway branch pointing at
+  nothing. Now deletes it too (`git branch -D`), but only when
+  `branchCreated` is true — never a branch `worktreeAdd` reused, which
+  predates this call and may carry real history. The cleanup-failure error
+  message's manual-recovery instructions now include the branch command too
+  when relevant.
+- `ai-flow help --all` (`bin/lib/commands.js`) and the `worktree` subcommand
+  error hint (`bin/lib/worktree.js`) were missing `lock`/`unlock`/`land`, and
+  `place` (introduced by this story), from their command lists — a user
+  mistyping a subcommand, or reading the full reference, saw `add`/`list`/
+  `remove` as the only options. Added all four.
+- Extended test: `test/worktree-plan.test.js`'s stale-placement-conflict test
+  now also asserts the orphaned branch is gone after the throw (not just the
+  worktree directory). `npm test`: 535/535 green (unchanged count — extended
+  an existing test rather than adding a new one).
+
 ## Test Exemption
 
 None — new behavior is covered directly (`test/backbone.test.js`,

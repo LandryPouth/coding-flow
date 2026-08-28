@@ -137,6 +137,10 @@ Usage:
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
   ai-flow worktree list
   ai-flow worktree remove <name> [--force] [--dry-run]
+  ai-flow worktree lock --story <path>
+  ai-flow worktree unlock [--story <path>] [--force]
+  ai-flow worktree land <name>|--story <path>
+  ai-flow worktree place --epic <path> --story <path> [--json]
   ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit]
                [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
   ai-flow hook install|uninstall|status [--dry-run] [--json]
@@ -173,7 +177,7 @@ Machinery (usually run FOR you by the skills, CI, or the git hook):
   guard        PreToolUse hook: deny writes to blocked paths or secret content (wired into settings.json by init).
   hook         Install/remove an opt-in pre-push gate that runs audit --check before each push.
   ci           Scaffold a clean-room GitHub Actions workflow that replays run (per-story verify) + audit on every PR.
-  worktree     Manage Git worktrees for parallel work (add/list/remove) with shared env/deps wiring.
+  worktree     Manage Git worktrees for parallel work (add/list/remove/lock/unlock/land/place) with shared env/deps wiring.
 
 Meta:
   commands     Show the easiest commands for this project.

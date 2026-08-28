@@ -202,6 +202,51 @@ function decidePlacement({ cwd, epicPath, storyPath }) {
     return { location: claim.location, created: false, chainId, label, parallelTo: null };
   }
 
+  if (claim.status === "occupied") {
+    // The freshly created worktree's own directory is already recorded for a
+    // different chain — only reachable via stale placement state (that
+    // chain's worktree was removed outside `ai-flow worktree` without
+    // clearing its recorded location, and this call's deterministic
+    // per-story dest happened to land on the same path). Fail loudly rather
+    // than silently reporting success on a claim that was never persisted —
+    // but the worktree this call just created was never recorded anywhere
+    // either, so leaving it on disk would silently block every future
+    // `worktreeAdd` at this exact deterministic path (its own
+    // `fs.existsSync` guard) and turn "fix the entry and retry" into a lie.
+    // Remove it before failing, so the placement state is the only thing
+    // left for the caller to fix.
+    const [staleChainId, staleEntry] = claim.occupyingChain;
+    try {
+      execFileSync("git", ["worktree", "remove", "--force", result.path], { cwd, stdio: "ignore" });
+      // `git worktree remove` deliberately keeps the branch (no commit is
+      // ever lost) — correct when removing a worktree someone was actually
+      // using, but this branch was created by this call alone, moments ago,
+      // for a worktree that never got recorded anywhere and is now gone
+      // too. Left behind, it would silently accumulate one throwaway branch
+      // per stale-state conflict. Only delete it when this call is the one
+      // that created it (`branchCreated`) — never a branch `worktreeAdd`
+      // reused, which predates this call and may carry real history.
+      if (result.branchCreated) {
+        execFileSync("git", ["branch", "-D", result.branch], { cwd, stdio: "ignore" });
+      }
+    } catch (cleanupErr) {
+      throw new Error(
+        `worktree placement conflict: the newly created worktree at "${result.path}" is already recorded for ` +
+          `chain "${staleChainId}" (${staleEntry.location}) in the placement state, AND cleaning up that new, ` +
+          `never-recorded worktree failed (${cleanupErr.message}). Remove it manually with ` +
+          `\`git worktree remove --force ${result.path}\`${result.branchCreated ? ` and \`git branch -D ${result.branch}\`` : ""}, ` +
+          `then delete the stale entry for chain "${staleChainId}" from the placement state and retry.`,
+      );
+    }
+    throw new Error(
+      `worktree placement conflict: the location a new worktree would need for chain "${chainId}" is already ` +
+        `recorded for chain "${staleChainId}" (${staleEntry.location}) in the placement state. This usually ` +
+        "means a worktree was removed outside `ai-flow worktree` without clearing its recorded placement — " +
+        "the newly created worktree has been cleaned up; remove the stale entry from the placement state " +
+        "file and retry.",
+    );
+  }
+
   return {
     location: result.path,
     created: true,

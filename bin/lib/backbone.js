@@ -211,8 +211,29 @@ function parseEdges(treeText) {
 // on. A branch point (a parent with more than one child) starts a new chain
 // for each child. `storyLabels` must already be in topological order —
 // `## Stories` position already guarantees this by convention (a later
-// story only ever builds on an earlier one).
+// story only ever builds on an earlier one) — but the tree text is
+// hand-authored separately and nothing stops an edge from being typed
+// backwards (`s2 ── s1` instead of `s1 ── s2`). Left unchecked, the chainId
+// loop below looks up `chainId.get(parent)` before `parent` has necessarily
+// been visited, silently producing `undefined` for the child instead of
+// failing — exactly the "guess a placement" failure this parser exists to
+// avoid. Checked explicitly before any edge is trusted, same principle as
+// `validateAgainstStories`.
+function validateEdgeOrder(edges, storyLabels) {
+  const indexOf = new Map(storyLabels.map((label, i) => [label, i]));
+  for (const { from, to } of edges) {
+    if (indexOf.get(from) >= indexOf.get(to)) {
+      throw new Error(
+        `dependency tree edge "${from} -> ${to}" is out of order — "${to}" must come after "${from}" in ` +
+          "## Stories (a later story only ever builds on an earlier one); check the tree for a reversed edge.",
+      );
+    }
+  }
+}
+
 function buildChainIds(edges, storyLabels) {
+  validateEdgeOrder(edges, storyLabels);
+
   const parentsOf = new Map();
   const childrenOf = new Map();
   for (const label of storyLabels) {

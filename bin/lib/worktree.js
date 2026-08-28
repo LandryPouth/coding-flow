@@ -280,7 +280,7 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
     }
   }
 
-  return { path: dest, branch: name, root };
+  return { path: dest, branch: name, root, branchCreated: !branchExists };
 }
 
 function describeStrategy(strategy, pm, hasNodeModules) {
@@ -796,7 +796,7 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
   } else if (sub === "land") {
     worktreeLand(name, { cwd, story });
   } else {
-    fail(`unknown worktree subcommand: "${sub || ""}". Use add, list, remove, lock, unlock or land.`);
+    fail(`unknown worktree subcommand: "${sub || ""}". Use add, list, remove, lock, unlock, land or place.`);
   }
 }
 

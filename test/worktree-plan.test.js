@@ -14,7 +14,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { decidePlacement, readPlacementState, claimChainIfPossible } = require('../bin/lib/worktree-plan');
+const { decidePlacement, readPlacementState, claimChainIfPossible, placementStatePath } = require('../bin/lib/worktree-plan');
+const { worktreeDest, requireRepo } = require('../bin/lib/worktree');
+const { writeJson } = require('../bin/lib/util');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
@@ -445,6 +447,63 @@ test('claimChainIfPossible survives real concurrent OS processes racing two diff
   assert.ok(state.chains.s3, "chain s3's claim must not be silently lost to a concurrent writer");
   assert.equal(path.resolve(state.chains.s1.location), path.resolve(locA));
   assert.equal(path.resolve(state.chains.s3.location), path.resolve(locB));
+});
+
+test('decidePlacement fails loudly instead of silently reporting success when the new worktree collides with a stale placement entry', (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    epicDirName: 'epic-18-two-chains',
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-18-01-a', 'story-18-02-b', 'story-18-03-c', 'story-18-04-d', 'story-18-05-e'],
+  });
+  const epicName = 'epic-18-two-chains';
+
+  // Claim chain s1 at `here` so chain s3's own placement below hits the
+  // "occupied" branch and needs a new worktree.
+  decidePlacement({ cwd: repo, epicPath, storyPath: `${epicPath}/story-18-01-a` });
+
+  // Simulate stale placement state: a chain recorded at the exact directory
+  // a fresh `worktreeAdd` for story-18-03-c would create, left behind by a
+  // worktree that was removed outside `ai-flow worktree` without clearing
+  // its recorded location.
+  const root = requireRepo(repo);
+  const predictedDest = worktreeDest(root, 'story-18-03-c');
+  const statePath = placementStatePath(repo, epicName);
+  const state = readPlacementState(repo, epicName);
+  state.chains['stale-chain'] = { location: predictedDest };
+  writeJson(statePath, state);
+
+  assert.throws(
+    () => decidePlacement({ cwd: repo, epicPath, storyPath: `${epicPath}/story-18-03-c` }),
+    /worktree placement conflict/,
+  );
+
+  // The worktree this call just created must not survive the throw — left
+  // behind, it would permanently block every future attempt for this story
+  // at `worktreeAdd`'s own `fs.existsSync(dest)` guard, turning "fix the
+  // entry and retry" (the error's own advice) into a lie.
+  assert.ok(!fs.existsSync(predictedDest), 'the orphaned worktree must be cleaned up before the throw');
+
+  // The branch this call created for that same, never-recorded worktree must
+  // not survive either — left behind, every stale-state conflict for this
+  // story would accumulate one more throwaway branch with nothing pointing
+  // at it.
+  let branchStillExists = true;
+  try {
+    execFileSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/story-18-03-c'], { cwd: repo });
+  } catch {
+    branchStillExists = false;
+  }
+  assert.equal(branchStillExists, false, 'the orphaned branch must be deleted alongside the orphaned worktree');
+
+  // Following the error's advice — clearing only the stale placement entry —
+  // must actually unblock a retry, not trade one crash for another.
+  const stateAfter = readPlacementState(repo, epicName);
+  delete stateAfter.chains['stale-chain'];
+  writeJson(statePath, stateAfter);
+
+  const retry = decidePlacement({ cwd: repo, epicPath, storyPath: `${epicPath}/story-18-03-c` });
+  assert.equal(retry.created, true);
+  assert.equal(path.resolve(retry.location), path.resolve(predictedDest));
 });
 
 test('CLI: worktree place surfaces a decidePlacement error instead of a stack trace', (t) => {
