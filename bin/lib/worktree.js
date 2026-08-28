@@ -198,7 +198,13 @@ function installCommand(pm) {
   return null;
 }
 
-function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
+// quiet: suppresses every progress line this function (and applyDeps) would
+// otherwise print — for a caller that presents its own summary instead (e.g.
+// worktree-plan.js's decidePlacement, whose CLI wrapper prints a consolidated
+// placement summary, and whose --json output must be the only thing on
+// stdout). git errors and deps-install failures still surface via `fail`/
+// stderr regardless of `quiet`.
+function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
   const root = requireRepo(cwd);
   let linkedStory = null;
 
@@ -237,36 +243,44 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story }) {
   const envToLink = ENV_FILES.filter((f) => fs.existsSync(path.join(root, f)));
 
   if (dryRun) {
-    log("Dry run — nothing is written.");
-    log(`  worktree : git ${addArgs.join(" ")}`);
-    log(`  branch   : ${branchExists ? `${name} (existing)` : `${name} (new, from ${from || "HEAD"})`}`);
-    if (linkedStory) log(`  story    : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no story content)"}`);
-    for (const f of envToLink) log(`  link     : ${f}`);
-    log(`  deps     : ${describeStrategy(strategy, pm, hasNodeModules)}`);
+    if (!quiet) {
+      log("Dry run — nothing is written.");
+      log(`  worktree : git ${addArgs.join(" ")}`);
+      log(`  branch   : ${branchExists ? `${name} (existing)` : `${name} (new, from ${from || "HEAD"})`}`);
+      if (linkedStory) log(`  story    : ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no story content)"}`);
+      for (const f of envToLink) log(`  link     : ${f}`);
+      log(`  deps     : ${describeStrategy(strategy, pm, hasNodeModules)}`);
+    }
     return;
   }
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   git(root, addArgs);
-  log(`Worktree created: ${dest}`);
-  log(`Branch: ${name}${branchExists ? " (existing)" : ""}`);
-  if (linkedStory) {
-    log(`Story linked: ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no story content)"}`);
+  if (!quiet) {
+    log(`Worktree created: ${dest}`);
+    log(`Branch: ${name}${branchExists ? " (existing)" : ""}`);
+    if (linkedStory) {
+      log(`Story linked: ${linkedStory.rel}${linkedStory.hasStoryFile ? "" : " (no story content)"}`);
+    }
   }
 
   for (const f of envToLink) {
     const status = makeLink(path.join(root, f), path.join(dest, f));
-    log(`  ${status} ${f}`);
+    if (!quiet) log(`  ${status} ${f}`);
   }
 
-  applyDeps(strategy, { pm, root, dest, hasNodeModules });
+  applyDeps(strategy, { pm, root, dest, hasNodeModules, quiet });
 
-  log("");
-  log("Next step:");
-  log(`  cd ${path.relative(cwd, dest) || dest}`);
-  if (linkedStory) {
-    log(`  ai-flow harness preflight --story ${linkedStory.rel}`);
+  if (!quiet) {
+    log("");
+    log("Next step:");
+    log(`  cd ${path.relative(cwd, dest) || dest}`);
+    if (linkedStory) {
+      log(`  ai-flow harness preflight --story ${linkedStory.rel}`);
+    }
   }
+
+  return { path: dest, branch: name, root };
 }
 
 function describeStrategy(strategy, pm, hasNodeModules) {
@@ -277,32 +291,37 @@ function describeStrategy(strategy, pm, hasNodeModules) {
   return `to install (${installCommand(pm)}) — monorepo/pnpm, symlink not advised`;
 }
 
-function applyDeps(strategy, { pm, root, dest, hasNodeModules }) {
+function applyDeps(strategy, { pm, root, dest, hasNodeModules, quiet }) {
   if (strategy === "skip" || strategy === "unknown") return;
 
   if (strategy === "link") {
     if (!hasNodeModules) {
-      log(`  node_modules absent at the root — nothing to link, run: ${installCommand(pm) || `${pm || "npm"} install`}`);
+      if (!quiet) {
+        log(`  node_modules absent at the root — nothing to link, run: ${installCommand(pm) || `${pm || "npm"} install`}`);
+      }
       return;
     }
     const status = makeLink(path.join(root, "node_modules"), path.join(dest, "node_modules"));
-    log(`  ${status} node_modules`);
+    if (!quiet) log(`  ${status} node_modules`);
     return;
   }
 
   if (strategy === "install") {
     const bin = pm || "npm";
-    log(`  ${installCommand(pm) || `${bin} install`} ...`);
+    if (!quiet) log(`  ${installCommand(pm) || `${bin} install`} ...`);
     try {
-      execFileSync(bin, ["install"], { cwd: dest, stdio: "inherit" });
+      // quiet: still surfaces on stderr (errors stay visible) but keeps
+      // stdout free for a caller whose own output must be machine-parseable
+      // (e.g. `ai-flow worktree place --json`).
+      execFileSync(bin, ["install"], { cwd: dest, stdio: quiet ? ["ignore", "ignore", "inherit"] : "inherit" });
     } catch {
-      log(`  "${installCommand(pm) || `${bin} install`}" failed — rerun it manually in the worktree.`);
+      if (!quiet) log(`  "${installCommand(pm) || `${bin} install`}" failed — rerun it manually in the worktree.`);
     }
     return;
   }
 
   // recommend-install
-  log(`  deps : run "${installCommand(pm)}" in the worktree (symlink not advised for this project).`);
+  if (!quiet) log(`  deps : run "${installCommand(pm)}" in the worktree (symlink not advised for this project).`);
 }
 
 function parseWorktrees(root) {
@@ -781,4 +800,12 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
   }
 }
 
-module.exports = { worktreeCommand, collectWorktrees, realDirtyLines };
+module.exports = {
+  worktreeCommand,
+  collectWorktrees,
+  realDirtyLines,
+  worktreeAdd,
+  worktreeDest,
+  requireRepo,
+  resolveStory,
+};

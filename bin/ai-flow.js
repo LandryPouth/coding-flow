@@ -60,6 +60,7 @@ if (command === "guard") {
   return;
 }
 
+const path = require("path");
 const { cwd, invocationDir } = require("./lib/context");
 const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
 const {
@@ -80,6 +81,7 @@ const { traceCommand } = require("./lib/trace");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
 const { worktreeCommand } = require("./lib/worktree");
+const { decidePlacement } = require("./lib/worktree-plan");
 const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
@@ -392,6 +394,41 @@ if (command === "init") {
   ciCommand({ commandArgs, flags });
 } else if (command === "plugin") {
   pluginCommand({ commandArgs, flags });
+} else if (command === "worktree" && commandArgs[0] === "place") {
+  // Not routed through worktreeCommand/worktree.js: decidePlacement
+  // (worktree-plan.js) itself calls back into worktree.js's worktreeAdd, so
+  // wiring this here — the one module neither of them requires — avoids a
+  // circular require between the two.
+  const epic = getFlagValue("--epic", null);
+  const story = getFlagValue("--story", null);
+
+  if (!epic || !story) {
+    fail("worktree place requires --epic <dir> and --story <dir>.");
+  }
+
+  let result;
+  try {
+    result = decidePlacement({ cwd, epicPath: epic, storyPath: story });
+  } catch (err) {
+    fail(err.message);
+  }
+
+  if (flags.has("--json")) {
+    log(JSON.stringify(result, null, 2));
+  } else {
+    log(`Chain: ${result.chainId} (story label ${result.label})`);
+    log(`Location: ${result.location}${result.created ? " (new worktree)" : " (current checkout)"}`);
+    if (result.created) {
+      log("");
+      log(
+        `Reason: chain ${result.parallelTo.chainId} already occupies this checkout (${result.parallelTo.location}), ` +
+          `so chain ${result.chainId} runs parallel to it in its own worktree.`,
+      );
+      log("");
+      log("Next step:");
+      log(`  cd ${path.relative(cwd, result.location) || result.location}`);
+    }
+  }
 } else if (command === "worktree") {
   worktreeCommand({
     commandArgs,

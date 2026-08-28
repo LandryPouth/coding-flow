@@ -82,7 +82,29 @@ paths while running QUICK, that is the signal to switch up, not to keep going.
 
 Never disable the gate (`requireTestChange`) to finish a story.
 
-**Before any implementation, at every intensity, lock the story:**
+**Before any implementation, at every intensity, resolve where the story runs:**
+
+```bash
+ai-flow worktree place --epic <epic-dir> --story <story-dir>
+```
+
+Reads the epic's Backbone/dependency-tree in its `index.md` and decides
+whether this story continues wherever its chain already lives, or opens a
+new worktree because it starts a chain parallel to what is already
+running — the isolation `/flow-plan`'s own contract already promises for
+sibling stories, applied automatically instead of by hand (see
+docs/DOGFOODING.md, 2026-08-27, for the two real incidents — inconsistent
+placement, and a worktree created for a story with nothing to parallelize —
+this step exists to close). If it reports a new worktree, `cd` into it
+before continuing: every step below (lock, implementation, verify) runs from
+there, not from wherever this invocation started. If it errors — an
+unsupported dependency-tree shape, e.g. a consolidation/merge point — stop
+and report it rather than guessing a location; place the story manually with
+`ai-flow worktree add --story <story-dir>` once resolved. With no story
+directory, or an epic with a single story and no dependency tree, there is
+nothing to place — skip this step.
+
+**Then, at every intensity, lock the story:**
 
 ```bash
 ai-flow worktree lock --story <story-dir>
@@ -93,9 +115,10 @@ This defends against a different failure than story risk does: a second
 unfinished work, mixing two stories' diffs on one tree before either is done.
 That risk does not correlate with how risky the story itself is, so the lock
 runs unconditionally, not gated behind STRICT's `harness preflight`. If it
-refuses — the checkout is occupied by a different story — stop and isolate
-first (`ai-flow worktree add --story <story-dir>`) rather than proceeding on
-the shared tree. With no story directory (see below), there is nothing to
+refuses — the checkout is occupied by a different story — stop; this should
+not happen right after placement resolved a location for this exact story,
+so treat it as a signal something upstream is wrong rather than working
+around it. With no story directory (see below), there is nothing to
 lock — skip this step.
 
 Everything else is machinery, and scales with intensity:
