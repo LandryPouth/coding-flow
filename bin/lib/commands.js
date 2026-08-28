@@ -141,6 +141,7 @@ Usage:
   ai-flow worktree unlock [--story <path>] [--force]
   ai-flow worktree land <name>|--story <path>
   ai-flow worktree place --epic <path> --story <path> [--json]
+  ai-flow worktree autoland --epic <path> --story <path> [--json]
   ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit]
                [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
   ai-flow hook install|uninstall|status [--dry-run] [--json]

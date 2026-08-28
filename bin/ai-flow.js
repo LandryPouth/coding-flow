@@ -81,7 +81,7 @@ const { traceCommand } = require("./lib/trace");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
 const { worktreeCommand } = require("./lib/worktree");
-const { decidePlacement } = require("./lib/worktree-plan");
+const { decidePlacement, autoLandIfChainFinished } = require("./lib/worktree-plan");
 const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
@@ -428,6 +428,33 @@ if (command === "init") {
       log("Next step:");
       log(`  cd ${path.relative(cwd, result.location) || result.location}`);
     }
+  }
+} else if (command === "worktree" && commandArgs[0] === "autoland") {
+  // Not routed through worktreeCommand/worktree.js either, same reason as
+  // `place`: autoLandIfChainFinished (worktree-plan.js) calls back into
+  // worktree.js's worktreeLand.
+  const epic = getFlagValue("--epic", null);
+  const story = getFlagValue("--story", null);
+
+  if (!epic || !story) {
+    fail("worktree autoland requires --epic <dir> and --story <dir>.");
+  }
+
+  let result;
+  try {
+    result = autoLandIfChainFinished({ cwd, epicPath: epic, storyPath: story });
+  } catch (err) {
+    fail(err.message);
+  }
+
+  if (flags.has("--json")) {
+    log(JSON.stringify(result, null, 2));
+  } else if (result.landed) {
+    log(`Landed: chain ${result.chainId} ("${result.worktreeName}") merged and its worktree removed.`);
+  } else if (result.reason === "chain-not-finished") {
+    log(`Chain ${result.chainId} is not finished yet — nothing to land.`);
+  } else {
+    log(`Chain ${result.chainId} never left the primary checkout — nothing to land.`);
   }
 } else if (command === "worktree") {
   worktreeCommand({

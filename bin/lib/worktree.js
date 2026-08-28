@@ -25,6 +25,11 @@ const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
 const { verifyStoryOnce, writeVerifyEvidence, printVerify } = require("./harness");
+// Leaf modules only (neither requires this file) — safe from here without
+// creating a cycle with worktree-plan.js, which itself requires this file
+// for `worktreeAdd`. See placement-store.js's own header.
+const { parseBackbone, labelForDir } = require("./backbone");
+const { clearChainPlacement } = require("./placement-store");
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -578,13 +583,61 @@ function conflictingFiles(wtPath) {
 // branch — mirrors `worktreeRemove`'s cleanup sequence, plus the lock. The
 // lock lives inside the story worktree's own checkout, so it must be cleared
 // BEFORE the worktree directory disappears.
-function landCleanup(root, match, branch) {
+//
+// `found` (the `{ epic, story }` pair `findStoryForBranch` resolved, or null
+// when the branch is not linked to a known story) drives the two bits of
+// story-03-02 bookkeeping added here, so every land — manual or the
+// automatic trigger — keeps the placement system introduced in story-03-01
+// consistent, not only the new auto-land path: a chain landed by hand must
+// not leave a stale entry behind either, or a later `worktree place` for the
+// same chain would recommend a location that no longer exists.
+function landCleanup(root, match, branch, found) {
   worktreeUnlock({ cwd: match.path, force: true });
   removeManagedLinks(match.path);
   git(root, ["worktree", "remove", match.path]);
   git(root, ["worktree", "prune"]);
   if (branch) {
     git(root, ["branch", "-D", branch], { allowFail: true });
+  }
+
+  // The parent `<repo>-worktrees/` directory `worktreeDest` places every
+  // worktree under: once the last one lands, nothing needs it until the next
+  // `worktreeAdd` recreates it (`fs.mkdirSync(..., { recursive: true })`), so
+  // removing it here loses nothing. Checked at the moment of removal, not a
+  // count computed earlier in this run, so two chains landing near the same
+  // moment don't race on it — `rmdirSync` on a non-empty directory throws
+  // and is ignored, never touching a sibling worktree still there.
+  const parentDir = path.dirname(match.path);
+  try {
+    if (fs.readdirSync(parentDir).length === 0) {
+      fs.rmdirSync(parentDir);
+    }
+  } catch {
+    // Non-empty (a sibling worktree is still there, or won a concurrent
+    // land first) or already gone — either way, nothing to do.
+  }
+
+  // Clear this chain's recorded placement (story-03-01) now that its
+  // worktree is gone. Best-effort: `found` is null when the branch is not
+  // linked to a known story (findStoryForBranch's own "best-effort only"
+  // contract already accepts that), in which case there is no chain to
+  // clear; a malformed/edited backbone must not block a land that otherwise
+  // already succeeded, so a parse failure here is swallowed too — worst case
+  // a stale placement entry needs manual cleanup, not a failed land.
+  if (found) {
+    try {
+      const indexPath = path.join(root, found.epic.path, "index.md");
+      if (fs.existsSync(indexPath)) {
+        const { storyDirs, chainId: chainIdOf } = parseBackbone(fs.readFileSync(indexPath, "utf8"));
+        const label = labelForDir(storyDirs, found.story.name);
+        if (label) {
+          clearChainPlacement(root, path.basename(found.epic.path), chainIdOf.get(label));
+        }
+      }
+    } catch {
+      // See above: a land that already merged and removed the worktree must
+      // not be reported as failed over placement-state bookkeeping.
+    }
   }
 }
 
@@ -649,18 +702,24 @@ function worktreeLand(name, { cwd, story }) {
     );
   }
 
+  // Resolved once, ahead of both the already-landed and the normal path
+  // below: `landCleanup` needs it (best-effort — see its own comment) to
+  // clear the landed chain's placement entry regardless of which path got
+  // there, and the normal path also needs it to fail loudly when the branch
+  // is not linked to a known story at all.
+  const found = findStoryForBranch(root, branch);
+
   // Already landed: the target has nothing new from this story. Skip
   // straight to cleanup rather than erroring — this is not a failure.
   const alreadyLanded =
     git(root, ["merge-base", "--is-ancestor", branch, "HEAD"], { allowFail: true }).code === 0;
 
   if (alreadyLanded) {
-    landCleanup(root, match, branch);
+    landCleanup(root, match, branch, found);
     log(`Already landed: "${branch}" had nothing new for this branch. Worktree and branch cleaned up.`);
     return;
   }
 
-  const found = findStoryForBranch(root, branch);
   if (!found) {
     fail(
       `worktree "${lookupName}" is not linked to a known story (no matching epics/*/story-* directory). ` +
@@ -756,7 +815,7 @@ function worktreeLand(name, { cwd, story }) {
     );
   }
 
-  landCleanup(root, match, branch);
+  landCleanup(root, match, branch, found);
   log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
 }
 
@@ -796,7 +855,7 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
   } else if (sub === "land") {
     worktreeLand(name, { cwd, story });
   } else {
-    fail(`unknown worktree subcommand: "${sub || ""}". Use add, list, remove, lock, unlock, land or place.`);
+    fail(`unknown worktree subcommand: "${sub || ""}". Use add, list, remove, lock, unlock, land, place or autoland.`);
   }
 }
 

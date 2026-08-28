@@ -152,6 +152,20 @@ that — keep it honest:
   `ai-flow worktree unlock --story <story-dir>` — a `blocked` or
   `in-progress` story still has real unlanded work the lock is correctly
   protecting, so it stays locked.
+- Immediately after unlocking, run
+  `ai-flow worktree autoland --epic <epic-dir> --story <story-dir>` (skip if
+  there was no story directory to place in the first place). It checks
+  whether this story was the last not-yet-done one of its chain and, if so
+  and that chain is running in its own worktree, lands it onto the primary
+  checkout automatically — the counterpart to the placement step at the top:
+  that step opened the worktree when the chain started, this one closes it
+  when the chain finishes, so nobody has to notice a chain is done and land
+  it by hand. Report exactly what it reports: landed, not-yet-finished (a
+  sibling in the chain is still open — normal, not an error), never isolated
+  (the chain ran in the primary checkout all along — also normal), or a land
+  failure (a real conflict or a failed post-land re-verify) — stop and report
+  a failure rather than retrying blindly, the same as any other `land`
+  failure.
 - On a red or partial verify, write `## Status: blocked` and record what failed.
 - `NOT PROVEN` (commands green, coverage gate blocked) is not `done` either. The
   story stays `in-progress` until a test covers it or an exemption is declared.

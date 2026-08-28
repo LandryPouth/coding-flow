@@ -32,24 +32,24 @@ ready and type `ai-flow worktree land` by hand.
 
 ## Acceptance Criteria
 
-- [ ] Given a two-story chain running in its own worktree, when its second
+- [x] Given a two-story chain running in its own worktree, when its second
       (last) story reaches the `verified` state, then `ai-flow worktree
       land` runs automatically and the worktree directory no longer exists
       afterward.
-- [ ] Given that same chain was the only worktree under `<repo>-worktrees/`,
+- [x] Given that same chain was the only worktree under `<repo>-worktrees/`,
       when it lands, then the now-empty `<repo>-worktrees/` directory is
       also removed.
-- [ ] Given two chains still running in separate worktrees under
+- [x] Given two chains still running in separate worktrees under
       `<repo>-worktrees/`, when one of them lands, then only its own
       worktree directory is removed and the sibling's worktree is untouched.
-- [ ] Given a chain's last story reaches `verified` but the post-land
+- [x] Given a chain's last story reaches `verified` but the post-land
       re-verify (epic-02's existing safety net) fails, when auto-land runs,
       then the merge is rolled back exactly as `worktree land` already does
       today, and the failure is reported — not silently retried or
       swallowed.
-- [ ] Given a story reaches `verified` but other stories of its chain are
+- [x] Given a story reaches `verified` but other stories of its chain are
       not yet done, when that happens, then no land is attempted.
-- [ ] Given a chain that was never isolated in its own worktree (ran in the
+- [x] Given a chain that was never isolated in its own worktree (ran in the
       primary checkout throughout), when its last story reaches `verified`,
       then nothing is landed or removed — there is no worktree to clean up.
 
