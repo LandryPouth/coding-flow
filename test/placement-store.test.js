@@ -16,8 +16,20 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const { withFileLock } = require('../bin/lib/placement-store');
+
+function waitForFile(p, timeoutMs, message) {
+  const deadline = Date.now() + timeoutMs;
+  const buf = new Int32Array(new SharedArrayBuffer(4));
+  while (!fs.existsSync(p)) {
+    if (Date.now() > deadline) {
+      assert.fail(message);
+    }
+    Atomics.wait(buf, 0, 0, 10);
+  }
+}
 
 function freshLockPath(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-lock-'));
@@ -67,4 +79,75 @@ test('withFileLock releases the lock even when the callback throws, so a failed 
     ranSecond = true;
   }, { waitTimeoutMs: 500, staleMs: 60 * 1000 });
   assert.ok(ranSecond, 'a later call must be able to acquire the lock the failed call released');
+});
+
+test('withFileLock does not delete a lock stolen from it while it was still (slowly) running', (t) => {
+  const lockPath = freshLockPath(t);
+  const readyPath = `${lockPath}.ready`;
+  const donePath = `${lockPath}.done`;
+  const holdMs = 300;
+
+  // A "legitimately still running" holder: acquires normally (no
+  // contention), then backdates its OWN lock file past a short staleMs so a
+  // later waiter treats it as abandoned, then keeps "working" (sleeping)
+  // well past that point before its own release runs — reproducing the
+  // window where a holder is stolen from while it is still alive, not
+  // crashed.
+  const holderPath = `${lockPath}.holder.js`;
+  fs.writeFileSync(
+    holderPath,
+    [
+      "const fs = require('fs');",
+      `const { withFileLock } = require(${JSON.stringify(path.join(__dirname, '..', 'bin', 'lib', 'placement-store'))});`,
+      `const lockPath = ${JSON.stringify(lockPath)};`,
+      `const readyPath = ${JSON.stringify(readyPath)};`,
+      `const donePath = ${JSON.stringify(donePath)};`,
+      `const holdMs = ${holdMs};`,
+      'withFileLock(lockPath, () => {',
+      '  const old = new Date(Date.now() - 10000);',
+      '  fs.utimesSync(lockPath, old, old);',
+      "  fs.writeFileSync(readyPath, 'ready');",
+      '  const buf = new Int32Array(new SharedArrayBuffer(4));',
+      '  Atomics.wait(buf, 0, 0, holdMs);',
+      '});',
+      "fs.writeFileSync(donePath, 'done');",
+    ].join('\n'),
+  );
+
+  const holder = spawn(process.execPath, [holderPath], { stdio: 'ignore' });
+  t.after(() => {
+    try {
+      holder.kill();
+    } catch {
+      // already exited on its own — nothing to clean up.
+    }
+  });
+
+  waitForFile(readyPath, 2000, 'the background holder never backdated its lock and signaled ready');
+
+  // Steals the now-stale-looking lock while the background holder is still
+  // asleep inside its own callback — the real "stolen while still alive"
+  // race, not a contrived token comparison.
+  let sawOwnTokenBeforeHolderReleased = null;
+  withFileLock(
+    lockPath,
+    () => {
+      const stolenContent = fs.readFileSync(lockPath, 'utf8');
+
+      // Wait for the background holder to wake up and run its own release
+      // logic — the exact moment a pre-fix `withFileLock` would delete
+      // whatever is currently at `lockPath`, which by now is this call's
+      // own lock, not the holder's.
+      waitForFile(donePath, holdMs + 2000, 'the background holder never finished releasing');
+
+      sawOwnTokenBeforeHolderReleased = fs.existsSync(lockPath) && fs.readFileSync(lockPath, 'utf8') === stolenContent;
+    },
+    { waitTimeoutMs: 2000, staleMs: 1000 },
+  );
+
+  assert.ok(
+    sawOwnTokenBeforeHolderReleased,
+    "the background holder's own release must not have deleted this call's lock after being stolen from",
+  );
+  assert.ok(!fs.existsSync(lockPath), 'this call must still release its own lock normally once its callback returns');
 });

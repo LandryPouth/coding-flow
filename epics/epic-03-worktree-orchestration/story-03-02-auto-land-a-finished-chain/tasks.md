@@ -420,6 +420,26 @@ inventory (plan.md's Decisions) missed:
 - plan.md's Decisions updated: the "two calls" inventory now also accounts
   for `landCleanup`'s two, and records this pass.
 
+**Seventh `/flow-review` pass (2026-08-29)**, a non-blocking finding fixed on
+request rather than left for a future story:
+
+- `withFileLock` (`bin/lib/placement-store.js`) had no ownership check on
+  release — a still-running holder that outlived `staleMs` (real for `land`'s
+  unbounded validation command) could have its lock stolen by a waiter, then
+  delete that waiter's active lock out from under it once it finally finished,
+  freeing the lock for a third caller while the second was still running. No
+  choice of `staleMs`, however generous, removes this — it only lowers the
+  odds.
+  Fixed with a per-acquisition ownership token: written into the lock file on
+  acquire, checked back on release, so `rmSync` only fires when the file still
+  holds that same token.
+- New test: `test/placement-store.test.js`, "withFileLock does not delete a
+  lock stolen from it while it was still (slowly) running" — confirmed red
+  against the pre-fix code (temporarily reverted `placement-store.js`, kept
+  the new test: the foreground call's lock was deleted out from under it)
+  before confirming it passes with the fix restored. `npm test`: 549/549 (was
+  548/548 — one new test, no regressions).
+
 ## Test Exemption
 
 None — new behavior is covered directly (`test/worktree-autoland.test.js`).

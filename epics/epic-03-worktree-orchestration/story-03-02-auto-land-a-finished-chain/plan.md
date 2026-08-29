@@ -179,6 +179,42 @@
   releases the lock, with the fix restored. `npm test`: 548/548 (was 547/547
   — one new test, no regressions).
 
+- **Seventh `/flow-review` pass (2026-08-29)** found that `withFileLock`
+  itself (`bin/lib/placement-store.js`) had no notion of lock ownership: its
+  release (`finally { ...; fs.rmSync(lockPath, { force: true }); }`) deleted
+  whatever file currently sat at `lockPath`, unconditionally. No `staleMs`,
+  however generous, actually eliminates the steal race described above it —
+  it only makes it less likely: holder A acquires and runs past `staleMs`
+  (still alive, not crashed); holder B, waiting since before A crossed that
+  threshold, reclaims the now-stale-looking lock and starts its own critical
+  section; when A eventually finishes, A's own unconditional `rmSync` deletes
+  B's still-active lock file, not A's own (already-replaced) one — freeing
+  the lock for a third caller to acquire while B is still mid-`land`. This is
+  the exact interleaving this story's whole lock exists to prevent (spec.md's
+  Concurrency edge case), reachable specifically when `land`'s real,
+  unbounded validation command runs long enough to cross
+  `LAND_LOCK_STALE_MS` (15 minutes) — a real, if narrow, scenario for a slow
+  project suite, not a contrived one.
+  Fixed by giving each acquisition an ownership token: a random string
+  written into the lock file right after `openSync("wx")` succeeds, checked
+  back on release — `rmSync` only runs if the file still holds that same
+  token, so a holder that has already been superseded skips the delete
+  instead of destroying the new owner's lock. The existing stale-reclaim path
+  (steal, then loop back to re-open and write a fresh token) is unchanged;
+  only the release side gained the check.
+  New test: `test/placement-store.test.js`, "withFileLock does not delete a
+  lock stolen from it while it was still (slowly) running" — a background
+  process acquires the lock, backdates its own lock file past a short
+  `staleMs` (simulating a holder that is still working but looks abandoned),
+  and sleeps; the foreground call steals the now-stale-looking lock while the
+  background holder is still asleep, then blocks until the background holder
+  wakes up and runs its own release, then asserts its own lock file is still
+  there with its own content. Confirmed red against the pre-fix code
+  (temporarily reverted `placement-store.js`, kept the new test: the
+  foreground call's lock was deleted out from under it) before confirming it
+  passes with the fix restored. `npm test`: 549/549 (was 548/548 — one new
+  test, no regressions).
+
 ## Test Plan
 
 - Extend `worktree.test.js`'s existing real-temp-git-repo pattern: a

@@ -61,14 +61,29 @@ const RETRY_SIGNAL = new Int32Array(new SharedArrayBuffer(4));
 // commands — a caller with a much longer-running body must pass longer
 // values, or a legitimately still-running holder gets timed out on, or has
 // its lock stolen by a waiter that mistook "still working" for "crashed".
+//
+// Stealing a stale lock is still possible no matter how generous `staleMs`
+// is — a holder whose own critical section runs long enough can be outlived
+// by it. Without an ownership check, that holder's own release would then
+// delete whoever stole the lock from it: A acquires, runs past `staleMs`, B
+// (having waited past `staleMs` too) reclaims and starts its own critical
+// section, and when A finally finishes, A's unconditional `rmSync` would
+// delete B's still-active lock file, letting a third caller acquire while B
+// is still running — the exact interleaving this lock exists to prevent.
+// Each holder writes a random token into the lock file on acquire and only
+// removes it on release if the file still holds that same token, so a
+// holder that has already been superseded skips the delete instead of
+// destroying the new owner's lock.
 function withFileLock(lockPath, fn, { waitTimeoutMs = LOCK_WAIT_TIMEOUT_MS, staleMs = LOCK_STALE_MS } = {}) {
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
 
   const deadline = Date.now() + waitTimeoutMs;
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   let fd = null;
   while (fd === null) {
     try {
       fd = fs.openSync(lockPath, "wx");
+      fs.writeSync(fd, token);
     } catch (err) {
       if (err.code !== "EEXIST") throw err;
 
@@ -100,7 +115,18 @@ function withFileLock(lockPath, fn, { waitTimeoutMs = LOCK_WAIT_TIMEOUT_MS, stal
     return fn();
   } finally {
     fs.closeSync(fd);
-    fs.rmSync(lockPath, { force: true });
+    let current = null;
+    try {
+      current = fs.readFileSync(lockPath, "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+    // Only remove the file if it is still ours: a mismatch (or it already
+    // being gone) means another holder stole it as stale while we were still
+    // running, and it is that holder's lock to release now, not ours.
+    if (current === token) {
+      fs.rmSync(lockPath, { force: true });
+    }
   }
 }
 
