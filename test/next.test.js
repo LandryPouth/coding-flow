@@ -164,6 +164,55 @@ test('next --all lists every item ranked by tier', (t) => {
   assert.ok(blockedIndex >= 0 && plannedIndex >= 0 && blockedIndex < plannedIndex, 'blocked must rank before planned');
 });
 
+// story-04-02: a STRICT-tier story (risk resolved the same way `ai-flow
+// harness preflight` already scores it — a diff touching a high-risk path,
+// `bin/lib/harness.js`'s `defaultHighRiskPaths`) with a green verify is not
+// "ready to ship" until it also has a fresh, passing review (story-04-01).
+test('next recommends /flow-review, not ship, for a STRICT story missing a fresh-passing review', (t) => {
+  const { repo } = initRepo(t);
+  const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\n## Status: done\n');
+  writeVerify(repo, storyPath, { ok: true });
+  commitAll(repo, 'init');
+
+  sh(repo, 'git', ['checkout', '-b', 'story-01-01-a']);
+  // A high-risk path in the diff is enough on its own for scoreDiffRisk to
+  // resolve "high" — matching harness.js's default `**/*payment*` glob.
+  fs.writeFileSync(path.join(repo, 'payment.js'), 'module.exports = {};\n');
+  sh(repo, 'git', ['add', '.']);
+  sh(repo, 'git', ['commit', '-m', 'implement']);
+
+  const { code, output } = run(repo, ['next']);
+  assert.equal(code, 0);
+  assert.match(output, /\[needs-review\]/);
+  assert.match(output, /STRICT-tier/);
+  assert.match(output, /\/flow-review/);
+  assert.doesNotMatch(output, /ai-flow ship/, 'must not recommend ship while review is missing');
+});
+
+test('next recommends ship once the same STRICT story has a fresh, passing review', (t) => {
+  const { repo } = initRepo(t);
+  const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\n## Status: done\n');
+  writeVerify(repo, storyPath, { ok: true });
+  commitAll(repo, 'init');
+
+  sh(repo, 'git', ['checkout', '-b', 'story-01-01-a']);
+  fs.writeFileSync(path.join(repo, 'payment.js'), 'module.exports = {};\n');
+  sh(repo, 'git', ['add', '.']);
+  sh(repo, 'git', ['commit', '-m', 'implement']);
+
+  // The real `ai-flow review capture` CLI (story-04-01), not a hand-written
+  // fixture — proves the two stories compose end-to-end.
+  const captured = run(repo, ['review', 'capture', '--story', storyPath, '--verdict', 'pass', '--json']);
+  assert.equal(captured.code, 0, `review capture must succeed: ${captured.output}`);
+  sh(repo, 'git', ['add', '-A']);
+  sh(repo, 'git', ['commit', '-m', 'chore: capture review evidence']);
+
+  const { code, output } = run(repo, ['next']);
+  assert.equal(code, 0);
+  assert.match(output, /\[ready-to-ship\]/);
+  assert.match(output, /ai-flow ship/);
+});
+
 test('next --json emits only the top item by default, all with --all', (t) => {
   const { repo } = initRepo(t);
   writeStory(repo, 'epic-01-x', 'story-01-01-blocked', '# blocked\n\n## Status: blocked\nfailed\n');

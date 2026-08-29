@@ -30,6 +30,15 @@ const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
+const {
+  readHarnessConfig,
+  changedFilesForCoverage,
+  readStoryBundle,
+  scoreStoryRisk,
+  scoreDiffRisk,
+  combineRisk,
+} = require("./harness");
+const { computeReviewStatus } = require("./status");
 
 function epicNameFromPath(epicPath) {
   return path.basename(epicPath);
@@ -225,6 +234,29 @@ function findRootStoryPath(cwd, epicName, worktreeName) {
 // calling `land` — an actual re-run, not a stale comparison — and `land`'s
 // own precondition (epic-02, unchanged) is the hard gate that rejects
 // anything that re-run does not cover.
+// story-04-02: a chain finishing is not only "every member done + green verify"
+// once any member's own risk tier resolves to STRICT (`combineRisk(...).level
+// === "high"`, computed the exact way `buildHarnessPreflight` already does —
+// never a second, independent risk model). That member also needs a fresh,
+// passing review evidence entry (story-04-01's `computeReviewStatus`, the
+// same "pass"/"stale"/"fail"/"none" states `ai-flow status` already surfaces).
+// QUICK/STANDARD members are unaffected — the pre-existing done/verified +
+// green-verify check is still the only one applied to them.
+//
+// The diff-risk half of the score is computed ONCE per chain (`changedFilesForCoverage`
+// reads the whole worktree's current diff against its base branch — every
+// member of a chain shares that one worktree/branch, so the diff is the same
+// input `ai-flow harness preflight` would see run from here right now), not
+// once per member; only the story-text half differs member to member.
+function reviewGateReason(cwd, story) {
+  const state = computeReviewStatus(cwd, story.path);
+
+  if (state === "none") return "review-missing";
+  if (state === "stale") return "review-stale";
+  if (state === "fail") return "review-failed";
+  return null;
+}
+
 function chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId) {
   const config = readConfig(cwd);
   const epicName = epicNameFromPath(epicPath);
@@ -236,11 +268,14 @@ function chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId) {
   // index.md exists and lists the story), so `storage` must see it too —
   // defensive only, never expected to actually be null.
   if (!epic) {
-    return false;
+    return { finished: false, reason: "chain-not-finished" };
   }
 
   const storyByName = new Map(epic.stories.map((story) => [story.name, story]));
   const verifyByDir = latestVerifyByStoryDir(cwd);
+  const { config: harnessConfig } = readHarnessConfig(cwd);
+  const diffFiles = changedFilesForCoverage(cwd);
+  const diffRisk = scoreDiffRisk(diffFiles, harnessConfig);
 
   for (const [label, id] of chainIdOf.entries()) {
     if (id !== chainId) continue;
@@ -251,16 +286,26 @@ function chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId) {
     // `chainIdOf` exists — a member with no matching story here would mean
     // `storage` and the backbone disagree about what's in `## Stories`,
     // not a real gap; treat as not-finished rather than guessing.
-    if (!story) return false;
+    if (!story) return { finished: false, reason: "chain-not-finished" };
 
     const claimsDone = story.status === "done" || story.status === "verified";
-    if (!claimsDone) return false;
+    if (!claimsDone) return { finished: false, reason: "chain-not-finished" };
 
     const verifyEntry = verifyByDir.get(story.path);
-    if (!verifyEntry || verifyEntry.ok !== true) return false;
+    if (!verifyEntry || verifyEntry.ok !== true) return { finished: false, reason: "chain-not-finished" };
+
+    const storyText = Object.values(readStoryBundle(path.join(cwd, story.path))).join("\n");
+    const risk = combineRisk(scoreStoryRisk(storyText, harnessConfig), diffRisk);
+
+    if (risk.level === "high") {
+      const reason = reviewGateReason(cwd, story);
+      if (reason) {
+        return { finished: false, reason, story: story.path };
+      }
+    }
   }
 
-  return true;
+  return { finished: true, reason: null };
 }
 
 // After a story reaches the derived "verified" state, decide whether that
@@ -332,8 +377,9 @@ function autoLandIfChainFinished({ cwd, epicPath, storyPath }) {
     );
   }
 
-  if (!chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId)) {
-    return { landed: false, reason: "chain-not-finished", chainId };
+  const finishState = chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId);
+  if (!finishState.finished) {
+    return { landed: false, reason: finishState.reason, chainId, ...(finishState.story ? { story: finishState.story } : {}) };
   }
 
   const worktreeName = path.basename(here);

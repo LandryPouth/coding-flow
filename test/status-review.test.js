@@ -117,3 +117,42 @@ test('status --json review field is independent of a linked worktree existing', 
   assert.equal(story.worktree, null, 'this story has no linked worktree');
   assert.equal(story.review, 'pass', 'review must still be reported without a worktree');
 });
+
+// story-04-02: `reviewRequired` names whether THIS story's own risk tier is
+// STRICT (the same `combineRisk` computation `chainIsFinished`/`next`'s
+// tier-4 check gate on) — only meaningful once a story claims to be done.
+test('status --json reports reviewRequired: true for a done STRICT-tier story (diff touches a high-risk path), and it is absent for a story that has not claimed done', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+
+  const notDone = storyOf(repo, storyRel);
+  assert.equal(notDone.reviewRequired, undefined, 'a story that has not claimed done has no reviewRequired opinion yet');
+
+  // `changedFilesForCoverage` reads the diff since the base branch — a
+  // separate branch is required for that diff to be non-empty, the same
+  // "one branch per epic" shape real usage (and `next.test.js`'s own STRICT
+  // fixture) already has, never directly on the base branch itself.
+  git(repo, ['branch', '-M', 'main']);
+  git(repo, ['checkout', '-b', 'work']);
+  fs.appendFileSync(path.join(repo, storyRel, 'story.md'), '\n## Status: done\n');
+  fs.writeFileSync(path.join(repo, 'payment.js'), 'module.exports = {};\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'mark done, touch a high-risk path']);
+
+  const story = storyOf(repo, storyRel);
+  assert.equal(story.reviewRequired, true, 'a high-risk-path diff must resolve this STRICT-tier story to reviewRequired: true');
+  assert.equal(story.review, 'none', 'no review has been captured for it yet');
+});
+
+test('status --json reports reviewRequired: false for a done story whose diff never touched a high-risk path', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+
+  git(repo, ['branch', '-M', 'main']);
+  git(repo, ['checkout', '-b', 'work']);
+  fs.appendFileSync(path.join(repo, storyRel, 'story.md'), '\n## Status: done\n');
+  fs.writeFileSync(path.join(repo, 'notes.txt'), 'plain change\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'mark done, plain change']);
+
+  const story = storyOf(repo, storyRel);
+  assert.equal(story.reviewRequired, false, 'a non-risky diff must not resolve this story to STRICT');
+});

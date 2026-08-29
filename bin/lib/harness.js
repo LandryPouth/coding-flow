@@ -39,8 +39,15 @@ const {
   selectFailureLines,
 } = require("./util");
 
-function harnessConfigPath() {
-  return path.join(cwd, ".coding-flow", "harness.json");
+// `root` defaults to this module's own process-bound `cwd` (the overwhelming
+// majority of call sites — `verify`, `check`, `preflight` all run in-process
+// against the real checkout). story-04-02 is the first caller that must score
+// risk for a story living in a DIFFERENT worktree than the process itself
+// (`ai-flow next` reports on every story project-wide, not just the one at
+// `cwd`) — an explicit root lets it read that worktree's own tracked
+// `.coding-flow/harness.json` without a real `chdir`.
+function harnessConfigPath(root = cwd) {
+  return path.join(root, ".coding-flow", "harness.json");
 }
 
 function harnessRunsDir() {
@@ -273,9 +280,9 @@ function defaultHarnessConfig() {
   };
 }
 
-function readHarnessConfig() {
+function readHarnessConfig(root = cwd) {
   const defaults = defaultHarnessConfig();
-  const config = readJson(harnessConfigPath(), null);
+  const config = readJson(harnessConfigPath(root), null);
 
   if (!config) {
     return { config: defaults, exists: false };
@@ -799,11 +806,11 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
   return report;
 }
 
-function runGitList(argsForGit) {
+function runGitList(argsForGit, root = cwd) {
   try {
     const childProcess = require("child_process");
     return childProcess
-      .execFileSync("git", argsForGit, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .execFileSync("git", argsForGit, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
@@ -812,10 +819,10 @@ function runGitList(argsForGit) {
   }
 }
 
-function getChangedFiles() {
+function getChangedFiles(root = cwd) {
   return [...new Set([
-    ...runGitList(["diff", "--name-only"]),
-    ...runGitList(["diff", "--cached", "--name-only"]),
+    ...runGitList(["diff", "--name-only"], root),
+    ...runGitList(["diff", "--cached", "--name-only"], root),
   ])].sort();
 }
 
@@ -1404,28 +1411,28 @@ function captureEnvironment() {
 // Everything this branch contributes, not just what is uncommitted: a story whose
 // tests are already committed must not read as "no test changed". Falls back to
 // the working tree when there is no base to compare against.
-function changedFilesForCoverage() {
+function changedFilesForCoverage(root = cwd) {
   const files = new Set();
-  const base = defaultBranch(cwd);
+  const base = defaultBranch(root);
 
   for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
+    const mergeBase = runGitList(["merge-base", ref, "HEAD"], root)[0];
 
     if (mergeBase) {
-      for (const file of runGitList(["diff", "--name-only", mergeBase])) {
+      for (const file of runGitList(["diff", "--name-only", mergeBase], root)) {
         files.add(file);
       }
       break;
     }
   }
 
-  for (const file of getChangedFiles()) {
+  for (const file of getChangedFiles(root)) {
     files.add(file);
   }
 
   // A brand-new test file is untracked, and it is the single most important case
   // this gate must see.
-  for (const file of runGitList(["ls-files", "--others", "--exclude-standard"])) {
+  for (const file of runGitList(["ls-files", "--others", "--exclude-standard"], root)) {
     files.add(file);
   }
 
@@ -2388,7 +2395,10 @@ module.exports = {
   defaultSecretPatterns,
   evaluateCoverage,
   scoreDiffRisk,
+  scoreStoryRisk,
   combineRisk,
+  readStoryBundle,
+  changedFilesForCoverage,
   harnessCommand,
   // Reused by `run` (batch orchestration) so it shares the single-story verify
   // execution path instead of duplicating it.

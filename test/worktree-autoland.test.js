@@ -154,6 +154,41 @@ function autoland(cwd, epicPath, storyPath, { json = true } = {}) {
   }
 }
 
+// Writes a captured review evidence file the same shape `ai-flow review
+// capture` (bin/lib/review.js, story-04-01) produces, WITHOUT committing —
+// lets a caller write evidence for several chain members against the exact
+// same tree token (one shared commit afterward), the way a single `flow-run`
+// session capturing review for a whole chain would land it. `writeReview`
+// below wraps this with its own commit for the single-story case.
+function writeReviewFile(worktreePath, storyRel, { verdict = 'pass' } = {}) {
+  const runsDir = path.join(worktreePath, '.coding-flow', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const treeToken = currentTreeToken(worktreePath);
+  const file = path.join(runsDir, `${Date.now()}-${Math.random().toString(16).slice(2, 8)}-review.json`);
+  fs.writeFileSync(
+    file,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        story: storyRel,
+        ok: verdict === 'pass',
+        verdict,
+        dimensions: {},
+        findingCounts: { p0: 0, p1: 0, p2: 0, p3: 0 },
+        reviewer: 'self',
+        provenance: { git: { treeToken } },
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function writeReview(worktreePath, storyRel, options = {}) {
+  writeReviewFile(worktreePath, storyRel, options);
+  commitAll(worktreePath, `chore: capture review evidence for ${storyRel}`);
+}
+
 // Writes a captured verify run file the same shape `harness verify` produces
 // (see audit.js's `entryFromRunFile`), then commits it so the worktree stays
 // clean — `.coding-flow/runs/*.json` is tracked content, not gitignored.
@@ -437,4 +472,153 @@ test('auto-land: a failed re-verify of a stale chain root fails before land ever
 
   const state = readPlacementState(repo, epicPath.split('/').pop());
   assert.ok('s2' in state.chains, 'the chain\'s placement entry must be untouched — nothing was landed');
+});
+
+// story-04-02: a chain finishing is not only "every member done + green
+// verify" once a member's own risk tier resolves to STRICT — a diff touching
+// a high-risk path (`bin/lib/harness.js`'s `defaultHighRiskPaths`, e.g.
+// `**/*payment*`) is enough to make `scoreDiffRisk` (and so `combineRisk`)
+// resolve to "high", the same way `ai-flow harness preflight` would score
+// this chain's diff right now. That member also needs a fresh, passing
+// review evidence entry (story-04-01) alongside the pre-existing
+// done/verified + green-verify check.
+// A companion `payment.test.js` is committed alongside `payment.js` so the
+// pre-land root re-verify (a REAL `ai-flow verify` run, not a fixture) does
+// not separately block on the coverage gate's own "a behavior file changed
+// with no test" rule (`harness.js`'s `evaluateCoverage`) — a pre-existing,
+// unrelated requirement this test would otherwise trip merely by picking a
+// high-risk path to make `scoreDiffRisk` resolve to "high".
+function touchHighRiskFile(worktreePath, message) {
+  fs.writeFileSync(path.join(worktreePath, 'payment.js'), 'module.exports = {};\n');
+  fs.writeFileSync(path.join(worktreePath, 'payment.test.js'), '// covers payment.js\n');
+  commitAll(worktreePath, message);
+}
+
+test('auto-land: a STRICT-tier chain (diff touches a high-risk path) with a green verify but no captured review blocks the land with reason "review-missing"', (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
+  });
+
+  place(repo, epicPath, `${epicPath}/story-x-01-a`);
+  const placedB = place(repo, epicPath, `${epicPath}/story-x-02-b`);
+  const worktreeB = placedB.location;
+
+  writeVerify(worktreeB, `${epicPath}/story-x-02-b`);
+  markStoryDone(worktreeB, epicPath, 'story-x-02-b');
+
+  touchHighRiskFile(worktreeB, 'feat: story c work (payment path)');
+
+  writeVerify(worktreeB, `${epicPath}/story-x-03-c`);
+  markStoryDone(worktreeB, epicPath, 'story-x-03-c');
+
+  const { code, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
+  assert.equal(code, 0, 'a review-gated chain is a no-op, not an error');
+  assert.equal(result.landed, false);
+  assert.equal(result.reason, 'review-missing');
+  assert.ok(fs.existsSync(worktreeB), 'the worktree must be untouched while review is missing');
+});
+
+test('auto-land: the same STRICT-tier chain lands once a fresh, passing review evidence entry exists', (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
+  });
+
+  place(repo, epicPath, `${epicPath}/story-x-01-a`);
+  const placedB = place(repo, epicPath, `${epicPath}/story-x-02-b`);
+  const worktreeB = placedB.location;
+
+  writeVerify(worktreeB, `${epicPath}/story-x-02-b`);
+  markStoryDone(worktreeB, epicPath, 'story-x-02-b');
+
+  touchHighRiskFile(worktreeB, 'feat: story c work (payment path)');
+
+  writeVerify(worktreeB, `${epicPath}/story-x-03-c`);
+  markStoryDone(worktreeB, epicPath, 'story-x-03-c');
+
+  // Both members are STRICT-tier here (the diff-risk half of the score is
+  // chain-wide — see the comment above `chainIsFinished` — so `payment.js`
+  // anywhere in the chain's diff makes every member "high"), so both need
+  // their own fresh review. One shared commit keeps both tokens identical to
+  // the current tree, rather than the second write staling out the first.
+  writeReviewFile(worktreeB, `${epicPath}/story-x-02-b`, { verdict: 'pass' });
+  writeReviewFile(worktreeB, `${epicPath}/story-x-03-c`, { verdict: 'pass' });
+  commitAll(worktreeB, 'chore: capture review evidence for the chain');
+
+  const { code, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
+  assert.equal(code, 0, `a satisfied review gate must land cleanly: ${JSON.stringify(result)}`);
+  assert.equal(result.landed, true);
+  assert.ok(!fs.existsSync(worktreeB), 'the worktree directory must be gone after landing');
+});
+
+test('auto-land: a STRICT-tier chain whose review evidence recorded a failing verdict blocks with reason "review-failed", distinct from "review-missing"/"review-stale"', (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
+  });
+
+  place(repo, epicPath, `${epicPath}/story-x-01-a`);
+  const placedB = place(repo, epicPath, `${epicPath}/story-x-02-b`);
+  const worktreeB = placedB.location;
+
+  writeVerify(worktreeB, `${epicPath}/story-x-02-b`);
+  markStoryDone(worktreeB, epicPath, 'story-x-02-b');
+
+  touchHighRiskFile(worktreeB, 'feat: story c work (payment path)');
+
+  writeVerify(worktreeB, `${epicPath}/story-x-03-c`);
+  markStoryDone(worktreeB, epicPath, 'story-x-03-c');
+
+  // b gets a satisfied (fresh, passing) review so the block below is
+  // unambiguously about c's own failing verdict, not b's missing one — both
+  // captured in the same commit (see the "lands" test above for why).
+  writeReviewFile(worktreeB, `${epicPath}/story-x-02-b`, { verdict: 'pass' });
+  writeReviewFile(worktreeB, `${epicPath}/story-x-03-c`, { verdict: 'fail' });
+  commitAll(worktreeB, 'chore: capture review evidence for the chain');
+
+  const { code, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
+  assert.equal(code, 0, 'a failing-review chain is a no-op, not an error');
+  assert.equal(result.landed, false);
+  assert.equal(result.reason, 'review-failed');
+  assert.ok(fs.existsSync(worktreeB), 'the worktree must be untouched while review failed');
+});
+
+test('auto-land: a STRICT-tier chain whose review evidence went stale (the tree moved since capture) blocks with reason "review-stale", distinct from "review-missing"/"review-failed"', (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
+  });
+
+  place(repo, epicPath, `${epicPath}/story-x-01-a`);
+  const placedB = place(repo, epicPath, `${epicPath}/story-x-02-b`);
+  const worktreeB = placedB.location;
+
+  writeVerify(worktreeB, `${epicPath}/story-x-02-b`);
+  markStoryDone(worktreeB, epicPath, 'story-x-02-b');
+
+  touchHighRiskFile(worktreeB, 'feat: story c work (payment path)');
+
+  writeVerify(worktreeB, `${epicPath}/story-x-03-c`);
+  markStoryDone(worktreeB, epicPath, 'story-x-03-c');
+  // Both members reviewed and captured together while fresh (see the "lands"
+  // test above for why one shared commit) — b must not read as
+  // "review-missing" once the tree moves below, or this test would prove the
+  // wrong reason.
+  writeReviewFile(worktreeB, `${epicPath}/story-x-02-b`, { verdict: 'pass' });
+  writeReviewFile(worktreeB, `${epicPath}/story-x-03-c`, { verdict: 'pass' });
+  commitAll(worktreeB, 'chore: capture review evidence for the chain');
+  // ...then the tree moves again, making the captured token stale — same
+  // shape as story-04-01's own staleness test. `chainIsFinished` never checks
+  // verify staleness itself (see the comment above it — that freshness is
+  // re-derived by `autoLandIfChainFinished`'s own root re-verify, right
+  // before `land`), so this only exercises the review gate.
+  fs.writeFileSync(path.join(worktreeB, 'after-review.txt'), 'changed after review\n');
+  commitAll(worktreeB, 'chore: change after review');
+
+  const { code, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
+  assert.equal(code, 0, 'a stale-review chain is a no-op, not an error');
+  assert.equal(result.landed, false);
+  assert.equal(result.reason, 'review-stale');
+  assert.ok(fs.existsSync(worktreeB), 'the worktree must be untouched while review is stale');
 });

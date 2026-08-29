@@ -32,24 +32,24 @@ exactly as `flow-run/SKILL.md` already describes.
 
 ## Acceptance Criteria
 
-- [ ] Given a STRICT-tier story with a green, fresh verify but no captured
+- [x] Given a STRICT-tier story with a green, fresh verify but no captured
       review evidence, when `chainIsFinished` runs, then the chain reports
       not-finished, reason names "no review captured," and no land is
       attempted.
-- [ ] Given that same story now has a fresh, passing review evidence entry,
+- [x] Given that same story now has a fresh, passing review evidence entry,
       when `chainIsFinished` runs again (with every other chain member
       already satisfying the existing check), then the chain reports
       finished.
-- [ ] Given a STRICT-tier story's review evidence records `verdict: fail`,
+- [x] Given a STRICT-tier story's review evidence records `verdict: fail`,
       when `chainIsFinished` runs, then not-finished, reason names the review
       failure specifically (not conflated with "no review" or "stale").
-- [ ] Given a STRICT-tier story's review evidence exists but is stale (the
+- [x] Given a STRICT-tier story's review evidence exists but is stale (the
       tree changed since capture), when `chainIsFinished` runs, then
       not-finished, reason names staleness specifically.
-- [ ] Given a QUICK or STANDARD story in any of the above review states, when
+- [x] Given a QUICK or STANDARD story in any of the above review states, when
       `chainIsFinished`/`next`'s tier-4 check runs, then review is not
       required at all — behavior is identical to before this story.
-- [ ] Given `ai-flow next` evaluates a STRICT story with done/verified status,
+- [x] Given `ai-flow next` evaluates a STRICT story with done/verified status,
       a green verify, but no fresh-passing review, then it recommends running
       `/flow-review` next, not `worktree land`/`ship`.
 

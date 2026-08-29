@@ -450,12 +450,20 @@ if (command === "init") {
     fail(err.message);
   }
 
+  const reviewGateMessages = {
+    "review-missing": `has no captured review for its STRICT-tier story "${result.story}"`,
+    "review-stale": `has a stale review (the tree moved since capture) for its STRICT-tier story "${result.story}"`,
+    "review-failed": `has a failing review for its STRICT-tier story "${result.story}"`,
+  };
+
   if (flags.has("--json")) {
     log(JSON.stringify(result, null, 2));
   } else if (result.landed) {
     log(`Landed: chain ${result.chainId} ("${result.worktreeName}") merged and its worktree removed.`);
   } else if (result.reason === "chain-not-finished") {
     log(`Chain ${result.chainId} is not finished yet — nothing to land.`);
+  } else if (reviewGateMessages[result.reason]) {
+    log(`Chain ${result.chainId} ${reviewGateMessages[result.reason]} — run /flow-review before landing.`);
   } else {
     log(`Chain ${result.chainId} never left the primary checkout — nothing to land.`);
   }

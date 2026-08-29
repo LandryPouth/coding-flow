@@ -15,6 +15,14 @@ const { currentTreeToken } = require("./identity");
 const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
 const { evaluateBranchPolicy } = require("./policy");
+const {
+  readHarnessConfig,
+  changedFilesForCoverage,
+  readStoryBundle,
+  scoreStoryRisk,
+  scoreDiffRisk,
+  combineRisk,
+} = require("./harness");
 
 // Indexes the worktrees by branch name. The worktree<->story mapping is
 // stateless: `worktree add --story` names the branch after the story directory,
@@ -86,6 +94,41 @@ function computeReviewStatus(root, storyPath) {
   return entry.ok ? "pass" : "fail";
 }
 
+// The diff-risk half of a story's score only depends on `root` (every story
+// sharing a checkout shares one diff), not on the story itself — cached per
+// root so a project with many done stories on the same checkout (the common
+// case: most stories share `cwd`, since worktrees are the exception) pays for
+// `changedFilesForCoverage`'s several `git` spawns once, not once per story.
+// A `/flow-review` measured `ai-flow status`/`next` going from ~0.1s to
+// ~0.5-0.7s on this repository's own 7 done stories before this cache existed.
+function diffRiskForRoot(root, cache) {
+  if (cache.has(root)) {
+    return cache.get(root);
+  }
+
+  const { config } = readHarnessConfig(root);
+  const diffRisk = scoreDiffRisk(changedFilesForCoverage(root), config);
+  const entry = { config, diffRisk };
+  cache.set(root, entry);
+  return entry;
+}
+
+// Story-04-02: whether this story's own risk tier resolves to STRICT
+// (`combineRisk(...).level === "high"`, computed the same way `ai-flow
+// harness preflight` already does — never a second, independent risk model),
+// so a human reading `status`'s `review` field can tell "green but this one
+// doesn't actually need a review" from "green and it does." Read from the
+// same location `computeReviewStatus` reads from. `cache` defaults to a
+// fresh, call-scoped Map so a standalone call (a test, a future caller with
+// only one story) needs no setup; `buildStatusModel` passes one shared Map
+// so every story in the same run reuses the same per-root diff-risk work.
+function computeReviewRequired(root, story, cache = new Map()) {
+  const { config, diffRisk } = diffRiskForRoot(root, cache);
+  const storyText = Object.values(readStoryBundle(path.join(root, story.path))).join("\n");
+  const risk = combineRisk(scoreStoryRisk(storyText, config), diffRisk);
+  return risk.level === "high";
+}
+
 const PLANS_DIR = "docs/plans";
 
 // A design doc under docs/plans/ that no epic's index.md references yet — a
@@ -127,6 +170,8 @@ function buildStatusModel(config) {
   const storage = getStorage(cwd, config);
   const wt = buildWorktreeIndex();
   const mappedBranches = new Set();
+  // Shared across every story in this one model build — see `diffRiskForRoot`.
+  const diffRiskCache = new Map();
 
   const epics = storage.listEpics().map((epic) => ({
     ...epic,
@@ -138,13 +183,21 @@ function buildStatusModel(config) {
       }
 
       const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
-      const review = computeReviewStatus(wtEntry ? wtEntry.fullPath : cwd, story.path);
+      const storyRoot = wtEntry ? wtEntry.fullPath : cwd;
+      const review = computeReviewStatus(storyRoot, story.path);
+      // Only computed for a story claiming to be finished — the same subset
+      // `chainIsFinished`/`next`'s tier-4 check actually gate on; a
+      // planned/in-progress/blocked story can't be landed regardless, so
+      // there is nothing for this field to usefully say yet.
+      const claimsDone = story.status === "done" || story.status === "verified";
+      const reviewRequired = claimsDone ? computeReviewRequired(storyRoot, story, diffRiskCache) : undefined;
 
       return {
         ...story,
         worktree: wtEntry ? wtEntry.path : null,
         ...(wtEntry ? { landReady } : {}),
         review,
+        ...(claimsDone ? { reviewRequired } : {}),
       };
     }),
   }));
@@ -205,7 +258,16 @@ function status({ json = false } = {}) {
         const wtSuffix = story.worktree
           ? `  → wt: ${story.worktree} [${story.landReady}]`
           : "";
-        const reviewSuffix = story.review !== "none" ? `  review: ${story.review}` : "";
+        // story-04-02: a STRICT-tier story (`reviewRequired`) that isn't a
+        // fresh pass gets "(required)" — the same distinction `chainIsFinished`/
+        // `next`'s tier-4 check act on, so a human reading this line does not
+        // have to separately re-derive the story's own risk tier.
+        const reviewSuffix =
+          story.reviewRequired && story.review !== "pass"
+            ? `  review: ${story.review} (required)`
+            : story.review !== "none"
+              ? `  review: ${story.review}`
+              : "";
         log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}${reviewSuffix}`);
       }
       log("");
@@ -239,4 +301,4 @@ function status({ json = false } = {}) {
   }
 }
 
-module.exports = { status, buildStatusModel };
+module.exports = { status, buildStatusModel, computeReviewStatus };

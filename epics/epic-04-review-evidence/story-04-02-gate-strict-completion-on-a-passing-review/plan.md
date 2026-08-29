@@ -63,6 +63,21 @@
   a single unreviewed STRICT member anywhere in the chain is exactly the case
   this story exists to catch, regardless of which member it is.
 
+- **Independent `/flow-review` pass (2026-08-29)**, given the artifact (the
+  diff) and the contract (spec.md/Requirements) only, not the implementer's
+  own reasoning: verdict pass, two P2s found and fixed, both efficiency —
+  `next.js`'s `strictReviewGap` recomputed the same `combineRisk`-based score
+  `buildStatusModel` had already produced as `story.reviewRequired`, and
+  `status.js`'s `computeReviewRequired` recomputed `changedFilesForCoverage`
+  (several `git` spawns) independently per story even when many stories share
+  one root. Measured directly: `ai-flow status` ~117ms → ~495ms and `ai-flow
+  next` ~230ms → ~680ms on this repository's own 7 done stories, before the
+  fix. Fixed by having `next.js` reuse `story.reviewRequired` instead of
+  recomputing, and adding `status.js`'s `diffRiskForRoot`, a cache shared
+  across all stories within one `buildStatusModel()` call and keyed by root.
+  Re-measured post-fix: `status` ~197ms, `next` ~226ms. `npm test`: 575/575
+  throughout, no regressions from either fix.
+
 ## Test Plan
 
 - Extend `test/worktree-autoland.test.js`'s existing real-temp-git-repo
