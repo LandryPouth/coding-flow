@@ -78,6 +78,52 @@
   second version invites the two to drift (e.g., one gets a bugfix the other
   does not) for no behavioral gain.
 
+- **First independent `/flow-review` pass (2026-08-29)**, given the artifact
+  (the staged diff) and the contract (spec.md/RULES.md) only, not the
+  implementer's own reasoning, found and fixed one P2 the implementation
+  missed and flagged one P2 as a residual risk out of scope for this story:
+  - Fixed: `review capture --story` only called `resolveStoryDir` (exists +
+    inside the project root), not `harness.js`'s `requireStoryScope` — the
+    additional "must be under `epics/` or a Spec Kit `specs/` feature" guard
+    `verify --story` already applies to the identical input, and for the
+    identical reason ("a scope that silently misses is worse than no scope
+    at all", harness.js's own comment on `requireStoryScope`). Reproduced
+    directly: `ai-flow review capture --story . --verdict pass` exited 0 and
+    wrote evidence with `"story": ""`, unfindable by any later
+    `latestReviewByStoryDir` lookup. Fixed by exporting `requireStoryScope`
+    from `harness.js` and calling it before `resolveStoryDir` in
+    `review.js`, exactly the order `verify`'s own subcommand handler already
+    uses. New test: `test/review.test.js`, "review capture rejects a --story
+    outside epics/ (and specs/), the same scope verify enforces" — confirmed
+    red against the pre-fix code before confirming it passes with the fix
+    restored. `npm test`: 519/519 (was 518/518 — one new test, no
+    regressions).
+  - Flagged, not fixed (out of this story's stated scope): landing a
+    worktree (`worktree.js`'s `landCleanup`) deletes the whole worktree,
+    including any `*-review.json` written there by `/flow-review` — unlike
+    verify evidence, which `worktreeLand` re-captures against the merged
+    root before cleanup, nothing re-captures or carries review evidence
+    across a land. Immediately after a successful land, `status` on the
+    primary checkout reports `review: none` for a story that had a passing
+    review moments before. This story's requirements never claim evidence
+    survives a land (only that it exists and is readable while it does), so
+    left open rather than designed in under review pressure — recorded here
+    and in `docs/DOGFOODING.md` as a real gap for story-04-02 (which is
+    supposed to gate STRICT completion on this evidence) to account for.
+
+- **Second independent `/flow-review` pass (2026-08-29, fresh session)**,
+  again against the artifact and contract only: verdict pass, no correctness
+  issue found. Two P3s (both non-blocking) applied:
+  - `writeVerifyEvidence` (harness.js) and `writeReviewEvidence` (review.js)
+    had hand-copied the identical mkdir+timestamp+collision-avoidance
+    mechanism — generic file-naming plumbing, not the verify/review evidence
+    separation this story's own Decisions above argue for keeping distinct.
+    Extracted `writeTimestampedEvidence(dir, suffix, evidence)` into
+    `util.js`; both callers now delegate to it.
+  - The one untested branch in `review.js` — a missing or unknown `review`
+    subcommand — got a test in `test/review.test.js`.
+  `npm test`: 520/520 (was 519/519 — one new test, no regressions).
+
 ## Test Plan
 
 - `test/review-evidence.test.js` (new): `writeReviewEvidence` writes a

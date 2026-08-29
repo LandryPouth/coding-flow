@@ -10,7 +10,7 @@ const path = require("path");
 const { cwd } = require("./context");
 const { log, toPortable } = require("./util");
 const { collectWorktrees, realDirtyLines } = require("./worktree");
-const { latestVerifyByStoryDir, isStale } = require("./audit");
+const { latestVerifyByStoryDir, latestReviewByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
 const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
@@ -62,6 +62,28 @@ function computeLandReady(worktreePath, storyPath) {
   }
 
   return "landable";
+}
+
+// Story-04-01: `"pass"` (fresh), `"stale"` (evidence exists, tree moved
+// since), `"fail"`, or `"none"` (no evidence ever captured). Read from the
+// same location `computeLandReady` reads verify from — the story's own
+// worktree when it has one, `cwd` (the primary checkout) otherwise, since a
+// review capture is not gated on a worktree existing at all. `isStale`
+// itself already requires `entry.ok` to be true (audit.js), so a failed
+// review can never register as stale here — checking staleness first is
+// still correct, not just convenient: it lets the two checks read in the
+// same "freshest signal first" order the states are documented in.
+function computeReviewStatus(root, storyPath) {
+  const entry = latestReviewByStoryDir(root).get(storyPath);
+  if (!entry) {
+    return "none";
+  }
+
+  if (isStale(entry, currentTreeToken(root))) {
+    return "stale";
+  }
+
+  return entry.ok ? "pass" : "fail";
 }
 
 const PLANS_DIR = "docs/plans";
@@ -116,8 +138,14 @@ function buildStatusModel(config) {
       }
 
       const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
+      const review = computeReviewStatus(wtEntry ? wtEntry.fullPath : cwd, story.path);
 
-      return { ...story, worktree: wtEntry ? wtEntry.path : null, ...(wtEntry ? { landReady } : {}) };
+      return {
+        ...story,
+        worktree: wtEntry ? wtEntry.path : null,
+        ...(wtEntry ? { landReady } : {}),
+        review,
+      };
     }),
   }));
 
@@ -177,7 +205,8 @@ function status({ json = false } = {}) {
         const wtSuffix = story.worktree
           ? `  → wt: ${story.worktree} [${story.landReady}]`
           : "";
-        log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}`);
+        const reviewSuffix = story.review !== "none" ? `  review: ${story.review}` : "";
+        log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}${reviewSuffix}`);
       }
       log("");
     }

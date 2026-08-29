@@ -30,6 +30,7 @@ const {
   normalizePortable,
   readJson,
   writeJson,
+  writeTimestampedEvidence,
   addIssue,
   matchesPattern,
   isAllowedEnvExample,
@@ -2176,18 +2177,7 @@ function findReusableVerify({ storyRelativePath, commands }) {
 // name always ends in -verify.json (so the ledger/audit ingest it) and stays
 // unique even inside a tight batch loop: same-millisecond writes get a counter.
 function writeVerifyEvidence(evidence) {
-  fs.mkdirSync(harnessRunsDir(), { recursive: true });
-  const base = new Date().toISOString().replace(/[:.]/g, "-");
-  let outputPath = path.join(harnessRunsDir(), `${base}-verify.json`);
-  let counter = 1;
-
-  while (fs.existsSync(outputPath)) {
-    outputPath = path.join(harnessRunsDir(), `${base}-${counter}-verify.json`);
-    counter += 1;
-  }
-
-  writeJson(outputPath, evidence);
-  return outputPath;
+  return writeTimestampedEvidence(harnessRunsDir(), "verify", evidence);
 }
 
 // `--story` scopes the proof, and a scope that silently misses is worse than no
@@ -2196,8 +2186,10 @@ function writeVerifyEvidence(evidence) {
 // as-is. `run` already refuses this (run.js selectStories); now that
 // `verify --story` is the promoted, typed-by-hand escape hatch, it must too.
 //
-// Only verify is this strict. `preflight` deliberately reports a missing story as
-// "(missing)", and `check` legitimately scopes its secret scan to any directory.
+// Verify and `review capture` (review.js — the same "a typo'd --story must not
+// silently produce evidence for the wrong thing" reasoning) are this strict.
+// `preflight` deliberately reports a missing story as "(missing)", and `check`
+// legitimately scopes its secret scan to any directory.
 function requireStoryScope(story) {
   const storyDir = resolveStoryDir(story);
 
@@ -2404,6 +2396,7 @@ module.exports = {
   writeVerifyEvidence,
   resolveValidationCommands,
   resolveStoryDir,
+  requireStoryScope,
   captureEnvironment,
   // Reused by `worktree land`'s post-merge re-verify so a failing command is
   // reported in the exact shape `ai-flow verify` already reports one in.

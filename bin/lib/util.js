@@ -151,6 +151,25 @@ function writeJson(filePath, value) {
   fs.renameSync(`${filePath}.tmp`, filePath);
 }
 
+// Shared by every evidence writer (`writeVerifyEvidence`, `writeReviewEvidence`,
+// ...): a millisecond timestamp is a unique-enough filename in practice, and the
+// counter only matters inside a tight batch loop where two writes land in the
+// same millisecond.
+function writeTimestampedEvidence(dir, suffix, evidence) {
+  fs.mkdirSync(dir, { recursive: true });
+  const base = new Date().toISOString().replace(/[:.]/g, "-");
+  let outputPath = path.join(dir, `${base}-${suffix}.json`);
+  let counter = 1;
+
+  while (fs.existsSync(outputPath)) {
+    outputPath = path.join(dir, `${base}-${counter}-${suffix}.json`);
+    counter += 1;
+  }
+
+  writeJson(outputPath, evidence);
+  return outputPath;
+}
+
 function removeFileIfExists(filePath, { dryRun = false } = {}) {
   if (!fs.existsSync(filePath)) {
     return false;
@@ -401,6 +420,7 @@ module.exports = {
   parseFrontmatter,
   readJson,
   writeJson,
+  writeTimestampedEvidence,
   removeFileIfExists,
   isPathInside,
   removeEmptyDirsUpward,

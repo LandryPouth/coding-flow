@@ -12,7 +12,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const { cwd } = require("./context");
-const { log, normalizePortable } = require("./util");
+const { log, normalizePortable, readJson } = require("./util");
 const { currentTreeToken } = require("./identity");
 
 function runsDir(root) {
@@ -340,6 +340,47 @@ function latestVerifyByStoryDir(root) {
   return byDir;
 }
 
+// Latest REVIEW result per story DIRECTORY (story-04-01) — mirrors
+// `latestVerifyByStoryDir` exactly in shape (`{ok, generatedAt, treeToken}`)
+// and multi-run handling (latest by `generatedAt` wins), but reads
+// `.coding-flow/runs/*-review.json` directly rather than through
+// `collectAll`/the ledger: review evidence is not audit-ledger material (no
+// gate reads it yet — that is story-04-02), just a durable fact `status`
+// surfaces. `review.js`'s writer is the only producer of these files, and it
+// always records `story` as the same project-relative directory path
+// `latestVerifyByStoryDir`'s callers key on, so no `.md`-suffix normalization
+// is needed here the way the verify reader needs it.
+function latestReviewByStoryDir(root) {
+  const byDir = new Map();
+  const dir = runsDir(root);
+
+  if (!fs.existsSync(dir)) {
+    return byDir;
+  }
+
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!name.endsWith("-review.json")) {
+      continue;
+    }
+
+    const data = readJson(path.join(dir, name), null);
+    if (!data || !data.story) {
+      continue;
+    }
+
+    const prev = byDir.get(data.story);
+    if (!prev || (data.generatedAt || "") > (prev.generatedAt || "")) {
+      byDir.set(data.story, {
+        ok: Boolean(data.ok),
+        generatedAt: data.generatedAt || "",
+        treeToken: (data.provenance && data.provenance.git && data.provenance.git.treeToken) || null,
+      });
+    }
+  }
+
+  return byDir;
+}
+
 function buildAuditMarkdown(entries) {
   const lines = [
     "# Audit ledger",
@@ -503,6 +544,7 @@ module.exports = {
   gate,
   isStale,
   latestVerifyByStoryDir,
+  latestReviewByStoryDir,
   buildAuditMarkdown,
   entryFromRunFile,
   collectDecisions,

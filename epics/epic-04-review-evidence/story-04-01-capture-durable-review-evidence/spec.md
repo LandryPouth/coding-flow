@@ -42,22 +42,22 @@ visible.
 
 ## Acceptance Criteria
 
-- [ ] Given a `/flow-review` pass completes with verdict `pass`, when it runs
+- [x] Given a `/flow-review` pass completes with verdict `pass`, when it runs
       `ai-flow review capture --story <dir> --verdict pass`, then a review
       evidence file exists under `.coding-flow/runs/` with `ok: true`, the
       correct story path, and the current tree token.
-- [ ] Given that evidence was captured and nothing in the tree changes since,
+- [x] Given that evidence was captured and nothing in the tree changes since,
       when `latestReviewByStoryDir`/`ai-flow status` reads it back, then the
       story's review reports fresh-pass.
-- [ ] Given the tree changes after capture (a real commit touching source
+- [x] Given the tree changes after capture (a real commit touching source
       outside `.coding-flow/`), when read again, then the review reports
       stale — using `isStale` unchanged, not a new rule.
-- [ ] Given a `/flow-review` pass completes with verdict `fail`, when
+- [x] Given a `/flow-review` pass completes with verdict `fail`, when
       captured, then `ok: false` is recorded and status reports `fail`,
       distinct from `stale` and from `none`.
-- [ ] Given a story with no review ever captured, when status is read, then
+- [x] Given a story with no review ever captured, when status is read, then
       it reports `none` — not an error, not conflated with `fail`.
-- [ ] Given two review captures exist for the same story, when read back,
+- [x] Given two review captures exist for the same story, when read back,
       then only the latest by `generatedAt` is reported — mirroring
       `latestVerifyByStoryDir`'s own multi-run resolution exactly.
 

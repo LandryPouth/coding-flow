@@ -76,6 +76,7 @@ const { nextCommand } = require("./lib/next");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { harnessCommand, ensureHarnessConfig } = require("./lib/harness");
 const { auditCommand } = require("./lib/audit");
+const { reviewCommand } = require("./lib/review");
 const { traceCommand } = require("./lib/trace");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
@@ -386,6 +387,8 @@ if (command === "init") {
   reportCommand({ getFlagValue, flags });
 } else if (command === "audit") {
   auditCommand({ getFlagValue, flags });
+} else if (command === "review") {
+  reviewCommand({ commandArgs, getFlagValue, flags });
 } else if (command === "trace") {
   traceCommand({ getFlagValue, flags });
 } else if (command === "ci") {

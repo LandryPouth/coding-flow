@@ -131,6 +131,9 @@ Usage:
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
   ai-flow audit [--export] [--check] [--since iso] [--decisions] [--json] [--dry-run]
+  ai-flow review capture --story path --verdict pass|fail [--reviewer self|subagent]
+                [--architecture|--tests|--security|--quality|--e2e quick|deep|skipped]
+                [--p0 n] [--p1 n] [--p2 n] [--p3 n] [--json]
   ai-flow trace [--story path] [--json]
   ai-flow ci init [--force] [--dry-run]
   ai-flow plugin sync|check [--json] [--dry-run]
@@ -169,6 +172,7 @@ Machinery (usually run FOR you by the skills, CI, or the git hook):
   harness      Run security checks (check), execute declared validation commands (verify), write evidence.
   audit        Aggregate evidence into an append-only ledger; --export writes docs/AUDIT.md, --check is the CI gate.
                --decisions: cross-epic view of every story's recorded ## Decisions (--export writes docs/DECISIONS.md).
+  review       capture: write a /flow-review verdict to .coding-flow/runs/ as durable evidence (status reads it back).
   trace        Show the story -> commits -> PR -> evidence -> tests chain and flag missing links.
   guard        PreToolUse hook: deny writes to blocked paths or secret content (wired into settings.json by init).
   hook         Install/remove an opt-in pre-push gate that runs audit --check before each push.
@@ -209,6 +213,11 @@ Flags:
   --test-exemption  Reason a verified change carries no test; recorded verbatim in the evidence.
   --since    Filter audit entries to those generated at or after an ISO timestamp.
   --decisions  Aggregate every story's ## Decisions section instead of the run-evidence ledger.
+  --verdict    Outcome recorded by review capture: pass or fail.
+  --reviewer   Who ran the review capture records: self (default) or subagent.
+  --architecture, --tests, --security, --quality, --e2e
+               Depth review capture records per dimension: quick, deep, or skipped (default).
+  --p0, --p1, --p2, --p3  Finding counts by severity for review capture (default 0).
   --epic     Scope run to every story in one epic (matched by name).
   --driver   Executor for run: none (default; verify only). Agent drivers are reserved.
   --storage  Storage backend recorded at init: local (default; github is reserved).
