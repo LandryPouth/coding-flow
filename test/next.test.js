@@ -108,7 +108,7 @@ test('next flags a story marked done whose last captured verify failed', (t) => 
   assert.match(output, /last captured verify failed/);
 });
 
-test('next suggests worktree add for a planned story with no worktree', (t) => {
+test('next suggests worktree place for a planned story with no worktree', (t) => {
   const { repo } = initRepo(t);
   const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\nnot started\n');
   commitAll(repo, 'init');
@@ -116,7 +116,7 @@ test('next suggests worktree add for a planned story with no worktree', (t) => {
   const { code, output } = run(repo, ['next']);
   assert.equal(code, 0);
   assert.match(output, /\[planned\]/);
-  assert.match(output, new RegExp(`ai-flow worktree add --story ${storyPath}`));
+  assert.match(output, new RegExp(`ai-flow worktree place --epic epics/epic-01-x --story ${storyPath}`));
 });
 
 test('next suggests ship for a proven story with unshipped work on the checked-out branch', (t) => {

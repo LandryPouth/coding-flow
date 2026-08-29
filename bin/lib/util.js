@@ -145,10 +145,22 @@ function readJson(filePath, fallback = null) {
   }
 }
 
+// The staging file is unique per call (pid + random suffix), not a fixed
+// `<filePath>.tmp`: a fixed name means two processes writing the same
+// `filePath` around the same time can stage into and rename away the same
+// tmp file from under each other — one call's write silently vanishes with
+// no error, the other's `renameSync` throws a raw ENOENT, regardless of how
+// carefully the caller sequenced its own read-decide-write (see
+// worktree-plan.js's `claimChainIfPossible`, the first caller that relies on
+// this surviving real concurrent writers). A unique staging name makes each
+// writer's tmp file its own, so `renameSync` always succeeds for its own
+// write; only the final rename can still race (last-writer-wins on the
+// target path), which is the narrower, already-accepted behavior.
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(`${filePath}.tmp`, `${JSON.stringify(value, null, 2)}\n`);
-  fs.renameSync(`${filePath}.tmp`, filePath);
+  const tmpPath = `${filePath}.${process.pid}.${require("crypto").randomBytes(6).toString("hex")}.tmp`;
+  fs.writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`);
+  fs.renameSync(tmpPath, filePath);
 }
 
 // Shared by every evidence writer (`writeVerifyEvidence`, `writeReviewEvidence`,

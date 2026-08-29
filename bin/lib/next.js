@@ -142,7 +142,7 @@ function buildQueue() {
           epic: epic.name,
           story: story.name,
           message: `"${story.name}" is planned and has no worktree yet`,
-          command: `ai-flow worktree add --story ${story.path}`,
+          command: `ai-flow worktree place --epic ${epic.path} --story ${story.path}`,
         });
       }
     }
