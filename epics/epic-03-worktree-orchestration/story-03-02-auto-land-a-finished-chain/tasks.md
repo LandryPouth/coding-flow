@@ -386,6 +386,40 @@ a pass that also ran the full suite itself and confirmed it green:
   re-verify call above it. `npm test`: 547/547 (was 544/544 — three new
   tests, no regressions).
 
+**Sixth `/flow-review` pass (2026-08-29)**, given the artifact and the
+contract only, found and fixed a P1 the first five passes missed — the same
+class of bug as the fourth pass, on a call site that pass's own "two calls"
+inventory (plan.md's Decisions) missed:
+
+- `landCleanup` (`bin/lib/worktree.js`) is called from both places inside
+  `worktreeLand`'s locked section (the already-landed shortcut and the normal
+  success path), but its own `git worktree remove`/`git worktree prune` calls
+  still went through the shared `git()` helper's default (non-`allowFail`)
+  path — which calls `fail()` → `process.exit()`, exactly the mechanism the
+  fourth pass's fix was built to eliminate from that section. Reproduced
+  directly: a validation command that drops a stray, unmanaged file into the
+  story worktree during the post-merge re-verify (after the pre-lock dirty
+  check already passed clean — a real race window this story's own lock
+  exists to protect, not a contrived one) makes `git worktree remove` refuse
+  ("contains modified or untracked files"), and the lock file is left on disk
+  (confirmed with a standalone script showing the lock survives the process
+  exit, and end-to-end through the real CLI). Consequence: every later `land`
+  — including a concurrent auto-land from another chain, the exact scenario
+  this lock exists to serialize — would wait out the full 10-minute timeout
+  before the 15-minute stale-reclaim frees it.
+  Fixed the same way as every other mutating call in the locked section:
+  `{ allowFail: true }` plus a thrown `Error`, worded to make clear the merge
+  itself already succeeded (retrying `land` is safe — it takes the
+  already-landed shortcut next time).
+- New test: `test/worktree.test.js`, "worktree land releases the shared lock
+  instead of leaking it when landCleanup's worktree removal fails" —
+  confirmed red against the pre-fix code (temporarily reverted
+  `worktree.js`, kept the new test: the lock file was left on disk) before
+  confirming it passes, and releases the lock, with the fix restored.
+  `npm test`: 548/548 (was 547/547 — one new test, no regressions).
+- plan.md's Decisions updated: the "two calls" inventory now also accounts
+  for `landCleanup`'s two, and records this pass.
+
 ## Test Exemption
 
 None — new behavior is covered directly (`test/worktree-autoland.test.js`).

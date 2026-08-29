@@ -151,6 +151,34 @@
   `placement-store.js`, kept the new test: failed with "waited 581ms, held
   800ms") before confirming it passes with the fix restored.
 
+- **Sixth `/flow-review` pass (2026-08-29)** found the "two calls" inventory
+  above was itself incomplete: `landCleanup` (called from both call sites
+  inside the same locked section — the already-landed shortcut and the normal
+  success path) made its own `git worktree remove`/`git worktree prune` calls
+  through the shared `git()` helper's default (non-`allowFail`) path, which
+  also calls `fail()` → `process.exit()`. Reproduced directly (a validation
+  command that drops a stray, unmanaged file into the story worktree during
+  the post-merge re-verify — after the pre-lock dirty check already passed
+  clean, so this is a real race window, not a contrived one): `git worktree
+  remove` then refuses ("contains modified or untracked files"), `fail()`
+  fires from inside `withFileLock`'s callback, and the lock file is left on
+  disk — confirmed with a standalone script showing the lock survives the
+  process exit. Every later `land` (including a concurrent auto-land from
+  another chain, exactly what this lock exists to protect) would then wait
+  out the full 10-minute timeout before the 15-minute stale-reclaim frees it.
+  Fixed the same way as every other mutating call in this section:
+  `{ allowFail: true }` plus a thrown `Error` naming what failed and making
+  clear the merge itself already succeeded (so retrying `land` is safe — it
+  will take the already-landed shortcut). The "two calls" inventory above is
+  accurate again now that `landCleanup`'s two calls are converted alongside
+  it.
+  New test: `test/worktree.test.js`, "worktree land releases the shared lock
+  instead of leaking it when landCleanup's worktree removal fails" — confirmed
+  red against the pre-fix code (temporarily reverted `worktree.js`, kept the
+  new test: the lock file was left on disk) before confirming it passes, and
+  releases the lock, with the fix restored. `npm test`: 548/548 (was 547/547
+  — one new test, no regressions).
+
 ## Test Plan
 
 - Extend `worktree.test.js`'s existing real-temp-git-repo pattern: a

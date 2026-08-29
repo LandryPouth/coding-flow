@@ -594,8 +594,29 @@ function conflictingFiles(wtPath) {
 function landCleanup(root, match, branch, found) {
   worktreeUnlock({ cwd: match.path, force: true });
   removeManagedLinks(match.path);
-  git(root, ["worktree", "remove", match.path]);
-  git(root, ["worktree", "prune"]);
+
+  // `allowFail` + `throw`, not the default `git()` path: `landCleanup` always
+  // runs inside `worktreeLand`'s `withFileLock` callback (both call sites
+  // below), and `fail()`'s `process.exit()` terminates before that lock's own
+  // `finally` can release it — the same reasoning already applied to every
+  // other mutating call in that locked section (see the comment above
+  // `LAND_LOCK_WAIT_TIMEOUT_MS`). By the time this runs the merge has already
+  // landed (or was already merged, in the already-landed shortcut), so a
+  // cleanup failure here must not be reported as a failed land, but it must
+  // not silently swallow a real error either — surface it, once the lock is
+  // already free, with a message that says what actually happened.
+  const remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
+  if (remove.code !== 0) {
+    throw new Error(
+      `the merge for "${branch}" already landed, but removing its worktree (${match.path}) failed: ` +
+        `${remove.stderr.trim()}. Fix the underlying issue and remove it manually ` +
+        `(\`git worktree remove --force ${match.path}\`), or run land again — it is safe to retry.`,
+    );
+  }
+  const prune = git(root, ["worktree", "prune"], { allowFail: true });
+  if (prune.code !== 0) {
+    throw new Error(`the merge for "${branch}" already landed, but \`git worktree prune\` failed: ${prune.stderr.trim()}.`);
+  }
   if (branch) {
     git(root, ["branch", "-D", branch], { allowFail: true });
   }

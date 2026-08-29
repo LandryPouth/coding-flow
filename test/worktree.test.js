@@ -741,3 +741,48 @@ test('worktree land waits for the shared land lock instead of racing a concurren
   );
   assert.ok(!fs.existsSync(storyWt), 'the worktree must be removed once land finally runs');
 });
+
+test('worktree land releases the shared lock instead of leaking it when landCleanup\'s worktree removal fails', (t) => {
+  const { base, repo } = freshRepo(t);
+  const storyWt = worktreePath(base, 'story-01');
+
+  // The post-merge re-verify's validation command runs with cwd = repo (the
+  // root, `context.js`'s real process.cwd()) — used here to drop a stray,
+  // unmanaged file into the story worktree DURING land's lock-held critical
+  // section (after the pre-lock dirty check already passed clean, and after
+  // the merge itself already succeeded), reproducing the race that makes
+  // `git worktree remove` fail inside `landCleanup`.
+  const strayFile = path.join(storyWt, 'stray.txt');
+  const strayScript = path.join(base, 'drop-stray.js');
+  fs.writeFileSync(strayScript, `require('fs').writeFileSync(${JSON.stringify(strayFile)}, 'x');\n`);
+  const command = `node ${JSON.stringify(strayScript)}`;
+  fs.mkdirSync(path.join(repo, 'epics', 'epic-01', 'story-01'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'epics', 'epic-01', 'story-01', 'story.md'), '# Story\n');
+  fs.mkdirSync(path.join(repo, '.coding-flow'), { recursive: true });
+  fs.writeFileSync(
+    path.join(repo, '.coding-flow', 'config.json'),
+    JSON.stringify({ validation: { commands: [command] } }, null, 2),
+  );
+  commitAll(repo, 'add story + a validation command that drops a stray file mid-land');
+
+  addStoryWorktree(base, repo, 'story-01');
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+
+  assert.notEqual(code, 0, `land must report the cleanup failure rather than exiting 0: ${output}`);
+  assert.match(output, /already landed/, 'the failure must make clear the merge itself already succeeded');
+  assert.match(output, /worktree remove/, 'the failure must name what actually failed (not a generic message)');
+
+  const root = sh(repo, 'git', ['rev-parse', '--show-toplevel']).trim();
+  const lockPath = path.join(gitCommonDir(root), 'coding-flow', 'land.lock');
+  assert.ok(
+    !fs.existsSync(lockPath),
+    'the land lock must be released (thrown Error unwinds normally) rather than leaked by an unguarded fail()/process.exit() inside landCleanup',
+  );
+
+  const log = sh(repo, 'git', ['log', '--oneline']);
+  assert.match(log, /story: add feature/, 'the merge itself must have gone through despite the cleanup failure');
+});
