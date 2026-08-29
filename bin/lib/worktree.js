@@ -24,7 +24,7 @@ const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
-const { verifyStoryOnce, writeVerifyEvidence, printVerify } = require("./harness");
+const { verifyStoryOnce, writeVerifyEvidence, printVerify, resolveValidationCommands } = require("./harness");
 // Leaf modules only (neither requires this file) — safe from here without
 // creating a cycle with worktree-plan.js, which itself requires this file
 // for `worktreeAdd`. See placement-store.js's own header.
@@ -671,11 +671,45 @@ function landCleanup(root, match, branch, found) {
 // `/flow-review` pass reproduced this as the story's one remaining gap.
 // `land`'s critical section can run a real, unbounded test suite (unlike
 // `placement-store.js`'s own JSON read+write, which is fast and bounded), so
-// both timeouts below are generous: a legitimate concurrent land waits far
-// longer than any placement claim would, and a lock is only ever stolen from
-// a holder that has clearly crashed, not one still mid-validation.
+// both timeouts below are floors, not the values actually used — see
+// `landLockTimeouts` just below, which scales them up from the project's own
+// configured validation commands.
 const LAND_LOCK_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 const LAND_LOCK_STALE_MS = 15 * 60 * 1000;
+
+// Mirrors `harness.js`'s `runValidationCommand` default (`timeoutMs = 600000`)
+// — the actual per-command ceiling the post-merge re-verify below is bound
+// by. The fixed floors above were picked as "generous" without being checked
+// against that default: `verifyStoryOnce` runs every configured validation
+// command SEQUENTIALLY (`harness.js`'s own `.map`), so a project declaring as
+// few as two or three ordinary commands (none individually near its own
+// 10-minute cap) can legitimately run longer than a fixed 15-minute
+// `staleMs` — at which point a concurrent land, arriving even a few minutes
+// after the first (well within "two chains finishing near the same moment"),
+// would see the still-working holder's lock as abandoned, steal it, and race
+// its own merge/rebase/reset against the same shared checkout the first
+// land's validation commands are still reading — the exact interleaving this
+// lock exists to prevent, reproduced by a later `/flow-review` pass tracing
+// the constants above against harness.js's own timeout default rather than
+// accepting them as already generous enough.
+const PER_COMMAND_TIMEOUT_MS = 600000;
+const LAND_LOCK_WAIT_MARGIN_MS = 2 * 60 * 1000;
+const LAND_LOCK_STALE_MARGIN_MS = 5 * 60 * 1000;
+
+// Pure: derives both timeouts from how many validation commands `land`'s
+// re-verify will actually run, never below the fixed floors above (the
+// common case: no configured commands, or few enough that the floors already
+// cover their worst case comfortably). Kept separate from the actual
+// (impure, config-reading) command count lookup below so the scaling itself
+// is unit-testable with a plain number, without needing a real project
+// checkout.
+function landLockTimeouts(commandCount) {
+  const worstCaseMs = commandCount * PER_COMMAND_TIMEOUT_MS;
+  return {
+    waitTimeoutMs: Math.max(LAND_LOCK_WAIT_TIMEOUT_MS, worstCaseMs + LAND_LOCK_WAIT_MARGIN_MS),
+    staleMs: Math.max(LAND_LOCK_STALE_MS, worstCaseMs + LAND_LOCK_STALE_MARGIN_MS),
+  };
+}
 
 // Reconciles a finished, verified story worktree onto the branch `land` runs
 // from: ff-only merge when possible, a rebase replay when the target moved,
@@ -770,6 +804,21 @@ function worktreeLand(name, { cwd, story }) {
   // itself is broken on a repo already proven valid moments earlier, at
   // which point a stuck lock is the least of the problem (the stale-timeout
   // reclaim below still recovers it, just not immediately).
+  //
+  // Command count resolved the same way the re-verify call inside the lock
+  // resolves its own (`verifyStoryOnce({ story: null, ... })` → `storyDir:
+  // null`) — a mismatch here would size the lock's timeouts for a different
+  // set of commands than the ones actually about to run. Best-effort: an
+  // unreadable config must not block land over sizing a lock, so this falls
+  // back to the fixed floors in `landLockTimeouts` rather than throwing.
+  let landCommandCount = 0;
+  try {
+    landCommandCount = resolveValidationCommands({ storyDir: null }).commands.length;
+  } catch {
+    // Falls back to the fixed floors below.
+  }
+  const { waitTimeoutMs, staleMs } = landLockTimeouts(landCommandCount);
+
   try {
     withFileLock(
       path.join(gitCommonDir(root), "coding-flow", "land.lock"),
@@ -883,7 +932,7 @@ function worktreeLand(name, { cwd, story }) {
         landCleanup(root, match, branch, found);
         log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
       },
-      { waitTimeoutMs: LAND_LOCK_WAIT_TIMEOUT_MS, staleMs: LAND_LOCK_STALE_MS },
+      { waitTimeoutMs, staleMs },
     );
   } catch (err) {
     fail(err.message);
@@ -945,4 +994,5 @@ module.exports = {
   worktreeDest,
   requireRepo,
   resolveStory,
+  landLockTimeouts,
 };

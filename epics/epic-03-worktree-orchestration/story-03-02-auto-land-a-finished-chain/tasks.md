@@ -440,6 +440,44 @@ request rather than left for a future story:
   before confirming it passes with the fix restored. `npm test`: 549/549 (was
   548/548 — one new test, no regressions).
 
+**Eighth `/flow-review` pass (2026-08-29)** found the Seventh pass's fix was
+necessary but not sufficient — it stops a stolen lock's original holder from
+destroying the new owner's lock file, but does not stop the theft itself:
+
+- `LAND_LOCK_STALE_MS` (15 minutes, a fixed guess) was never checked against
+  `harness.js`'s own timeout default: `verifyStoryOnce` runs its validation
+  commands SEQUENTIALLY, each capped at `runValidationCommand`'s default 10
+  minutes, with no limit on command count. A project declaring 2+ ordinary
+  commands (none individually near its own cap) can legitimately exceed 15
+  minutes — at which point a second auto-land arriving even a few minutes
+  later (well inside "two chains finishing near the same moment") steals the
+  first's lock and races its own merge/rebase/reset against the same shared
+  checkout the first is still using — the exact interleaving this lock exists
+  to prevent.
+  Fixed by deriving both `waitTimeoutMs` and `staleMs` from the project's
+  actual configured validation-command count (`landLockTimeouts` in
+  `bin/lib/worktree.js`, using the same `resolveValidationCommands({
+  storyDir: null })` resolution `land`'s own re-verify call uses) instead of
+  a fixed guess — `max(fixed floor, commandCount * 600000 + margin)` for
+  each, so a project whose real worst case exceeds the old constants gets
+  timeouts that actually cover it, and a project with few or no commands
+  keeps the previous behavior unchanged.
+- New tests: `test/worktree.test.js`, "landLockTimeouts scales both timeouts
+  with the number of validation commands, never below the fixed floors" (unit
+  test on the pure derivation) and "worktree land does not steal a lock aged
+  past the fixed stale floor when the project declares enough validation
+  commands to legitimately need longer" — confirmed red against the pre-fix
+  code (temporarily reverted to the fixed constants: `land` stole a
+  16-minutes-backdated lock after ~605ms instead of waiting the full 800ms
+  for its real release) before confirming it waits correctly with the fix
+  restored. `npm test`: 551/551 (was 549/549 — two new tests, no
+  regressions).
+- Residual, recorded in plan.md's Decisions: this narrows the remaining gap
+  to a validation command whose actual runtime exceeds the fixed
+  per-command constant this derivation assumes — a true heartbeat would close
+  that too, deferred as real added complexity beyond what this story's
+  acceptance criteria require.
+
 ## Test Exemption
 
 None — new behavior is covered directly (`test/worktree-autoland.test.js`).

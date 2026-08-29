@@ -215,6 +215,63 @@
   passes with the fix restored. `npm test`: 549/549 (was 548/548 — one new
   test, no regressions).
 
+- **Eighth `/flow-review` pass (2026-08-29)** found that the Seventh pass's
+  ownership token only closed half the gap it described: it stops a stolen
+  lock's original holder from deleting the new owner's lock file, but does
+  nothing about the theft itself — a holder that is still genuinely alive and
+  working can still have its lock stolen once `LAND_LOCK_STALE_MS` (15
+  minutes) elapses, at which point the thief runs its own merge/rebase/reset
+  concurrently against the same shared checkout the original holder is still
+  using. Traced against `harness.js`'s own defaults rather than treated as an
+  already-acceptable edge case: `verifyStoryOnce`'s validation commands run
+  SEQUENTIALLY (`results = resolution.commands.map(...)`), each individually
+  capped at `runValidationCommand`'s default `timeoutMs` of 600000ms (10
+  minutes), with no cap on how many commands a project's
+  `config.validation.commands`/`quality` declares. A project with as few as 2
+  ordinary commands can legitimately run past the fixed 15-minute `staleMs`
+  with nothing individually near its own per-command cap — not a contrived
+  extreme, an unremarkable multi-command validation config. At that point a
+  second auto-land arriving even a few minutes after the first (well inside
+  "two chains finishing near the same moment", spec.md's own scenario) steals
+  the lock instead of waiting, exactly the interleaving this lock exists to
+  prevent.
+  Fixed by deriving both lock timeouts from the project's own configured
+  validation-command count instead of a fixed guess: `landLockTimeouts`
+  (`bin/lib/worktree.js`) takes the count `resolveValidationCommands({
+  storyDir: null })` reports (the same resolution `land`'s own re-verify call
+  uses) and returns `max(fixed floor, commandCount * 600000 + margin)` for
+  both `waitTimeoutMs` and `staleMs` — so a project whose real worst case
+  exceeds the old fixed constants gets timeouts that actually cover it,
+  while a project with few or no configured commands keeps exactly the
+  previous 10-minute/15-minute behavior. The command-count lookup is
+  best-effort (an unreadable config falls back to the fixed floors rather
+  than blocking land over it); the timeout arithmetic itself is a pure
+  function of a plain number, kept separate and exported so it is
+  unit-testable without a real project checkout.
+  New tests: `test/worktree.test.js`, "landLockTimeouts scales both timeouts
+  with the number of validation commands, never below the fixed floors" (unit
+  test on the pure function) and "worktree land does not steal a lock aged
+  past the fixed stale floor when the project declares enough validation
+  commands to legitimately need longer" (a lock backdated 16 minutes — past
+  the OLD fixed 15-minute `staleMs` — held by a background process for 800ms,
+  against a repo configured with 3 validation commands; confirmed red against
+  the pre-fix code, temporarily reverted to the fixed constants: `land` stole
+  the backdated lock immediately, waiting only ~605ms instead of the full
+  800ms, before confirming it waits for the real release with the fix
+  restored). `npm test`: 551/551 (was 549/549 — two new tests, no
+  regressions).
+  Residual: this narrows the gap to "a validation suite whose real,
+  configured worst case still exceeds its own derived `staleMs`" (only
+  possible now if a single command's actual runtime is close to but under its
+  10-minute timeout by design and the project's true worst case is
+  underestimated by the fixed per-command constant) rather than eliminating
+  it outright — a true heartbeat (refreshing the lock file's mtime while the
+  critical section is still running, regardless of command count) would close
+  that too, but requires a background process independent of the parent's own
+  blocking `execFileSync` calls, which is real added complexity deferred for
+  now given the derived-timeout fix already covers the realistic case this
+  story's acceptance criteria describe.
+
 ## Test Plan
 
 - Extend `worktree.test.js`'s existing real-temp-git-repo pattern: a

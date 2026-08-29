@@ -14,6 +14,7 @@ const path = require('node:path');
 
 const { currentTreeToken } = require('../bin/lib/identity');
 const { gitCommonDir } = require('../bin/lib/placement-store');
+const { landLockTimeouts } = require('../bin/lib/worktree');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
@@ -785,4 +786,104 @@ test('worktree land releases the shared lock instead of leaking it when landClea
 
   const log = sh(repo, 'git', ['log', '--oneline']);
   assert.match(log, /story: add feature/, 'the merge itself must have gone through despite the cleanup failure');
+});
+
+test('landLockTimeouts scales both timeouts with the number of validation commands, never below the fixed floors', () => {
+  const zero = landLockTimeouts(0);
+  assert.equal(zero.waitTimeoutMs, 10 * 60 * 1000, 'no configured commands must fall back to the fixed wait floor');
+  assert.equal(zero.staleMs, 15 * 60 * 1000, 'no configured commands must fall back to the fixed stale floor');
+
+  const one = landLockTimeouts(1);
+  assert.ok(one.waitTimeoutMs >= zero.waitTimeoutMs, 'one command must never lower the wait floor');
+  assert.ok(one.staleMs >= zero.staleMs, 'one command must never lower the stale floor');
+
+  // Two commands at harness.js's own 10-minute-per-command default already total 20
+  // minutes — past both fixed floors above. This is the case the fixed constants
+  // got wrong: a real, unremarkable project config, not a contrived extreme.
+  const two = landLockTimeouts(2);
+  assert.ok(
+    two.staleMs > 20 * 60 * 1000,
+    `two commands must push staleMs comfortably past their own 20-minute worst case, got ${two.staleMs}`,
+  );
+  assert.ok(
+    two.waitTimeoutMs < two.staleMs,
+    'wait must still time out before stale-reclaim would fire, so a genuinely stuck lock is never raced, only reported',
+  );
+});
+
+test('worktree land does not steal a lock aged past the fixed stale floor when the project declares enough validation commands to legitimately need longer', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  // Three commands means landLockTimeouts sizes staleMs at 3 * 10min + 5min = 35
+  // minutes — comfortably past the 16-minute backdate below, unlike the old fixed
+  // 15-minute constant, which the backdate is deliberately chosen to just clear.
+  fs.writeFileSync(
+    path.join(repo, '.coding-flow', 'config.json'),
+    JSON.stringify(
+      { validation: { commands: ['node -e "process.exit(0)"', 'node -e "process.exit(0)"', 'node -e "process.exit(0)"'] } },
+      null,
+      2,
+    ),
+  );
+  commitAll(repo, 'chore: declare three validation commands');
+
+  const root = sh(repo, 'git', ['rev-parse', '--show-toplevel']).trim();
+  const lockPath = path.join(gitCommonDir(root), 'coding-flow', 'land.lock');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+
+  const holdMs = 800;
+  const backdateMs = 16 * 60 * 1000;
+  const holderPath = path.join(base, 'lock-holder.js');
+  fs.writeFileSync(
+    holderPath,
+    [
+      "const fs = require('fs');",
+      `const lockPath = ${JSON.stringify(lockPath)};`,
+      `const holdMs = ${holdMs};`,
+      `const backdateMs = ${backdateMs};`,
+      "const fd = fs.openSync(lockPath, 'wx');",
+      // Backdated past the OLD fixed 15-minute staleMs on purpose — this is what a
+      // pre-fix `land` would have treated as abandoned and stolen immediately.
+      'const old = new Date(Date.now() - backdateMs);',
+      'fs.utimesSync(lockPath, old, old);',
+      'const buf = new Int32Array(new SharedArrayBuffer(4));',
+      'Atomics.wait(buf, 0, 0, holdMs);',
+      'fs.closeSync(fd);',
+      'fs.rmSync(lockPath, { force: true });',
+    ].join('\n'),
+  );
+
+  const holder = require('node:child_process').spawn(process.execPath, [holderPath], { stdio: 'ignore' });
+  t.after(() => {
+    try {
+      holder.kill();
+    } catch {
+      // already exited on its own — nothing to clean up.
+    }
+  });
+
+  const acquireDeadline = Date.now() + 2000;
+  const pollBuf = new Int32Array(new SharedArrayBuffer(4));
+  while (!fs.existsSync(lockPath)) {
+    if (Date.now() > acquireDeadline) {
+      assert.fail('the lock holder never acquired the lock');
+    }
+    Atomics.wait(pollBuf, 0, 0, 10);
+  }
+
+  const before = Date.now();
+  const { code, output } = run(repo, ['land', 'story-01']);
+  const elapsed = Date.now() - before;
+
+  assert.equal(code, 0, `land must still succeed once the held lock is released: ${output}`);
+  assert.ok(
+    elapsed >= holdMs - 50,
+    'land must have waited for the actual release rather than stealing the lock the instant it saw an mtime ' +
+      `older than the fixed 15-minute floor (waited only ${elapsed}ms, held ${holdMs}ms)`,
+  );
 });
