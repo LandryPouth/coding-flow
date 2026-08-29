@@ -121,11 +121,21 @@ test('status flags being on the base branch under branchPerEpic', (t) => {
 
   const { output } = run(dir, ['status', '--json']);
   const data = JSON.parse(output);
+  assert.equal(data.policy.branchPerEpic, true);
   assert.equal(data.policy.branch, 'main');
   assert.equal(data.policy.onBase, true);
 
   const text = run(dir, ['status']);
   assert.match(text.output, /branchPerEpic/i, 'the policy reminder must appear in text');
+  // The hint's example must create one branch/worktree for the whole epic
+  // (`worktree place --epic`), not one scoped to a single story
+  // (`worktree add --story`) — see story-03-03.
+  assert.match(text.output, /worktree place --epic/, 'the example command must be epic-scoped');
+  assert.doesNotMatch(
+    text.output,
+    /worktree add --story/,
+    'the example command must not point at a story-scoped command',
+  );
 });
 
 test('upgrade creates config.json for a project installed before the seam', (t) => {

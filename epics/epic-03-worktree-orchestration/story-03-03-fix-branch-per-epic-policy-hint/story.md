@@ -12,12 +12,12 @@ in `bin/lib/policy.js`) are correct and unchanged.
 
 ## Acceptance Criteria
 
-- [ ] Given `branchPerEpic: true` in `.coding-flow/config.json` and the
+- [x] Given `branchPerEpic: true` in `.coding-flow/config.json` and the
       current checkout is on the base branch, when `ai-flow status` prints
       its policy reminder, then the example command it shows creates one
       branch/worktree for the whole epic — not a command scoped to a single
       story.
-- [ ] Given the same setup, when `ai-flow status --json` is inspected, then
+- [x] Given the same setup, when `ai-flow status --json` is inspected, then
       the underlying policy fields (`branchPerEpic`, `branch`, `onBase`) are
       unchanged — this story only fixes the printed reminder text, not the
       policy data.
@@ -30,4 +30,15 @@ npm test
 
 ## Result
 
-*(filled by /flow-run after implementation)*
+- **Changed**: `bin/lib/status.js`'s branch-per-epic reminder now points at
+  `ai-flow worktree place --epic <epic-dir> --story <story-dir>` — the
+  epic-aware placement command added in story-03-01 — instead of
+  `ai-flow worktree add --story <dir>`, which names its branch/worktree after
+  a single story directory and contradicted the "one branch per epic" policy
+  it was meant to illustrate. `policy.enforced`/`policy.branch`/`policy.onBase`
+  in `bin/lib/policy.js` are untouched.
+- **Verify**: green (`npm test`, 1 command via `ai-flow verify`).
+  Coverage: evidence (test file moved alongside the change; no lcov/coverage
+  report is emitted by this project's `npm test`).
+
+## Status: done

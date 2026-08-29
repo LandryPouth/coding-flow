@@ -195,7 +195,7 @@ function status({ json = false } = {}) {
   if (policy.enforced && policy.onBase) {
     log(
       `Policy branchPerEpic: you are on "${policy.branch}" (base branch). ` +
-        "Create one branch per epic (e.g. `ai-flow worktree add --story <dir>`) before coding.",
+        "Create one branch per epic (e.g. `ai-flow worktree place --epic <epic-dir> --story <story-dir>`) before coding.",
     );
     log("");
   }
