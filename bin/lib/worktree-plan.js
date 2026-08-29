@@ -415,10 +415,24 @@ function autoLandIfChainFinished({ cwd, epicPath, storyPath }) {
         }).trim();
 
         if (staged) {
-          execFileSync("git", ["commit", "-m", `chore: refresh verify for ${rootStoryPath} before auto-land`], {
-            cwd: here,
-            stdio: "ignore",
-          });
+          // Wrapped like the re-verify call above (and unlike `add`/
+          // `check-ignore`, which only fail in ways already handled): a
+          // project-local `pre-commit` hook (lint-staged, commitlint, a
+          // secrets scan) can reject even this narrow, evidence-only commit,
+          // and an uncaught `execFileSync` failure here would surface as a
+          // raw "Command failed" message instead of one of this function's
+          // otherwise consistently actionable errors.
+          try {
+            execFileSync("git", ["commit", "-m", `chore: refresh verify for ${rootStoryPath} before auto-land`], {
+              cwd: here,
+              stdio: ["ignore", "pipe", "pipe"],
+            });
+          } catch (err) {
+            const message = `${err.stdout || ""}${err.stderr || ""}`.trim() || err.message;
+            throw new Error(
+              `worktree autoland: committing the refreshed verify for chain root "${rootStoryPath}" failed: ${message}`,
+            );
+          }
         }
       }
     }

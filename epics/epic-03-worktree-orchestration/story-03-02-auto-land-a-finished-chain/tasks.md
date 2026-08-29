@@ -363,6 +363,29 @@ side rather than the placement or freshness side already covered:
   (previously only covered the parent-directory removal race), per RULES.md's
   requirement to record unresolved risk rather than leave it undocumented.
 
+**Fifth `/flow-review` pass (2026-08-29)**, two non-blocking improvements from
+a pass that also ran the full suite itself and confirmed it green:
+
+- `withFileLock`'s stale-lock-reclaim branch (`bin/lib/placement-store.js`,
+  the `Date.now() - stat.mtimeMs > staleMs` check) had zero test coverage
+  anywhere in the suite, for either its original placement-JSON use
+  (story-03-01) or this story's new one — and this story raises the stakes of
+  that branch considerably, since it now decides whether `land`'s real
+  merge/rebase/reset against the shared main checkout gets interrupted by a
+  second concurrent land. New `test/placement-store.test.js` (new file, 3
+  tests): reclaiming a lock file backdated past `staleMs`; NOT reclaiming one
+  within its stale window (waits, then times out); and the lock being
+  released even when the guarded callback throws (the exact mechanism the
+  fourth pass's `fail()`-to-`throw` conversion depends on).
+- The root-refresh step's final `git commit` (`bin/lib/worktree-plan.js`) ran
+  unguarded, unlike the `check-ignore` call two lines above it — a
+  project-local `pre-commit` hook rejecting this narrow, evidence-only commit
+  would have surfaced as a raw `execFileSync` "Command failed" message
+  instead of one of this function's otherwise consistently actionable
+  errors. Wrapped in the same try/catch pattern already used for the
+  re-verify call above it. `npm test`: 547/547 (was 544/544 — three new
+  tests, no regressions).
+
 ## Test Exemption
 
 None — new behavior is covered directly (`test/worktree-autoland.test.js`).
