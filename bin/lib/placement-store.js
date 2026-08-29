@@ -48,11 +48,23 @@ const LOCK_STALE_MS = 30000;
 // signaled, only used for its timeout as a real (non-spinning) sleep.
 const RETRY_SIGNAL = new Int32Array(new SharedArrayBuffer(4));
 
-function withPlacementLock(statePath, fn) {
-  const lockPath = `${statePath}.lock`;
+// General-purpose exclusive filesystem lock, factored out of the placement
+// state's own use below so `worktree.js` can reuse the exact same primitive
+// (wait/steal-if-stale semantics included) to serialize `worktree land`
+// against the shared main checkout (story-03-02, the /flow-review pass that
+// found two concurrent auto-lands could otherwise race destructively on the
+// same working directory) — not just this module's JSON file.
+//
+// `waitTimeoutMs`/`staleMs` are overridable per call: this module's own JSON
+// read+write is fast and bounded, so the small defaults below are right for
+// it, but `land`'s critical section runs real, unbounded project validation
+// commands — a caller with a much longer-running body must pass longer
+// values, or a legitimately still-running holder gets timed out on, or has
+// its lock stolen by a waiter that mistook "still working" for "crashed".
+function withFileLock(lockPath, fn, { waitTimeoutMs = LOCK_WAIT_TIMEOUT_MS, staleMs = LOCK_STALE_MS } = {}) {
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
 
-  const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+  const deadline = Date.now() + waitTimeoutMs;
   let fd = null;
   while (fd === null) {
     try {
@@ -60,19 +72,20 @@ function withPlacementLock(statePath, fn) {
     } catch (err) {
       if (err.code !== "EEXIST") throw err;
 
-      // A lock left behind by a crashed/killed process must not deadlock
-      // every later call forever — stealing it after it is well past any
-      // realistic hold time (this function does one JSON read+write, never
-      // `worktreeAdd`/`worktree land`) is safer than an unrecoverable stuck
-      // lock.
+      // A lock left behind by a crashed/killed process — or one abandoned by
+      // `fail()`'s `process.exit()`, which terminates before any `finally`
+      // on the stack (including this function's own, below) gets a chance to
+      // run — must not deadlock every later call forever. Stealing it once
+      // it is well past any realistic hold time is safer than an
+      // unrecoverable stuck lock.
       const stat = fs.statSync(lockPath, { throwIfNoEntry: false });
-      if (stat && Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
+      if (stat && Date.now() - stat.mtimeMs > staleMs) {
         fs.rmSync(lockPath, { force: true });
         continue;
       }
 
       if (Date.now() > deadline) {
-        throw new Error(`timed out waiting for the worktree placement lock: ${lockPath}`);
+        throw new Error(`timed out waiting for the lock: ${lockPath}`);
       }
 
       // A real blocking wait, not a CPU-spinning one: `Atomics.wait` blocks
@@ -89,6 +102,10 @@ function withPlacementLock(statePath, fn) {
     fs.closeSync(fd);
     fs.rmSync(lockPath, { force: true });
   }
+}
+
+function withPlacementLock(statePath, fn) {
+  return withFileLock(`${statePath}.lock`, fn);
 }
 
 function claimChainIfPossible(cwd, epicName, chainId, location) {
@@ -140,4 +157,5 @@ module.exports = {
   readPlacementState,
   claimChainIfPossible,
   clearChainPlacement,
+  withFileLock,
 };

@@ -62,7 +62,17 @@ ready and type `ai-flow worktree land` by hand.
 - **Concurrency**: two chains reaching "last story verified" at nearly the
   same moment must not race on removing the shared `<repo>-worktrees/`
   parent directory (only remove it if it is actually empty at removal time,
-  not based on a stale check).
+  not based on a stale check) — nor, the more consequential case a
+  `/flow-review` pass found this story's first draft left unaddressed, on
+  `land`'s own merge/rebase/reset/post-merge-validation sequence, which all
+  run directly against the shared main checkout: two auto-lands that close
+  together must serialize there too, not interleave. `worktree land` now
+  takes a real filesystem lock (`bin/lib/worktree.js`, reusing
+  `placement-store.js`'s own lock primitive) around that sequence, scoped to
+  the whole repository via `git-common-dir` so it applies regardless of
+  which worktree a `land` call runs from — see plan.md's Decisions for the
+  timeout choices and the `fail()`/`process.exit()` interaction that shaped
+  the fix.
 - **Data**: a land that fails and rolls back must leave the story's own
   worktree, branch, and placement-state entry exactly as `worktree land`
   already guarantees today — this story adds no new failure surface, only

@@ -13,6 +13,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { currentTreeToken } = require('../bin/lib/identity');
+const { gitCommonDir } = require('../bin/lib/placement-store');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
@@ -664,4 +665,79 @@ test('worktree land judges the post-land re-verify on its declared commands only
   const runs = verifyRunFiles(repo);
   assert.equal(runs.length, 1, 'the re-verify must still be recorded as evidence');
   assert.equal(runs[0].ok, true, 'the re-verify must be green: the declared command decides, not a coverage gate scoped to unrelated, already-landed history');
+});
+
+// Pins down the fix for the gap a `/flow-review` pass on story-03-02 found:
+// `worktreeLand`'s merge/rebase/reset/post-merge-validation sequence ran
+// directly against the shared main checkout with no serialization at all, so
+// two chains auto-landing near the same moment (story-03-02's whole reason to
+// exist — parallel chains finishing independently) could race destructively
+// on that one directory. Fixed by serializing `land`'s mutating section behind
+// a real filesystem lock (`placement-store.js`'s own `withFileLock`,
+// `<git-common-dir>/coding-flow/land.lock`). This test does not rely on
+// process-scheduling luck to widen a race window (contrast the CPU-spin
+// `writeRaceWorker` pattern in worktree-plan.test.js): it deterministically
+// pre-acquires the exact lock file `land` itself now takes, in a real
+// background OS process that holds it for a known duration, then asserts
+// `land` waited at least that long before proceeding — before this fix, `land`
+// had no lock to wait on at all and would have started mutating `root`
+// immediately regardless of the held file.
+test('worktree land waits for the shared land lock instead of racing a concurrent holder', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const root = sh(repo, 'git', ['rev-parse', '--show-toplevel']).trim();
+  const lockPath = path.join(gitCommonDir(root), 'coding-flow', 'land.lock');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+
+  const holdMs = 800;
+  const holderPath = path.join(base, 'lock-holder.js');
+  fs.writeFileSync(
+    holderPath,
+    [
+      "const fs = require('fs');",
+      `const lockPath = ${JSON.stringify(lockPath)};`,
+      `const holdMs = ${holdMs};`,
+      "const fd = fs.openSync(lockPath, 'wx');",
+      'const buf = new Int32Array(new SharedArrayBuffer(4));',
+      'Atomics.wait(buf, 0, 0, holdMs);',
+      'fs.closeSync(fd);',
+      'fs.rmSync(lockPath, { force: true });',
+    ].join('\n'),
+  );
+
+  const holder = require('node:child_process').spawn(process.execPath, [holderPath], { stdio: 'ignore' });
+  t.after(() => {
+    try {
+      holder.kill();
+    } catch {
+      // already exited on its own — nothing to clean up.
+    }
+  });
+
+  // Block until the holder has actually acquired the lock, so this exercises
+  // real contention rather than incidental scheduling luck.
+  const acquireDeadline = Date.now() + 2000;
+  const pollBuf = new Int32Array(new SharedArrayBuffer(4));
+  while (!fs.existsSync(lockPath)) {
+    if (Date.now() > acquireDeadline) {
+      assert.fail('the lock holder never acquired the lock');
+    }
+    Atomics.wait(pollBuf, 0, 0, 10);
+  }
+
+  const before = Date.now();
+  const { code, output } = run(repo, ['land', 'story-01']);
+  const elapsed = Date.now() - before;
+
+  assert.equal(code, 0, `land must still succeed once the held lock is released: ${output}`);
+  assert.ok(
+    elapsed >= holdMs - 50,
+    `land must have waited for the held lock instead of racing it (waited ${elapsed}ms, held ${holdMs}ms)`,
+  );
+  assert.ok(!fs.existsSync(storyWt), 'the worktree must be removed once land finally runs');
 });

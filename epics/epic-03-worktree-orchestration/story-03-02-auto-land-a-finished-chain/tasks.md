@@ -155,6 +155,214 @@ green (was 535/535 before this story).
   makes it fail loudly with neither chain's worktree or placement entry
   touched. `npm test`: 541/541 green (was 540/540).
 
+**Post-review fixes (`/flow-review`, 2026-08-29)**:
+
+- A second `/flow-review` pass, reviewing the artifact against the story's
+  contract (not this session's own reasoning), found and reproduced a P0:
+  `chainIsFinished` compared every chain member's own captured verify
+  `treeToken` against ONE shared `currentToken` computed once, at check
+  time. All of a chain's stories share one worktree/branch, so by the time
+  the chain's last member finishes, every earlier member's own token
+  necessarily predates that later member's own commits — legitimate chain
+  progression, not drift. Reproduced directly (a minimal two-commit repo,
+  outside any test fixture): comparing an earlier token against a later one
+  after a real, unrelated file commit returned `isStale: true`. Consequence:
+  auto-land could never fire for a real (non-toy) multi-story chain — it
+  silently no-opped forever, reporting `chain-not-finished`. Not caught by
+  `test/worktree-autoland.test.js` because its `writeVerify` fixture only
+  ever committed under `.coding-flow/runs/`, which `computeTreeToken`
+  deliberately excludes — so no test ever moved the token between two
+  members' verify captures.
+- Fixing just that exposed a second, deeper issue while proving the fix
+  against `flow-run`'s actual documented sequence (`SKILL.md`'s "Status From
+  Proof": verify captured, `## Status: done` written as its own commit
+  right after — for every story, chained or not): `worktree land`'s own
+  precondition (epic-02, unchanged) checks freshness only for the story
+  matching the worktree's own name, which is always the chain's ROOT story
+  (`worktreeAdd` names the worktree/branch after whichever story first
+  claimed the chain). The root's own verify predates every dependent's
+  later work by construction, so `land` refused with "stale" even after
+  `chainIsFinished` correctly recognized the chain as done — and, further
+  up, even a **single**-story chain tripped the same shared-token gate
+  inside `chainIsFinished` itself, since flow-run's own mandated
+  `## Status: done` commit lands after the verify it is based on, moving
+  the tree past it every time, chain or no chain.
+  Fixed in two parts, confirmed against real single- and multi-story
+  reproductions before touching the test suite:
+  1. `chainIsFinished` no longer compares any verify's token against the
+     current tree at all — it only requires each member to claim
+     done/verified and to have been green at some point. Freshness is a
+     real requirement, but a static comparison here cannot express it
+     correctly given flow-run's own write order; enforcing it here was
+     always going to reject a legitimately finished chain.
+  2. `autoLandIfChainFinished` now honestly re-verifies the chain's root
+     story (`ai-flow verify --story <root>`, a real command re-run, not a
+     synthesized pass) against the current tree immediately before calling
+     `land`, but only when the root's own recorded verify is missing or
+     stale — a single-story chain's own verify is already the most recent
+     thing that happened, so this is a no-op there. The refreshed evidence
+     is committed (`.coding-flow/runs/*.json` is tracked content) so
+     `land`'s own dirty-tree check does not itself refuse. `land`'s
+     ff-only/rebase/re-verify/rollback contract is still reused exactly
+     as-is, per spec.md — this only feeds it an honest, current precondition
+     instead of redefining it.
+- `test/worktree-autoland.test.js`'s "last story of a worktree'd chain
+  lands..." test now mirrors flow-run's real order (verify, then
+  `## Status: done` as its own commit, for both chain members, with real
+  code work for the second member landing in between) rather than the
+  looser sequence that had masked both gaps. `npm test`: 541/541 green
+  (was 541/541 before — same count, stronger coverage: the existing test
+  now exercises the real ordering instead of one that happened to avoid
+  both bugs).
+
+**Second `/flow-review` pass (2026-08-29)**, reviewing the artifact (the diff
+above) against the contract (spec.md, plan.md, RULES.md) rather than this
+session's own reasoning about it:
+
+- The refresh-and-commit step staged with `git add -A` before committing the
+  refreshed root evidence — broader than its own stated job (committing one
+  evidence file so `land`'s dirty-tree check does not refuse). Compared
+  against this codebase's only other automatic-commit path
+  (`ship.js`'s `autoCommitDirtyTree`, which explicitly runs a secret/
+  sensitive-file scan before ever staging, because "an automatic commit must
+  never be the thing that leaks a credential a human would have caught in
+  review"), this step had no equivalent guard and would have silently swept
+  any unrelated untracked, non-gitignored file sitting in the worktree at
+  that moment into the auto-land commit. Fixed by narrowing the stage to
+  `git add -- .coding-flow/runs` — the only path this step is ever meant to
+  touch — and skipping the commit entirely when nothing is actually staged
+  afterward (the rare case where `verify`'s own reusable-proof cache
+  answered from an already-matching evidence file without writing a new
+  one).
+- `bin/lib/worktree-plan.js`'s `findRootStoryPath` duplicates `worktree.js`'s
+  `findStoryForBranch` (not exported, hence the duplication) without its
+  best-effort try/catch around the storage read. Left as-is — the epic-name
+  scoping here is more precise than a global search, and this only ever runs
+  moments after `resolveStoryChain` has already proven the epic is
+  readable — but documented in-place so the divergence reads as deliberate,
+  not an oversight.
+- plan.md's own Decisions/Technical Notes still described the pre-fix design
+  ("reuses `land`'s preconditions... unchanged; does not duplicate or
+  re-check them"), which the first post-review fix (above) had already
+  contradicted by adding the root re-verify-and-commit step. Updated to
+  describe what the code actually does now — RULES.md requires meaningful
+  architecture decisions to live in the story's plan Decisions section, and
+  a reader opening plan.md for "why does this call verify at all" was
+  getting the old, wrong answer.
+- Test gap: no test exercised a failure *inside* the new root-refresh step
+  itself (only `land`'s own pre-existing post-merge re-verify failure,
+  epic-02, was covered). Added
+  `test/worktree-autoland.test.js`'s "a failed re-verify of a stale chain
+  root fails before land ever runs..." test — same stale-root shape as the
+  "lands" test above, but with a command that always fails, asserting the
+  worktree/branch/placement entry are all untouched and `land` is never
+  reached. Confirmed red against the pre-fix code (reverting the root-refresh
+  block fails both this new test and the earlier "lands" test, 5/7), green
+  after. `npm test`: 542/542 (was 541/541 — one new test, no regressions).
+
+**Third `/flow-review` pass (2026-08-29)**, this time explicitly given the
+artifact and the contract only (spec.md, this repo's own `.gitignore`) rather
+than the session's own reasoning about it — found and reproduced a P0 the
+first two passes missed:
+
+- The refresh step's `git add -- .coding-flow/runs` crashed with an uncaught
+  error on this project's own repository. `.coding-flow/runs/` has been
+  gitignored in this repo's root `.gitignore` since its very first commit,
+  `harness.js`'s `writeVerifyEvidence` never commits evidence anywhere in this
+  codebase, and `ci.js` uploads the directory as a CI artifact — it is real,
+  ephemeral, non-source content, not "tracked, not gitignored" as the
+  pre-fix comment claimed (that claim cited a `worktree.js` convention that
+  turned out not to exist). `git add` on an explicitly-named, fully-ignored
+  path exits non-zero without `-f`, and the call was not wrapped in a
+  try/catch, so the whole `autoLandIfChainFinished` call died with a bare
+  `Error: Command failed: git add -- .coding-flow/runs`. Reproduced end-to-end
+  against the real CLI (real `ai-flow verify` runs, not the test suite's own
+  hand-written-and-committed evidence fixture, against a repo carrying this
+  project's actual `.gitignore`): a two-story chain following flow-run's real
+  write order (verify, then `## Status: done` as its own commit) always makes
+  the root's recorded verify stale by the time the chain finishes — so this
+  is not an edge case, it is the normal path, and auto-land was broken for
+  this project's own dogfooding.
+  Fixed in two steps: first attempted removing the commit entirely (evidence
+  freshness is read straight off disk by `latestVerifyByStoryDir` regardless
+  of git tracking, so it seemed unnecessary) — this broke the *existing*
+  "lands and removes the worktree directory" test, because when
+  `.coding-flow/runs/` is genuinely NOT gitignored, the freshly-written
+  evidence file is a real untracked file and `land`'s own dirty-tree check
+  (`git status --porcelain`) does list it, refusing the land. The correct fix
+  checks which case applies first (`git check-ignore -q --
+  .coding-flow/runs`, not swallowing every `git add` failure indiscriminately
+  since that would just as easily hide a real one): commit narrowly
+  (`git add -- .coding-flow/runs`, never `-A`) when the path is not ignored,
+  skip the commit entirely when it is — `land`'s own check never saw an
+  ignored file as dirty to begin with, so nothing needs staging there either
+  way.
+- New test: `test/worktree-autoland.test.js` gained a dedicated regression
+  case using a `.gitignore` matching this project's own convention and real
+  `ai-flow verify` runs (not the fixture's own hand-written evidence, which
+  only worked because no test repo shipped a `.gitignore`) — confirmed this
+  reproduces the crash against the pre-fix code before confirming the fix
+  lands cleanly. `npm test`: 543/543 (was 542/542 — one new test, no
+  regressions, including the pre-existing non-gitignored "lands" test that
+  the first fix attempt broke).
+- plan.md's Technical Notes corrected: it previously claimed the refresh was
+  "a no-op for a single-story chain" — false, per the reproduction above (the
+  mandated status commit alone stales the root's own verify, single-story or
+  not) — and described the commit step as unconditional, missing the
+  gitignored case entirely.
+
+**Fourth `/flow-review` pass (2026-08-29)**, reviewing the artifact and the
+contract (spec.md, plan.md, RULES.md) rather than the session's own reasoning
+— found and fixed a P1 the first three passes missed, entirely on the landing
+side rather than the placement or freshness side already covered:
+
+- `worktreeLand` (`bin/lib/worktree.js`) ran its whole
+  merge/rebase/reset/post-merge-validation sequence directly against the
+  shared main checkout with no serialization at all. Two chains auto-landing
+  near the same moment — the exact scenario this epic exists to enable,
+  parallel chains finishing independently — could interleave destructively on
+  that one working directory: `verifyStoryOnce`'s real validation commands run
+  against `context.js`'s module-level `cwd` (resolved once from the real OS
+  `process.cwd()`, independent of any parameter — the same fact plan.md's own
+  "Design decision" section already used to justify spawning `land` as a
+  subprocess), so one land's in-flight test run could read a half-merged tree,
+  or one's `git reset --hard` on a failed re-verify could yank files out from
+  under another's concurrent read. `placement-store.js` already took a real
+  filesystem lock for its own, much lower-stakes JSON read/write; the actual
+  git mutation of the shared checkout had no equivalent, and spec.md's only
+  documented concurrency edge case named the (far less severe) parent-directory
+  removal race, not this one.
+  Fixed by extracting `placement-store.js`'s lock primitive into a general
+  `withFileLock(lockPath, fn, { waitTimeoutMs, staleMs })` and wrapping
+  `worktreeLand`'s mutating section in it, scoped by `git-common-dir` so the
+  same lock file applies from any of the repo's worktrees. Timeouts are not
+  the placement store's own 5s/30s defaults — `land`'s critical section runs a
+  real, unbounded validation command, so both are generous (10 minutes to
+  wait, 15 before a held lock is considered abandoned) rather than tuned,
+  since waiting too long costs far less than racing the checkout again. See
+  plan.md's Decisions for the full writeup, including the `fail()`/
+  `process.exit()` interaction this fix had to account for: `fail()`
+  terminates before `withFileLock`'s own `finally` (the lock release) can run,
+  and `land` calls `fail()` on nearly every one of its own ordinary failure
+  paths — so every `fail()` call inside the locked section was converted to a
+  thrown `Error` instead (a real exception unwinds normally, releasing the
+  lock before the message reaches the caller), with one `try/catch` around the
+  whole locked call translating back to `fail(err.message)` afterward. Every
+  existing test's expected failure text is unchanged.
+- New test: `test/worktree.test.js` gained "worktree land waits for the
+  shared land lock instead of racing a concurrent holder" — a real background
+  OS process pre-acquires the exact lock file `land` now takes, holds it for a
+  known duration, and the test asserts `land` waited at least that long rather
+  than proceeding immediately. Confirmed red against the pre-fix code
+  (temporarily reverted `worktree.js`/`placement-store.js`, kept the new test:
+  failed with "waited 581ms, held 800ms") before confirming it passes with the
+  fix restored. `npm test`: 544/544 (was 543/543 — one new test, no
+  regressions, including "retried after a rollback, lands cleanly", the
+  existing test most likely to have caught a lock-leak regression).
+- spec.md's Concurrency edge case extended to name this race explicitly
+  (previously only covered the parent-directory removal race), per RULES.md's
+  requirement to record unresolved risk rather than leave it undocumented.
+
 ## Test Exemption
 
 None — new behavior is covered directly (`test/worktree-autoland.test.js`).

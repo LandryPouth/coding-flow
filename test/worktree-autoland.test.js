@@ -70,7 +70,7 @@ s4
 4. **story-x-04-d** — root of chain C, also parallel to chain A.
 `;
 
-function freshRepo(t, { indexMd, storyDirs, command = 'node -e "process.exit(0)"' }) {
+function freshRepo(t, { indexMd, storyDirs, command = 'node -e "process.exit(0)"', gitignore = null }) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-autoland-'));
   const repo = path.join(base, 'repo');
   fs.mkdirSync(repo);
@@ -92,12 +92,50 @@ function freshRepo(t, { indexMd, storyDirs, command = 'node -e "process.exit(0)"
     JSON.stringify({ validation: { commands: [command] } }, null, 2),
   );
 
+  // Opt-in: this project's own root `.gitignore` excludes `.coding-flow/runs/`
+  // (it always has, since this repo's very first commit) — a `/flow-review`
+  // found that auto-land's root re-verify step used to crash under exactly
+  // this convention (`git add` on an explicitly-named, fully-ignored path
+  // exits non-zero without `-f`). Most tests below don't need this — only
+  // the dedicated regression test does — since introducing it everywhere
+  // would silently change what `writeVerify`'s own `git add -A`-based commit
+  // helper actually stages.
+  if (gitignore) {
+    fs.writeFileSync(path.join(repo, '.gitignore'), gitignore);
+  }
+
   fs.writeFileSync(path.join(repo, 'README.md'), '# repo\n');
   sh(repo, 'git', ['add', '.']);
   sh(repo, 'git', ['commit', '-m', 'init']);
 
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   return { base, repo, epicPath };
+}
+
+// Runs the real `ai-flow verify` CLI, the same way flow-run does — as opposed
+// to `writeVerify` below, which hand-writes+commits an evidence file for
+// tests that don't care about this. `harness.js`'s `writeVerifyEvidence`
+// never runs `git add`/`git commit` (grep confirms zero call sites in this
+// codebase): the evidence lands as a plain, untracked file, gitignored in
+// this project's own `.gitignore`. Needed to reproduce the P0 above faithfully
+// — `writeVerify`'s own commit-based convention only works because no test
+// fixture ships a `.gitignore`.
+function realVerify(cwd, storyRel) {
+  sh(cwd, process.execPath, [CLI, 'verify', '--story', storyRel]);
+}
+
+// Appends the explicit `## Status: done` line `flow-run` always writes on
+// finishing a story (skills/flow-run/SKILL.md's "Status From Proof" step) —
+// the authoritative signal `chainIsFinished` reads (storage/local.js's own
+// `inferStoryStatus`, step 1, wins over its verify-based fallback). Real
+// usage never reaches that fallback; test fixtures should not rely on it
+// either once a real code commit is involved (its own freshness derivation
+// shares the same whole-repo `currentTreeToken` this fix is about, so it can
+// go stale for reasons unrelated to what a given test means to exercise).
+function markStoryDone(worktreePath, epicPath, dirName) {
+  const storyMd = path.join(worktreePath, epicPath, dirName, 'story.md');
+  fs.appendFileSync(storyMd, '\n## Status: done\n');
+  commitAll(worktreePath, `chore: mark ${dirName} done`);
 }
 
 function place(cwd, epicPath, storyPath) {
@@ -174,8 +212,28 @@ test('auto-land: last story of a worktree\'d chain lands and removes the worktre
   const placedB = place(repo, epicPath, `${epicPath}/story-x-02-b`);
   const worktreeB = placedB.location;
 
+  // Mirrors flow-run's own mandated order (skills/flow-run/SKILL.md's
+  // "Status From Proof" step): verify captured first, `## Status: done`
+  // written as its own commit right after — for BOTH stories, same as real
+  // usage. Reproduces two gaps a `/flow-review` found, both now fixed:
+  // (1) `chainIsFinished` used to compare every chain member's own verify
+  // against one shared "current" token, so the chain's root story read as
+  // stale the moment its dependent added a single commit afterward — a real
+  // (non-toy) multi-story chain could never finish; (2) even past that,
+  // `worktree land`'s own precondition (epic-02, unchanged) only checks
+  // freshness for the story matching the worktree's name (always the
+  // chain's root), which by design predates every dependent's later work —
+  // `autoLandIfChainFinished` now honestly re-verifies the root against the
+  // current tree, right before calling `land`, rather than working around
+  // `land`'s own contract.
   writeVerify(worktreeB, `${epicPath}/story-x-02-b`);
+  markStoryDone(worktreeB, epicPath, 'story-x-02-b');
+
+  fs.writeFileSync(path.join(worktreeB, 'src.txt'), 'story c work\n');
+  commitAll(worktreeB, 'feat: story c work');
+
   writeVerify(worktreeB, `${epicPath}/story-x-03-c`);
+  markStoryDone(worktreeB, epicPath, 'story-x-03-c');
 
   const { code, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
   assert.equal(code, 0, 'a successful land must exit 0');
@@ -193,6 +251,45 @@ test('auto-land: last story of a worktree\'d chain lands and removes the worktre
   // The parent `<repo>-worktrees/` directory must also be gone: this was the
   // only worktree under it.
   assert.ok(!fs.existsSync(path.join(base, 'repo-worktrees')), 'the now-empty parent directory must be removed too');
+});
+
+test('auto-land: lands even when .coding-flow/runs is gitignored (this project\'s own convention), reproducing a P0 a `/flow-review` found', (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
+    // The exact rule this repository's own root `.gitignore` has carried
+    // since its first commit. The root-refresh step used to `git add --
+    // .coding-flow/runs` before landing — explicitly naming an entirely
+    // ignored path makes `git add` exit non-zero without `-f`, which crashed
+    // this call, uncaught, on every real multi-story chain (the mandated
+    // `## Status: done` commit always makes the root's own verify stale by
+    // the time the chain finishes, so the refresh always ran). The fix reads
+    // the refreshed evidence straight off disk instead of committing it —
+    // `land`'s own freshness check does the same, so nothing needs to be
+    // tracked either way.
+    gitignore: '.coding-flow/runs/\n',
+  });
+
+  place(repo, epicPath, `${epicPath}/story-x-01-a`);
+  const placedB = place(repo, epicPath, `${epicPath}/story-x-02-b`);
+  const worktreeB = placedB.location;
+
+  // Real `ai-flow verify` runs (not `writeVerify`'s hand-written+committed
+  // fixture), so the evidence lands exactly as it does in real usage: an
+  // untracked, gitignored file that is never committed.
+  realVerify(worktreeB, `${epicPath}/story-x-02-b`);
+  markStoryDone(worktreeB, epicPath, 'story-x-02-b');
+
+  fs.writeFileSync(path.join(worktreeB, 'src.txt'), 'story c work\n');
+  commitAll(worktreeB, 'feat: story c work');
+
+  realVerify(worktreeB, `${epicPath}/story-x-03-c`);
+  markStoryDone(worktreeB, epicPath, 'story-x-03-c');
+
+  const { code, output, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
+  assert.equal(code, 0, `auto-land must succeed when .coding-flow/runs is gitignored, got: ${output}`);
+  assert.equal(result.landed, true);
+  assert.ok(!fs.existsSync(worktreeB), 'the worktree directory must be gone after landing');
 });
 
 test('auto-land: a sibling worktree is untouched when only one of two chains lands', (t) => {
@@ -295,4 +392,49 @@ test('auto-land: a failed post-land re-verify rolls back and is reported, exactl
 
   const state = readPlacementState(repo, epicPath.split('/').pop());
   assert.ok('s2' in state.chains, 'a rolled-back land must not clear the chain\'s placement entry');
+});
+
+test('auto-land: a failed re-verify of a stale chain root fails before land ever runs, leaving the chain untouched', (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
+    command: 'node -e "process.exit(1)"',
+  });
+
+  place(repo, epicPath, `${epicPath}/story-x-01-a`);
+  const placedB = place(repo, epicPath, `${epicPath}/story-x-02-b`);
+  const worktreeB = placedB.location;
+
+  // Same shape as the "lands" test above (a real commit between the root's
+  // own verify and the last story's, so the root's recorded verify is stale
+  // by the time the chain finishes) — except the project's configured
+  // command always fails, so the new pre-land refresh (`ai-flow verify
+  // --story <root>`) itself fails, before `land` (and its own post-merge
+  // re-verify) is ever reached. Distinct failure point from the test above,
+  // which only exercises `land`'s own post-merge re-verify because the root
+  // there is never stale.
+  writeVerify(worktreeB, `${epicPath}/story-x-02-b`);
+  markStoryDone(worktreeB, epicPath, 'story-x-02-b');
+
+  fs.writeFileSync(path.join(worktreeB, 'src.txt'), 'story c work\n');
+  commitAll(worktreeB, 'feat: story c work');
+
+  writeVerify(worktreeB, `${epicPath}/story-x-03-c`);
+  markStoryDone(worktreeB, epicPath, 'story-x-03-c');
+
+  const branchTipBefore = sh(worktreeB, 'git', ['rev-parse', 'HEAD']).trim();
+  const { code, output } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`, { json: false });
+  assert.notEqual(code, 0, 'a failed root re-verify must fail the autoland call, not silently succeed');
+  assert.match(output, /re-verifying chain root/, 'the failure must name the root re-verify step, not a generic land failure');
+  assert.match(output, /process\.exit\(1\)/, 'the failing command output must be reported');
+
+  assert.ok(fs.existsSync(worktreeB), 'the story worktree must be untouched — land never ran');
+  assert.equal(
+    sh(worktreeB, 'git', ['rev-parse', 'HEAD']).trim(),
+    branchTipBefore,
+    'nothing must be committed in the story worktree when the refresh itself fails',
+  );
+
+  const state = readPlacementState(repo, epicPath.split('/').pop());
+  assert.ok('s2' in state.chains, 'the chain\'s placement entry must be untouched — nothing was landed');
 });

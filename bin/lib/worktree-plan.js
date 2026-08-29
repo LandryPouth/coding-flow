@@ -174,11 +174,57 @@ function decidePlacement({ cwd, epicPath, storyPath }) {
   };
 }
 
-// A story is "verified" for auto-land purposes the same way `next.js`'s own
+// `worktree land`'s own precondition always checks freshness for the story
+// matching the WORKTREE'S OWN NAME (`findStoryForBranch`, keyed off the
+// branch/worktree name) — and that name is always the chain's ROOT story
+// (`worktreeAdd` names the worktree/branch after whichever story first
+// claimed the chain, in `decidePlacement`). Resolves that root story's own
+// project-relative path, the same shape `storage.listEpics()` already
+// returns, or null if the worktree name matches no known story (defensive
+// only — unreachable in the normal flow, since this only runs after
+// `resolveStoryChain` already confirmed the chain and its members exist).
+//
+// Deliberately not a call to `findStoryForBranch` itself (worktree.js):
+// that helper is not exported (it is `worktree.js`-internal), and it
+// searches every epic for a name match rather than the one epic this call
+// already knows it is in — scoping here to `epicName` is strictly more
+// precise, since a same-named story directory in a different epic would
+// otherwise resolve to the wrong root. It also skips `findStoryForBranch`'s
+// own best-effort try/catch around the storage read (there, a transient
+// read failure degrades to "not linked to a known story" rather than
+// blocking `land`; here it surfaces as an uncaught error) — acceptable
+// since this only ever runs after `resolveStoryChain` has already proven
+// the epic and chain are readable moments earlier in the same call.
+function findRootStoryPath(cwd, epicName, worktreeName) {
+  const config = readConfig(cwd);
+  const epic = getStorage(cwd, config)
+    .listEpics()
+    .find((e) => e.name === epicName);
+  if (!epic) return null;
+  const story = epic.stories.find((s) => s.name === worktreeName);
+  return story ? story.path : null;
+}
+
+// A story counts toward "chain finished" the same way `next.js`'s own
 // tier-4 ("ready-to-ship") check reads it: an explicit `done`/`verified`
-// status AND a green, non-stale captured verify for it — a written status
-// alone is not proof (see next.js's `storyProof`, reused here in shape, not
-// imported, since `next.js` is a CLI aggregator, not a library dependency).
+// status AND a captured verify that was green at some point — a written
+// status alone is not proof (see next.js's `storyProof`, reused here in
+// shape, not imported, since `next.js` is a CLI aggregator, not a library
+// dependency).
+//
+// Deliberately NOT checked here: whether that verify is still *fresh*
+// against the tree right now. All of a chain's stories share one
+// worktree/branch, and `flow-run` always writes `## Status: done` as its own
+// commit AFTER the verify it is based on (skills/flow-run/SKILL.md's own
+// mandated order) — so by design, the tree always moves past a story's own
+// verify before that story is done, for every story, chained or not. A
+// static token comparison here would flag every finished chain as
+// unfinished, always. Freshness is a real requirement, but it belongs at
+// the one place it can be answered honestly: `autoLandIfChainFinished`
+// re-verifies the chain's root story against the CURRENT tree, right before
+// calling `land` — an actual re-run, not a stale comparison — and `land`'s
+// own precondition (epic-02, unchanged) is the hard gate that rejects
+// anything that re-run does not cover.
 function chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId) {
   const config = readConfig(cwd);
   const epicName = epicNameFromPath(epicPath);
@@ -195,7 +241,6 @@ function chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId) {
 
   const storyByName = new Map(epic.stories.map((story) => [story.name, story]));
   const verifyByDir = latestVerifyByStoryDir(cwd);
-  const currentToken = currentTreeToken(cwd);
 
   for (const [label, id] of chainIdOf.entries()) {
     if (id !== chainId) continue;
@@ -213,7 +258,6 @@ function chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId) {
 
     const verifyEntry = verifyByDir.get(story.path);
     if (!verifyEntry || verifyEntry.ok !== true) return false;
-    if (isStale(verifyEntry, currentToken)) return false;
   }
 
   return true;
@@ -294,6 +338,91 @@ function autoLandIfChainFinished({ cwd, epicPath, storyPath }) {
 
   const worktreeName = path.basename(here);
   const cliPath = path.join(__dirname, "..", "ai-flow.js");
+
+  // `chainIsFinished` above only requires the chain's most recently captured
+  // verify to be fresh — correct for deciding "is this chain done" (see its
+  // own comment), but `worktree land`'s own precondition (epic-02, reused
+  // exactly as-is) checks freshness for the ROOT story specifically, and the
+  // root's own verify predates every dependent's later commits in any real
+  // multi-story chain — in fact it predates flow-run's own mandated
+  // `## Status: done` commit (written right after the verify it is based on,
+  // for every story, chained or not — SKILL.md's "Status From Proof"), so
+  // this branch fires on essentially every real land, not only multi-story
+  // ones. Not a bug in `land` to work around by redefining its contract (out
+  // of scope per spec.md) — the honest fix is to actually refresh the root's
+  // own evidence before calling `land`, the same command a human would run
+  // by hand (`ai-flow verify --story <root>`).
+  const rootStoryPath = findRootStoryPath(cwd, epicName, worktreeName);
+  if (rootStoryPath) {
+    const verifyByDir = latestVerifyByStoryDir(cwd);
+    const rootEntry = verifyByDir.get(rootStoryPath);
+    const currentToken = currentTreeToken(cwd);
+
+    if (!rootEntry || isStale(rootEntry, currentToken)) {
+      try {
+        execFileSync(process.execPath, [cliPath, "verify", "--story", rootStoryPath], {
+          cwd: here,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch (err) {
+        const message = `${err.stdout || ""}${err.stderr || ""}`.trim() || err.message;
+        throw new Error(
+          `worktree autoland: re-verifying chain root "${rootStoryPath}" before landing failed: ${message}`,
+        );
+      }
+
+      // `land`'s own dirty-tree check (`realDirtyLines`, `git status
+      // --porcelain`) would otherwise refuse to land the freshly-written
+      // evidence file as an uncommitted change — but only when
+      // `.coding-flow/runs/` is NOT gitignored: `git status --porcelain`
+      // never lists ignored paths in the first place, so there is nothing to
+      // stage or commit when it is (this project's own root `.gitignore` has
+      // excluded it since the repo's first commit, and neither
+      // `writeVerifyEvidence` (harness.js) nor anything else in this
+      // codebase ever commits it — a real, ephemeral, non-source directory,
+      // per `ci.js`'s artifact upload and `identity.js`'s tree-token
+      // exclusion). Checking with `git check-ignore` first — rather than
+      // just attempting `git add` and swallowing any failure — because
+      // `git add` on an explicitly-named, fully-ignored path exits non-zero
+      // for that reason specifically (confirmed: exit 1, "The following
+      // paths are ignored"), and swallowing every failure there would just
+      // as easily hide a real one (disk full, permissions).
+      let pathIsIgnored = true;
+      try {
+        execFileSync("git", ["check-ignore", "-q", "--", ".coding-flow/runs"], { cwd: here, stdio: "ignore" });
+      } catch (err) {
+        if (err.status !== 1) throw err;
+        pathIsIgnored = false;
+      }
+
+      if (!pathIsIgnored) {
+        // Staged narrowly (never `-A`): this step's own job is committing
+        // the refreshed evidence, nothing else — an unrelated untracked
+        // file sitting in the worktree at this exact moment must never ride
+        // along into a commit nobody reviewed, the same reasoning
+        // `ship.js`'s `autoCommitDirtyTree` scans for secrets before its own
+        // auto-commit, just enforced here by never widening the `add`.
+        execFileSync("git", ["add", "--", ".coding-flow/runs"], { cwd: here, stdio: "ignore" });
+
+        // A no-op in the rare case `verify`'s own reusable-proof cache
+        // (`findReusableVerify` in harness.js) answered from an older
+        // evidence file that already matched the current tree without
+        // writing a new one.
+        const staged = execFileSync("git", ["status", "--porcelain", "--", ".coding-flow/runs"], {
+          cwd: here,
+          encoding: "utf8",
+        }).trim();
+
+        if (staged) {
+          execFileSync("git", ["commit", "-m", `chore: refresh verify for ${rootStoryPath} before auto-land`], {
+            cwd: here,
+            stdio: "ignore",
+          });
+        }
+      }
+    }
+  }
 
   try {
     execFileSync(process.execPath, [cliPath, "worktree", "land", worktreeName], {

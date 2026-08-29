@@ -29,7 +29,7 @@ const { verifyStoryOnce, writeVerifyEvidence, printVerify } = require("./harness
 // creating a cycle with worktree-plan.js, which itself requires this file
 // for `worktreeAdd`. See placement-store.js's own header.
 const { parseBackbone, labelForDir } = require("./backbone");
-const { clearChainPlacement } = require("./placement-store");
+const { clearChainPlacement, gitCommonDir, withFileLock } = require("./placement-store");
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -641,6 +641,21 @@ function landCleanup(root, match, branch, found) {
   }
 }
 
+// `land`'s own mutating sequence below (merge/rebase/reset/the post-merge
+// re-verify's real validation commands) all run directly against the shared
+// main checkout — nothing else in this file's own working directory. Two
+// chains auto-landing near the same moment (story-03-02's whole reason to
+// exist: parallel chains finishing independently) would otherwise race
+// destructively on that one directory with no serialization at all — a
+// `/flow-review` pass reproduced this as the story's one remaining gap.
+// `land`'s critical section can run a real, unbounded test suite (unlike
+// `placement-store.js`'s own JSON read+write, which is fast and bounded), so
+// both timeouts below are generous: a legitimate concurrent land waits far
+// longer than any placement claim would, and a lock is only ever stolen from
+// a holder that has clearly crashed, not one still mid-validation.
+const LAND_LOCK_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
+const LAND_LOCK_STALE_MS = 15 * 60 * 1000;
+
 // Reconciles a finished, verified story worktree onto the branch `land` runs
 // from: ff-only merge when possible, a rebase replay when the target moved,
 // a hard stop (never an auto-resolve) on a real conflict. See spec.md /
@@ -709,114 +724,149 @@ function worktreeLand(name, { cwd, story }) {
   // is not linked to a known story at all.
   const found = findStoryForBranch(root, branch);
 
-  // Already landed: the target has nothing new from this story. Skip
-  // straight to cleanup rather than erroring — this is not a failure.
-  const alreadyLanded =
-    git(root, ["merge-base", "--is-ancestor", branch, "HEAD"], { allowFail: true }).code === 0;
-
-  if (alreadyLanded) {
-    landCleanup(root, match, branch, found);
-    log(`Already landed: "${branch}" had nothing new for this branch. Worktree and branch cleaned up.`);
-    return;
-  }
-
-  if (!found) {
-    fail(
-      `worktree "${lookupName}" is not linked to a known story (no matching epics/*/story-* directory). ` +
-        "land requires a story with a recorded verify.",
-    );
-  }
-
-  const verifyByDir = latestVerifyByStoryDir(match.path);
-  const verifyEntry = verifyByDir.get(found.story.path);
-
-  if (!verifyEntry || verifyEntry.ok !== true) {
-    fail(
-      `no green verify recorded for story "${found.story.path}". ` +
-        `Run "ai-flow verify --story ${found.story.path}" in the worktree first.`,
-    );
-  }
-
-  const currentToken = currentTreeToken(match.path);
-  if (isStale(verifyEntry, currentToken)) {
-    fail(
-      `the verify recorded for story "${found.story.path}" is stale (the tree changed since). ` +
-        `Run "ai-flow verify --story ${found.story.path}" again in the worktree.`,
-    );
-  }
-
-  // Captured before any merge is attempted: a fast-forward moves the branch
-  // pointer with no merge commit of its own, so on a failed re-verify below
-  // this is the only thing to restore, not something to "revert".
-  const preMergeSha = git(root, ["rev-parse", "HEAD"]).stdout.trim();
-
-  // Cheapest option first: ff-only either succeeds cleanly or fails fast with
-  // no side effects.
-  const ffOnly = git(root, ["merge", "--ff-only", branch], { allowFail: true });
-
-  if (ffOnly.code !== 0) {
-    // The target moved since the story branched: replay the story's commits
-    // onto its current tip, INSIDE the story's own worktree — the target
-    // checkout is not touched until the retried ff-only merge below. A failed
-    // ff-only has no side effects, so the tip to rebase onto is still preMergeSha.
-    const rebase = git(match.path, ["rebase", preMergeSha], { allowFail: true });
-
-    if (rebase.code !== 0) {
-      const conflicts = conflictingFiles(match.path);
-      fail(
-        `rebasing "${branch}" onto the current tip hit a conflict. Nothing was merged; the target branch ` +
-          "is untouched. The story worktree is left mid-rebase for manual resolution:\n" +
-          `  cd ${match.path}\n` +
-          "  # resolve, then: git rebase --continue (or git rebase --abort)\n" +
-          `Conflicting files:\n${conflicts.map((f) => `  ${f}`).join("\n")}`,
-      );
-    }
-
-    const retryFf = git(root, ["merge", "--ff-only", branch], { allowFail: true });
-    if (retryFf.code !== 0) {
-      fail(
-        `fast-forward merge still failed after rebasing "${branch}": ${retryFf.stderr.trim()}. ` +
-          `The story worktree at ${match.path} has already been rebased onto the new tip — nothing was ` +
-          "merged, but its state changed; inspect it before retrying.",
-      );
-    }
-  }
-
-  // Two independently-green stories can still combine into something broken
-  // (the concrete worry: two migrations that never conflict as text but are
-  // incompatible once applied together) — no single story's own verify can see
-  // that, since it never ran against the merged result. Re-run the project's
-  // validation commands against the target checkout, unconditional on the
-  // story's own risk tier: the risk lives in the combination, not in either
-  // story alone. Uses the same evidence path `ai-flow verify` writes to, so a
-  // failed land is not just a terminal message — it shows up wherever a
-  // captured verify already does.
+  // Everything from here on mutates the shared main checkout (`root`) —
+  // serialized so a second `land` targeting the same checkout waits its turn
+  // instead of racing this one's merge/rebase/reset/validation-run. See the
+  // comment above `LAND_LOCK_WAIT_TIMEOUT_MS`. Scoped by `git-common-dir` (not
+  // `root` itself) so it is the same lock file regardless of which of the
+  // repo's worktrees a `land` call happens to be run from.
   //
-  // skipCoverage: true — the coverage gate reads the diff from the default
-  // branch to HEAD, which after this merge is every story's accumulated diff
-  // since main, not just the one just landed, and it cannot see a story-scoped
-  // test exemption a landed story already earned. Judging the merged result on
-  // whether its commands pass, not on a heuristic scoped to the wrong diff, is
-  // what this re-verify is for; coverage stays a per-story concern.
-  const evidence = verifyStoryOnce({ story: null, skipCoverage: true });
-  const evidencePath = writeVerifyEvidence(evidence);
-  printVerify(evidence, evidencePath);
+  // `throw` inside the locked callback, never `fail()`: `fail()`'s own
+  // `process.exit()` terminates before `withFileLock`'s `finally` (which
+  // releases the lock) gets a chance to run — confirmed directly, `process.exit()`
+  // does not unwind the stack the way a thrown error does. A real land failure
+  // is the COMMON case here (a conflict, a stale verify, a failed re-verify),
+  // so leaking the lock on every one of them would make the very next `land`
+  // retry (the normal, expected recovery — see the "retried after a rollback"
+  // test) wait out `LAND_LOCK_WAIT_TIMEOUT_MS` for nothing. Thrown errors DO
+  // unwind normally, so the lock is released before the message ever reaches
+  // the user; `fail()` is called once, after the lock has already been freed.
+  // Two calls below still go through the shared `git()` helper's own default
+  // (non-`allowFail`) path, which calls `fail()` directly rather than
+  // throwing: `rev-parse HEAD` and the post-failure `reset --hard`. Left as
+  // the ordinary `git()` contract deliberately, not converted to `allowFail`
+  // + throw like every other mutating call here — both only fail if git
+  // itself is broken on a repo already proven valid moments earlier, at
+  // which point a stuck lock is the least of the problem (the stale-timeout
+  // reclaim below still recovers it, just not immediately).
+  try {
+    withFileLock(
+      path.join(gitCommonDir(root), "coding-flow", "land.lock"),
+      () => {
+        // Already landed: the target has nothing new from this story. Skip
+        // straight to cleanup rather than erroring — this is not a failure.
+        const alreadyLanded =
+          git(root, ["merge-base", "--is-ancestor", branch, "HEAD"], { allowFail: true }).code === 0;
 
-  if (!evidence.ok) {
-    // Bounded and reversible by construction: only the merge commit `land` just
-    // created is undone. The story's own worktree, branch, and lock are never
-    // touched, so the fix happens where the story's commits already live and
-    // `land` can be retried once it is fixed.
-    git(root, ["reset", "--hard", preMergeSha]);
-    fail(
-      `post-land validation failed on the merged result. The target branch was reset to its pre-merge ` +
-        `commit (${preMergeSha.slice(0, 12)}). The story worktree, branch, and lock at ${match.path} are ` +
-        "untouched — fix it there and land again.",
+        if (alreadyLanded) {
+          landCleanup(root, match, branch, found);
+          log(`Already landed: "${branch}" had nothing new for this branch. Worktree and branch cleaned up.`);
+          return;
+        }
+
+        if (!found) {
+          throw new Error(
+            `worktree "${lookupName}" is not linked to a known story (no matching epics/*/story-* directory). ` +
+              "land requires a story with a recorded verify.",
+          );
+        }
+
+        const verifyByDir = latestVerifyByStoryDir(match.path);
+        const verifyEntry = verifyByDir.get(found.story.path);
+
+        if (!verifyEntry || verifyEntry.ok !== true) {
+          throw new Error(
+            `no green verify recorded for story "${found.story.path}". ` +
+              `Run "ai-flow verify --story ${found.story.path}" in the worktree first.`,
+          );
+        }
+
+        const currentToken = currentTreeToken(match.path);
+        if (isStale(verifyEntry, currentToken)) {
+          throw new Error(
+            `the verify recorded for story "${found.story.path}" is stale (the tree changed since). ` +
+              `Run "ai-flow verify --story ${found.story.path}" again in the worktree.`,
+          );
+        }
+
+        // Captured before any merge is attempted: a fast-forward moves the branch
+        // pointer with no merge commit of its own, so on a failed re-verify below
+        // this is the only thing to restore, not something to "revert".
+        const preMergeSha = git(root, ["rev-parse", "HEAD"]).stdout.trim();
+
+        // Cheapest option first: ff-only either succeeds cleanly or fails fast with
+        // no side effects.
+        const ffOnly = git(root, ["merge", "--ff-only", branch], { allowFail: true });
+
+        if (ffOnly.code !== 0) {
+          // The target moved since the story branched: replay the story's commits
+          // onto its current tip, INSIDE the story's own worktree — the target
+          // checkout is not touched until the retried ff-only merge below. A failed
+          // ff-only has no side effects, so the tip to rebase onto is still preMergeSha.
+          const rebase = git(match.path, ["rebase", preMergeSha], { allowFail: true });
+
+          if (rebase.code !== 0) {
+            const conflicts = conflictingFiles(match.path);
+            throw new Error(
+              `rebasing "${branch}" onto the current tip hit a conflict. Nothing was merged; the target branch ` +
+                "is untouched. The story worktree is left mid-rebase for manual resolution:\n" +
+                `  cd ${match.path}\n` +
+                "  # resolve, then: git rebase --continue (or git rebase --abort)\n" +
+                `Conflicting files:\n${conflicts.map((f) => `  ${f}`).join("\n")}`,
+            );
+          }
+
+          const retryFf = git(root, ["merge", "--ff-only", branch], { allowFail: true });
+          if (retryFf.code !== 0) {
+            throw new Error(
+              `fast-forward merge still failed after rebasing "${branch}": ${retryFf.stderr.trim()}. ` +
+                `The story worktree at ${match.path} has already been rebased onto the new tip — nothing was ` +
+                "merged, but its state changed; inspect it before retrying.",
+            );
+          }
+        }
+
+        // Two independently-green stories can still combine into something broken
+        // (the concrete worry: two migrations that never conflict as text but are
+        // incompatible once applied together) — no single story's own verify can see
+        // that, since it never ran against the merged result. Re-run the project's
+        // validation commands against the target checkout, unconditional on the
+        // story's own risk tier: the risk lives in the combination, not in either
+        // story alone. Uses the same evidence path `ai-flow verify` writes to, so a
+        // failed land is not just a terminal message — it shows up wherever a
+        // captured verify already does.
+        //
+        // skipCoverage: true — the coverage gate reads the diff from the default
+        // branch to HEAD, which after this merge is every story's accumulated diff
+        // since main, not just the one just landed, and it cannot see a story-scoped
+        // test exemption a landed story already earned. Judging the merged result on
+        // whether its commands pass, not on a heuristic scoped to the wrong diff, is
+        // what this re-verify is for; coverage stays a per-story concern.
+        const evidence = verifyStoryOnce({ story: null, skipCoverage: true });
+        const evidencePath = writeVerifyEvidence(evidence);
+        printVerify(evidence, evidencePath);
+
+        if (!evidence.ok) {
+          // Bounded and reversible by construction: only the merge commit `land` just
+          // created is undone. The story's own worktree, branch, and lock are never
+          // touched, so the fix happens where the story's commits already live and
+          // `land` can be retried once it is fixed.
+          git(root, ["reset", "--hard", preMergeSha]);
+          throw new Error(
+            `post-land validation failed on the merged result. The target branch was reset to its pre-merge ` +
+              `commit (${preMergeSha.slice(0, 12)}). The story worktree, branch, and lock at ${match.path} are ` +
+              "untouched — fix it there and land again.",
+          );
+        }
+
+        landCleanup(root, match, branch, found);
+        log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
+      },
+      { waitTimeoutMs: LAND_LOCK_WAIT_TIMEOUT_MS, staleMs: LAND_LOCK_STALE_MS },
     );
+  } catch (err) {
+    fail(err.message);
   }
-
-  landCleanup(root, match, branch, found);
-  log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
 }
 
 // Extracts positional arguments, ignoring flags and the value of flags that take
@@ -838,6 +888,13 @@ function positionalArgs(args) {
   return out;
 }
 
+// `place` and `autoland` are deliberately NOT handled here — `ai-flow.js`
+// intercepts both before a call ever reaches this dispatcher (see its own
+// comments next to those two branches), to avoid a circular require between
+// this file and worktree-plan.js. The fallback message below still lists
+// them: they are valid `ai-flow worktree <sub>` subcommands from a user's
+// point of view, even though this function's own `sub` branches never see
+// them in practice.
 function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story }) {
   const sub = commandArgs[0];
   const name = positionalArgs(commandArgs.slice(1))[0];
