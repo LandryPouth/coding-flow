@@ -517,6 +517,13 @@ test('auto-land: a STRICT-tier chain (diff touches a high-risk path) with a gree
   assert.equal(result.landed, false);
   assert.equal(result.reason, 'review-missing');
   assert.ok(fs.existsSync(worktreeB), 'the worktree must be untouched while review is missing');
+
+  // Same no-op, read through the human-readable text path — a second call is
+  // safe here since nothing was landed above, so nothing changed in between.
+  const text = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`, { json: false });
+  assert.equal(text.code, 0);
+  assert.match(text.output, /has no captured review for its STRICT-tier story/);
+  assert.match(text.output, /run \/flow-review before landing/);
 });
 
 test('auto-land: the same STRICT-tier chain lands once a fresh, passing review evidence entry exists', (t) => {
@@ -582,6 +589,11 @@ test('auto-land: a STRICT-tier chain whose review evidence recorded a failing ve
   assert.equal(result.landed, false);
   assert.equal(result.reason, 'review-failed');
   assert.ok(fs.existsSync(worktreeB), 'the worktree must be untouched while review failed');
+
+  const text = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`, { json: false });
+  assert.equal(text.code, 0);
+  assert.match(text.output, /has a failing review for its STRICT-tier story/);
+  assert.match(text.output, /run \/flow-review before landing/);
 });
 
 test('auto-land: a STRICT-tier chain whose review evidence went stale (the tree moved since capture) blocks with reason "review-stale", distinct from "review-missing"/"review-failed"', (t) => {
@@ -621,4 +633,9 @@ test('auto-land: a STRICT-tier chain whose review evidence went stale (the tree 
   assert.equal(result.landed, false);
   assert.equal(result.reason, 'review-stale');
   assert.ok(fs.existsSync(worktreeB), 'the worktree must be untouched while review is stale');
+
+  const text = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`, { json: false });
+  assert.equal(text.code, 0);
+  assert.match(text.output, /has a stale review \(the tree moved since capture\) for its STRICT-tier story/);
+  assert.match(text.output, /run \/flow-review before landing/);
 });

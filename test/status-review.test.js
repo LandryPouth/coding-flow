@@ -156,3 +156,50 @@ test('status --json reports reviewRequired: false for a done story whose diff ne
   const story = storyOf(repo, storyRel);
   assert.equal(story.reviewRequired, false, 'a non-risky diff must not resolve this story to STRICT');
 });
+
+// The text output's "(required)" marker (status.js's `reviewSuffix`) is a
+// separate code path from the JSON `reviewRequired` field tested above — a
+// regression there would not be caught by the JSON-only tests.
+test('the text output marks a STRICT-tier story\'s missing review "(required)"', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+
+  git(repo, ['branch', '-M', 'main']);
+  git(repo, ['checkout', '-b', 'work']);
+  fs.appendFileSync(path.join(repo, storyRel, 'story.md'), '\n## Status: done\n');
+  fs.writeFileSync(path.join(repo, 'payment.js'), 'module.exports = {};\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'mark done, touch a high-risk path']);
+
+  const output = run(repo, ['status']).output;
+  assert.match(output, /review: none \(required\)/);
+});
+
+test('the text output does not mark a STRICT-tier story\'s fresh, passing review "(required)"', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+
+  git(repo, ['branch', '-M', 'main']);
+  git(repo, ['checkout', '-b', 'work']);
+  fs.appendFileSync(path.join(repo, storyRel, 'story.md'), '\n## Status: done\n');
+  fs.writeFileSync(path.join(repo, 'payment.js'), 'module.exports = {};\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'mark done, touch a high-risk path']);
+  assert.equal(run(repo, ['review', 'capture', '--story', storyRel, '--verdict', 'pass']).code, 0);
+
+  const output = run(repo, ['status']).output;
+  assert.match(output, /review: pass/);
+  assert.doesNotMatch(output, /\(required\)/, 'a fresh, passing review must never show "(required)"');
+});
+
+test('the text output never marks a non-STRICT story\'s review "(required)", and prints no suffix at all when none was ever captured', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+
+  git(repo, ['branch', '-M', 'main']);
+  git(repo, ['checkout', '-b', 'work']);
+  fs.appendFileSync(path.join(repo, storyRel, 'story.md'), '\n## Status: done\n');
+  fs.writeFileSync(path.join(repo, 'notes.txt'), 'plain change\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'mark done, plain change']);
+
+  const output = run(repo, ['status']).output;
+  assert.doesNotMatch(output, /review: /, 'a non-STRICT story with no review must print no review suffix, and never "(required)"');
+});

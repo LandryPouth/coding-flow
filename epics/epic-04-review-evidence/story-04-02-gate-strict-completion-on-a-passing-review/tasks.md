@@ -49,17 +49,29 @@
   `harness check` reports the same pre-existing failures in
   `test/guard.test.js`/`test/harness.test.js` (fake secret fixtures,
   unrelated to this diff) already logged in `docs/DOGFOODING.md` 2026-08-18.
-- **Independent review**: one pass (artifact + contract only), verdict pass.
-  Two P2s found and fixed, both efficiency: `next.js`'s `strictReviewGap` and
-  `status.js`'s `computeReviewRequired` each independently recomputed the
-  same `changedFilesForCoverage`-based risk score per story — measured
-  `ai-flow status` going from ~117ms to ~495ms and `ai-flow next` from ~230ms
-  to ~680ms on this repository's own 7 done stories. Fixed: `next.js` now
-  reuses `story.reviewRequired` (already computed once by `buildStatusModel`)
-  instead of recomputing; `status.js` gained a `diffRiskForRoot` cache shared
-  across all stories in one `buildStatusModel()` call, keyed by root (many
-  stories typically share one root). Post-fix: `status` ~197ms, `next`
-  ~226ms — back near baseline. Re-verified: 575/575.
+- **Independent review**: two passes (artifact + contract only), both verdict
+  pass.
+  - Pass 1: two P2s found and fixed, both efficiency: `next.js`'s
+    `strictReviewGap` and `status.js`'s `computeReviewRequired` each
+    independently recomputed the same `changedFilesForCoverage`-based risk
+    score per story — measured `ai-flow status` going from ~117ms to ~495ms
+    and `ai-flow next` from ~230ms to ~680ms on this repository's own 7 done
+    stories. Fixed: `next.js` now reuses `story.reviewRequired` (already
+    computed once by `buildStatusModel`) instead of recomputing; `status.js`
+    gained a `diffRiskForRoot` cache shared across all stories in one
+    `buildStatusModel()` call, keyed by root (many stories typically share one
+    root). Post-fix: `status` ~197ms, `next` ~226ms — back near baseline.
+  - Pass 2 (2026-08-30): two P2s found and fixed, both test-coverage gaps —
+    the human-readable text for the three auto-land failure reasons
+    (`bin/ai-flow.js`) and `status`'s `(required)` suffix (`status.js`) were
+    exercised by no test (every prior test asserted on `--json` output only).
+    Verified the gate itself was real (not just the tests) by disabling
+    `reviewGateReason` locally and confirming all three review-gate autoland
+    tests failed for the expected reason, then restored it. Fixed by adding
+    text-mode assertions to the three existing autoland review-gate tests and
+    three new status-text tests; corrected this story's plan.md Acceptance
+    Traceability table, which had claimed a "non-STRICT regression guard"
+    test that did not exist. Re-verified: 578/578.
 
 ### Rollback Notes
 

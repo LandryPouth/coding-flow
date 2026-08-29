@@ -78,6 +78,22 @@
   Re-measured post-fix: `status` ~197ms, `next` ~226ms. `npm test`: 575/575
   throughout, no regressions from either fix.
 
+- **Second independent `/flow-review` pass (2026-08-30)**: verdict pass. Two
+  P2s found and fixed, both test-coverage gaps: the human-readable text for
+  the three new auto-land failure reasons (`bin/ai-flow.js`'s
+  `reviewGateMessages`) and `ai-flow status`'s `(required)` suffix
+  (`status.js`'s `reviewSuffix`) were exercised by no test — every story-04-02
+  test asserted on the `--json` path only. Negative-evidence check: disabling
+  `reviewGateReason` locally made all three review-gate tests in
+  `test/worktree-autoland.test.js` fail for the expected reason, confirming
+  the gate itself (not just the tests) is real, before adding the missing
+  text-path coverage. Fixed by adding text-mode (`json: false`) assertions to
+  the three existing review-gate autoland tests and three new status-text
+  tests; also corrected this file's Acceptance Traceability table, which had
+  claimed a dedicated "non-STRICT regression guard" test that did not exist
+  (the actual coverage is incidental, via a pre-existing unmodified test).
+  `npm test`: 575/575.
+
 ## Test Plan
 
 - Extend `test/worktree-autoland.test.js`'s existing real-temp-git-repo
@@ -99,7 +115,7 @@
 | STRICT + fresh-pass review unblocks | same file — review-gate, satisfied case |
 | STRICT + fail review blocks with specific reason | same file — review-gate, fail case |
 | STRICT + stale review blocks with specific reason | same file — review-gate, stale case |
-| QUICK/STANDARD unaffected in every review state | same file — review-gate, non-STRICT regression guard |
+| QUICK/STANDARD unaffected (no review evidence, low-risk diff) | same file — the pre-existing, unmodified "last story of a worktree'd chain lands" test (a low-risk diff, no review captured, still lands) |
 | `next` recommends `/flow-review` for a STRICT story missing it | `test/next.test.js` — tier-4, review gate |
 
 ## Commands
