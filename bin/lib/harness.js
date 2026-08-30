@@ -618,6 +618,15 @@ function isGuardedWindow(windowText) {
   return /allowFail\s*:\s*true/.test(windowText);
 }
 
+// How many lines a single `git(...)` call's own span is allowed to run over
+// before the guard check gives up looking for its matching close paren. Real
+// call sites in this project fit in 1-2 lines, but the guard check must not
+// silently truncate a genuinely longer call and read that truncation as
+// "unguarded" — a false positive the structural signal must never produce
+// (see `scanStructuralGitSignals`). Generous on purpose: this only bounds a
+// single call's own text, not how far the file is scanned overall.
+const GUARD_SPAN_MAX_LINES = 20;
+
 // Returns the text of the balanced-parens call starting at `matchStart` (the
 // index of a `git` identifier) — i.e. `git(...)` up to its own matching close
 // paren, not whatever text happens to follow it in a wider window. This is what
@@ -730,6 +739,17 @@ function scanStructuralGitSignals(changedFiles, config, root) {
   for (const [file, lines] of addedByFile) {
     for (let i = 0; i < lines.length; i += 1) {
       const window = lines.slice(i, i + 3).join("\n");
+      // Separate from `window` above: `window` only needs to be wide enough
+      // to recognize a multi-line call's own opening shape (`git(\n  root,\n
+      // [...`). The guard check needs to see the call's own matching close
+      // paren wherever it actually falls, which can be further away than the
+      // 3-line signature window — capping the guard's own text to `window`
+      // would truncate `callSpanText`'s balanced-parens walk mid-call and let
+      // an `allowFail: true` sitting just past line 3 read as "not found",
+      // false-flagging an already-guarded call as unguarded. `spanWindow`
+      // shares the same starting text as `window` (both begin at line `i`),
+      // so a `match.index` found in `window` is still valid inside it.
+      const spanWindow = lines.slice(i, i + GUARD_SPAN_MAX_LINES).join("\n");
       for (const signal of STRUCTURAL_GIT_SIGNALS) {
         const re = new RegExp(signal.pattern.source, "g");
         let match;
@@ -740,7 +760,7 @@ function scanStructuralGitSignals(changedFiles, config, root) {
           // window instead of once.
           const offset = window.slice(0, match.index).split("\n").length - 1;
           if (offset !== 0) continue;
-          const span = callSpanText(window, match.index);
+          const span = callSpanText(spanWindow, match.index);
           if (isGuardedWindow(span)) continue;
           matches.push({ file, signal: signal.name, line: lines[i].trim() });
         }

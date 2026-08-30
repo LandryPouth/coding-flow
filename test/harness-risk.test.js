@@ -170,3 +170,30 @@ test('scoreDiffRisk does not flag an already-allowFail-guarded mutation call (fa
     `an allowFail-guarded call must not be flagged, got ${risk.level}: ${risk.reason}`,
   );
 });
+
+test('scoreDiffRisk does not flag a guarded call whose allowFail sits past the 3-line signature window (guard span truncation)', (t) => {
+  const repo = initRepo(t);
+  fs.writeFileSync(
+    path.join(repo, 'src.js'),
+    'function landCleanup(root, match) {\n' +
+      '  const remove = git(\n' +
+      '    root,\n' +
+      '    [\n' +
+      '      "worktree",\n' +
+      '      "remove",\n' +
+      '      match.path,\n' +
+      '    ],\n' +
+      '    { allowFail: true },\n' +
+      '  );\n' +
+      '  if (remove.code !== 0) { throw new Error("failed"); }\n' +
+      '}\n',
+  );
+  commitAll(repo, 'add guarded worktree remove spanning many lines');
+
+  const risk = scoreRepo(repo);
+  assert.equal(
+    risk.level,
+    'low',
+    `an allowFail-guarded call must not be flagged just because its guard is beyond the signature window, got ${risk.level}: ${risk.reason}`,
+  );
+});
