@@ -19,6 +19,20 @@ quick pass for that dimension. Deterministic quality (lint, format, typecheck,
 duplication detectors) is not your job — that runs as executed proof through
 `ai-flow verify`; you cover the judgment a linter cannot.
 
+When the calling context's own risk tier already resolved STRICT (`scoreDiffRisk`/
+`scoreStoryRisk` returned `high`), Architecture, Tests, and Security default to
+their **Deep** sections without you re-judging risk from scratch — the score that
+triggered STRICT already answered "is this a refactor/cross-module/high-risk
+change" for those three dimensions. A QUICK/STANDARD diff is unaffected: the quick
+checklist stays the stated default there — this raises the floor only where the
+risk score already raised it. Depth is what scales per dimension inside this one
+independent pass, not parallel subagents fanned out one per dimension: each added
+subagent context re-reads the full diff and contract, so cost multiplies roughly
+per dimension added that way, while the cheapest, most mechanical misses are
+already closed by structural checks and one genuinely independent pass going Deep
+where risk demands it. `/code-review ultra` remains available as an explicit,
+separately-invoked path when that extra parallel coverage is worth its cost.
+
 ## Conventions
 
 - `{project-root}` means the current repository root.
@@ -228,3 +242,29 @@ Verdict: pass/fail
 
 -
 ```
+
+After producing the markdown above, capture it as durable evidence so a later
+session (or the tool itself) can read the verdict back without re-reading the
+diff — `story-04-01`'s whole point, and the precondition `flow-run`'s STRICT
+gate will eventually require (`story-04-02`, not wired yet):
+
+```bash
+ai-flow review capture --story <story-dir> --verdict pass|fail \
+  --architecture quick|deep|skipped --tests quick|deep|skipped \
+  --security quick|deep|skipped --quality quick|deep|skipped --e2e quick|deep|skipped \
+  --p0 <count> --p1 <count> --p2 <count> --p3 <count> \
+  [--reviewer self|subagent]
+```
+
+- `--verdict` is this pass's own Verdict line.
+- Each dimension flag is `deep` if that dimension's Deep section ran, `quick`
+  if only the default checklist ran, `skipped` if the dimension was not
+  covered at all (E2E defaults to `skipped` unless the change is a critical
+  journey).
+- `--p0`..`--p3` are the Findings counts by severity, from this pass's own
+  `## Findings` list — not a re-count of `## Non-Blocking Improvements`.
+- `--reviewer subagent` when this pass ran as a delegated, independent review
+  (see "Reviewing Your Own Diff" above); `self` (the default) otherwise.
+
+If `ai-flow` is not on `PATH`, use `npx @landry_pouth/coding-flow` instead —
+same as every other command in this skill set.

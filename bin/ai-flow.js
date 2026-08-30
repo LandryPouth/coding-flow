@@ -60,6 +60,7 @@ if (command === "guard") {
   return;
 }
 
+const path = require("path");
 const { cwd, invocationDir } = require("./lib/context");
 const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
 const {
@@ -76,10 +77,12 @@ const { nextCommand } = require("./lib/next");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { harnessCommand, ensureHarnessConfig } = require("./lib/harness");
 const { auditCommand } = require("./lib/audit");
+const { reviewCommand } = require("./lib/review");
 const { traceCommand } = require("./lib/trace");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
 const { worktreeCommand } = require("./lib/worktree");
+const { decidePlacement, autoLandIfChainFinished } = require("./lib/worktree-plan");
 const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
@@ -386,12 +389,84 @@ if (command === "init") {
   reportCommand({ getFlagValue, flags });
 } else if (command === "audit") {
   auditCommand({ getFlagValue, flags });
+} else if (command === "review") {
+  reviewCommand({ commandArgs, getFlagValue, flags });
 } else if (command === "trace") {
   traceCommand({ getFlagValue, flags });
 } else if (command === "ci") {
   ciCommand({ commandArgs, flags });
 } else if (command === "plugin") {
   pluginCommand({ commandArgs, flags });
+} else if (command === "worktree" && commandArgs[0] === "place") {
+  // Not routed through worktreeCommand/worktree.js: decidePlacement
+  // (worktree-plan.js) itself calls back into worktree.js's worktreeAdd, so
+  // wiring this here — the one module neither of them requires — avoids a
+  // circular require between the two.
+  const epic = getFlagValue("--epic", null);
+  const story = getFlagValue("--story", null);
+
+  if (!epic || !story) {
+    fail("worktree place requires --epic <dir> and --story <dir>.");
+  }
+
+  let result;
+  try {
+    result = decidePlacement({ cwd, epicPath: epic, storyPath: story });
+  } catch (err) {
+    fail(err.message);
+  }
+
+  if (flags.has("--json")) {
+    log(JSON.stringify(result, null, 2));
+  } else {
+    log(`Chain: ${result.chainId} (story label ${result.label})`);
+    log(`Location: ${result.location}${result.created ? " (new worktree)" : " (current checkout)"}`);
+    if (result.created) {
+      log("");
+      log(
+        `Reason: chain ${result.parallelTo.chainId} already occupies this checkout (${result.parallelTo.location}), ` +
+          `so chain ${result.chainId} runs parallel to it in its own worktree.`,
+      );
+      log("");
+      log("Next step:");
+      log(`  cd ${path.relative(cwd, result.location) || result.location}`);
+    }
+  }
+} else if (command === "worktree" && commandArgs[0] === "autoland") {
+  // Not routed through worktreeCommand/worktree.js either, same reason as
+  // `place`: autoLandIfChainFinished (worktree-plan.js) calls back into
+  // worktree.js's worktreeLand.
+  const epic = getFlagValue("--epic", null);
+  const story = getFlagValue("--story", null);
+
+  if (!epic || !story) {
+    fail("worktree autoland requires --epic <dir> and --story <dir>.");
+  }
+
+  let result;
+  try {
+    result = autoLandIfChainFinished({ cwd, epicPath: epic, storyPath: story });
+  } catch (err) {
+    fail(err.message);
+  }
+
+  const reviewGateMessages = {
+    "review-missing": `has no captured review for its STRICT-tier story "${result.story}"`,
+    "review-stale": `has a stale review (the tree moved since capture) for its STRICT-tier story "${result.story}"`,
+    "review-failed": `has a failing review for its STRICT-tier story "${result.story}"`,
+  };
+
+  if (flags.has("--json")) {
+    log(JSON.stringify(result, null, 2));
+  } else if (result.landed) {
+    log(`Landed: chain ${result.chainId} ("${result.worktreeName}") merged and its worktree removed.`);
+  } else if (result.reason === "chain-not-finished") {
+    log(`Chain ${result.chainId} is not finished yet — nothing to land.`);
+  } else if (reviewGateMessages[result.reason]) {
+    log(`Chain ${result.chainId} ${reviewGateMessages[result.reason]} — run /flow-review before landing.`);
+  } else {
+    log(`Chain ${result.chainId} never left the primary checkout — nothing to land.`);
+  }
 } else if (command === "worktree") {
   worktreeCommand({
     commandArgs,

@@ -24,7 +24,7 @@ const { execFileSync } = require("child_process");
 const { cwd } = require("./context");
 const { log } = require("./util");
 const { readConfig } = require("./config");
-const { buildStatusModel } = require("./status");
+const { buildStatusModel, computeReviewStatus } = require("./status");
 const { latestVerifyByStoryDir } = require("./audit");
 const { defaultBranch, currentBranch } = require("./policy");
 
@@ -32,8 +32,11 @@ const TIER_LABELS = {
   1: "blocked",
   2: "unproven",
   3: "stale",
-  4: "ready-to-ship",
-  5: "planned",
+  // story-04-02: a distinct tier, never folded into "ready-to-ship" — a
+  // STRICT story missing a fresh, passing review is not ready to ship.
+  4: "needs-review",
+  5: "ready-to-ship",
+  6: "planned",
 };
 
 function git(dir, args) {
@@ -84,6 +87,28 @@ function hasUnshippedWork(location, base) {
   return ahead !== null && ahead !== "" && ahead !== "0";
 }
 
+// story-04-02: a STRICT-tier story (`story.reviewRequired`, already computed
+// by `buildStatusModel` — the same `combineRisk`/`scoreStoryRisk`/
+// `scoreDiffRisk` `buildHarnessPreflight` uses, never a second, independent
+// risk model, and never recomputed a second time here) is not "ready to
+// ship" on a green verify alone; it also needs a fresh, passing review
+// (story-04-01's `computeReviewStatus`). Returns a human-readable gap
+// description when one is missing, or `null` when the story is not STRICT or
+// its review is already fresh-passing. `location` is the story's own worktree
+// or the primary checkout — the exact same location `buildStatusModel`
+// already scored `reviewRequired` against.
+function strictReviewGap(location, story) {
+  if (!story.reviewRequired) {
+    return null;
+  }
+
+  const state = computeReviewStatus(location, story.path);
+  if (state === "none") return "has no captured review";
+  if (state === "stale") return "review is stale — the code moved since it was captured";
+  if (state === "fail") return "review recorded a failing verdict";
+  return null;
+}
+
 function buildQueue() {
   const config = readConfig(cwd);
   const model = buildStatusModel(config);
@@ -126,10 +151,20 @@ function buildQueue() {
         });
       } else if (claimsDone) {
         const location = storyLocation(story);
-        if (hasUnshippedWork(location, base)) {
-          const here = location === cwd;
+        const reviewGap = location ? strictReviewGap(location, story) : null;
+
+        if (reviewGap) {
           items.push({
             tier: 4,
+            epic: epic.name,
+            story: story.name,
+            message: `"${story.name}" is STRICT-tier and ${reviewGap} — run /flow-review before landing/shipping`,
+            command: null,
+          });
+        } else if (hasUnshippedWork(location, base)) {
+          const here = location === cwd;
+          items.push({
+            tier: 5,
             epic: epic.name,
             story: story.name,
             message: `"${story.name}" is proven and has unshipped work`,
@@ -138,11 +173,11 @@ function buildQueue() {
         }
       } else if (story.status === "planned" && !story.worktree) {
         items.push({
-          tier: 5,
+          tier: 6,
           epic: epic.name,
           story: story.name,
           message: `"${story.name}" is planned and has no worktree yet`,
-          command: `ai-flow worktree add --story ${story.path}`,
+          command: `ai-flow worktree place --epic ${epic.path} --story ${story.path}`,
         });
       }
     }

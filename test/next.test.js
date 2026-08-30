@@ -108,7 +108,7 @@ test('next flags a story marked done whose last captured verify failed', (t) => 
   assert.match(output, /last captured verify failed/);
 });
 
-test('next suggests worktree add for a planned story with no worktree', (t) => {
+test('next suggests worktree place for a planned story with no worktree', (t) => {
   const { repo } = initRepo(t);
   const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\nnot started\n');
   commitAll(repo, 'init');
@@ -116,7 +116,7 @@ test('next suggests worktree add for a planned story with no worktree', (t) => {
   const { code, output } = run(repo, ['next']);
   assert.equal(code, 0);
   assert.match(output, /\[planned\]/);
-  assert.match(output, new RegExp(`ai-flow worktree add --story ${storyPath}`));
+  assert.match(output, new RegExp(`ai-flow worktree place --epic epics/epic-01-x --story ${storyPath}`));
 });
 
 test('next suggests ship for a proven story with unshipped work on the checked-out branch', (t) => {
@@ -162,6 +162,55 @@ test('next --all lists every item ranked by tier', (t) => {
   const blockedIndex = output.indexOf('[blocked]');
   const plannedIndex = output.indexOf('[planned]');
   assert.ok(blockedIndex >= 0 && plannedIndex >= 0 && blockedIndex < plannedIndex, 'blocked must rank before planned');
+});
+
+// story-04-02: a STRICT-tier story (risk resolved the same way `ai-flow
+// harness preflight` already scores it — a diff touching a high-risk path,
+// `bin/lib/harness.js`'s `defaultHighRiskPaths`) with a green verify is not
+// "ready to ship" until it also has a fresh, passing review (story-04-01).
+test('next recommends /flow-review, not ship, for a STRICT story missing a fresh-passing review', (t) => {
+  const { repo } = initRepo(t);
+  const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\n## Status: done\n');
+  writeVerify(repo, storyPath, { ok: true });
+  commitAll(repo, 'init');
+
+  sh(repo, 'git', ['checkout', '-b', 'story-01-01-a']);
+  // A high-risk path in the diff is enough on its own for scoreDiffRisk to
+  // resolve "high" — matching harness.js's default `**/*payment*` glob.
+  fs.writeFileSync(path.join(repo, 'payment.js'), 'module.exports = {};\n');
+  sh(repo, 'git', ['add', '.']);
+  sh(repo, 'git', ['commit', '-m', 'implement']);
+
+  const { code, output } = run(repo, ['next']);
+  assert.equal(code, 0);
+  assert.match(output, /\[needs-review\]/);
+  assert.match(output, /STRICT-tier/);
+  assert.match(output, /\/flow-review/);
+  assert.doesNotMatch(output, /ai-flow ship/, 'must not recommend ship while review is missing');
+});
+
+test('next recommends ship once the same STRICT story has a fresh, passing review', (t) => {
+  const { repo } = initRepo(t);
+  const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\n## Status: done\n');
+  writeVerify(repo, storyPath, { ok: true });
+  commitAll(repo, 'init');
+
+  sh(repo, 'git', ['checkout', '-b', 'story-01-01-a']);
+  fs.writeFileSync(path.join(repo, 'payment.js'), 'module.exports = {};\n');
+  sh(repo, 'git', ['add', '.']);
+  sh(repo, 'git', ['commit', '-m', 'implement']);
+
+  // The real `ai-flow review capture` CLI (story-04-01), not a hand-written
+  // fixture — proves the two stories compose end-to-end.
+  const captured = run(repo, ['review', 'capture', '--story', storyPath, '--verdict', 'pass', '--json']);
+  assert.equal(captured.code, 0, `review capture must succeed: ${captured.output}`);
+  sh(repo, 'git', ['add', '-A']);
+  sh(repo, 'git', ['commit', '-m', 'chore: capture review evidence']);
+
+  const { code, output } = run(repo, ['next']);
+  assert.equal(code, 0);
+  assert.match(output, /\[ready-to-ship\]/);
+  assert.match(output, /ai-flow ship/);
 });
 
 test('next --json emits only the top item by default, all with --all', (t) => {

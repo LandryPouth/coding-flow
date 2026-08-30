@@ -15,6 +15,9 @@ const TEMPLATES = path.join(__dirname, '..', 'templates');
 const SKILLS = path.join(TEMPLATES, '.claude', 'skills');
 
 const read = (...parts) => fs.readFileSync(path.join(...parts), 'utf8');
+// Prose is hard-wrapped for readability; collapse whitespace before matching
+// a multi-word phrase so a rewrap doesn't fail a test the content still satisfies.
+const flat = (text) => text.replace(/\s+/g, ' ');
 
 function skillFiles() {
   return fs
@@ -101,6 +104,38 @@ test('verify stays non-skippable at every intensity', () => {
   // Ceremony is negotiable; proof is not.
   assert.match(run, /Required at every intensity, non-skippable/);
   assert.match(run, /ai-flow verify --story/);
+});
+
+// story-04-04: the one /flow-review pass STRICT requires must be genuinely
+// independent (a fresh subagent, not the authoring session re-reading its own
+// reasoning) and go Deep by default on the dimensions STRICT's own risk score
+// already flagged — without defaulting to parallel multi-subagent fan-out.
+test('STRICT self-review delegates to a fresh, adversarially-framed subagent', () => {
+  const run = flat(read(SKILLS, 'flow-run', 'SKILL.md'));
+  assert.match(run, /In STRICT, `\/flow-review` is required, and the one pass must be genuinely independent/);
+  assert.match(run, /delegate it to a fresh Agent\/subagent call/);
+  // The subagent must be told the tier is already STRICT — otherwise flow-review's
+  // Deep-by-default clause has nothing to trigger on and it re-judges risk itself.
+  assert.match(run, /this diff's risk tier already resolved STRICT/);
+  assert.match(run, /nothing else beyond that, never your own reasoning or conclusion/);
+  assert.match(run, /Frame the prompt adversarially/);
+});
+
+test('a STRICT-risk diff defaults Architecture, Tests, and Security to Deep without re-judging risk', () => {
+  const review = flat(read(SKILLS, 'flow-review', 'SKILL.md'));
+  assert.match(
+    review,
+    /`scoreDiffRisk`\/ `scoreStoryRisk` returned `high`\), Architecture, Tests, and Security default to their \*\*Deep\*\* sections/,
+  );
+  // The floor only moves where the risk score already moved it.
+  assert.match(review, /A QUICK\/STANDARD diff is unaffected: the quick checklist stays the stated default there/);
+});
+
+test('dimension depth scales inside one independent pass, not parallel subagent fan-out', () => {
+  const review = flat(read(SKILLS, 'flow-review', 'SKILL.md'));
+  assert.match(review, /not parallel subagents fanned out one per dimension/);
+  assert.match(review, /cost multiplies roughly per dimension added that way/);
+  assert.match(review, /`\/code-review ultra` remains available as an explicit,/);
 });
 
 test('flow-plan records story dependencies as a tree so parallelism is visible', () => {

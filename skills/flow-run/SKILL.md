@@ -82,7 +82,31 @@ paths while running QUICK, that is the signal to switch up, not to keep going.
 
 Never disable the gate (`requireTestChange`) to finish a story.
 
-**Before any implementation, at every intensity, lock the story:**
+**Before any implementation, at every intensity, resolve where the story runs:**
+
+```bash
+ai-flow worktree place --epic <epic-dir> --story <story-dir>
+```
+
+`<epic-dir>` is `<story-dir>`'s parent directory (`epics/epic-NN-name/`, per
+the Conventions above). Reads the epic's Backbone/dependency-tree in its
+`index.md` and decides
+whether this story continues wherever its chain already lives, or opens a
+new worktree because it starts a chain parallel to what is already
+running — the isolation `/flow-plan`'s own contract already promises for
+sibling stories, applied automatically instead of by hand (see
+docs/DOGFOODING.md, 2026-08-27, for the two real incidents — inconsistent
+placement, and a worktree created for a story with nothing to parallelize —
+this step exists to close). If it reports a new worktree, `cd` into it
+before continuing: every step below (lock, implementation, verify) runs from
+there, not from wherever this invocation started. If it errors — an
+unsupported dependency-tree shape, e.g. a consolidation/merge point — stop
+and report it rather than guessing a location; place the story manually with
+`ai-flow worktree add --story <story-dir>` once resolved. With no story
+directory, or an epic with a single story and no dependency tree, there is
+nothing to place — skip this step.
+
+**Then, at every intensity, lock the story:**
 
 ```bash
 ai-flow worktree lock --story <story-dir>
@@ -93,9 +117,10 @@ This defends against a different failure than story risk does: a second
 unfinished work, mixing two stories' diffs on one tree before either is done.
 That risk does not correlate with how risky the story itself is, so the lock
 runs unconditionally, not gated behind STRICT's `harness preflight`. If it
-refuses — the checkout is occupied by a different story — stop and isolate
-first (`ai-flow worktree add --story <story-dir>`) rather than proceeding on
-the shared tree. With no story directory (see below), there is nothing to
+refuses — the checkout is occupied by a different story — stop; this should
+not happen right after placement resolved a location for this exact story,
+so treat it as a signal something upstream is wrong rather than working
+around it. With no story directory (see below), there is nothing to
 lock — skip this step.
 
 Everything else is machinery, and scales with intensity:
@@ -127,6 +152,20 @@ that — keep it honest:
   `ai-flow worktree unlock --story <story-dir>` — a `blocked` or
   `in-progress` story still has real unlanded work the lock is correctly
   protecting, so it stays locked.
+- Immediately after unlocking, run
+  `ai-flow worktree autoland --epic <epic-dir> --story <story-dir>` (skip if
+  there was no story directory to place in the first place). It checks
+  whether this story was the last not-yet-done one of its chain and, if so
+  and that chain is running in its own worktree, lands it onto the primary
+  checkout automatically — the counterpart to the placement step at the top:
+  that step opened the worktree when the chain started, this one closes it
+  when the chain finishes, so nobody has to notice a chain is done and land
+  it by hand. Report exactly what it reports: landed, not-yet-finished (a
+  sibling in the chain is still open — normal, not an error), never isolated
+  (the chain ran in the primary checkout all along — also normal), or a land
+  failure (a real conflict or a failed post-land re-verify) — stop and report
+  a failure rather than retrying blindly, the same as any other `land`
+  failure.
 - On a red or partial verify, write `## Status: blocked` and record what failed.
 - `NOT PROVEN` (commands green, coverage gate blocked) is not `done` either. The
   story stays `in-progress` until a test covers it or an exemption is declared.
@@ -256,7 +295,17 @@ request. A full review pass over a diff you wrote minutes ago mostly re-reads yo
 own reasoning; it earns its cost when the diff is large or unfamiliar, not by
 default.
 
-In STRICT, `/flow-review` is required. An independent pass is the point of STRICT.
+In STRICT, `/flow-review` is required, and the one pass must be genuinely
+independent: delegate it to a fresh Agent/subagent call, handed the diff, the
+contract — the story's acceptance criteria, `RULES.md`, and the codebase's existing
+conventions — and the fact that this diff's risk tier already resolved STRICT, so
+it can default Architecture, Tests, and Security to Deep instead of re-judging
+risk itself — nothing else beyond that, never your own reasoning or conclusion.
+Frame the prompt adversarially: find what is wrong with this change, assume the
+author is overconfident. A session reviewing its own diff minutes after writing it
+is the weakest reviewer available — the reasoning that produced a defect is still
+in context, and re-reading it just reproduces the same conclusion; a fresh context
+handed only the artifact and the contract is what an independent pass means.
 
 ## Common Rationalizations
 

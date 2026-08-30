@@ -30,6 +30,7 @@ const {
   normalizePortable,
   readJson,
   writeJson,
+  writeTimestampedEvidence,
   addIssue,
   matchesPattern,
   isAllowedEnvExample,
@@ -38,8 +39,15 @@ const {
   selectFailureLines,
 } = require("./util");
 
-function harnessConfigPath() {
-  return path.join(cwd, ".coding-flow", "harness.json");
+// `root` defaults to this module's own process-bound `cwd` (the overwhelming
+// majority of call sites — `verify`, `check`, `preflight` all run in-process
+// against the real checkout). story-04-02 is the first caller that must score
+// risk for a story living in a DIFFERENT worktree than the process itself
+// (`ai-flow next` reports on every story project-wide, not just the one at
+// `cwd`) — an explicit root lets it read that worktree's own tracked
+// `.coding-flow/harness.json` without a real `chdir`.
+function harnessConfigPath(root = cwd) {
+  return path.join(root, ".coding-flow", "harness.json");
 }
 
 function harnessRunsDir() {
@@ -272,9 +280,9 @@ function defaultHarnessConfig() {
   };
 }
 
-function readHarnessConfig() {
+function readHarnessConfig(root = cwd) {
   const defaults = defaultHarnessConfig();
-  const config = readJson(harnessConfigPath(), null);
+  const config = readJson(harnessConfigPath(root), null);
 
   if (!config) {
     return { config: defaults, exists: false };
@@ -584,23 +592,220 @@ function scoreStoryRisk(storyText, config) {
   };
 }
 
+// story-04-03: unconditional git-mutation calls added to a changed, non-test
+// file — the same territory epic-03's own rationale already names as risky
+// (deletes worktrees/branches, merges unattended) even when no path or prose
+// term says "auth"/"payment"/"migration". Each pattern requires the call to be
+// wrapped in this project's own `git(root, [...])` helper shape (see
+// `worktree.js`'s `git()`), matching the exact call convention the real
+// story-03-02 bug used — a bounded text signal, not a generic shell-command
+// scanner.
+const STRUCTURAL_GIT_SIGNALS = [
+  { name: "git worktree remove", pattern: /\bgit\s*\([^;]*?\[\s*["'`]worktree["'`]\s*,\s*["'`]remove["'`]/ },
+  { name: "git branch -D/-f (force branch delete)", pattern: /\bgit\s*\([^;]*?\[\s*["'`]branch["'`]\s*,\s*["'`]-[DdFf]["'`]/ },
+  { name: "git reset --hard", pattern: /\bgit\s*\([^;]*?\[\s*["'`]reset["'`]\s*,\s*["'`]--hard["'`]/ },
+  { name: "git merge", pattern: /\bgit\s*\([^;]*?\[\s*["'`]merge["'`]/ },
+];
+
+// A call already passing `{ allowFail: true }` (this project's own converted
+// pattern, post story-03-02) returns a result instead of exiting the process —
+// it is not "unattended" the way a default-path call is, so it must not be
+// flagged. Checked over the specific call's own span (see `callSpanText`), not
+// an arbitrary window of surrounding text — an `allowFail: true` belonging to a
+// neighboring call on the same or an adjacent line must not leak onto a
+// different, genuinely-unguarded call.
+function isGuardedWindow(windowText) {
+  return /allowFail\s*:\s*true/.test(windowText);
+}
+
+// How many lines a single `git(...)` call's own span is allowed to run over
+// before the guard check gives up looking for its matching close paren. Real
+// call sites in this project fit in 1-2 lines, but the guard check must not
+// silently truncate a genuinely longer call and read that truncation as
+// "unguarded" — a false positive the structural signal must never produce
+// (see `scanStructuralGitSignals`). Generous on purpose: this only bounds a
+// single call's own text, not how far the file is scanned overall.
+const GUARD_SPAN_MAX_LINES = 20;
+
+// Returns the text of the balanced-parens call starting at `matchStart` (the
+// index of a `git` identifier) — i.e. `git(...)` up to its own matching close
+// paren, not whatever text happens to follow it in a wider window. This is what
+// scopes the `allowFail: true` guard check to the one call it actually guards:
+// two `git(...)` calls on the same line, one guarded and one not, must not
+// contaminate each other.
+function callSpanText(text, matchStart) {
+  const openIdx = text.indexOf("(", matchStart);
+  if (openIdx === -1) return text.slice(matchStart);
+  let depth = 0;
+  for (let i = openIdx; i < text.length; i += 1) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")") {
+      depth -= 1;
+      if (depth === 0) return text.slice(matchStart, i + 1);
+    }
+  }
+  return text.slice(matchStart);
+}
+
+// Non-test, non-doc files only: a mutation call rehearsed inside a test file
+// is expected there (it is what proves the real call site is safe), not a
+// production diff to escalate.
+function structuralRiskCandidateFiles(changedFiles, config) {
+  const testGlobs = Array.isArray(config.testGlobs) ? config.testGlobs : defaultTestGlobs();
+  return changedFiles.filter(
+    (file) =>
+      /\.(js|mjs|cjs|ts)$/i.test(file) && !testGlobs.some((pattern) => matchesPattern(file, pattern)),
+  );
+}
+
+// Added lines only (`git diff -U0`), scoped to the same base-branch-or-fallback
+// comparison `changedFilesForCoverage` already uses. Deliberately NOT restricted
+// to `files` via a pathspec: a pathspec that only names the new side of a rename
+// hides the old side from git's own rename detection, so a renamed-but-unchanged
+// file would show as 100%-added content instead of a content-free rename — a
+// real false positive found in review. Running the unrestricted diff once and
+// filtering to `files` in-process keeps this to one spawn for the whole set
+// while still detecting renames correctly. Every file mentioned by a `diff --git`
+// header is pre-registered with zero added lines (a content-identical rename
+// emits a header with no `+++`/`+` lines at all); real hunks then layer their
+// `+` lines on top. Untracked new files (no history to diff against, so they
+// never appear in the diff at all) fall back to reading the working file
+// directly, since every line of a brand-new file is, in effect, "added". Never
+// throws: any git failure (no repo, no git binary) degrades to "nothing to
+// scan" rather than breaking the risk score that calls it.
+function addedLinesByFile(root, files) {
+  const byFile = new Map();
+  if (files.length === 0) return byFile;
+  const wanted = new Set(files);
+
+  const base = defaultBranch(root);
+  let mergeBase = null;
+  for (const ref of [base, `origin/${base}`]) {
+    mergeBase = runGitList(["merge-base", ref, "HEAD"], root)[0];
+    if (mergeBase) break;
+  }
+
+  try {
+    const diffArgs = mergeBase ? ["diff", "-U0", mergeBase] : ["diff", "-U0"];
+    const output = require("child_process").execFileSync("git", diffArgs, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    let current = null;
+    for (const line of output.split(/\r?\n/)) {
+      const header = /^diff --git a\/.+ b\/(.+)$/.exec(line);
+      if (header) {
+        current = null;
+        if (wanted.has(header[1]) && !byFile.has(header[1])) byFile.set(header[1], []);
+        continue;
+      }
+      if (line.startsWith("+++ ")) {
+        const target = line.slice(4).replace(/^[ab]\//, "").trim();
+        current = target === "/dev/null" ? null : target;
+        if (current && wanted.has(current) && !byFile.has(current)) byFile.set(current, []);
+        continue;
+      }
+      if (current && wanted.has(current) && line.startsWith("+") && !line.startsWith("+++")) {
+        byFile.get(current).push(line.slice(1));
+      }
+    }
+  } catch {
+    // No base to diff against, or git failed — fall through to the untracked-file
+    // fallback below for every file (nothing was captured above).
+  }
+
+  for (const file of files) {
+    if (byFile.has(file)) continue;
+    try {
+      const content = fs.readFileSync(path.join(root, file), "utf8");
+      byFile.set(file, content.split(/\r?\n/));
+    } catch {
+      // Deleted, or genuinely unreadable — nothing to scan for this file.
+    }
+  }
+
+  return byFile;
+}
+
+function scanStructuralGitSignals(changedFiles, config, root) {
+  const candidates = structuralRiskCandidateFiles(changedFiles, config);
+  if (candidates.length === 0) return [];
+
+  const addedByFile = addedLinesByFile(root, candidates);
+  const matches = [];
+
+  for (const [file, lines] of addedByFile) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const window = lines.slice(i, i + 3).join("\n");
+      // Separate from `window` above: `window` only needs to be wide enough
+      // to recognize a multi-line call's own opening shape (`git(\n  root,\n
+      // [...`). The guard check needs to see the call's own matching close
+      // paren wherever it actually falls, which can be further away than the
+      // 3-line signature window — capping the guard's own text to `window`
+      // would truncate `callSpanText`'s balanced-parens walk mid-call and let
+      // an `allowFail: true` sitting just past line 3 read as "not found",
+      // false-flagging an already-guarded call as unguarded. `spanWindow`
+      // shares the same starting text as `window` (both begin at line `i`),
+      // so a `match.index` found in `window` is still valid inside it.
+      const spanWindow = lines.slice(i, i + GUARD_SPAN_MAX_LINES).join("\n");
+      for (const signal of STRUCTURAL_GIT_SIGNALS) {
+        const re = new RegExp(signal.pattern.source, "g");
+        let match;
+        while ((match = re.exec(window))) {
+          // Only accept a match that starts on this window's own first line
+          // (offset 0) — otherwise the same call gets re-matched again from an
+          // earlier iteration's window and reported once per overlapping
+          // window instead of once.
+          const offset = window.slice(0, match.index).split("\n").length - 1;
+          if (offset !== 0) continue;
+          const span = callSpanText(spanWindow, match.index);
+          if (isGuardedWindow(span)) continue;
+          matches.push({ file, signal: signal.name, line: lines[i].trim() });
+        }
+      }
+    }
+  }
+
+  return matches;
+}
+
 // Risk read from the diff itself. Independent of any prose, so it holds on a
 // change with no story at all — which is also what lets the proof layer work
-// outside `epics/`.
-function scoreDiffRisk(changedFiles, config) {
+// outside `epics/`. `root` defaults to this module's own `cwd` like the rest of
+// harness.js's `root`-parameterized functions (see `harnessConfigPath`) — every
+// existing call site already runs against a real checkout, so this only widens
+// what a caller scoring a DIFFERENT worktree (`status.js`, `worktree-plan.js`)
+// can pass.
+function scoreDiffRisk(changedFiles, config, root = cwd) {
   const patterns = Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaultHighRiskPaths();
   const matchedPaths = changedFiles.filter((file) =>
     patterns.some((pattern) => matchesPattern(file, pattern)),
   );
+  const structuralMatches = scanStructuralGitSignals(changedFiles, config, root);
 
-  if (matchedPaths.length === 0) {
-    return { level: "low", matchedPaths: [], reason: "no sensitive path in the diff." };
+  if (matchedPaths.length === 0 && structuralMatches.length === 0) {
+    return { level: "low", matchedPaths: [], structuralSignals: [], reason: "no sensitive path in the diff." };
+  }
+
+  const reasons = [];
+  if (matchedPaths.length > 0) {
+    reasons.push(`the diff touches ${matchedPaths.slice(0, 3).join(", ")}${matchedPaths.length > 3 ? ", …" : ""}`);
+  }
+  if (structuralMatches.length > 0) {
+    const named = structuralMatches
+      .slice(0, 3)
+      .map((m) => `an unguarded ${m.signal} in ${m.file}`)
+      .join("; ");
+    reasons.push(`${named}${structuralMatches.length > 3 ? "; …" : ""}`);
   }
 
   return {
     level: "high",
     matchedPaths,
-    reason: `the diff touches ${matchedPaths.slice(0, 3).join(", ")}${matchedPaths.length > 3 ? ", …" : ""}.`,
+    structuralSignals: structuralMatches,
+    reason: `${reasons.join("; ")}.`,
   };
 }
 
@@ -798,11 +1003,11 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
   return report;
 }
 
-function runGitList(argsForGit) {
+function runGitList(argsForGit, root = cwd) {
   try {
     const childProcess = require("child_process");
     return childProcess
-      .execFileSync("git", argsForGit, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .execFileSync("git", argsForGit, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
@@ -811,10 +1016,10 @@ function runGitList(argsForGit) {
   }
 }
 
-function getChangedFiles() {
+function getChangedFiles(root = cwd) {
   return [...new Set([
-    ...runGitList(["diff", "--name-only"]),
-    ...runGitList(["diff", "--cached", "--name-only"]),
+    ...runGitList(["diff", "--name-only"], root),
+    ...runGitList(["diff", "--cached", "--name-only"], root),
   ])].sort();
 }
 
@@ -1403,28 +1608,28 @@ function captureEnvironment() {
 // Everything this branch contributes, not just what is uncommitted: a story whose
 // tests are already committed must not read as "no test changed". Falls back to
 // the working tree when there is no base to compare against.
-function changedFilesForCoverage() {
+function changedFilesForCoverage(root = cwd) {
   const files = new Set();
-  const base = defaultBranch(cwd);
+  const base = defaultBranch(root);
 
   for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
+    const mergeBase = runGitList(["merge-base", ref, "HEAD"], root)[0];
 
     if (mergeBase) {
-      for (const file of runGitList(["diff", "--name-only", mergeBase])) {
+      for (const file of runGitList(["diff", "--name-only", mergeBase], root)) {
         files.add(file);
       }
       break;
     }
   }
 
-  for (const file of getChangedFiles()) {
+  for (const file of getChangedFiles(root)) {
     files.add(file);
   }
 
   // A brand-new test file is untracked, and it is the single most important case
   // this gate must see.
-  for (const file of runGitList(["ls-files", "--others", "--exclude-standard"])) {
+  for (const file of runGitList(["ls-files", "--others", "--exclude-standard"], root)) {
     files.add(file);
   }
 
@@ -2176,18 +2381,7 @@ function findReusableVerify({ storyRelativePath, commands }) {
 // name always ends in -verify.json (so the ledger/audit ingest it) and stays
 // unique even inside a tight batch loop: same-millisecond writes get a counter.
 function writeVerifyEvidence(evidence) {
-  fs.mkdirSync(harnessRunsDir(), { recursive: true });
-  const base = new Date().toISOString().replace(/[:.]/g, "-");
-  let outputPath = path.join(harnessRunsDir(), `${base}-verify.json`);
-  let counter = 1;
-
-  while (fs.existsSync(outputPath)) {
-    outputPath = path.join(harnessRunsDir(), `${base}-${counter}-verify.json`);
-    counter += 1;
-  }
-
-  writeJson(outputPath, evidence);
-  return outputPath;
+  return writeTimestampedEvidence(harnessRunsDir(), "verify", evidence);
 }
 
 // `--story` scopes the proof, and a scope that silently misses is worse than no
@@ -2196,8 +2390,10 @@ function writeVerifyEvidence(evidence) {
 // as-is. `run` already refuses this (run.js selectStories); now that
 // `verify --story` is the promoted, typed-by-hand escape hatch, it must too.
 //
-// Only verify is this strict. `preflight` deliberately reports a missing story as
-// "(missing)", and `check` legitimately scopes its secret scan to any directory.
+// Verify and `review capture` (review.js — the same "a typo'd --story must not
+// silently produce evidence for the wrong thing" reasoning) are this strict.
+// `preflight` deliberately reports a missing story as "(missing)", and `check`
+// legitimately scopes its secret scan to any directory.
 function requireStoryScope(story) {
   const storyDir = resolveStoryDir(story);
 
@@ -2396,7 +2592,10 @@ module.exports = {
   defaultSecretPatterns,
   evaluateCoverage,
   scoreDiffRisk,
+  scoreStoryRisk,
   combineRisk,
+  readStoryBundle,
+  changedFilesForCoverage,
   harnessCommand,
   // Reused by `run` (batch orchestration) so it shares the single-story verify
   // execution path instead of duplicating it.
@@ -2404,6 +2603,7 @@ module.exports = {
   writeVerifyEvidence,
   resolveValidationCommands,
   resolveStoryDir,
+  requireStoryScope,
   captureEnvironment,
   // Reused by `worktree land`'s post-merge re-verify so a failing command is
   // reported in the exact shape `ai-flow verify` already reports one in.
