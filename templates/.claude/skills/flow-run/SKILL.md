@@ -296,13 +296,15 @@ own reasoning; it earns its cost when the diff is large or unfamiliar, not by
 default.
 
 In STRICT, `/flow-review` is required, and the one pass must be genuinely
-independent: delegate it to a fresh Agent/subagent call, handed the diff and the
+independent: delegate it to a fresh Agent/subagent call, handed the diff, the
 contract — the story's acceptance criteria, `RULES.md`, and the codebase's existing
-conventions — and nothing else, never your own reasoning or conclusion. Frame the
-prompt adversarially: find what is wrong with this change, assume the author is
-overconfident. A session reviewing its own diff minutes after writing it is the
-weakest reviewer available — the reasoning that produced a defect is still in
-context, and re-reading it just reproduces the same conclusion; a fresh context
+conventions — and the fact that this diff's risk tier already resolved STRICT, so
+it can default Architecture, Tests, and Security to Deep instead of re-judging
+risk itself — nothing else beyond that, never your own reasoning or conclusion.
+Frame the prompt adversarially: find what is wrong with this change, assume the
+author is overconfident. A session reviewing its own diff minutes after writing it
+is the weakest reviewer available — the reasoning that produced a defect is still
+in context, and re-reading it just reproduces the same conclusion; a fresh context
 handed only the artifact and the contract is what an independent pass means.
 
 ## Common Rationalizations

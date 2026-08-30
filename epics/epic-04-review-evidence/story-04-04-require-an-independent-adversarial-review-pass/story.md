@@ -13,10 +13,16 @@ their `templates/.claude/skills/` source-of-truth copies only.)*
 
 - [x] Given `flow-run/SKILL.md`'s "Review Before Done" STRICT line, when read,
       then it explicitly instructs delegating to a fresh Agent/subagent call
-      handed the diff and the contract (acceptance criteria, `RULES.md`,
-      conventions) only — never the authoring session's own reasoning or
-      conclusion — framed adversarially ("find what's wrong, assume the
-      author is overconfident").
+      handed the diff, the contract (acceptance criteria, `RULES.md`,
+      conventions), and the fact that this diff's risk tier already resolved
+      STRICT — nothing else beyond that, never the authoring session's own
+      reasoning or conclusion — framed adversarially ("find what's wrong,
+      assume the author is overconfident"). The risk-tier fact is included
+      because `flow-review`'s Deep-by-default clause (AC2) is conditioned on
+      the reviewer already knowing the calling context resolved STRICT; a
+      fresh subagent handed only the diff and contract has no way to know
+      that unless told, so omitting it would make AC2 unreachable through
+      delegation.
 - [x] Given `flow-review/SKILL.md`'s dimension-selection guidance, when the
       calling context's own risk tier is already STRICT (`scoreDiffRisk`/
       `scoreStoryRisk` resolved `high`), then Architecture, Tests, and
@@ -52,9 +58,16 @@ npm test
 
 `templates/.claude/skills/flow-run/SKILL.md`'s "Review Before Done" STRICT line now
 explicitly instructs delegating the pass to a fresh Agent/subagent call, handed the
-diff and the contract (acceptance criteria, `RULES.md`, existing conventions) only —
+diff, the contract (acceptance criteria, `RULES.md`, existing conventions), and the
+fact that this diff's risk tier already resolved STRICT — nothing else beyond that,
 never the authoring session's own reasoning or conclusion — framed adversarially
 ("find what is wrong with this change, assume the author is overconfident").
+
+The risk-tier fact was added after an independent review of this story caught that
+the original "diff and the contract ... only" wording left a delegated subagent no
+way to know the calling context had resolved STRICT, which made `flow-review`'s
+Deep-by-default clause (below) unreachable through delegation — the subagent had no
+way to derive that fact from the diff and contract alone, only to be told.
 
 `templates/.claude/skills/flow-review/SKILL.md`'s Overview now states that when the
 calling context's own risk tier already resolved STRICT (`scoreDiffRisk`/
