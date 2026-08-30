@@ -9,6 +9,8 @@
     "commands": [
       "npm test"
     ],
-    "quality": []
+    "quality": [
+      "node scripts/check-lock-exit-reachability.js"
+    ]
   }
 }

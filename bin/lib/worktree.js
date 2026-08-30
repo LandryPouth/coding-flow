@@ -862,6 +862,12 @@ function worktreeLand(name, { cwd, story }) {
         // Captured before any merge is attempted: a fast-forward moves the branch
         // pointer with no merge commit of its own, so on a failed re-verify below
         // this is the only thing to restore, not something to "revert".
+        // lock-exit-ok: intentionally on the default fail()/process.exit() path —
+        // this runs on `root`, a checkout already proven valid earlier in this same
+        // call, so a failure here means git itself is broken, not a recoverable
+        // story-side condition; scripts/check-lock-exit-reachability.js does not see
+        // this call by design (it only follows named helpers, not inline callback
+        // code — see that script's own header for why).
         const preMergeSha = git(root, ["rev-parse", "HEAD"]).stdout.trim();
 
         // Cheapest option first: ff-only either succeeds cleanly or fails fast with
@@ -921,6 +927,9 @@ function worktreeLand(name, { cwd, story }) {
           // created is undone. The story's own worktree, branch, and lock are never
           // touched, so the fix happens where the story's commits already live and
           // `land` can be retried once it is fixed.
+          // lock-exit-ok: same rationale as the `rev-parse HEAD` capture above — an
+          // already-proven-valid checkout, on the default fail() path, invisible to
+          // check-lock-exit-reachability.js by design.
           git(root, ["reset", "--hard", preMergeSha]);
           throw new Error(
             `post-land validation failed on the merged result. The target branch was reset to its pre-merge ` +

@@ -107,7 +107,7 @@ function diffRiskForRoot(root, cache) {
   }
 
   const { config } = readHarnessConfig(root);
-  const diffRisk = scoreDiffRisk(changedFilesForCoverage(root), config);
+  const diffRisk = scoreDiffRisk(changedFilesForCoverage(root), config, root);
   const entry = { config, diffRisk };
   cache.set(root, entry);
   return entry;

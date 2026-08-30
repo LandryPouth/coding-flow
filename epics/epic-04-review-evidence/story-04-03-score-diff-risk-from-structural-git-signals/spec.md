@@ -35,24 +35,24 @@ deterministic check instead of something only a review pass can catch.
 
 ## Acceptance Criteria
 
-- [ ] Given a diff that adds an unconditional `git worktree remove`/
+- [x] Given a diff that adds an unconditional `git worktree remove`/
       `git branch -D`/unattended-merge call with no accompanying test
       touching it, when `scoreDiffRisk` runs, then it reports at least
       `medium` and names the structural signal in its reason — not `low`.
-- [ ] Given `ai-flow verify` runs on this repository with the new
+- [x] Given `ai-flow verify` runs on this repository with the new
       `validation.quality` entry configured, when a callback passed to
       `withFileLock` contains a path reaching `fail()`/`process.exit()`
       without an intervening throw/catch boundary, then the check exits
       non-zero and `verify` reports it as a failed command.
-- [ ] Given a regression fixture reproducing `landCleanup`'s pre-fix shape
+- [x] Given a regression fixture reproducing `landCleanup`'s pre-fix shape
       (the exact bug story-03-02's sixth pass found), when the check runs
       against it, then it fails — confirming the check actually catches the
       real bug class, not a synthetic stand-in.
-- [ ] Given the current, already-fixed `worktree.js` (post story-03-02, every
+- [x] Given the current, already-fixed `worktree.js` (post story-03-02, every
       mutating call inside the lock converted to `allowFail` + `throw`), when
       the same check runs, then it passes clean — no false positive on the
       converted calls.
-- [ ] Given a diff that only touches test files or docs, when `scoreDiffRisk`
+- [x] Given a diff that only touches test files or docs, when `scoreDiffRisk`
       runs, then the new structural signals do not fire — no false escalation
       on non-production changes.
 

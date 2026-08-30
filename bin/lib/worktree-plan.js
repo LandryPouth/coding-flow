@@ -275,7 +275,7 @@ function chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId) {
   const verifyByDir = latestVerifyByStoryDir(cwd);
   const { config: harnessConfig } = readHarnessConfig(cwd);
   const diffFiles = changedFilesForCoverage(cwd);
-  const diffRisk = scoreDiffRisk(diffFiles, harnessConfig);
+  const diffRisk = scoreDiffRisk(diffFiles, harnessConfig, cwd);
 
   for (const [label, id] of chainIdOf.entries()) {
     if (id !== chainId) continue;
