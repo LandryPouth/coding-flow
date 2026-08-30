@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-08-30
+
+### Added
+
+- **Durable `/flow-review` evidence.** A review verdict is captured via
+  `ai-flow review capture` as a fact — pass or fail, fresh or stale against
+  the current tree — that a later session or the tool itself can read back
+  without re-reading the whole diff and narrative.
+- **STRICT completion is gated on a passing, fresh review.** A STRICT-tier
+  story with a green verify but no passing review captured against the
+  current tree is no longer treated as finished — `worktree land` refuses
+  it, and `ai-flow next` names review as the missing step. QUICK/STANDARD
+  stories are unaffected; review stays opt-in there.
+- **`scoreDiffRisk` reads structural git signals.** A diff that deletes
+  worktrees, force-deletes branches, or merges unattended now scores at
+  least `medium`/`high` risk instead of `low`/`not-required` just because
+  none of those operations spell "auth," "payment," or another keyword.
+- **The one `/flow-review` pass STRICT requires is genuinely independent.**
+  `/flow-run`'s STRICT gate now delegates that pass to a fresh Agent/
+  subagent call, handed the diff, the contract, and the fact that the
+  diff's risk tier already resolved STRICT, framed adversarially — instead
+  of the authoring session re-reading its own reasoning. `/flow-review`
+  defaults Architecture, Tests, and Security to their Deep sections when
+  the calling context's risk tier is already STRICT, without re-judging
+  risk from scratch; QUICK/STANDARD diffs are unaffected.
+
 ## [0.9.0] - 2026-08-26
 
 ### Added
