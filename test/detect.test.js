@@ -36,7 +36,10 @@ test('an existing .codex or .claude directory names its platform when nothing el
 });
 
 test('a project carrying both directories resolves to claude, deterministically', (t) => {
-  assert.equal(resolveTarget({ env: {}, cwd: project(t, ['.claude', '.codex']) }).target, 'claude');
+  const both = resolveTarget({ env: {}, cwd: project(t, ['.claude', '.codex']) });
+  assert.equal(both.target, 'claude');
+  assert.equal(both.source, 'dir:.claude (also .codex)', 'the ambiguity is named in the source');
+  assert.equal(resolveTarget({ env: {}, cwd: project(t, ['.claude']) }).source, 'dir:.claude');
 });
 
 test('no signal is "unrecognized" and never throws, even on a path that does not exist', (t) => {

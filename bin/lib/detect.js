@@ -43,7 +43,9 @@ function resolveTarget({ flags = {}, env = process.env, cwd = process.cwd() } = 
   }
 
   if (isDir(path.join(cwd, ".claude"))) {
-    return { target: "claude", source: "dir:.claude" };
+    // Claude still wins, but the evidence names the ambiguity instead of hiding it.
+    const both = isDir(path.join(cwd, ".codex"));
+    return { target: "claude", source: both ? "dir:.claude (also .codex)" : "dir:.claude" };
   }
 
   if (isDir(path.join(cwd, ".codex"))) {
