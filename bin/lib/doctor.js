@@ -27,6 +27,7 @@ const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
+const { inspectCodexSandbox } = require("./codex-settings");
 const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
 
 // Past this many stories, an epic is no longer one shippable capability (see
@@ -236,6 +237,33 @@ function checkGuardWiring(errors, warnings) {
   }
 }
 
+// Codex's guard is the sandbox profile in .codex/config.toml. Absent means no
+// protection, silently — an error. A file we did not generate is the user's own
+// and is not ours to judge; ours but out of date still protects, so it is a warning.
+// Only runs for a project that uses Codex.
+function checkCodexSandbox(errors, warnings) {
+  if (!activeTargets(readConfig(cwd)).includes("codex")) {
+    return;
+  }
+
+  const { state } = inspectCodexSandbox(cwd);
+  const file = ".codex/config.toml";
+
+  if (state === "absent") {
+    errors.push({
+      code: "guard_not_wired",
+      file,
+      message: "this project uses Codex but no sandbox profile is installed — writes are not protected; run `ai-flow upgrade`",
+    });
+  } else if (state === "stale") {
+    warnings.push({
+      code: "codex_sandbox_stale",
+      file,
+      message: "the Codex sandbox profile does not match the current blocked paths — run `ai-flow upgrade` to regenerate it",
+    });
+  }
+}
+
 // OpenCode's guard is a plugin file, so the same two silent failures apply: it
 // is missing while the project uses OpenCode (writes unprotected there), or it
 // is ours but written by another version. Not checked at all for a project that
@@ -292,6 +320,7 @@ function collectMinimalReport({ strict = false } = {}) {
   }
 
   checkGuardWiring(errors, warnings);
+  checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings);
 
   return {
@@ -487,6 +516,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
+  checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings);
 
   return {

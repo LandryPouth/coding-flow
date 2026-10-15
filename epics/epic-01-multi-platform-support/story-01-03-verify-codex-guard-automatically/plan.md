@@ -38,6 +38,13 @@
   `codex` install to observe once, the same way ai-learn's author did) and
   record it in Decisions.
 
+## Carried over from story 01-02's review
+
+- Observe whether `"deny"` blocks reads as well as writes (the Claude guard only
+  blocks writes) and whether glob keys like `**/*.pem` are honoured by Codex's
+  matcher; probe at least one glob entry, not only a literal path.
+- Record both answers in Decisions below.
+
 ## Decisions
 
 _(filled during implementation — record the exact denial signal observed

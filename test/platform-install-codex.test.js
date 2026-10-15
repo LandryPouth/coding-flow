@@ -106,14 +106,14 @@ test('an "unrecognized" install is replaced by the first explicit target', (t) =
   assert.equal(fs.readdirSync(path.join(dir, '.codex', 'skills')).length, SKILLS.length);
 });
 
-test('init --target codex records platform evidence with commands-only enforcement', (t) => {
+test('init --target codex records platform evidence with the sandbox-profile tier', (t) => {
   const dir = project(t);
   init(dir, ['--target', 'codex']);
   const [record] = platformRecords(dir);
   assert.equal(record.target, 'codex');
   assert.equal(record.detectionSource, 'flag');
   assert.equal(record.commandsInstalled, 7);
-  assert.equal(record.enforcementTier, 'commands-only');
+  assert.equal(record.enforcementTier, 'sandbox-profile');
 });
 
 test('an unknown --target is refused with the accepted values', (t) => {

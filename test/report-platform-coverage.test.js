@@ -27,7 +27,7 @@ test('report lists a Codex install under "Platform coverage" with its enforcemen
   const out = cli(dir, ['report']);
   const section = out.split('## Platform coverage')[1].split('## Guard denials')[0];
   assert.match(section, /\| codex \|/);
-  assert.match(section, /enforcementTier: commands-only/);
+  assert.match(section, /enforcementTier: sandbox-profile/);
 });
 
 test('report says so when no platform install was ever recorded', (t) => {
