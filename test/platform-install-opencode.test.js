@@ -51,3 +51,12 @@ test('opencode: --opencode is still accepted and changes nothing on this target'
   const { out } = initOpenCode(t, ['--opencode']);
   assert.match(out, /Guard plugin \(OpenCode\): wired/);
 });
+
+test('opencode: report records enforcementTier plugin when the guard is wired, commands-only with --no-guard', (t) => {
+  const report = (dir) => {
+    const out = execFileSync(process.execPath, [CLI, 'report'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return out.split('## Platform coverage')[1].split('## Guard denials')[0];
+  };
+  assert.match(report(initOpenCode(t, []).dir), /\| opencode \|.*enforcementTier: plugin/);
+  assert.match(report(initOpenCode(t, ['--no-guard']).dir), /\| opencode \|.*enforcementTier: commands-only/);
+});

@@ -118,7 +118,7 @@ const {
 const { ensureCodexSandbox } = require("./lib/codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./lib/codex-probe");
 const { tierFor } = require("./lib/platforms/evidence");
-const { ensureOpenCodePlugin, removeOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
+const { ensureOpenCodePlugin, removeOpenCodePlugin, inspectOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
 const { printCommands, printHelp } = require("./lib/commands");
@@ -543,7 +543,11 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
           : target === "codex"
             ? tierFor(sandboxWired ? "sandbox-profile" : "commands-only", codexProbe)
             : platformCommands
-              ? "commands-only"
+              ? // A platform with its own guard is only "plugin" once that guard is
+                // actually on disk (--no-guard leaves it commands-only, and says so).
+                COMMAND_PLATFORMS[target].guard === "plugin" && inspectOpenCodePlugin().state !== "absent"
+                ? "plugin"
+                : "commands-only"
               : target === "unrecognized"
                 ? "unrecognized"
                 : "none",
