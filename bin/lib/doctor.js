@@ -317,21 +317,14 @@ function checkOpenCodeWiring(errors, warnings) {
   const plugin = inspectOpenCodePlugin();
   const file = ".opencode/plugins/coding-flow-guard.js";
 
-  // A commands-only install (OpenCode's own, or another target added beside it) has
-  // `.opencode/` from those commands and no guard by design (reported as a note),
-  // so an absent plugin is not an error.
-  if (
-    plugin.state === "absent" &&
-    (COMMAND_PLATFORMS[readConfig(cwd).target] || activeTargets(readConfig(cwd)).includes("opencode"))
-  ) {
-    return;
-  }
-
+  // OpenCode always gets the guard (`--target opencode`, `--opencode`, or a project
+  // that already uses it), so an absent plugin here is a hole, not a design choice —
+  // the same rule as a .claude/settings.json without the hook.
   if (plugin.state === "absent") {
     errors.push({
       code: "opencode_guard_not_wired",
       file,
-      message: "this project uses OpenCode but no guard plugin is installed — writes are not protected there; run `ai-flow upgrade --opencode`",
+      message: "this project uses OpenCode but no guard plugin is installed — writes are not protected there; run `ai-flow upgrade`",
     });
   } else if (plugin.state === "stale") {
     warnings.push({
@@ -438,15 +431,13 @@ function collectDoctorReport({ strict = false } = {}) {
   const errors = [];
   const warnings = [];
   // Known, permanent facts — not a problem to fix, so never an error or a warning.
+  // OpenCode has its own guard (a plugin, checked by checkOpenCodeWiring), so only
+  // the platforms with no verified mechanism get this note.
   const notes = platforms
-    .filter((p) => COMMAND_PLATFORMS[p])
-    // OpenCode can carry a guard plugin: it is only "unavailable" until it is wired.
-    .filter((p) => p !== "opencode" || inspectOpenCodePlugin().state === "absent")
+    .filter((p) => COMMAND_PLATFORMS[p] && !COMMAND_PLATFORMS[p].guard)
     .map((p) => ({
       code: "guard_unavailable",
-      message:
-        `guard not available on this host (${p}): commands are installed, writes are not mechanically protected` +
-        (p === "opencode" ? " — run `ai-flow init --target opencode --opencode` to wire the guard plugin" : ""),
+      message: `guard not available on this host (${p}): commands are installed, writes are not mechanically protected`,
     }));
 
   if (config.target === "unrecognized") {

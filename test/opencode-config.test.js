@@ -150,16 +150,18 @@ test('cli: the generated COMMANDS.md never contains a literal "undefined"', (t) 
   assert.doesNotMatch(fs.readFileSync(path.join(project, '.coding-flow', 'COMMANDS.md'), 'utf8'), /undefined/);
 });
 
-test('cli: `init --global --guard` wires the guard plugin in the user dir; uninstall removes it, and only if ours', (t) => {
+test('cli: `init --global` wires the guard plugin in the user dir by default; --no-guard skips it; uninstall removes it, and only if ours', (t) => {
   const home = tmp(t, 'cf-oc-home-');
   const project = tmp(t, 'cf-oc-proj-');
   const env = cleanEnv({ HOME: home, XDG_CONFIG_HOME: '' });
   const run = (args) => execFileSync(process.execPath, [CLI, ...args], { cwd: project, env, encoding: 'utf8' });
   const plugin = path.join(home, '.config', 'opencode', 'plugins', 'coding-flow-guard.js');
 
-  assert.doesNotMatch(run(['init', '--global']), /Guard plugin/);
+  assert.match(run(['init', '--global', '--no-guard']), /Guard: skipped \(--no-guard\)/);
   assert.equal(fs.existsSync(plugin), false);
-  assert.match(run(['init', '--global', '--guard']), /Guard plugin \(OpenCode, all projects\): created/);
+  assert.match(run(['init', '--global']), /Guard plugin \(OpenCode, all projects\): created/);
+  // --guard is still accepted; it is the default now.
+  assert.match(run(['init', '--global', '--guard']), /Guard plugin \(OpenCode, all projects\): unchanged/);
   assert.match(fs.readFileSync(plugin, 'utf8'), /^\/\/ coding-flow:guard-plugin/);
   assert.match(run(['uninstall', '--global']), /Removed the global guard plugin|Removed 7/);
   assert.equal(fs.existsSync(plugin), false);

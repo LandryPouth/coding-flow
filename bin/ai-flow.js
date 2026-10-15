@@ -118,7 +118,7 @@ const {
 const { ensureCodexSandbox } = require("./lib/codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./lib/codex-probe");
 const { tierFor } = require("./lib/platforms/evidence");
-const { ensureOpenCodePlugin, removeOpenCodePlugin, inspectOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
+const { ensureOpenCodePlugin, removeOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
 const { printCommands, printHelp } = require("./lib/commands");
@@ -190,16 +190,11 @@ function describeCodexSandbox(status, dryRun) {
 }
 
 // OpenCode has no settings.json: its guard is a plugin under .opencode/plugins/.
-// Wired when asked for (`--opencode`) or when the project already uses OpenCode;
-// never created for someone who does not.
-// A commands-only target (Gemini, OpenCode, Antigravity) never auto-wires: an
-// OpenCode install creates `.opencode/` itself, and a later init for another target
-// would then see it, making `usesOpenCode()` true and wiring a guard the install says
-// it lacks. Only an explicit `--opencode` opts in there.
-function wireOpenCode({ dryRun, quiet = false, target = null }) {
-  const selfCreatedDir = Boolean(COMMAND_PLATFORMS[target]) && !flags.has("--opencode");
-
-  if (flags.has("--no-guard") || selfCreatedDir || !(flags.has("--opencode") || usesOpenCode())) {
+// Wired whenever OpenCode is one of this project's platforms (`--target opencode`,
+// a target recorded earlier), when asked for (`--opencode`), or when the project
+// already uses OpenCode — the same default as the Claude hook. `--no-guard` opts out.
+function wireOpenCode({ dryRun, quiet = false, targets = [] }) {
+  if (flags.has("--no-guard") || !(targets.includes("opencode") || flags.has("--opencode") || usesOpenCode())) {
     return;
   }
 
@@ -278,16 +273,17 @@ function globalCommand(name) {
 
   log(dryRun ? "Dry run complete." : "Coding Flow installed for OpenCode, in every project.");
   log(`Commands: ${result.written.length} written to ${result.dir} (${result.skipped.length} kept)`);
-  // Opt-in like the project one: a guard is wired because someone asked, never as a side effect.
-  if (flags.has("--guard") && !flags.has("--no-guard")) {
+  // On by default, like the project one; `--no-guard` opts out. (`--guard` is still
+  // accepted, and is now the default.)
+  if (!flags.has("--no-guard")) {
     const plugin = ensureOpenCodePlugin({ dryRun, file: pluginFile });
 
     log(`Guard plugin (OpenCode, all projects): ${plugin.status === "skipped" ? "skipped (a plugin that is not ours is already there)" : `${plugin.status} at ${pluginFile}`}`);
   } else {
-    log("Guard: none globally — add it with `ai-flow init --global --guard` (or per project: `ai-flow init --target opencode --opencode`).");
+    log("Guard: skipped (--no-guard) — writes are not mechanically protected in OpenCode. Re-run without --no-guard to wire it.");
   }
 
-  log("Start in any project with `/flow-setup`; it scaffolds Coding Flow there. Update later with `ai-flow upgrade --global` (add --guard to keep the guard current).");
+  log("Start in any project with `/flow-setup`; it scaffolds Coding Flow there. Update later with `ai-flow upgrade --global`.");
 }
 
 if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command)) {
@@ -340,11 +336,15 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     } else if (!flags.has("--no-guard") && minimalTarget === "codex") {
       const sandbox = ensureCodexSandbox({ dryRun });
       log(`Guard sandbox: ${describeCodexSandbox(sandbox.status, dryRun)}`);
-    } else if (minimalTarget !== "claude" && minimalTarget !== "codex") {
+    } else if (
+      minimalTarget !== "claude" &&
+      minimalTarget !== "codex" &&
+      !(COMMAND_PLATFORMS[minimalTarget] && COMMAND_PLATFORMS[minimalTarget].guard)
+    ) {
       log(`Guard hook: none for "${minimalTarget}" yet (commands-only platform)`);
     }
 
-    wireOpenCode({ dryRun, target: minimalTarget });
+    wireOpenCode({ dryRun, targets: [minimalTarget] });
 
     log("");
     log("Installed: the guard hook, the proof layer, and the friction log. No RULES.md, no epics/, no skills.");
@@ -456,14 +456,11 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
       `Commands: ${platformCommands.written.length} written to ${COMMAND_PLATFORMS[target].dir} ` +
         `(${platformCommands.skipped.length} kept)`,
     );
-    // OpenCode has an opt-in guard plugin: its own line below says what was wired,
-    // so claiming "no guard" here would contradict it.
-    if (target !== "opencode" || (!flags.has("--opencode") && inspectOpenCodePlugin().state === "absent")) {
-      log(
-        target === "opencode"
-          ? "Guard: none yet for OpenCode — writes are not mechanically protected. Re-run with --opencode to wire the guard plugin."
-          : `Guard hook: none for "${target}" — commands-only platform, writes are not mechanically protected`,
-      );
+    // A platform with its own guard says what was wired on its own line below.
+    if (!COMMAND_PLATFORMS[target].guard) {
+      log(`Guard hook: none for "${target}" — commands-only platform, writes are not mechanically protected`);
+    } else if (flags.has("--no-guard")) {
+      log(`Guard: skipped (--no-guard) — writes are not mechanically protected in ${target}`);
     }
   } else {
     log(
@@ -516,11 +513,9 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     }
   }
 
-  wireOpenCode({ dryRun: flags.has("--dry-run"), target });
-  wireOpenCodeInstructions({
-    dryRun: flags.has("--dry-run"),
-    targets: [...new Set([target, requestedTarget, ...readConfig(cwd).alsoTargets].filter(Boolean))],
-  });
+  const installTargets = [...new Set([target, requestedTarget, ...readConfig(cwd).alsoTargets].filter(Boolean))];
+  wireOpenCode({ dryRun: flags.has("--dry-run"), targets: installTargets });
+  wireOpenCodeInstructions({ dryRun: flags.has("--dry-run"), targets: installTargets });
 
   const countInstalledCommands = () => {
     const rendered = target === "codex" ? codexSkills : platformCommands;
@@ -689,7 +684,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     }
   }
 
-  wireOpenCode({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), target: upgradeConfig.target });
+  wireOpenCode({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), targets: platforms });
   wireOpenCodeInstructions({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), targets: platforms });
 
   if (!flags.has("--json")) {
