@@ -67,6 +67,7 @@ const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
 const {
   copyTemplates,
   copyCodexSkills,
+  copyPlatformCommands,
   listTemplateSkillNames,
   ensureConvenienceFiles,
   ensureFrictionLog,
@@ -103,6 +104,7 @@ const {
   STORAGE_BACKENDS,
 } = require("./lib/config");
 const { EXPLICIT_TARGETS, resolveTarget } = require("./lib/detect");
+const { COMMANDS_ONLY_PLATFORMS } = require("./lib/platforms/registry");
 const { writePlatformEvidence } = require("./lib/platforms/evidence");
 const { detectPlugin } = require("./lib/claude-plugin");
 const { ensureHookSettings } = require("./lib/settings");
@@ -317,6 +319,9 @@ if (command === "init") {
     target,
   });
   const codexSkills = target === "codex" ? copyCodexSkills({ force: flags.has("--force"), dryRun }) : null;
+  const platformCommands = COMMANDS_ONLY_PLATFORMS[target]
+    ? copyPlatformCommands(target, { force: flags.has("--force"), dryRun })
+    : null;
   const convenience = ensureConvenienceFiles({
     force: flags.has("--force"),
     dryRun: flags.has("--dry-run"),
@@ -336,6 +341,12 @@ if (command === "init") {
     log(describeSkillsMode(effectiveSkills, configResult.created ? skills.reason : "recorded at init"));
   } else if (target === "codex") {
     log(`Skills: ${codexSkills.written.length} written to .codex/skills as $flow-* (${codexSkills.skipped.length} kept)`);
+  } else if (platformCommands) {
+    log(
+      `Commands: ${platformCommands.written.length} written to ${COMMANDS_ONLY_PLATFORMS[target].dir} ` +
+        `(${platformCommands.skipped.length} kept)`,
+    );
+    log(`Guard hook: none for "${target}" — commands-only platform, writes are not mechanically protected`);
   } else {
     log(
       "Platform not recognized: no commands were installed. " +
@@ -380,10 +391,12 @@ if (command === "init") {
       commandsInstalled:
         target === "codex"
           ? codexSkills.written.length + codexSkills.skipped.length
-          : target === "claude" && effectiveSkills === "project"
+          : platformCommands
+            ? platformCommands.written.length + platformCommands.skipped.length
+            : target === "claude" && effectiveSkills === "project"
             ? listTemplateSkillNames().length
             : 0,
-      enforcementTier: target === "claude" ? (hookWired ? "hook" : "none") : target === "codex" ? "commands-only" : "none",
+      enforcementTier: target === "claude" ? (hookWired ? "hook" : "none") : target === "codex" || platformCommands ? "commands-only" : "none",
     });
   }
 
@@ -472,6 +485,17 @@ if (command === "init") {
     skillsMode: skills,
     platform: upgradeTarget,
   });
+
+  for (const platform of platforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+    const commands = copyPlatformCommands(platform, {
+      force: flags.has("--force"),
+      dryRun: flags.has("--dry-run"),
+    });
+
+    if (!flags.has("--json")) {
+      log(`Commands (${platform}): ${commands.written.length} written to ${COMMANDS_ONLY_PLATFORMS[platform].dir} (${commands.skipped.length} kept)`);
+    }
+  }
 
   if (hasCodex) {
     const codexSkills = copyCodexSkills({ force: flags.has("--force"), dryRun: flags.has("--dry-run") });

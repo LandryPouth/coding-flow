@@ -32,8 +32,8 @@ const INSTALL_MODES = ["full", "minimal"];
 
 // Which agent platform this project was installed for. "unrecognized" is a
 // recorded answer, not an error: nothing confirmed the host, so nothing
-// platform-specific was written. gemini/opencode/antigravity join in story 4.
-const TARGETS = ["claude", "codex", "unrecognized"];
+// platform-specific was written.
+const TARGETS = ["claude", "codex", "gemini", "opencode", "antigravity", "unrecognized"];
 const PLATFORM_TARGETS = TARGETS.filter((t) => t !== "unrecognized");
 
 function configPath(cwd) {

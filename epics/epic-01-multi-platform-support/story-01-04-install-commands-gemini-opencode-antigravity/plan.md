@@ -28,9 +28,19 @@
 
 ## Decisions
 
-_(filled during implementation — record OpenCode's/Gemini's actual
-project-vs-user command location choice, mirroring story 1's Codex
-decision)_
+All three are **project-scoped** (an install must not write to the user's home):
+
+- Gemini: `.gemini/commands/coding-flow/<name>.toml`, invoked `/coding-flow:<name>`. Not exercised
+  against the `gemini` binary; the format is ai-learn's validated one.
+- OpenCode: `.opencode/command/coding-flow/<name>.md`, invoked `/coding-flow/<name>`. **Verified with
+  the real `opencode` 1.19**: `opencode debug config` in a throwaway project lists all 7 as
+  `coding-flow/flow-*`, so project-scoped files are discovered.
+- Antigravity: `.agent/skills/<name>/SKILL.md`. **Unverified**: the workspace path comes from
+  Antigravity's documented workspace-skills convention, not from a run against the product.
+- TOML prompt is a `'''` literal string (skills contain backslashes); only a body that itself holds
+  `'''` falls back to an escaped `"""` string.
+- doctor reports the gap as a `notes` entry, separate from `errors`/`warnings`, so `--strict` can
+  never turn a permanent, known gap into a failure.
 
 ## Test plan
 

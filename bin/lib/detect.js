@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 
 // What `init --target` accepts. The rest of `TARGETS` (config.js) is derived.
-const EXPLICIT_TARGETS = ["claude", "codex"];
+const EXPLICIT_TARGETS = ["claude", "codex", "gemini", "opencode", "antigravity"];
 
 function isDir(target) {
   try {

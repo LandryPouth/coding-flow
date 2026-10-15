@@ -19,8 +19,8 @@ function writeRaw(dir, value) {
   fs.writeFileSync(configPath(dir), JSON.stringify(value));
 }
 
-test('TARGETS is exactly the three values this story knows', () => {
-  assert.deepEqual(TARGETS, ['claude', 'codex', 'unrecognized']);
+test('TARGETS is exactly the values the platforms support, plus unrecognized', () => {
+  assert.deepEqual(TARGETS, ['claude', 'codex', 'gemini', 'opencode', 'antigravity', 'unrecognized']);
 });
 
 test('ensureConfig records the target once and never overwrites it', (t) => {

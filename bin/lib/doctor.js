@@ -15,6 +15,7 @@ const {
   manifestPath,
   copyTemplates,
   copyCodexSkills,
+  copyPlatformCommands,
   writeManifest,
   readManifest,
   ensureConvenienceFiles,
@@ -22,6 +23,7 @@ const {
 const { collectHarnessReport } = require("./harness");
 const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
+const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
@@ -345,8 +347,22 @@ function collectDoctorReport({ strict = false } = {}) {
     }
   }
 
+  // The exact files each commands-only platform's renderer writes.
+  for (const platform of platforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+    for (const name of skillNames) {
+      required.push(COMMANDS_ONLY_PLATFORMS[platform].render(`---\nname: ${name}\ndescription: x\n---\n`).relPath);
+    }
+  }
+
   const errors = [];
   const warnings = [];
+  // Known, permanent facts — not a problem to fix, so never an error or a warning.
+  const notes = platforms
+    .filter((p) => COMMANDS_ONLY_PLATFORMS[p])
+    .map((p) => ({
+      code: "guard_unavailable",
+      message: `guard not available on this host (${p}): commands are installed, writes are not mechanically protected`,
+    }));
 
   if (config.target === "unrecognized") {
     warnings.push({
@@ -489,7 +505,15 @@ function collectDoctorReport({ strict = false } = {}) {
     binaryOnPath: isCommandAvailable("ai-flow"),
     errors,
     warnings,
+    notes,
   };
+}
+
+function printNotes(report) {
+  for (const note of report.notes || []) {
+    log("");
+    log(`Note: ${note.message}`);
+  }
 }
 
 function doctor({ fix = false, json = false, strict = false } = {}) {
@@ -511,6 +535,10 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
       includeSkills: fixPlatforms.includes("claude") && fixConfig.skills === "project",
       target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
     });
+
+    for (const platform of fixPlatforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+      copyPlatformCommands(platform, { force: false, dryRun: false });
+    }
 
     if (fixPlatforms.includes("codex")) {
       copyCodexSkills({ force: false, dryRun: false });
@@ -538,6 +566,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
       }
     }
 
+    printNotes(report);
     log("");
     log(binaryPathNote(report.binaryOnPath));
   } else {
@@ -554,6 +583,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
       }
     }
 
+    printNotes(report);
     log("");
     log("Run `ai-flow doctor --fix` to restore missing files.");
     log("");

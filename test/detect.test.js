@@ -47,5 +47,5 @@ test('no signal is "unrecognized" and never throws, even on a path that does not
 test('CLAUDECODE only counts when it is exactly "1", and an unknown flag value is ignored', (t) => {
   const cwd = project(t);
   assert.equal(resolveTarget({ env: { CLAUDECODE: 'true' }, cwd }).target, 'unrecognized');
-  assert.equal(resolveTarget({ flags: { target: 'gemini' }, env: {}, cwd }).target, 'unrecognized');
+  assert.equal(resolveTarget({ flags: { target: 'emacs' }, env: {}, cwd }).target, 'unrecognized');
 });

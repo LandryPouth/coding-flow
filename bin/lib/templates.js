@@ -9,6 +9,7 @@ const path = require("path");
 
 const { templatesRoot, cwd, packageJson, githubNpxCommand, flowScripts } = require("./context");
 const { CODEX_SKILLS_DIR, renderSkill: renderCodexSkill } = require("./platforms/codex");
+const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
 const {
   log,
   fail,
@@ -137,6 +138,7 @@ function buildManifestFromCurrentTargets(previous = null) {
     // written; carried forward untouched because this builder only knows the
     // Claude targets.
     codexSkills: (previous && previous.codexSkills) || {},
+    platformCommands: (previous && previous.platformCommands) || {},
   };
 }
 
@@ -492,50 +494,79 @@ function hashText(text) {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
-function copyCodexSkills({ force = false, dryRun = false } = {}) {
-  ensureTemplatesExist();
-
+// Shared by every rendered flavor: `files` are `{ rel, content }`, and the
+// manifest key records what was written so an untouched file can be refreshed.
+function syncRendered(files, manifestKey, { force, dryRun }) {
   const written = [];
   const skipped = [];
   const manifest = readManifest();
-  const recorded = { ...(manifest.codexSkills || {}) };
+  const recorded = { ...(manifest[manifestKey] || {}) };
 
-  for (const name of listTemplateSkillNames()) {
-    const source = path.join(templatesRoot, ".claude", "skills", name, "SKILL.md");
-    const targetRel = `${CODEX_SKILLS_DIR}/${name}/SKILL.md`;
-    const target = path.join(cwd, targetRel);
-    const rendered = renderCodexSkill(fs.readFileSync(source, "utf8"));
-    const renderedHash = hashText(rendered);
+  for (const { rel, content } of files) {
+    const target = path.join(cwd, rel);
+    const renderedHash = hashText(content);
 
     if (fs.existsSync(target)) {
       const currentHash = hashText(fs.readFileSync(target, "utf8"));
 
       if (currentHash === renderedHash) {
-        recorded[targetRel] = renderedHash;
-        skipped.push(targetRel);
+        recorded[rel] = renderedHash;
+        skipped.push(rel);
         continue;
       }
 
-      if (!force && recorded[targetRel] !== currentHash) {
-        skipped.push(targetRel);
+      if (!force && recorded[rel] !== currentHash) {
+        skipped.push(rel);
         continue;
       }
     }
 
     if (!dryRun) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, rendered);
-      recorded[targetRel] = renderedHash;
+      fs.writeFileSync(target, content);
+      recorded[rel] = renderedHash;
     }
 
-    written.push(targetRel);
+    written.push(rel);
   }
 
   if (!dryRun) {
-    writeJson(manifestPath(), { ...manifest, codexSkills: recorded });
+    writeJson(manifestPath(), { ...manifest, [manifestKey]: recorded });
   }
 
   return { written, skipped };
+}
+
+function sourceSkills() {
+  ensureTemplatesExist();
+
+  return listTemplateSkillNames().map((name) =>
+    fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8"),
+  );
+}
+
+function copyCodexSkills({ force = false, dryRun = false } = {}) {
+  ensureTemplatesExist();
+
+  const files = listTemplateSkillNames().map((name) => ({
+    rel: `${CODEX_SKILLS_DIR}/${name}/SKILL.md`,
+    content: renderCodexSkill(
+      fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8"),
+    ),
+  }));
+
+  return syncRendered(files, "codexSkills", { force, dryRun });
+}
+
+// Gemini, OpenCode and Antigravity: same sources, each rendered in its own format.
+function copyPlatformCommands(target, { force = false, dryRun = false } = {}) {
+  const files = sourceSkills().map((markdown) => {
+    const { relPath, content } = COMMANDS_ONLY_PLATFORMS[target].render(markdown);
+
+    return { rel: relPath, content };
+  });
+
+  return syncRendered(files, "platformCommands", { force, dryRun });
 }
 
 // The friction log is the one piece of documentation a minimal install still
@@ -757,6 +788,7 @@ module.exports = {
   detectProjectPackageJson,
   copyTemplates,
   copyCodexSkills,
+  copyPlatformCommands,
   ensureConvenienceFiles,
   ensureFrictionLog,
   printConvenienceSummary,
