@@ -242,6 +242,27 @@ test('doctor: a denied probe is confirmed-working, exits 0 and records probe.ok:
   assert.equal(last.enforcementTier, 'sandbox');
 });
 
+test('init: a denied probe is logged as confirmed working and recorded with the sandbox tier', (t) => {
+  const fake = fakeCodex(t);
+  const dir = project(t);
+  const res = cli(dir, ['init', '--target', 'codex'], { fake, mode: 'deny' });
+  assert.equal(res.code, 0);
+  assert.match(res.output, /Codex sandbox: confirmed working/);
+  const last = platformRecords(dir).pop();
+  assert.deepEqual([last.probe.ran, last.probe.ok], [true, true]);
+  assert.equal(last.enforcementTier, 'sandbox');
+});
+
+test('init: a write that is NOT denied is flagged and never earns the sandbox tier', (t) => {
+  const fake = fakeCodex(t);
+  const dir = project(t);
+  const res = cli(dir, ['init', '--target', 'codex'], { fake, mode: 'allow' });
+  assert.match(res.output, /Codex sandbox: confirmed BROKEN/);
+  const last = platformRecords(dir).pop();
+  assert.equal(last.probe.ok, false);
+  assert.notEqual(last.enforcementTier, 'sandbox');
+});
+
 test('doctor: a write that is NOT denied is an error, exit 1, probe.ok:false and no sandbox tier', (t) => {
   const fake = fakeCodex(t);
   const dir = codexProject(t, { fake, mode: 'allow' });

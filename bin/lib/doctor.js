@@ -287,7 +287,7 @@ function checkCodexSandbox(errors, warnings) {
     warnings.push({ code: "codex_sandbox_unprobed", file, message: `Codex sandbox ${describeProbe(probe)}; deny globs do not stop new files, so add a directory entry (e.g. \`.ssh/**\`)` });
   }
 
-  return { ...probe, baseTier: "sandbox-profile" };
+  return probe;
 }
 
 // OpenCode's guard is a plugin file, so the same two silent failures apply: it
@@ -617,8 +617,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
   // Every probe is evidence, so `ai-flow report` can show enforcement as checked
   // rather than claimed. Idempotent: an unchanged result writes nothing.
   if (report.codexProbe) {
-    const { baseTier, ...probe } = report.codexProbe;
-    recordProbeEvidence(cwd, { target: "codex", probe, baseTier });
+    recordProbeEvidence(cwd, { target: "codex", probe: report.codexProbe, baseTier: "sandbox-profile" });
   }
 
   // A broken or unconfirmed probe is already an error/warning above; the line is
