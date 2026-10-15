@@ -27,6 +27,19 @@ const MAX_DENIALS = 40;
 const MAX_FAILURES = 15;
 const MAX_TAIL_LINES = 12;
 
+// What the executed probe found, next to the tier it earned.
+function describeProbeOutcome(probe) {
+  if (!probe) {
+    return "";
+  }
+
+  if (!probe.ran) {
+    return " (probe: not run)";
+  }
+
+  return probe.ok === true ? " (probe: write denied)" : probe.ok === false ? " (probe: write NOT denied)" : " (probe: inconclusive)";
+}
+
 function codingFlowDir(root = cwd) {
   return path.join(root, ".coding-flow");
 }
@@ -252,6 +265,7 @@ function buildReport({ root = cwd, raw = false } = {}) {
       commandsInstalled: typeof run.commandsInstalled === "number" ? run.commandsInstalled : null,
       enforcementTier: run.enforcementTier || null,
       signals: run.signals && typeof run.signals === "object" ? run.signals : null,
+      probe: run.probe && typeof run.probe === "object" ? { ran: run.probe.ran === true, ok: run.probe.ok === undefined ? null : run.probe.ok } : null,
     })),
     unrecognized: summarizeUnrecognized(platforms.filter((run) => run.target === "unrecognized")),
     denials: denials.slice(-MAX_DENIALS).map((entry) => ({
@@ -320,7 +334,7 @@ function renderMarkdown(report) {
       const when = entry.at ? entry.at.replace("T", " ").slice(0, 16) : "?";
       push(
         `| ${when} | ${entry.target || "?"} | ${entry.detectionSource || "?"} | ` +
-          `${entry.commandsInstalled === null ? "?" : entry.commandsInstalled} | enforcementTier: ${entry.enforcementTier || "?"} |`,
+          `${entry.commandsInstalled === null ? "?" : entry.commandsInstalled} | enforcementTier: ${entry.enforcementTier || "?"}${describeProbeOutcome(entry.probe)} |`,
       );
     }
   }

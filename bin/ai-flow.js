@@ -109,6 +109,8 @@ const { writePlatformEvidence } = require("./lib/platforms/evidence");
 const { detectPlugin } = require("./lib/claude-plugin");
 const { ensureHookSettings } = require("./lib/settings");
 const { ensureCodexSandbox } = require("./lib/codex-settings");
+const { probeCodexSandbox, describeProbe } = require("./lib/codex-probe");
+const { tierFor } = require("./lib/platforms/evidence");
 const { ensureOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
@@ -397,11 +399,18 @@ if (command === "init") {
   }
 
   let sandboxWired = false;
+  let codexProbe = null;
 
   if (!flags.has("--no-guard") && target === "codex") {
     const sandbox = ensureCodexSandbox({ dryRun: flags.has("--dry-run") });
     sandboxWired = sandbox.status !== "skipped";
     log(`Guard sandbox: ${describeCodexSandbox(sandbox.status, flags.has("--dry-run"))}`);
+
+    // Execute it once: a written profile is a claim, a denied write is proof.
+    if (!flags.has("--dry-run") && sandbox.status !== "skipped") {
+      codexProbe = probeCodexSandbox({ root: cwd });
+      log(`Codex sandbox: ${describeProbe(codexProbe)}`);
+    }
   }
 
   wireOpenCode({ dryRun: flags.has("--dry-run") });
@@ -430,14 +439,13 @@ if (command === "init") {
             ? "hook"
             : "none"
           : target === "codex"
-            ? sandboxWired
-              ? "sandbox-profile"
-              : "commands-only"
+            ? tierFor(sandboxWired ? "sandbox-profile" : "commands-only", codexProbe)
             : platformCommands
               ? "commands-only"
               : target === "unrecognized"
                 ? "unrecognized"
                 : "none",
+      probe: codexProbe,
       signals: target === "unrecognized" ? collectSignals({ env: process.env, cwd }) : undefined,
     });
   }

@@ -47,8 +47,19 @@
 
 ## Decisions
 
-_(filled during implementation — record the exact denial signal observed
-from `codex sandbox`, and the final probe-command construction)_
+Observed against codex-cli 0.138 (a real install, isolated `CODEX_HOME`):
+
+- **Invocation**: `codex sandbox --permissions-profile coding-flow-guard -C <root> -- sh -c 'echo probe > "$1"' sh <file>`. No auth needed.
+- **Denial signal**: non-zero exit and `sh: cannot create <f>: Permission denied` (or `Read-only file system` when the target does not exist). The probe also checks the file does not exist afterwards — the file wins over the exit code.
+- **Untrusted project**: Codex never loads the project's `.codex/config.toml` and fails with `default_permissions requires a \`[permissions]\` table` before running anything. That is `ok: null` ("is this project trusted in Codex?"), a warning, never a pass or a guard failure.
+- **Probe target is a denied DIRECTORY** (`.ssh/` from `.ssh/**`), not a glob entry, and a file inside it that does not exist yet. Created if missing and removed after, whatever the outcome.
+- `ok:false` is an error (`codex_sandbox_not_enforcing`); `ok:null` is a warning (`codex_sandbox_unconfirmed`); `ran:false` (no codex, or no directory entry to probe) is silent. Evidence tier is `sandbox` only on `ok:true`.
+- Probe runs in `doctor` and `init` (full and minimal-less; not `upgrade`, not `--dry-run`). `doctor` writes a platform record too, deduplicated on (tier, probe), carrying the install record forward.
+
+### Findings about story 01-02's profile (answers to the carried-over questions)
+
+- **`"deny"` blocks reads as well as writes** (`cat a.blocked` → Permission denied). The Claude guard only blocks writes, so under Codex the agent also cannot READ `.env`, `*.pem`, `*.key`, `node_modules/`. Stricter than the Claude side; arguably right for secrets, wrong for `node_modules`.
+- **Glob entries only protect files that exist when the sandbox starts.** With `"**/*.blocked" = "deny"`: appending to an existing `a.blocked` / `sub/x.blocked` was denied, but creating a NEW `b.blocked` / `sub/y.blocked` succeeded. So `**/id_rsa`, `**/*.pem`, `**/*.key` (and likely `.env.*`) do not stop an agent creating such a file; only literal paths and directories (`.env`, `.ssh`, `node_modules`) cover creation. This is a real hole in the story 01-02 guard that the probe (directory target) does not and cannot report. Not fixed here: Codex's matcher has no create-time glob; it needs a decision (document the gap, or add a doctor warning for glob-only policies).
 
 ## Test plan
 

@@ -28,6 +28,8 @@ const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
 const { inspectCodexSandbox } = require("./codex-settings");
+const { probeCodexSandbox, describeProbe } = require("./codex-probe");
+const { recordProbeEvidence } = require("./platforms/evidence");
 const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
 
 // Past this many stories, an epic is no longer one shippable capability (see
@@ -240,10 +242,13 @@ function checkGuardWiring(errors, warnings) {
 // Codex's guard is the sandbox profile in .codex/config.toml. Absent means no
 // protection, silently — an error. A file we did not generate is the user's own
 // and is not ours to judge; ours but out of date still protects, so it is a warning.
-// Only runs for a project that uses Codex.
+// Only runs for a project that uses Codex. A profile that is present is then
+// exercised for real (codex-probe.js): a profile that denies nothing is an error,
+// never a warning — a false sense of protection is the worst outcome. Returns the
+// probe result (or null when nothing was probed) for the report and the evidence.
 function checkCodexSandbox(errors, warnings) {
   if (!activeTargets(readConfig(cwd)).includes("codex")) {
-    return;
+    return null;
   }
 
   const { state } = inspectCodexSandbox(cwd);
@@ -262,6 +267,22 @@ function checkCodexSandbox(errors, warnings) {
       message: "the Codex sandbox profile does not match the current blocked paths — run `ai-flow upgrade` to regenerate it",
     });
   }
+
+  // Only our own profile is probed: a foreign file is the user's, and the profile
+  // we would probe for is not in it.
+  if (state === "absent" || state === "foreign") {
+    return null;
+  }
+
+  const probe = probeCodexSandbox({ root: cwd });
+
+  if (probe.ran && probe.ok === false) {
+    errors.push({ code: "codex_sandbox_not_enforcing", file, message: `Codex sandbox ${describeProbe(probe)}` });
+  } else if (probe.ran && probe.ok === null) {
+    warnings.push({ code: "codex_sandbox_unconfirmed", file, message: `Codex sandbox ${describeProbe(probe)}` });
+  }
+
+  return { ...probe, baseTier: "sandbox-profile" };
 }
 
 // OpenCode's guard is a plugin file, so the same two silent failures apply: it
@@ -320,7 +341,7 @@ function collectMinimalReport({ strict = false } = {}) {
   }
 
   checkGuardWiring(errors, warnings);
-  checkCodexSandbox(errors, warnings);
+  const codexProbe = checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings);
 
   return {
@@ -328,6 +349,7 @@ function collectMinimalReport({ strict = false } = {}) {
     root: cwd,
     version: packageJson.version,
     strict,
+    codexProbe,
     install: "minimal",
     skillsMode: "plugin",
     skills: [],
@@ -516,7 +538,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
-  checkCodexSandbox(errors, warnings);
+  const codexProbe = checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings);
 
   return {
@@ -524,6 +546,7 @@ function collectDoctorReport({ strict = false } = {}) {
     root: cwd,
     version: packageJson.version,
     strict,
+    codexProbe,
     install: "full",
     skillsMode,
     skills: skillNames,
@@ -579,6 +602,20 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
 
   const report = collectDoctorReport({ strict });
 
+  // Every probe is evidence, so `ai-flow report` can show enforcement as checked
+  // rather than claimed. Idempotent: an unchanged result writes nothing.
+  if (report.codexProbe) {
+    const { baseTier, ...probe } = report.codexProbe;
+    recordProbeEvidence(cwd, { target: "codex", probe, baseTier });
+  }
+
+  // A broken or unconfirmed probe is already an error/warning above; the line is
+  // for the two outcomes that are not (confirmed working, not checked).
+  const probeLine =
+    report.codexProbe && (!report.codexProbe.ran || report.codexProbe.ok === true)
+      ? `Codex sandbox: ${describeProbe(report.codexProbe)}`
+      : null;
+
   if (json) {
     log(JSON.stringify(report, null, 2));
   } else if (report.ok) {
@@ -597,6 +634,12 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     }
 
     printNotes(report);
+
+    if (probeLine) {
+      log("");
+      log(probeLine);
+    }
+
     log("");
     log(binaryPathNote(report.binaryOnPath));
   } else {
@@ -614,6 +657,12 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     }
 
     printNotes(report);
+
+    if (probeLine) {
+      log("");
+      log(probeLine);
+    }
+
     log("");
     log("Run `ai-flow doctor --fix` to restore missing files.");
     log("");

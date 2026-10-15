@@ -23,7 +23,21 @@ function latestPlatformRecord(runsDir, target) {
   return names.length ? readJson(path.join(runsDir, names[names.length - 1]), null) : null;
 }
 
-function writePlatformEvidence(root, { target, detectionSource, commandsInstalled, enforcementTier, signals }) {
+// The tier a probe result earns: "sandbox" only when a probe actually ran and the
+// write was denied — never from config presence alone. Anything else falls back to
+// what is merely installed.
+function tierFor(baseTier, probe) {
+  return probe && probe.ran && probe.ok === true ? "sandbox" : baseTier;
+}
+
+function sameProbe(a, b) {
+  const x = a || null;
+  const y = b || null;
+
+  return (x && x.ran) === (y && y.ran) && (x ? x.ok : null) === (y ? y.ok : null) && (x ? x.detail : null) === (y ? y.detail : null);
+}
+
+function writePlatformEvidence(root, { target, detectionSource, commandsInstalled, enforcementTier, signals, probe = null }) {
   const generatedAt = new Date().toISOString();
   const runsDir = path.join(root, ".coding-flow", "runs");
   const previous = latestPlatformRecord(runsDir, target);
@@ -35,7 +49,8 @@ function writePlatformEvidence(root, { target, detectionSource, commandsInstalle
     previous.detectionSource === detectionSource &&
     previous.commandsInstalled === commandsInstalled &&
     previous.enforcementTier === enforcementTier &&
-    JSON.stringify(previous.signals || null) === JSON.stringify(signals || null)
+    JSON.stringify(previous.signals || null) === JSON.stringify(signals || null) &&
+    sameProbe(previous.probe, probe)
   ) {
     return null;
   }
@@ -49,9 +64,27 @@ function writePlatformEvidence(root, { target, detectionSource, commandsInstalle
     record.signals = signals;
   }
 
+  if (probe) {
+    record.probe = probe;
+  }
+
   writeJson(file, record);
 
   return file;
 }
 
-module.exports = { writePlatformEvidence };
+// `doctor` re-checks enforcement on its own: carry the newest install record
+// forward with the fresh probe, so the report shows what was actually verified.
+function recordProbeEvidence(root, { target, probe, baseTier }) {
+  const previous = latestPlatformRecord(path.join(root, ".coding-flow", "runs"), target);
+
+  return writePlatformEvidence(root, {
+    target,
+    detectionSource: previous ? previous.detectionSource : "doctor",
+    commandsInstalled: previous && typeof previous.commandsInstalled === "number" ? previous.commandsInstalled : null,
+    enforcementTier: tierFor(baseTier, probe),
+    probe,
+  });
+}
+
+module.exports = { writePlatformEvidence, recordProbeEvidence, tierFor };
