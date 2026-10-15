@@ -6,7 +6,28 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-15
+
 ### Added
+
+- **Multi-platform install.** `ai-flow init` detects the host (`--target
+  claude|codex|gemini|opencode|antigravity`, else `CLAUDECODE=1`, `.claude/`,
+  `.codex/`) and installs that platform's commands. A host nobody recognized
+  installs no commands and records boolean presence signals only (never values),
+  shown in `ai-flow report`. Adding a second target keeps the first.
+- **Codex sandbox guard.** For Codex, `init`/`upgrade` write a permissions
+  profile into `.codex/config.toml` from the same blocked paths as the Claude
+  guard; `doctor` flags it absent (error) or stale (warning).
+- **Executed self-test of the Codex guard.** `doctor` and `init` run
+  `codex sandbox` against a denied directory and read the result: write denied
+  (confirmed working), write allowed (error `codex_sandbox_not_enforcing`), or
+  Codex failing for another reason such as an untrusted project (warning). Bounded by a timeout,
+  skipped silently without `codex`, always cleans up. The `sandbox` enforcement
+  tier is earned only by a denied write, never by config presence.
+- **Commands for Gemini, OpenCode and Antigravity** (commands only: no write
+  guard has been verified there, and the tier says so).
+- **`## Platform coverage` in `ai-flow report`**: per target, detection source,
+  commands installed, enforcement tier and probe outcome.
 
 - **OpenCode guard.** `ai-flow init --opencode` (or any project that already
   has `opencode.json` / `.opencode/`) writes `.opencode/plugins/coding-flow-guard.js`,
@@ -20,6 +41,19 @@ All notable changes to this project are documented here. The format is based on
 - **Skills for OpenCode projects.** OpenCode reads skills from the project
   (`.claude/skills`), not from the Claude Code plugin, so `init`/`upgrade` copy
   them whenever OpenCode is in use, even with the plugin installed.
+
+### Changed
+
+- `.claude` wins over `.codex` when both exist, and the evidence names the ambiguity.
+- A commands-only install no longer auto-wires the OpenCode guard plugin
+  (only an explicit `--opencode` does), and `doctor` no longer errors on it.
+
+### Known limits
+
+- Under Codex, deny globs (`**/*.pem`) only protect files that already exist;
+  only literal paths and directories stop creation. `doctor` warns
+  (`codex_sandbox_unprobed`) when a policy has no directory entry to probe.
+- Codex `"deny"` blocks reads as well as writes (stricter than the Claude guard).
 
 ## [0.10.0] - 2026-08-30
 
