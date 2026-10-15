@@ -85,7 +85,7 @@ test('init --target codex twice is idempotent: nothing duplicated or rewritten',
   assert.deepEqual(fs.readdirSync(path.join(dir, '.codex', 'skills')).sort(), SKILLS);
 });
 
-test('a prior Claude install is left untouched, Codex is added alongside and the new target is recorded', (t) => {
+test('a prior Claude install is left untouched, Codex is added alongside and the new target is recorded as an addition', (t) => {
   const dir = project(t);
   init(dir, ['--target', 'claude', '--with-skills']);
   const claudeSkill = path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md');
@@ -94,7 +94,8 @@ test('a prior Claude install is left untouched, Codex is added alongside and the
   init(dir, ['--target', 'codex']);
   assert.deepEqual([fs.readFileSync(claudeSkill, 'utf8'), fs.readFileSync(settings, 'utf8')], before);
   assert.ok(fs.existsSync(path.join(dir, '.codex', 'skills', 'flow-run', 'SKILL.md')));
-  assert.equal(config(dir).target, 'codex', 'an explicit --target is recorded, so doctor/upgrade/report agree with the files');
+  assert.equal(config(dir).target, 'claude', 'the first decision stays the primary target');
+  assert.deepEqual(config(dir).alsoTargets, ['codex']);
 });
 
 test('an "unrecognized" install is replaced by the first explicit target', (t) => {
@@ -170,4 +171,46 @@ test('upgrade on an unrecognized project writes no Claude file either', (t) => {
   cli(dir, ['upgrade']);
   assert.equal(fs.existsSync(path.join(dir, '.claude')), false);
   assert.equal(fs.existsSync(path.join(dir, 'CLAUDE.md')), false);
+});
+
+function doctorJson(dir) {
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(dir, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
+  delete env.CLAUDECODE;
+  try {
+    return JSON.parse(execFileSync(process.execPath, [CLI, 'doctor', '--json'], { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  } catch (error) {
+    return JSON.parse(error.stdout);
+  }
+}
+
+test('adding Codex to a Claude project keeps the first target and its guard check', (t) => {
+  const dir = project(t);
+  init(dir, ['--target', 'claude', '--with-skills']);
+  init(dir, ['--target', 'codex']);
+  assert.equal(config(dir).target, 'claude');
+  assert.equal(config(dir).skills, 'project', 'adding Codex must not overwrite the Claude skills mode');
+  execFileSync(process.execPath, [CLI, 'upgrade'], { cwd: dir, env: { ...process.env, CLAUDECODE: '' }, stdio: 'ignore' });
+  assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md')), 'upgrade keeps .claude/skills');
+  assert.deepEqual(config(dir).alsoTargets, ['codex']);
+  assert.equal(SKILLS.every((n) => fs.existsSync(path.join(dir, '.codex', 'skills', n, 'SKILL.md'))), true);
+
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{}');
+  assert.ok(doctorJson(dir).errors.some((e) => e.code === 'guard_not_wired'));
+});
+
+test('adding Claude to a Codex project installs Claude skills per the machine, not the placeholder', (t) => {
+  const dir = project(t);
+  init(dir, ['--target', 'codex']);
+  init(dir, ['--target', 'claude']);
+  assert.equal(config(dir).target, 'codex');
+  assert.deepEqual(config(dir).alsoTargets, ['claude']);
+  assert.equal(config(dir).skills, 'project');
+  assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md')));
+});
+
+test('an idempotent re-run adds no second platform record', (t) => {
+  const dir = project(t);
+  init(dir, ['--target', 'codex']);
+  init(dir, ['--target', 'codex']);
+  assert.equal(platformRecords(dir).length, 1);
 });

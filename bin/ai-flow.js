@@ -98,6 +98,8 @@ const {
   writeConfigSkills,
   writeConfigInstall,
   writeConfigTarget,
+  writeConfigAlsoTarget,
+  activeTargets,
   STORAGE_BACKENDS,
 } = require("./lib/config");
 const { EXPLICIT_TARGETS, resolveTarget } = require("./lib/detect");
@@ -262,7 +264,8 @@ if (command === "init") {
   const detected = resolveTarget({ flags: { target: requestedTarget }, env: process.env, cwd });
   const target =
     requestedTarget || !hadConfig || recorded.target === "unrecognized" ? detected.target : recorded.target;
-  const detectionSource = target === detected.target ? detected.source : "config";
+  const detectionSource =
+    requestedTarget || !hadConfig || recorded.target === "unrecognized" ? detected.source : "config";
 
   // Only a Claude install can draw on the Claude plugin; Codex and an
   // unrecognized host get no `.claude/skills` copy to keep or prune.
@@ -283,12 +286,11 @@ if (command === "init") {
   if (!dryRun && !configResult.created && recorded.target === "unrecognized" && target !== "unrecognized") {
     configResult.config = writeConfigTarget(cwd, target, skills.mode);
   } else if (!dryRun && !configResult.created && requestedTarget && requestedTarget !== recorded.target) {
-    // An explicit --target is a decision made now: the record has to follow it,
-    // or doctor/upgrade/report keep judging the project as the platform it was
-    // before while the files on disk say otherwise. The other platform's files
-    // stay where they are.
-    configResult.config = writeConfigTarget(cwd, requestedTarget);
-    log(`Target: recorded as "${requestedTarget}" (was "${recorded.target}"; its files are left in place)`);
+    // The recorded platform stays the project's first decision. An explicit
+    // --target for another one is added alongside, so doctor and upgrade keep
+    // judging the files of both instead of dropping the first one's checks.
+    configResult.config = writeConfigAlsoTarget(cwd, requestedTarget, skills.mode);
+    log(`Target: "${requestedTarget}" added alongside "${recorded.target}"; both are kept up to date`);
   }
 
   const effectiveSkills = configResult.config.skills;
@@ -433,7 +435,11 @@ if (command === "init") {
     log(describeSkillsMode(skills, reason));
   }
 
-  const upgradeTarget = readConfig(cwd).target;
+  const upgradeConfig = readConfig(cwd);
+  const platforms = activeTargets(upgradeConfig);
+  const hasClaude = platforms.includes("claude");
+  const hasCodex = platforms.includes("codex");
+  const upgradeTarget = hasClaude ? "claude" : upgradeConfig.target;
 
   upgrade({
     force: flags.has("--force"),
@@ -444,7 +450,7 @@ if (command === "init") {
     platform: upgradeTarget,
   });
 
-  if (upgradeTarget === "codex") {
+  if (hasCodex) {
     const codexSkills = copyCodexSkills({ force: flags.has("--force"), dryRun: flags.has("--dry-run") });
 
     if (!flags.has("--json")) {
@@ -459,7 +465,7 @@ if (command === "init") {
   // with the version it was installed with, forever. Every guard fix would ship
   // to npm and reach nobody. Re-wiring here also promotes a matcher we shipped
   // as a default before it covered `Bash`.
-  if (!flags.has("--no-guard") && upgradeTarget === "claude") {
+  if (!flags.has("--no-guard") && hasClaude) {
     const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
 
     if (!flags.has("--json")) {

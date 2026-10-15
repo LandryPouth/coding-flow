@@ -73,7 +73,11 @@ comment on a prior wrong Gemini-hook guess for why).
   `--target claude`. The suite pins `CLAUDECODE=1` in `scripts/test-env-guard.js`.
 - **`unrecognized` is replaceable**: it is the one recorded target a later
   explicit `--target` overwrites (`writeConfigTarget`); any other recorded
-  target is a decision and is left alone (a second platform is added alongside).
+  target is a decision and stays the primary `target`. An explicit `--target`
+  for a different platform is added alongside it in `alsoTargets`; doctor and
+  upgrade judge and refresh every active platform (`activeTargets`), so adding
+  Codex never drops the Claude guard check. An idempotent re-run writes no new
+  `platform` record.
 
 ## Test plan
 

@@ -20,7 +20,7 @@ const {
   ensureConvenienceFiles,
 } = require("./templates");
 const { collectHarnessReport } = require("./harness");
-const { readConfig } = require("./config");
+const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
@@ -201,7 +201,7 @@ function checkDuplicateNumbering(warnings) {
 function checkGuardWiring(errors, warnings) {
   // The Claude hook is Claude's guard; another platform's guard is judged by its
   // own check (a later story), and `.claude/settings.json` is not its business.
-  if (readConfig(cwd).target !== "claude") {
+  if (!activeTargets(readConfig(cwd)).includes("claude")) {
     return;
   }
 
@@ -332,11 +332,14 @@ function collectDoctorReport({ strict = false } = {}) {
   // CLAUDE.md and the Claude skills belong to a Claude install only; a Codex
   // project is judged against its own commands, and an unrecognized one against
   // the shared files alone.
-  if (config.target === "claude") {
+  const platforms = activeTargets(config);
+  const hasClaude = platforms.includes("claude");
+
+  if (hasClaude) {
     required.push("CLAUDE.md");
   }
 
-  if (config.target === "codex") {
+  if (platforms.includes("codex")) {
     for (const name of skillNames) {
       required.push(`${CODEX_SKILLS_DIR}/${name}/SKILL.md`);
     }
@@ -354,7 +357,7 @@ function collectDoctorReport({ strict = false } = {}) {
     });
   }
 
-  for (const spec of getTemplateSpecs({ includeSkills, target: config.target })) {
+  for (const spec of getTemplateSpecs({ includeSkills, target: hasClaude ? "claude" : config.target })) {
     required.push(spec.targetRel);
   }
 
@@ -500,15 +503,16 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
 
   if (fix) {
     const fixConfig = readConfig(cwd);
+    const fixPlatforms = activeTargets(fixConfig);
 
     copyTemplates({
       force: false,
       dryRun: false,
-      includeSkills: fixConfig.target === "claude" && fixConfig.skills === "project",
-      target: fixConfig.target,
+      includeSkills: fixPlatforms.includes("claude") && fixConfig.skills === "project",
+      target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
     });
 
-    if (fixConfig.target === "codex") {
+    if (fixPlatforms.includes("codex")) {
       copyCodexSkills({ force: false, dryRun: false });
     }
     writeManifest(readManifest());

@@ -34,6 +34,7 @@ const INSTALL_MODES = ["full", "minimal"];
 // recorded answer, not an error: nothing confirmed the host, so nothing
 // platform-specific was written. gemini/opencode/antigravity join in story 4.
 const TARGETS = ["claude", "codex", "unrecognized"];
+const PLATFORM_TARGETS = TARGETS.filter((t) => t !== "unrecognized");
 
 function configPath(cwd) {
   return path.join(cwd, ".coding-flow", "config.json");
@@ -61,6 +62,9 @@ function defaultConfig() {
     // there was, so an absent value has to mean "claude" — an unrecognized
     // target would make every existing project look unwired.
     target: "claude",
+    // Platforms added alongside `target` by a later explicit `--target`. `target`
+    // stays the first decision; these are checked and refreshed too.
+    alsoTargets: [],
     // Validation commands run by `ai-flow verify`. Empty by default: the
     // command then falls back to the "## Commands" block of plan.md, then to the
     // package.json scripts. Declaring them here makes validation explicit and
@@ -99,6 +103,10 @@ function readConfig(cwd) {
         ? existing.target
         : "unrecognized";
 
+  const alsoTargets = Array.isArray(existing.alsoTargets)
+    ? [...new Set(existing.alsoTargets.filter((t) => PLATFORM_TARGETS.includes(t) && t !== target))]
+    : defaults.alsoTargets;
+
   const cleanCommandList = (value) =>
     Array.isArray(value) ? value.filter((c) => typeof c === "string" && c.trim()) : [];
 
@@ -117,6 +125,7 @@ function readConfig(cwd) {
     skills,
     install,
     target,
+    alsoTargets,
     branchPerEpic:
       typeof existing.branchPerEpic === "boolean" ? existing.branchPerEpic : defaults.branchPerEpic,
     autoMergeEpic:
@@ -206,7 +215,34 @@ function writeConfigTarget(cwd, target, skills) {
   return config;
 }
 
+// A project can run several platforms; every one of them is judged by doctor
+// and refreshed by upgrade, not only the first one recorded.
+function activeTargets(config) {
+  return [config.target, ...(config.alsoTargets || [])].filter((t) => t !== "unrecognized");
+}
+
+function writeConfigAlsoTarget(cwd, target, skills) {
+  const config = readConfig(cwd);
+
+  if (!PLATFORM_TARGETS.includes(target) || target === config.target || config.alsoTargets.includes(target)) {
+    return config;
+  }
+
+  const next = {
+    ...config,
+    alsoTargets: [...config.alsoTargets, target],
+    // The skills mode describes the Claude install; only adding Claude may set it,
+    // or Codex's placeholder would overwrite a recorded "project" and the next
+    // upgrade would prune .claude/skills.
+    ...(target === "claude" && SKILLS_MODES.includes(skills) ? { skills } : {}),
+  };
+  writeJson(configPath(cwd), next);
+  return next;
+}
+
 module.exports = {
+  activeTargets,
+  writeConfigAlsoTarget,
   STORAGE_BACKENDS,
   TARGETS,
   writeConfigTarget,
