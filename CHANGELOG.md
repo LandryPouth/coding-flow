@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **`## Stories` bullets are parsed.** `worktree place`/`autoland` rejected epics
+  written the way the shipped example and `flow-plan`'s template write them
+  (`- [ ] story-…`); only `1. **story-…**` was accepted. Both forms work now.
+- **OpenCode guard messages no longer contradict each other.** `init` and `doctor`
+  stop saying "no guard" once the plugin is wired, and say how to wire it otherwise.
+- **`.opencode/`, `.codex/`, `.gemini/`, `.agent/` are not "existing code".**
+  A fresh OpenCode install no longer reports a brownfield project.
+
 ### Changed
 
 - **OpenCode commands are flat.** They now install to `.opencode/command/` and are

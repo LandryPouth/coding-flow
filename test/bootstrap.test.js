@@ -180,6 +180,14 @@ test('init says nothing about brownfield on a fresh repository', (t) => {
   assert.doesNotMatch(res.output, /flow-plan bootstrap/);
 });
 
+test('init on an OpenCode project does not read its own .opencode/ as existing code', (t) => {
+  const res = run(project(t, 'init-opencode-greenfield'), ['init', '--target', 'opencode']);
+  assert.equal(res.code, 0, res.output);
+
+  assert.doesNotMatch(res.output, /Existing code detected/);
+  assert.doesNotMatch(res.output, /Directories: .*\.opencode/);
+});
+
 test('init warns loudly when the stack is outside every detector', (t) => {
   const res = run(unknownStackProject(t, 'init-unknown'), ['init']);
   assert.equal(res.code, 0, res.output);

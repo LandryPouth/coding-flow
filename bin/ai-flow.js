@@ -371,7 +371,15 @@ if (command === "init") {
       `Commands: ${platformCommands.written.length} written to ${COMMANDS_ONLY_PLATFORMS[target].dir} ` +
         `(${platformCommands.skipped.length} kept)`,
     );
-    log(`Guard hook: none for "${target}" — commands-only platform, writes are not mechanically protected`);
+    // OpenCode has an opt-in guard plugin: its own line below says what was wired,
+    // so claiming "no guard" here would contradict it.
+    if (target !== "opencode" || !flags.has("--opencode")) {
+      log(
+        target === "opencode"
+          ? "Guard: none yet for OpenCode — writes are not mechanically protected. Re-run with --opencode to wire the guard plugin."
+          : `Guard hook: none for "${target}" — commands-only platform, writes are not mechanically protected`,
+      );
+    }
   } else {
     log(
       "Platform not recognized: no commands were installed. " +
