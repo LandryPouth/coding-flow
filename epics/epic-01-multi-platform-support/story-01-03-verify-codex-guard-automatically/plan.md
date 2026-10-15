@@ -53,6 +53,7 @@ Observed against codex-cli 0.138 (a real install, isolated `CODEX_HOME`):
 - **Denial signal**: non-zero exit and `sh: cannot create <f>: Permission denied` (or `Read-only file system` when the target does not exist). The probe also checks the file does not exist afterwards — the file wins over the exit code.
 - **Untrusted project**: Codex never loads the project's `.codex/config.toml` and fails with `default_permissions requires a \`[permissions]\` table` before running anything. That is `ok: null` ("is this project trusted in Codex?"), a warning, never a pass or a guard failure.
 - **Probe target is a denied DIRECTORY** (`.ssh/` from `.ssh/**`), not a glob entry, and a file inside it that does not exist yet. Created if missing and removed after, whatever the outcome.
+  A hard kill (SIGKILL, power loss) mid-probe can leave the created directory behind; delete it by hand.
 - `ok:false` is an error (`codex_sandbox_not_enforcing`); `ok:null` is a warning (`codex_sandbox_unconfirmed`); `ran:false` (no codex, or no directory entry to probe) is silent. Evidence tier is `sandbox` only on `ok:true`.
 - Probe runs in `doctor` and `init` (full and minimal-less; not `upgrade`, not `--dry-run`). `doctor` writes a platform record too, deduplicated on (tier, probe), carrying the install record forward.
 

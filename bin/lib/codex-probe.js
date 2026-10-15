@@ -11,7 +11,7 @@
 //              the project's .codex/config.toml)
 //
 // Observed against codex-cli 0.138: a denied write exits non-zero with "Permission
-// denied" (or "Read-only file system" when the target does not exist yet); an
+// denied" on the probe file (or "Read-only file system" when the target does not exist yet); an
 // untrusted project fails with "default_permissions requires a `[permissions]`
 // table" before running anything. A deny GLOB only covers files that exist when the
 // sandbox starts, so the probe targets a denied DIRECTORY, which also covers files
@@ -30,7 +30,11 @@ const { isCommandAvailable } = require("./util");
 // guard hook's own timeout): a probe must never be able to hang doctor or init.
 const PROBE_TIMEOUT_MS = 20000;
 
-const DENIAL_SIGNAL = /permission denied|read-only file system|operation not permitted/i;
+// Only the probe shell's own refusal of the probe file counts — dash words it "sh: 1:
+// cannot create <file>: Permission denied", bash "sh: line 1: <file>: Permission denied".
+// A bare "permission denied" / "operation not permitted" also comes from a
+// sandbox that failed to start (bwrap, config EACCES) — that proves nothing was enforced.
+const DENIAL_SIGNAL = /(cannot create [^\n]*|\.coding-flow-probe-[^\n]*): (permission denied|read-only file system)/i;
 const UNTRUSTED_SIGNAL = /requires a `?\[permissions\]`? table|unknown permissions? profile|not found in/i;
 
 // The first denied path that is a plain directory (`dir/**` with no glob in `dir`).

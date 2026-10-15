@@ -103,6 +103,18 @@ test('interpretProbe keeps denied / not-denied / unrelated failure apart', () =>
   assert.equal(interpretProbe({ status: 0, stderr: '', wrote: false, directory: '.ssh' }).ok, null);
 });
 
+test('a sandbox that fails to start is inconclusive, never a pass', () => {
+  for (const stderr of ['bwrap: setting up uid map: Operation not permitted', 'sandbox failed: Permission denied (os error 13) reading config']) {
+    const probe = interpretProbe({ status: 1, stderr, wrote: false, directory: '.ssh' });
+    assert.deepEqual([probe.ran, probe.ok], [true, null], stderr);
+  }
+});
+
+test('a bash-style denial of the probe file is still a pass', () => {
+  const stderr = 'sh: line 1: /p/.ssh/.coding-flow-probe-1-2: Permission denied';
+  assert.equal(interpretProbe({ status: 1, stderr, wrote: false, directory: '.ssh' }).ok, true);
+});
+
 test('an untrusted project is named as such, not read as a guard failure', () => {
   const probe = interpretProbe({ status: 1, stderr: 'Error: default_permissions requires a `[permissions]` table', wrote: false, directory: '.ssh' });
   assert.equal(probe.ok, null);
@@ -141,7 +153,7 @@ test('a denied write is ok:true and leaves nothing behind', (t) => {
     available: () => true,
     spawn: (cmd, args) => {
       calls.push([cmd, args]);
-      return { status: 2, stderr: 'sh: cannot create: Permission denied' };
+      return { status: 2, stderr: 'sh: cannot create /x/.ssh/probe: Permission denied' };
     },
   });
   assert.equal(probe.ok, true);
