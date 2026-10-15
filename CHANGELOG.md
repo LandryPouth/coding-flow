@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-15
+
 ### Fixed
 
 - **`## Stories` bullets are parsed.** `worktree place`/`autoland` rejected epics
