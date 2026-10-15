@@ -87,6 +87,17 @@ function defineSuite({ target, files, parser, describe }) {
     if (parser === 'toml') assert.match(parsed.prompt, /\\ backslash and """ quotes and ''' too/);
   });
 
+  test(`${target}: the guard gap is real — init wires no guard file or hook`, (t) => {
+    const dir = project(t);
+    cli(dir, ['init', '--target', target]);
+    const out = cli(dir, ['upgrade']);
+    assert.doesNotMatch(out, /Guard plugin/);
+    assert.equal(fs.existsSync(path.join(dir, '.opencode', 'plugins')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.claude', 'settings.json')), false);
+    const evidence = cli(dir, ['report']);
+    assert.match(evidence, /enforcementTier: commands-only/);
+  });
+
   test(`${target}: doctor states the guard gap as a note, never as an error or warning`, (t) => {
     const dir = project(t);
     cli(dir, ['init', '--target', target]);

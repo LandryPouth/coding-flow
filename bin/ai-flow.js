@@ -185,8 +185,13 @@ function describeCodexSandbox(status, dryRun) {
 // OpenCode has no settings.json: its guard is a plugin under .opencode/plugins/.
 // Wired when asked for (`--opencode`) or when the project already uses OpenCode;
 // never created for someone who does not.
-function wireOpenCode({ dryRun, quiet = false }) {
-  if (flags.has("--no-guard") || !(flags.has("--opencode") || usesOpenCode())) {
+// `target: "opencode"` is a commands-only install: init itself creates `.opencode/`,
+// which would make `usesOpenCode()` true and wire a guard the install says it lacks.
+// Only an explicit `--opencode` opts in there.
+function wireOpenCode({ dryRun, quiet = false, target = null }) {
+  const selfCreatedDir = target === "opencode" && !flags.has("--opencode");
+
+  if (flags.has("--no-guard") || selfCreatedDir || !(flags.has("--opencode") || usesOpenCode())) {
     return;
   }
 
@@ -261,7 +266,7 @@ if (command === "init") {
       log(`Guard hook: none for "${minimalTarget}" yet (commands-only platform)`);
     }
 
-    wireOpenCode({ dryRun });
+    wireOpenCode({ dryRun, target: minimalTarget });
 
     log("");
     log("Installed: the guard hook, the proof layer, and the friction log. No RULES.md, no epics/, no skills.");
@@ -410,10 +415,14 @@ if (command === "init") {
     if (!flags.has("--dry-run") && sandbox.status !== "skipped") {
       codexProbe = probeCodexSandbox({ root: cwd });
       log(`Codex sandbox: ${describeProbe(codexProbe)}`);
+
+      if (codexProbe.ran && codexProbe.ok !== true) {
+        log("Run `ai-flow doctor` for the full check; a broken sandbox is an error there.");
+      }
     }
   }
 
-  wireOpenCode({ dryRun: flags.has("--dry-run") });
+  wireOpenCode({ dryRun: flags.has("--dry-run"), target });
 
   const countInstalledCommands = () => {
     const rendered = target === "codex" ? codexSkills : platformCommands;
@@ -580,7 +589,7 @@ if (command === "init") {
     }
   }
 
-  wireOpenCode({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json") });
+  wireOpenCode({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), target: upgradeConfig.target });
 
   if (!flags.has("--json")) {
     log("");
