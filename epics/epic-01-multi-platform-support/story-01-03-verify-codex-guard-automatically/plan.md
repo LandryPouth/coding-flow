@@ -38,10 +38,33 @@
   `codex` install to observe once, the same way ai-learn's author did) and
   record it in Decisions.
 
+## Carried over from story 01-02's review
+
+- Observe whether `"deny"` blocks reads as well as writes (the Claude guard only
+  blocks writes) and whether glob keys like `**/*.pem` are honoured by Codex's
+  matcher; probe at least one glob entry, not only a literal path.
+- Record both answers in Decisions below.
+
 ## Decisions
 
-_(filled during implementation — record the exact denial signal observed
-from `codex sandbox`, and the final probe-command construction)_
+Observed against codex-cli 0.138 (a real install, isolated `CODEX_HOME`):
+
+- **Invocation**: `codex sandbox --permissions-profile coding-flow-guard -C <root> -- sh -c 'echo probe > "$1"' sh <file>`. No auth needed.
+- **Denial signal**: non-zero exit and `sh: cannot create <f>: Permission denied` (or `Read-only file system` when the target does not exist). The probe also checks the file does not exist afterwards — the file wins over the exit code.
+- **Untrusted project**: Codex never loads the project's `.codex/config.toml` and fails with `default_permissions requires a \`[permissions]\` table` before running anything. That is `ok: null` ("is this project trusted in Codex?"), a warning, never a pass or a guard failure.
+- **Probe target is a denied DIRECTORY** (`.ssh/` from `.ssh/**`), not a glob entry, and a file inside it that does not exist yet. Created if missing and removed after, whatever the outcome.
+  A hard kill (SIGKILL, power loss) mid-probe can leave the created directory behind; delete it by hand.
+- `ok:false` is an error (`codex_sandbox_not_enforcing`); `ok:null` is a warning (`codex_sandbox_unconfirmed`); `ran:false` (no codex, or no directory entry to probe) is silent. Evidence tier is `sandbox` only on `ok:true`.
+- Probe runs in `doctor` and `init` (full and minimal-less; not `upgrade`, not `--dry-run`). `doctor` writes a platform record too, deduplicated on (tier, probe), carrying the install record forward.
+- **Two spawns per run, not one**: `checkCodexBinary` runs a bounded `codex --version` before the sandbox spawn (the generic `isCommandAvailable` has no timeout, so a hung codex would block doctor/init). Worst case is about 2 x `PROBE_TIMEOUT_MS` (40 s); a normal run is one quick version check plus one sandbox spawn.
+- **codex found but broken**: a codex that fails or hangs on `--version` is `ran:true, ok:null` (warning `codex_sandbox_unconfirmed`), no longer silently "absent".
+- **Glob-only policy**: no `dir/**` entry means nothing to probe (`ran:false, reason:"no-directory"`), and doctor warns `codex_sandbox_unprobed`, because a profile that was never exercised is a claim, not proof. `ran:false` results carry a `reason` (`no-binary` | `no-directory`).
+- The probe file name is stripped from `detail`, so an unchanged failure dedupes in the evidence.
+
+### Findings about story 01-02's profile (answers to the carried-over questions)
+
+- **`"deny"` blocks reads as well as writes** (`cat a.blocked` → Permission denied). The Claude guard only blocks writes, so under Codex the agent also cannot READ `.env`, `*.pem`, `*.key`, `node_modules/`. Stricter than the Claude side; arguably right for secrets, wrong for `node_modules`.
+- **Glob entries only protect files that exist when the sandbox starts.** With `"**/*.blocked" = "deny"`: appending to an existing `a.blocked` / `sub/x.blocked` was denied, but creating a NEW `b.blocked` / `sub/y.blocked` succeeded. So `**/id_rsa`, `**/*.pem`, `**/*.key` (and likely `.env.*`) do not stop an agent creating such a file; only literal paths and directories (`.env`, `.ssh`, `node_modules`) cover creation. This is a real hole in the story 01-02 guard that the probe (directory target) does not and cannot report. Not fixed here: Codex's matcher has no create-time glob; it needs a decision (document the gap, or add a doctor warning for glob-only policies).
 
 ## Test plan
 
@@ -66,7 +89,7 @@ from `codex sandbox`, and the final probe-command construction)_
 | profile misconfigured → doctor error, `probe.ok: false` | `test/codex-probe.test.js` (integration) |
 | codex absent → no spawn, `probe.ran: false`, no error | `test/codex-probe.test.js` (unit) |
 | report shows confirmed enforcement tier | extend `test/report-platform-coverage.test.js` |
-| bounded runtime, no hang | `test/codex-probe.test.js` (timeout case) |
+| bounded runtime, no hang (one version check + one sandbox spawn) | `test/codex-probe.test.js` (timeout case) |
 
 ## Commands
 

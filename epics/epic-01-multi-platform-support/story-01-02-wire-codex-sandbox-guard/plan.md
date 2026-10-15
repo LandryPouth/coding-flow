@@ -34,7 +34,11 @@
 
 ## Decisions
 
-_(filled during implementation)_
+- Policy single-sourced: `loadPolicy` (now exported from guard.js) feeds the profile; non-string `blockedPaths` entries are skipped so a malformed harness.json cannot crash upgrade/doctor.
+- Foreign file (no leading marker) is not a doctor finding (acceptance criterion wins over the requirements prose); missing = `guard_not_wired` error, stale = `codex_sandbox_stale` warning.
+- Evidence tier `sandbox-profile` when the profile is written, `commands-only` otherwise (`--no-guard`, foreign file). Mechanism unproven until story 3; init output notes Codex needs project trust.
+- Not done (review finding): the profile does not deny `.codex/` or `harness.json` — denying `.codex` would block `upgrade` writing skills; the Claude guard has the same self-edit gap. Revisit in story 3.
+- Out of scope, pre-existing: `uninstall` removes no platform guard (Claude hook, OpenCode plugin, Codex profile).
 
 ## Test plan
 
@@ -54,7 +58,7 @@ _(filled during implementation)_
 | fresh init writes correct marker + denies | `test/codex-settings.test.js` |
 | foreign file untouched, no error | `test/codex-settings.test.js` |
 | upgrade regenerates stale marker-stamped file | `test/codex-settings.test.js` |
-| missing profile on codex target → doctor error | `test/doctor-guard-wiring.test.js` (extended) |
+| missing profile on codex target → doctor error | `test/codex-settings.test.js` (doctor cases live there) |
 
 ## Commands
 

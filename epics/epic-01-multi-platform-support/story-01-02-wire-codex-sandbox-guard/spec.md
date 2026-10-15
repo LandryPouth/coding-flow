@@ -36,18 +36,18 @@ as a rule the agent is supposed to follow.
 
 ## Acceptance criteria
 
-- [ ] Given `ai-flow init --target codex` runs on a project with no
+- [x] Given `ai-flow init --target codex` runs on a project with no
       `.codex/config.toml`, when init completes, then the file exists,
       starts with the marker comment, and its `default_permissions` profile
       denies exactly the paths `.coding-flow/harness.json` declares blocked.
-- [ ] Given a project already has a `.codex/config.toml` that does not start
+- [x] Given a project already has a `.codex/config.toml` that does not start
       with the marker, when `ai-flow init --target codex` runs, then the
       file is left byte-for-byte untouched and `doctor` does not report it
       as an error (foreign file, not our problem to fix).
-- [ ] Given a marker-stamped `.codex/config.toml` from an older version,
+- [x] Given a marker-stamped `.codex/config.toml` from an older version,
       when `ai-flow upgrade` runs, then the file is regenerated to match the
       current denied-path list.
-- [ ] Given `target === "codex"` and no `.codex/config.toml` exists at all,
+- [x] Given `target === "codex"` and no `.codex/config.toml` exists at all,
       when `ai-flow doctor` runs, then it reports a `guard_not_wired`-class
       error (mirrors the existing Claude check's severity reasoning: no
       protection, silently, is worse than a stale one).

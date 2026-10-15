@@ -7,6 +7,8 @@
 > the shared `.agents/` mirror: a source of confusion, replaced by a clear
 > per-agent target.
 
+> **Update 2026-10-15:** the OpenCode guard is built (`bin/lib/opencode.js`, `test/opencode-guard.test.js`). Verified against the installed OpenCode binary: plugins load from `.opencode/plugins/`, `tool.execute.before` receives `{tool}` and `{args}` for every tool including subagents', a `throw` refuses the call, `apply_patch` (`patchText`) is the edit tool for GPT-family models, and skills are read from `.claude/skills` / `.agents/skills`.
+
 ## Thesis
 
 A neutral `.agents/skills/` mirror blends conventions and forces every agent to

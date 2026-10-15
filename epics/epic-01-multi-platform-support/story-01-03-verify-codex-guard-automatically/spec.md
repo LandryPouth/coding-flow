@@ -41,26 +41,26 @@ by hand, never something the shipped tool runs itself.
 
 ## Acceptance criteria
 
-- [ ] Given `codex` is on `PATH` and the sandbox profile from story 2 is
+- [x] Given `codex` is on `PATH` and the sandbox profile from story 2 is
       correctly wired, when `ai-flow doctor` runs, then it executes the
       probe, the probe's write attempt is denied, and the platform evidence
       record has `probe: {ran: true, ok: true}`.
-- [ ] Given `codex` is on `PATH` but the sandbox profile is missing or
+- [x] Given `codex` is on `PATH` but the sandbox profile is missing or
       misconfigured (denies nothing), when `ai-flow doctor` runs, then the
       probe's write attempt succeeds, `doctor` reports this as an **error**
       (not a warning — a false sense of protection is the worst outcome),
       and the evidence record has `probe: {ran: true, ok: false}`.
-- [ ] Given `codex` is not on `PATH`, when `ai-flow doctor` runs, then no
+- [x] Given `codex` is not on `PATH`, when `ai-flow doctor` runs, then no
       `codex` process is spawned, `doctor` exits with its normal status
       (this alone is never an error), and the evidence record has
       `probe: {ran: false}`.
-- [ ] Given the probe ran and passed, when `ai-flow report` runs, then
+- [x] Given the probe ran and passed, when `ai-flow report` runs, then
       `## Platform coverage` shows `codex` with a confirmed-working
       enforcement tier, not merely "commands installed."
-- [ ] Given `doctor` runs twice in a row on an unchanged, correctly-wired
+- [x] Given `doctor` runs twice in a row on an unchanged, correctly-wired
       project, when comparing the two runs, then both complete in a
-      reasonable time for a command run routinely (the probe spawns at most
-      one `codex` process per run — no retry storm, no hang without a
+      reasonable time for a command run routinely (doctor runs one bounded
+      `codex --version` and at most one sandbox `codex` spawn per run — no retry storm, no hang without a
       timeout).
 
 ## Edge cases

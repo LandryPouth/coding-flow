@@ -50,9 +50,34 @@ comment on a prior wrong Gemini-hook guess for why).
 
 ## Decisions
 
-_(filled during implementation — record here: the templates.js restructuring
-approach chosen, and Codex's actual project-vs-user-level prompt convention
-once confirmed)_
+- **templates.js restructuring**: no `templates/{shared,claude,codex}/` split.
+  `getTemplateSpecs`/`copyTemplates`/`upgrade` gained a `target` parameter
+  (default `"claude"`, so every existing caller is unchanged) that drops
+  `CLAUDE_ONLY_TEMPLATES` (`CLAUDE.md`) for any other target, and `copyTemplates`
+  no longer prunes `.claude/skills` for a non-Claude run. The manifest/hash
+  logic is untouched. Codex files are written by a separate `copyCodexSkills`,
+  rendered from the same `templates/.claude/skills/*` sources
+  (`bin/lib/platforms/codex.js`), so there is still one source of truth.
+- **Codex command shape**: not `~/.codex/prompts/` (ai-learn's choice). Codex
+  0.138 ships no prompts directory, and its own tooling installs skills into
+  `$CODEX_HOME/skills` (`~/.codex/skills`) as `<name>/SKILL.md` with
+  `name`/`description` frontmatter — exactly the shape coding-flow's skills
+  already have. So each skill is rendered as `.codex/skills/<name>/SKILL.md`
+  (7 files), invoked as `$flow-*`. **Project-scoped discovery of `.codex/skills`
+  is NOT confirmed against the binary** (only the user-level path is); the epic
+  index tracks verifying it with the real `codex` before story 3.
+- **Unrecognized host changes the default**: with no flag, no `CLAUDECODE=1` and
+  no `.claude/`/`.codex/`, `init` now writes no platform commands and no
+  `.claude/settings.json` (AC 2), and says how to re-run. A plain-terminal
+  first `init` in a fresh dir used to install Claude skills; it now needs
+  `--target claude`. The suite pins `CLAUDECODE=1` in `scripts/test-env-guard.js`.
+- **`unrecognized` is replaceable**: it is the one recorded target a later
+  explicit `--target` overwrites (`writeConfigTarget`); any other recorded
+  target is a decision and stays the primary `target`. An explicit `--target`
+  for a different platform is added alongside it in `alsoTargets`; doctor and
+  upgrade judge and refresh every active platform (`activeTargets`), so adding
+  Codex never drops the Claude guard check. An idempotent re-run writes no new
+  `platform` record.
 
 ## Test plan
 

@@ -49,25 +49,25 @@ already does — without any Claude-specific file being written.
 
 ## Acceptance criteria
 
-- [ ] Given a project with no `.coding-flow/config.json`, when `ai-flow init
+- [x] Given a project with no `.coding-flow/config.json`, when `ai-flow init
       --target codex` runs, then `.coding-flow/config.json` records
       `target: "codex"` and the resolved Codex commands directory contains
       one rendered file per coding-flow skill (7 files).
-- [ ] Given `ai-flow init` runs with no `--target`, `CLAUDECODE` unset, and
+- [x] Given `ai-flow init` runs with no `--target`, `CLAUDECODE` unset, and
       neither `.claude/` nor `.codex/` present, when init completes, then
       `target` is recorded as `"unrecognized"` and no platform-specific
       command files are written.
-- [ ] Given a Codex-targeted install just ran, when `ai-flow report` runs,
+- [x] Given a Codex-targeted install just ran, when `ai-flow report` runs,
       then its output contains a `## Platform coverage` section listing
       `codex` with `enforcementTier: commands-only`.
-- [ ] Given an existing `*-verify.json` evidence file written before this
+- [x] Given an existing `*-verify.json` evidence file written before this
       change (no `kind` field), when `ai-flow report` runs, then it is still
       classified as `kind: "verify"` — the filename fallback still works.
-- [ ] Given `ai-flow init --target codex` runs twice in a row, when the
+- [x] Given `ai-flow init --target codex` runs twice in a row, when the
       second run completes, then no Codex command file is duplicated or
       corrupted (idempotent, matching `copyTemplates`'s existing
       skip-unless-force contract).
-- [ ] Given a project already has `.claude/` from a prior Claude install,
+- [x] Given a project already has `.claude/` from a prior Claude install,
       when `ai-flow init --target codex` runs on it, then the existing
       `.claude/` files are untouched and Codex's files are added alongside.
 

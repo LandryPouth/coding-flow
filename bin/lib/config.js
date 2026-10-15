@@ -30,6 +30,12 @@ const SKILLS_MODES = ["plugin", "project"];
 // install — a minimal project missing RULES.md is correct, not broken.
 const INSTALL_MODES = ["full", "minimal"];
 
+// Which agent platform this project was installed for. "unrecognized" is a
+// recorded answer, not an error: nothing confirmed the host, so nothing
+// platform-specific was written.
+const TARGETS = ["claude", "codex", "gemini", "opencode", "antigravity", "unrecognized"];
+const PLATFORM_TARGETS = TARGETS.filter((t) => t !== "unrecognized");
+
 function configPath(cwd) {
   return path.join(cwd, ".coding-flow", "config.json");
 }
@@ -52,6 +58,13 @@ function defaultConfig() {
     // Same reasoning: a config written before this field existed came from a
     // full install, so that is what an absent value has to mean.
     install: "full",
+    // A config written before this field existed came from the only platform
+    // there was, so an absent value has to mean "claude" — an unrecognized
+    // target would make every existing project look unwired.
+    target: "claude",
+    // Platforms added alongside `target` by a later explicit `--target`. `target`
+    // stays the first decision; these are checked and refreshed too.
+    alsoTargets: [],
     // Validation commands run by `ai-flow verify`. Empty by default: the
     // command then falls back to the "## Commands" block of plan.md, then to the
     // package.json scripts. Declaring them here makes validation explicit and
@@ -81,6 +94,18 @@ function readConfig(cwd) {
   const storage = STORAGE_BACKENDS.includes(existing.storage) ? existing.storage : defaults.storage;
   const skills = SKILLS_MODES.includes(existing.skills) ? existing.skills : defaults.skills;
   const install = INSTALL_MODES.includes(existing.install) ? existing.install : defaults.install;
+  // Absent means a pre-target install (claude); present-but-invalid means nobody
+  // can say what it was, which is exactly what "unrecognized" records.
+  const target =
+    existing.target === undefined
+      ? defaults.target
+      : TARGETS.includes(existing.target)
+        ? existing.target
+        : "unrecognized";
+
+  const alsoTargets = Array.isArray(existing.alsoTargets)
+    ? [...new Set(existing.alsoTargets.filter((t) => PLATFORM_TARGETS.includes(t) && t !== target))]
+    : defaults.alsoTargets;
 
   const cleanCommandList = (value) =>
     Array.isArray(value) ? value.filter((c) => typeof c === "string" && c.trim()) : [];
@@ -99,6 +124,8 @@ function readConfig(cwd) {
     storage,
     skills,
     install,
+    target,
+    alsoTargets,
     branchPerEpic:
       typeof existing.branchPerEpic === "boolean" ? existing.branchPerEpic : defaults.branchPerEpic,
     autoMergeEpic:
@@ -111,21 +138,28 @@ function readConfig(cwd) {
 // already made stay stable across upgrades.
 function ensureConfig(
   cwd,
-  { dryRun = false, storage = "local", branchPerEpic = true, skills = "project", install = "full" } = {},
+  {
+    dryRun = false,
+    storage = "local",
+    branchPerEpic = true,
+    skills = "project",
+    install = "full",
+    target = "claude",
+  } = {},
 ) {
-  const target = configPath(cwd);
+  const file = configPath(cwd);
 
-  if (fs.existsSync(target)) {
-    return { created: false, path: target, config: readConfig(cwd) };
+  if (fs.existsSync(file)) {
+    return { created: false, path: file, config: readConfig(cwd) };
   }
 
-  const config = { ...defaultConfig(), storage, branchPerEpic, skills, install };
+  const config = { ...defaultConfig(), storage, branchPerEpic, skills, install, target };
 
   if (!dryRun) {
-    writeJson(target, config);
+    writeJson(file, config);
   }
 
-  return { created: true, path: target, config };
+  return { created: true, path: file, config };
 }
 
 // The channel this project RECORDED, or null when it never recorded one — which
@@ -169,8 +203,49 @@ function writeConfigInstall(cwd, install) {
   return config;
 }
 
+// `unrecognized` is the one target a project may leave: it records that nothing
+// was confirmed, so a later explicit `--target` is the first real decision.
+function writeConfigTarget(cwd, target, skills) {
+  if (!TARGETS.includes(target)) {
+    return readConfig(cwd);
+  }
+
+  const config = { ...readConfig(cwd), target, ...(SKILLS_MODES.includes(skills) ? { skills } : {}) };
+  writeJson(configPath(cwd), config);
+  return config;
+}
+
+// A project can run several platforms; every one of them is judged by doctor
+// and refreshed by upgrade, not only the first one recorded.
+function activeTargets(config) {
+  return [config.target, ...(config.alsoTargets || [])].filter((t) => t !== "unrecognized");
+}
+
+function writeConfigAlsoTarget(cwd, target, skills) {
+  const config = readConfig(cwd);
+
+  if (!PLATFORM_TARGETS.includes(target) || target === config.target || config.alsoTargets.includes(target)) {
+    return config;
+  }
+
+  const next = {
+    ...config,
+    alsoTargets: [...config.alsoTargets, target],
+    // The skills mode describes the Claude install; only adding Claude may set it,
+    // or Codex's placeholder would overwrite a recorded "project" and the next
+    // upgrade would prune .claude/skills.
+    ...(target === "claude" && SKILLS_MODES.includes(skills) ? { skills } : {}),
+  };
+  writeJson(configPath(cwd), next);
+  return next;
+}
+
 module.exports = {
+  activeTargets,
+  writeConfigAlsoTarget,
   STORAGE_BACKENDS,
+  TARGETS,
+  writeConfigTarget,
   SKILLS_MODES,
   INSTALL_MODES,
   writeConfigInstall,

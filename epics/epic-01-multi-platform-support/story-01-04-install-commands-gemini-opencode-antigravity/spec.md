@@ -40,20 +40,20 @@ claim.
 
 ## Acceptance criteria
 
-- [ ] Given `ai-flow init --target gemini` runs, when init completes, then
+- [x] Given `ai-flow init --target gemini` runs, when init completes, then
       the rendered TOML files parse cleanly with a strict TOML parser and
       `target: "gemini"` is recorded.
-- [ ] Given `ai-flow init --target opencode` runs, when init completes, then
+- [x] Given `ai-flow init --target opencode` runs, when init completes, then
       the rendered markdown+frontmatter files exist at OpenCode's expected
       location and `target: "opencode"` is recorded.
-- [ ] Given `ai-flow init --target antigravity` runs, when init completes,
+- [x] Given `ai-flow init --target antigravity` runs, when init completes,
       then one `SKILL.md` directory per coding-flow skill exists with valid
       YAML frontmatter (a description containing a mid-sentence `:` does
       not break it — the exact bug class ai-learn hit).
-- [ ] Given any of the three targets, when `ai-flow doctor` runs, then it
+- [x] Given any of the three targets, when `ai-flow doctor` runs, then it
       prints an explicit "guard not available on this host" line and this
       is never counted toward `errors` (only ever informational).
-- [ ] Given any of the three targets, when `ai-flow report` runs, then
+- [x] Given any of the three targets, when `ai-flow report` runs, then
       `## Platform coverage` shows the target with `enforcementTier:
       commands-only` and no fabricated probe result.
 

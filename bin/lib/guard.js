@@ -422,4 +422,4 @@ function guardCommand({ getFlagValue, flags }) {
   process.exit(0);
 }
 
-module.exports = { guardCommand, decide, shellWriteTargets };
+module.exports = { guardCommand, decide, shellWriteTargets, loadPolicy };

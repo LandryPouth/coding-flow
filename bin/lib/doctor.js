@@ -14,15 +14,23 @@ const {
   getTemplateSpecs,
   manifestPath,
   copyTemplates,
+  copyCodexSkills,
+  copyPlatformCommands,
   writeManifest,
   readManifest,
   ensureConvenienceFiles,
 } = require("./templates");
 const { collectHarnessReport } = require("./harness");
-const { readConfig } = require("./config");
+const { readConfig, activeTargets } = require("./config");
+const { CODEX_SKILLS_DIR } = require("./platforms/codex");
+const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
+const { inspectCodexSandbox } = require("./codex-settings");
+const { probeCodexSandbox, describeProbe } = require("./codex-probe");
+const { recordProbeEvidence } = require("./platforms/evidence");
+const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -196,6 +204,12 @@ function checkDuplicateNumbering(warnings) {
 // is an error, not a warning. A stale command still enforces, just via the
 // slower fallback — that one stays a warning.
 function checkGuardWiring(errors, warnings) {
+  // The Claude hook is Claude's guard; another platform's guard is judged by its
+  // own check (a later story), and `.claude/settings.json` is not its business.
+  if (!activeTargets(readConfig(cwd)).includes("claude")) {
+    return;
+  }
+
   const settings = readJson(path.join(cwd, ".claude", "settings.json"), null);
 
   // No settings.json yet is init's job to create, not doctor's to flag — this
@@ -221,6 +235,91 @@ function checkGuardWiring(errors, warnings) {
       code: "guard_hook_stale",
       file: ".claude/settings.json",
       message: "the guard hook command does not match this install (still enforces via the npx fallback) — run `ai-flow upgrade` to re-wire it",
+    });
+  }
+}
+
+// Codex's guard is the sandbox profile in .codex/config.toml. Absent means no
+// protection, silently — an error. A file we did not generate is the user's own
+// and is not ours to judge; ours but out of date still protects, so it is a warning.
+// Only runs for a project that uses Codex. A profile that is present is then
+// exercised for real (codex-probe.js): a profile that denies nothing is an error,
+// never a warning — a false sense of protection is the worst outcome. Returns the
+// probe result (or null when nothing was probed) for the report and the evidence.
+function checkCodexSandbox(errors, warnings) {
+  if (!activeTargets(readConfig(cwd)).includes("codex")) {
+    return null;
+  }
+
+  const { state } = inspectCodexSandbox(cwd);
+  const file = ".codex/config.toml";
+
+  if (state === "absent") {
+    errors.push({
+      code: "guard_not_wired",
+      file,
+      message: "this project uses Codex but no sandbox profile is installed — writes are not protected; run `ai-flow upgrade`",
+    });
+  } else if (state === "stale") {
+    warnings.push({
+      code: "codex_sandbox_stale",
+      file,
+      message: "the Codex sandbox profile does not match the current blocked paths — run `ai-flow upgrade` to regenerate it",
+    });
+  }
+
+  // Only our own profile is probed: a foreign file is the user's, and the profile
+  // we would probe for is not in it.
+  if (state === "absent" || state === "foreign") {
+    return null;
+  }
+
+  const probe = probeCodexSandbox({ root: cwd });
+
+  if (probe.ran && probe.ok === false) {
+    errors.push({ code: "codex_sandbox_not_enforcing", file, message: `Codex sandbox ${describeProbe(probe)}` });
+  } else if (probe.ran && probe.ok === null) {
+    warnings.push({ code: "codex_sandbox_unconfirmed", file, message: `Codex sandbox ${describeProbe(probe)}` });
+  }
+
+  // A profile nothing could be probed against is a claim again, not proof: say so.
+  if (!probe.ran && probe.reason === "no-directory") {
+    warnings.push({ code: "codex_sandbox_unprobed", file, message: `Codex sandbox ${describeProbe(probe)}; deny globs do not stop new files, so add a directory entry (e.g. \`.ssh/**\`)` });
+  }
+
+  return probe;
+}
+
+// OpenCode's guard is a plugin file, so the same two silent failures apply: it
+// is missing while the project uses OpenCode (writes unprotected there), or it
+// is ours but written by another version. Not checked at all for a project that
+// does not use OpenCode — Claude-only installs stay exactly as they were.
+function checkOpenCodeWiring(errors, warnings) {
+  if (!usesOpenCode()) {
+    return;
+  }
+
+  const plugin = inspectOpenCodePlugin();
+  const file = ".opencode/plugins/coding-flow-guard.js";
+
+  // A commands-only install (OpenCode's own, or another target added beside it) has
+  // `.opencode/` from those commands and no guard by design (reported as a note),
+  // so an absent plugin is not an error.
+  if (plugin.state === "absent" && COMMANDS_ONLY_PLATFORMS[readConfig(cwd).target]) {
+    return;
+  }
+
+  if (plugin.state === "absent") {
+    errors.push({
+      code: "opencode_guard_not_wired",
+      file,
+      message: "this project uses OpenCode but no guard plugin is installed — writes are not protected there; run `ai-flow upgrade --opencode`",
+    });
+  } else if (plugin.state === "stale") {
+    warnings.push({
+      code: "opencode_guard_stale",
+      file,
+      message: "the OpenCode guard plugin does not match this install — run `ai-flow upgrade` to re-wire it",
     });
   }
 }
@@ -254,12 +353,15 @@ function collectMinimalReport({ strict = false } = {}) {
   }
 
   checkGuardWiring(errors, warnings);
+  const codexProbe = checkCodexSandbox(errors, warnings);
+  checkOpenCodeWiring(errors, warnings);
 
   return {
     ok: errors.length === 0,
     root: cwd,
     version: packageJson.version,
     strict,
+    codexProbe,
     install: "minimal",
     skillsMode: "plugin",
     skills: [],
@@ -290,13 +392,51 @@ function collectDoctorReport({ strict = false } = {}) {
     "docs/architecture.md",
     "docs/conventions.md",
     "docs/roadmap.md",
-    "CLAUDE.md",
   ];
+
+  // CLAUDE.md and the Claude skills belong to a Claude install only; a Codex
+  // project is judged against its own commands, and an unrecognized one against
+  // the shared files alone.
+  const platforms = activeTargets(config);
+  const hasClaude = platforms.includes("claude");
+
+  if (hasClaude) {
+    required.push("CLAUDE.md");
+  }
+
+  if (platforms.includes("codex")) {
+    for (const name of skillNames) {
+      required.push(`${CODEX_SKILLS_DIR}/${name}/SKILL.md`);
+    }
+  }
+
+  // The exact files each commands-only platform's renderer writes.
+  for (const platform of platforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+    for (const name of skillNames) {
+      required.push(COMMANDS_ONLY_PLATFORMS[platform].render(`---\nname: ${name}\ndescription: x\n---\n`).relPath);
+    }
+  }
 
   const errors = [];
   const warnings = [];
+  // Known, permanent facts — not a problem to fix, so never an error or a warning.
+  const notes = platforms
+    .filter((p) => COMMANDS_ONLY_PLATFORMS[p])
+    .map((p) => ({
+      code: "guard_unavailable",
+      message: `guard not available on this host (${p}): commands are installed, writes are not mechanically protected`,
+    }));
 
-  for (const spec of getTemplateSpecs({ includeSkills })) {
+  if (config.target === "unrecognized") {
+    warnings.push({
+      code: "platform_unrecognized",
+      message:
+        "no platform was recognized at init, so no commands and no guard were installed — " +
+        "run `ai-flow init --target claude` or `--target codex`",
+    });
+  }
+
+  for (const spec of getTemplateSpecs({ includeSkills, target: hasClaude ? "claude" : config.target })) {
     required.push(spec.targetRel);
   }
 
@@ -410,12 +550,15 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
+  const codexProbe = checkCodexSandbox(errors, warnings);
+  checkOpenCodeWiring(errors, warnings);
 
   return {
     ok: errors.length === 0,
     root: cwd,
     version: packageJson.version,
     strict,
+    codexProbe,
     install: "full",
     skillsMode,
     skills: skillNames,
@@ -427,7 +570,15 @@ function collectDoctorReport({ strict = false } = {}) {
     binaryOnPath: isCommandAvailable("ai-flow"),
     errors,
     warnings,
+    notes,
   };
+}
+
+function printNotes(report) {
+  for (const note of report.notes || []) {
+    log("");
+    log(`Note: ${note.message}`);
+  }
 }
 
 function doctor({ fix = false, json = false, strict = false } = {}) {
@@ -440,16 +591,41 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
   }
 
   if (fix) {
+    const fixConfig = readConfig(cwd);
+    const fixPlatforms = activeTargets(fixConfig);
+
     copyTemplates({
       force: false,
       dryRun: false,
-      includeSkills: readConfig(cwd).skills === "project",
+      includeSkills: fixPlatforms.includes("claude") && fixConfig.skills === "project",
+      target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
     });
+
+    for (const platform of fixPlatforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+      copyPlatformCommands(platform, { force: false, dryRun: false });
+    }
+
+    if (fixPlatforms.includes("codex")) {
+      copyCodexSkills({ force: false, dryRun: false });
+    }
     writeManifest(readManifest());
     ensureConvenienceFiles({ dryRun: false, force: false });
   }
 
   const report = collectDoctorReport({ strict });
+
+  // Every probe is evidence, so `ai-flow report` can show enforcement as checked
+  // rather than claimed. Idempotent: an unchanged result writes nothing.
+  if (report.codexProbe) {
+    recordProbeEvidence(cwd, { target: "codex", probe: report.codexProbe, baseTier: "sandbox-profile" });
+  }
+
+  // A broken or unconfirmed probe is already an error/warning above; the line is
+  // for the two outcomes that are not (confirmed working, not checked).
+  const probeLine =
+    report.codexProbe && (!report.codexProbe.ran || report.codexProbe.ok === true)
+      ? `Codex sandbox: ${describeProbe(report.codexProbe)}`
+      : null;
 
   if (json) {
     log(JSON.stringify(report, null, 2));
@@ -468,6 +644,13 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
       }
     }
 
+    printNotes(report);
+
+    if (probeLine) {
+      log("");
+      log(probeLine);
+    }
+
     log("");
     log(binaryPathNote(report.binaryOnPath));
   } else {
@@ -482,6 +665,13 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
       for (const warning of report.warnings) {
         log(`- ${warning.message}`);
       }
+    }
+
+    printNotes(report);
+
+    if (probeLine) {
+      log("");
+      log(probeLine);
     }
 
     log("");

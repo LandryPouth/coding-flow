@@ -3,10 +3,13 @@
 // Installation and update of the template files: copy, manifest (fingerprints to
 // detect local edits), convenience npm scripts, and cheat-sheet.
 
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
 const { templatesRoot, cwd, packageJson, githubNpxCommand, flowScripts } = require("./context");
+const { CODEX_SKILLS_DIR, renderSkill: renderCodexSkill } = require("./platforms/codex");
+const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
 const {
   log,
   fail,
@@ -50,7 +53,14 @@ function isSkillTarget(targetRel) {
   return normalizePortable(targetRel).startsWith(`${SKILLS_DIR}/`);
 }
 
-function getTemplateSpecs({ includeSkills = true } = {}) {
+// Files that exist only for Claude Code. A Codex install must not get them: it
+// has its own flavor (platforms/codex.js), and a stray CLAUDE.md in a Codex
+// project is the kind of Claude-specific file the target was meant to avoid.
+const CLAUDE_ONLY_TEMPLATES = ["CLAUDE.md"];
+
+// `target` is "claude" by default so every existing caller keeps its behavior.
+// Anything else (codex, unrecognized) gets the shared files only.
+function getTemplateSpecs({ includeSkills = true, target = "claude" } = {}) {
   ensureTemplatesExist();
 
   const specs = [];
@@ -59,6 +69,10 @@ function getTemplateSpecs({ includeSkills = true } = {}) {
     const relativePath = toPortable(path.relative(templatesRoot, source));
 
     if (!includeSkills && isSkillTarget(relativePath)) {
+      continue;
+    }
+
+    if (target !== "claude" && CLAUDE_ONLY_TEMPLATES.includes(relativePath)) {
       continue;
     }
 
@@ -120,6 +134,11 @@ function buildManifestFromCurrentTargets(previous = null) {
     updatedAt: new Date().toISOString(),
     packageJsonCreated: Boolean(previous && previous.packageJsonCreated),
     files,
+    // Codex skills are rendered, so they are tracked by the hash of what was
+    // written; carried forward untouched because this builder only knows the
+    // Claude targets.
+    codexSkills: (previous && previous.codexSkills) || {},
+    platformCommands: (previous && previous.platformCommands) || {},
   };
 }
 
@@ -466,6 +485,90 @@ function copyFileToTarget(source, targetRel, { force = false, dryRun = false } =
   return targetExists ? "updated" : "copied";
 }
 
+// The Codex flavor of the skills: one `.codex/skills/<name>/SKILL.md` per
+// coding-flow skill, rendered from the same sources the Claude copy uses. Same
+// contract as the Claude templates: an untouched file (its hash matches what the
+// manifest recorded) is refreshed, a locally edited one is kept unless forced,
+// and an up-to-date one is a no-op.
+function hashText(text) {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+// Shared by every rendered flavor: `files` are `{ rel, content }`, and the
+// manifest key records what was written so an untouched file can be refreshed.
+function syncRendered(files, manifestKey, { force, dryRun }) {
+  const written = [];
+  const skipped = [];
+  const manifest = readManifest();
+  const recorded = { ...(manifest[manifestKey] || {}) };
+
+  for (const { rel, content } of files) {
+    const target = path.join(cwd, rel);
+    const renderedHash = hashText(content);
+
+    if (fs.existsSync(target)) {
+      const currentHash = hashText(fs.readFileSync(target, "utf8"));
+
+      if (currentHash === renderedHash) {
+        recorded[rel] = renderedHash;
+        skipped.push(rel);
+        continue;
+      }
+
+      if (!force && recorded[rel] !== currentHash) {
+        skipped.push(rel);
+        continue;
+      }
+    }
+
+    if (!dryRun) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content);
+      recorded[rel] = renderedHash;
+    }
+
+    written.push(rel);
+  }
+
+  if (!dryRun) {
+    writeJson(manifestPath(), { ...manifest, [manifestKey]: recorded });
+  }
+
+  return { written, skipped };
+}
+
+function sourceSkills() {
+  ensureTemplatesExist();
+
+  return listTemplateSkillNames().map((name) =>
+    fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8"),
+  );
+}
+
+function copyCodexSkills({ force = false, dryRun = false } = {}) {
+  ensureTemplatesExist();
+
+  const files = listTemplateSkillNames().map((name) => ({
+    rel: `${CODEX_SKILLS_DIR}/${name}/SKILL.md`,
+    content: renderCodexSkill(
+      fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8"),
+    ),
+  }));
+
+  return syncRendered(files, "codexSkills", { force, dryRun });
+}
+
+// Gemini, OpenCode and Antigravity: same sources, each rendered in its own format.
+function copyPlatformCommands(target, { force = false, dryRun = false } = {}) {
+  const files = sourceSkills().map((markdown) => {
+    const { relPath, content } = COMMANDS_ONLY_PLATFORMS[target].render(markdown);
+
+    return { rel: relPath, content };
+  });
+
+  return syncRendered(files, "platformCommands", { force, dryRun });
+}
+
 // The friction log is the one piece of documentation a minimal install still
 // lays down. It is not there to explain the tool — it is the return channel: the
 // only place a user who is not the author records a gate that fired on a
@@ -538,14 +641,14 @@ function pruneStaleSkills({ dryRun = false, force = false, includeSkills = true 
   return { removed, skippedModified: force ? [] : modified };
 }
 
-function copyTemplates({ force = false, dryRun = false, includeSkills = true } = {}) {
+function copyTemplates({ force = false, dryRun = false, includeSkills = true, target = "claude" } = {}) {
   ensureTemplatesExist();
 
   const copied = [];
   const updated = [];
   const skipped = [];
 
-  for (const spec of getTemplateSpecs({ includeSkills })) {
+  for (const spec of getTemplateSpecs({ includeSkills, target })) {
     const result = copyFileToTarget(spec.source, spec.targetRel, { force, dryRun });
 
     if (result === "copied") {
@@ -559,7 +662,10 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true } =
 
   // Prune BEFORE the manifest is rewritten: it reads the entries recorded by the
   // previous install to know what it is allowed to remove.
-  const prunedSkills = pruneStaleSkills({ dryRun, force, includeSkills });
+  // A non-Claude install never owns `.claude/skills`: pruning there would delete
+  // another platform's commands just because this run did not install them.
+  const prunedSkills =
+    target === "claude" ? pruneStaleSkills({ dryRun, force, includeSkills }) : { removed: [], skippedModified: [] };
 
   if (!dryRun) {
     writeManifest(force ? null : readManifest());
@@ -570,14 +676,21 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true } =
   return { copied, updated, skipped, harnessCreated, prunedSkills };
 }
 
-function upgrade({ force = false, dryRun = false, json = false, includeSkills = true, skillsMode = null } = {}) {
+function upgrade({
+  force = false,
+  dryRun = false,
+  json = false,
+  includeSkills = true,
+  skillsMode = null,
+  platform = "claude",
+} = {}) {
   const previous = readManifest();
   const copied = [];
   const updated = [];
   const skippedModified = [];
   const unchanged = [];
 
-  for (const spec of getTemplateSpecs({ includeSkills }).filter((item) => item.kind === "template")) {
+  for (const spec of getTemplateSpecs({ includeSkills, target: platform }).filter((item) => item.kind === "template")) {
     const target = path.join(cwd, spec.targetRel);
     const sourceHash = hashFile(spec.source);
     const manifestEntry = previous.files ? previous.files[spec.targetRel] : null;
@@ -674,6 +787,8 @@ module.exports = {
   writeManifest,
   detectProjectPackageJson,
   copyTemplates,
+  copyCodexSkills,
+  copyPlatformCommands,
   ensureConvenienceFiles,
   ensureFrictionLog,
   printConvenienceSummary,

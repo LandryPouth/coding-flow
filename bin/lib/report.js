@@ -20,11 +20,25 @@ const os = require("os");
 const path = require("path");
 
 const { cwd } = require("./context");
+const { collectSignals } = require("./detect");
 const { log, readJson, normalizePortable, selectFailureLines } = require("./util");
 
 const MAX_DENIALS = 40;
 const MAX_FAILURES = 15;
 const MAX_TAIL_LINES = 12;
+
+// What the executed probe found, next to the tier it earned.
+function describeProbeOutcome(probe) {
+  if (!probe) {
+    return "";
+  }
+
+  if (!probe.ran) {
+    return " (probe: not run)";
+  }
+
+  return probe.ok === true ? " (probe: write denied)" : probe.ok === false ? " (probe: write NOT denied)" : " (probe: inconclusive)";
+}
 
 function codingFlowDir(root = cwd) {
   return path.join(root, ".coding-flow");
@@ -79,7 +93,10 @@ function readRuns(root) {
     .sort()
     .map((name) => {
       const parsed = readJson(path.join(dir, name), null);
-      return parsed ? { ...parsed, file: name, kind: name.includes("verify") ? "verify" : "evidence" } : null;
+      // The record names its own kind. The filename is only the fallback for
+      // evidence written before records carried one.
+      const kind = parsed && typeof parsed.kind === "string" ? parsed.kind : name.includes("verify") ? "verify" : "evidence";
+      return parsed ? { ...parsed, file: name, kind } : null;
     })
     .filter(Boolean);
 }
@@ -148,11 +165,41 @@ function describeCounts(counts) {
   return entries.length ? entries.map(([key, n]) => `${key} ${n}`).join(" · ") : "none recorded";
 }
 
+// How many installs nobody recognized, and which allowlisted signals they showed.
+// A signal a record predates (added to the allowlist later) counts as "not
+// checked" for that record, never as absent.
+function summarizeUnrecognized(records) {
+  if (!records.length) {
+    return null;
+  }
+
+  const names = new Set(Object.keys(collectSignals({ env: {}, cwd: "/" })));
+
+  for (const record of records) {
+    // Only well-formed `env:`/`dir:` keys: a record is a local file anyone can edit.
+    Object.keys(record.signals || {})
+      .filter((name) => /^(env|dir):[\w./-]+$/.test(name))
+      .forEach((name) => names.add(name));
+  }
+
+  const signals = {};
+
+  for (const name of names) {
+    const seen = records.filter((r) => r.signals && r.signals[name] === true).length;
+    const checked = records.filter((r) => r.signals && typeof r.signals[name] === "boolean").length;
+
+    signals[name] = { seen, notChecked: records.length - checked };
+  }
+
+  return { count: records.length, signals };
+}
+
 function buildReport({ root = cwd, raw = false } = {}) {
   const redact = makeRedactor({ root, raw });
   const runs = readRuns(root);
   const verifies = runs.filter((run) => run.kind === "verify");
   const evidence = runs.filter((run) => run.kind === "evidence");
+  const platforms = runs.filter((run) => run.kind === "platform");
   const denials = readDenials(root);
   const config = readJson(path.join(codingFlowDir(root), "config.json"), null);
   const harness = readJson(path.join(codingFlowDir(root), "harness.json"), null);
@@ -214,6 +261,16 @@ function buildReport({ root = cwd, raw = false } = {}) {
       recommendedModes: countBy(evidence, (run) => run.recommendedMode || null),
       coverageTiers: countBy(verifies, (run) => (run.coverage ? run.coverage.mode || run.coverage.tier : null)),
     },
+    platformCoverage: platforms.map((run) => ({
+      at: run.generatedAt || null,
+      target: run.target || null,
+      detectionSource: run.detectionSource || null,
+      commandsInstalled: typeof run.commandsInstalled === "number" ? run.commandsInstalled : null,
+      enforcementTier: run.enforcementTier || null,
+      signals: run.signals && typeof run.signals === "object" ? run.signals : null,
+      probe: run.probe && typeof run.probe === "object" ? { ran: run.probe.ran === true, ok: run.probe.ok === undefined ? null : run.probe.ok } : null,
+    })),
+    unrecognized: summarizeUnrecognized(platforms.filter((run) => run.target === "unrecognized")),
     denials: denials.slice(-MAX_DENIALS).map((entry) => ({
       at: entry.at || null,
       tool: entry.tool || null,
@@ -267,6 +324,36 @@ function renderMarkdown(report) {
   push(`- Coverage rungs: ${describeCounts(report.activity.coverageTiers)}`);
   push();
 
+  push("## Platform coverage");
+  push();
+
+  if (!report.platformCoverage.length) {
+    push("None recorded.");
+  } else {
+    push("| When | Target | Detected by | Commands | Enforcement |");
+    push("|---|---|---|---|---|");
+
+    for (const entry of report.platformCoverage) {
+      const when = entry.at ? entry.at.replace("T", " ").slice(0, 16) : "?";
+      push(
+        `| ${when} | ${entry.target || "?"} | ${entry.detectionSource || "?"} | ` +
+          `${entry.commandsInstalled === null ? "?" : entry.commandsInstalled} | enforcementTier: ${entry.enforcementTier || "?"}${describeProbeOutcome(entry.probe)} |`,
+      );
+    }
+  }
+
+  if (report.unrecognized) {
+    const parts = Object.entries(report.unrecognized.signals).map(([name, s]) =>
+      s.notChecked === report.unrecognized.count
+        ? `${name} not checked`
+        : `${name} ${s.seen}/${report.unrecognized.count - s.notChecked}${s.notChecked ? ` (not checked in ${s.notChecked})` : ""}`,
+    );
+
+    push();
+    push(`**unrecognized** — ${report.unrecognized.count} install(s) on a platform nobody has verified yet. Signals seen: ${parts.join(" · ")}`);
+  }
+
+  push();
   push(`## Guard denials (${report.denialsTotal})`);
   push();
 

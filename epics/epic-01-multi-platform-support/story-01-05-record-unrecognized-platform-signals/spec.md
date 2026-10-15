@@ -36,12 +36,12 @@ into "target: unrecognized" with no further information to act on.
 
 ## Acceptance criteria
 
-- [ ] Given `ai-flow init` runs with no `--target`, no known env signal, and
+- [x] Given `ai-flow init` runs with no `--target`, no known env signal, and
       no known config directory present, when init completes, then
       `target: "unrecognized"` is recorded, no platform-specific files are
       written, and a `platform`-kind evidence record exists with
       `enforcementTier: "unrecognized"`.
-- [ ] Given the same scenario but a `.codex` directory happens to exist
+- [x] Given the same scenario but a `.codex` directory happens to exist
       without a `CLAUDECODE`/Codex-confirming signal (a partial/ambiguous
       case), when init completes, then the evidence record's signal capture
       reflects that `.codex` was present — even though detection still
@@ -50,13 +50,13 @@ into "target: unrecognized" with no further information to act on.
       only for the platforms it already knows about; confirm during
       implementation whether this counts as "known" or "unrecognized" and
       record the decision).
-- [ ] Given an evidence record's signal capture, when inspected, then it
+- [x] Given an evidence record's signal capture, when inspected, then it
       contains only booleans/named-allowlist membership — never a raw env
       var value, never a file listing beyond the named allowlist.
-- [ ] Given one or more `unrecognized` records exist, when `ai-flow report`
+- [x] Given one or more `unrecognized` records exist, when `ai-flow report`
       runs, then `## Platform coverage` shows an `unrecognized` row with a
       count and which signals were seen across those records.
-- [ ] Given zero `unrecognized` records exist, when `ai-flow report` runs,
+- [x] Given zero `unrecognized` records exist, when `ai-flow report` runs,
       then no `unrecognized` row appears (no noise for the common case).
 
 ## Edge cases
