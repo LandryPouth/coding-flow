@@ -26,3 +26,10 @@ for (const name of [
 ]) {
   delete process.env[name];
 }
+
+// `init` resolves its platform from the environment (CLAUDECODE=1 means Claude
+// Code). Most of the suite exercises the Claude install, and the answer must not
+// depend on whether the developer happens to run `npm test` from inside Claude
+// Code or from a plain terminal / CI. Pinned here, once; the detection tests
+// that need a bare environment delete it from the env they hand the CLI.
+process.env.CLAUDECODE = "1";

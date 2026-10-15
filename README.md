@@ -250,7 +250,7 @@ current machine.
 
 | Command | Use |
 | --- | --- |
-| `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the hook, `--opencode` also wires the OpenCode guard plugin. |
+| `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the hook, `--opencode` also wires the OpenCode guard plugin. `--target claude\|codex` picks the platform: Codex gets `.codex/skills/` (commands only, no guard yet). With no flag, no `CLAUDECODE=1` and no `.claude/`/`.codex/`, the platform is recorded as `unrecognized` and **no platform commands are installed** — re-run with `--target`. |
 | `ai-flow upgrade` | Update installed files without overwriting local changes. |
 | `ai-flow doctor` | Check files, skills, frontmatter, manifest. `--fix` restores missing files, `--strict` adds checks. |
 | `ai-flow status` | List epics/stories, inferred status, and the linked worktree. |

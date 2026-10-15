@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { templatesRoot, cwd, packageJson, githubNpxCommand, flowScripts } = require("./context");
+const { CODEX_SKILLS_DIR, renderSkill: renderCodexSkill } = require("./platforms/codex");
 const {
   log,
   fail,
@@ -50,7 +51,14 @@ function isSkillTarget(targetRel) {
   return normalizePortable(targetRel).startsWith(`${SKILLS_DIR}/`);
 }
 
-function getTemplateSpecs({ includeSkills = true } = {}) {
+// Files that exist only for Claude Code. A Codex install must not get them: it
+// has its own flavor (platforms/codex.js), and a stray CLAUDE.md in a Codex
+// project is the kind of Claude-specific file the target was meant to avoid.
+const CLAUDE_ONLY_TEMPLATES = ["CLAUDE.md"];
+
+// `target` is "claude" by default so every existing caller keeps its behavior.
+// Anything else (codex, unrecognized) gets the shared files only.
+function getTemplateSpecs({ includeSkills = true, target = "claude" } = {}) {
   ensureTemplatesExist();
 
   const specs = [];
@@ -59,6 +67,10 @@ function getTemplateSpecs({ includeSkills = true } = {}) {
     const relativePath = toPortable(path.relative(templatesRoot, source));
 
     if (!includeSkills && isSkillTarget(relativePath)) {
+      continue;
+    }
+
+    if (target !== "claude" && CLAUDE_ONLY_TEMPLATES.includes(relativePath)) {
       continue;
     }
 
@@ -466,6 +478,36 @@ function copyFileToTarget(source, targetRel, { force = false, dryRun = false } =
   return targetExists ? "updated" : "copied";
 }
 
+// The Codex flavor of the skills: one `.codex/skills/<name>/SKILL.md` per
+// coding-flow skill, rendered from the same sources the Claude copy uses. Same
+// skip-unless-force contract as `copyFileToTarget`, so a second run is a no-op.
+function copyCodexSkills({ force = false, dryRun = false } = {}) {
+  ensureTemplatesExist();
+
+  const written = [];
+  const skipped = [];
+
+  for (const name of listTemplateSkillNames()) {
+    const source = path.join(templatesRoot, ".claude", "skills", name, "SKILL.md");
+    const targetRel = `${CODEX_SKILLS_DIR}/${name}/SKILL.md`;
+    const target = path.join(cwd, targetRel);
+
+    if (fs.existsSync(target) && !force) {
+      skipped.push(targetRel);
+      continue;
+    }
+
+    if (!dryRun) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, renderCodexSkill(fs.readFileSync(source, "utf8")));
+    }
+
+    written.push(targetRel);
+  }
+
+  return { written, skipped };
+}
+
 // The friction log is the one piece of documentation a minimal install still
 // lays down. It is not there to explain the tool — it is the return channel: the
 // only place a user who is not the author records a gate that fired on a
@@ -538,14 +580,14 @@ function pruneStaleSkills({ dryRun = false, force = false, includeSkills = true 
   return { removed, skippedModified: force ? [] : modified };
 }
 
-function copyTemplates({ force = false, dryRun = false, includeSkills = true } = {}) {
+function copyTemplates({ force = false, dryRun = false, includeSkills = true, target = "claude" } = {}) {
   ensureTemplatesExist();
 
   const copied = [];
   const updated = [];
   const skipped = [];
 
-  for (const spec of getTemplateSpecs({ includeSkills })) {
+  for (const spec of getTemplateSpecs({ includeSkills, target })) {
     const result = copyFileToTarget(spec.source, spec.targetRel, { force, dryRun });
 
     if (result === "copied") {
@@ -559,7 +601,10 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true } =
 
   // Prune BEFORE the manifest is rewritten: it reads the entries recorded by the
   // previous install to know what it is allowed to remove.
-  const prunedSkills = pruneStaleSkills({ dryRun, force, includeSkills });
+  // A non-Claude install never owns `.claude/skills`: pruning there would delete
+  // another platform's commands just because this run did not install them.
+  const prunedSkills =
+    target === "claude" ? pruneStaleSkills({ dryRun, force, includeSkills }) : { removed: [], skippedModified: [] };
 
   if (!dryRun) {
     writeManifest(force ? null : readManifest());
@@ -570,14 +615,21 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true } =
   return { copied, updated, skipped, harnessCreated, prunedSkills };
 }
 
-function upgrade({ force = false, dryRun = false, json = false, includeSkills = true, skillsMode = null } = {}) {
+function upgrade({
+  force = false,
+  dryRun = false,
+  json = false,
+  includeSkills = true,
+  skillsMode = null,
+  platform = "claude",
+} = {}) {
   const previous = readManifest();
   const copied = [];
   const updated = [];
   const skippedModified = [];
   const unchanged = [];
 
-  for (const spec of getTemplateSpecs({ includeSkills }).filter((item) => item.kind === "template")) {
+  for (const spec of getTemplateSpecs({ includeSkills, target: platform }).filter((item) => item.kind === "template")) {
     const target = path.join(cwd, spec.targetRel);
     const sourceHash = hashFile(spec.source);
     const manifestEntry = previous.files ? previous.files[spec.targetRel] : null;
@@ -674,6 +726,7 @@ module.exports = {
   writeManifest,
   detectProjectPackageJson,
   copyTemplates,
+  copyCodexSkills,
   ensureConvenienceFiles,
   ensureFrictionLog,
   printConvenienceSummary,

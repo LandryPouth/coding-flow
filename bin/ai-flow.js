@@ -60,11 +60,14 @@ if (command === "guard") {
   return;
 }
 
+const fs = require("fs");
 const path = require("path");
 const { cwd, invocationDir } = require("./lib/context");
 const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
 const {
   copyTemplates,
+  copyCodexSkills,
+  listTemplateSkillNames,
   ensureConvenienceFiles,
   ensureFrictionLog,
   printConvenienceSummary,
@@ -89,12 +92,16 @@ const { hookCommand } = require("./lib/hook");
 const { reportCommand } = require("./lib/report");
 const {
   ensureConfig,
+  configPath,
   readConfig,
   readConfigSkillsChoice,
   writeConfigSkills,
   writeConfigInstall,
+  writeConfigTarget,
   STORAGE_BACKENDS,
 } = require("./lib/config");
+const { EXPLICIT_TARGETS, resolveTarget } = require("./lib/detect");
+const { writePlatformEvidence } = require("./lib/platforms/evidence");
 const { detectPlugin } = require("./lib/claude-plugin");
 const { ensureHookSettings } = require("./lib/settings");
 const { ensureOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
@@ -240,21 +247,58 @@ if (command === "init") {
     );
   }
 
-  const skills = resolveSkillsMode();
+  const requestedTarget = getFlagValue("--target", null);
+
+  if (requestedTarget && !EXPLICIT_TARGETS.includes(requestedTarget)) {
+    fail(`unknown --target "${requestedTarget}". Use one of: ${EXPLICIT_TARGETS.join(", ")}.`);
+  }
+
+  // Which platform is this install for? A recorded decision wins on a re-init,
+  // then an explicit --target, then what the environment confirms — and when
+  // nothing is confirmed the answer is "unrecognized", never a guess.
+  const dryRun = flags.has("--dry-run");
+  const recorded = readConfig(cwd);
+  const hadConfig = fs.existsSync(configPath(cwd));
+  const detected = resolveTarget({ flags: { target: requestedTarget }, env: process.env, cwd });
+  const target =
+    requestedTarget || !hadConfig || recorded.target === "unrecognized" ? detected.target : recorded.target;
+  const detectionSource = target === detected.target ? detected.source : "config";
+
+  // Only a Claude install can draw on the Claude plugin; Codex and an
+  // unrecognized host get no `.claude/skills` copy to keep or prune.
+  const skills =
+    target === "claude" ? resolveSkillsMode() : { mode: "plugin", reason: `no Claude skills for target "${target}"` };
   // Config first: on a re-init, the choice recorded at the original install wins
   // over whatever this machine detects, so the copy below matches the config.
   const configResult = ensureConfig(cwd, {
-    dryRun: flags.has("--dry-run"),
+    dryRun,
     storage,
     branchPerEpic: !flags.has("--no-branch-per-epic"),
     skills: skills.mode,
+    target,
   });
+
+  // "unrecognized" is the one recorded target that is not a decision: the first
+  // explicit or confirmed platform after it is allowed to replace it.
+  if (!dryRun && !configResult.created && recorded.target === "unrecognized" && target !== "unrecognized") {
+    configResult.config = writeConfigTarget(cwd, target, skills.mode);
+  } else if (!dryRun && !configResult.created && requestedTarget && requestedTarget !== recorded.target) {
+    // An explicit --target is a decision made now: the record has to follow it,
+    // or doctor/upgrade/report keep judging the project as the platform it was
+    // before while the files on disk say otherwise. The other platform's files
+    // stay where they are.
+    configResult.config = writeConfigTarget(cwd, requestedTarget);
+    log(`Target: recorded as "${requestedTarget}" (was "${recorded.target}"; its files are left in place)`);
+  }
+
   const effectiveSkills = configResult.config.skills;
   const result = copyTemplates({
     force: flags.has("--force"),
-    dryRun: flags.has("--dry-run"),
-    includeSkills: effectiveSkills === "project",
+    dryRun,
+    includeSkills: target === "claude" && effectiveSkills === "project",
+    target,
   });
+  const codexSkills = target === "codex" ? copyCodexSkills({ force: flags.has("--force"), dryRun }) : null;
   const convenience = ensureConvenienceFiles({
     force: flags.has("--force"),
     dryRun: flags.has("--dry-run"),
@@ -270,7 +314,16 @@ if (command === "init") {
   log(`Updated: ${result.updated.length}`);
   // An existing project already had a config, so its recorded choice wins over
   // what we just detected — say which one is actually in effect.
-  log(describeSkillsMode(effectiveSkills, configResult.created ? skills.reason : "recorded at init"));
+  if (target === "claude") {
+    log(describeSkillsMode(effectiveSkills, configResult.created ? skills.reason : "recorded at init"));
+  } else if (target === "codex") {
+    log(`Skills: ${codexSkills.written.length} written to .codex/skills as $flow-* (${codexSkills.skipped.length} kept)`);
+  } else {
+    log(
+      "Platform not recognized: no commands were installed. " +
+        "Re-run with `ai-flow init --target claude` or `--target codex`.",
+    );
+  }
   printPrunedSkills(result.prunedSkills, { dryRun: flags.has("--dry-run") });
 
   if (result.harnessCreated) {
@@ -286,12 +339,30 @@ if (command === "init") {
 
   // Wires the `guard` PreToolUse hook: deterministic guardrail (secrets/blocked
   // paths refused BEFORE the write). Non-destructive merge into settings.json.
-  if (!flags.has("--no-guard")) {
+  // `.claude/settings.json` is Claude's file: a Codex or unrecognized install
+  // must not create it (Codex's guard is a sandbox profile, a later story).
+  if (!flags.has("--no-guard") && target === "claude") {
     const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
     log(`Guard hook: ${describeHookStatus(hook.status, flags.has("--dry-run"))}`);
   }
 
   wireOpenCode({ dryRun: flags.has("--dry-run") });
+
+  // What this install did for its platform, as evidence: a missing guard has to
+  // show up in `ai-flow report` as a fact, not stay an absence nobody can see.
+  if (!dryRun) {
+    writePlatformEvidence(cwd, {
+      target,
+      detectionSource,
+      commandsInstalled:
+        target === "codex"
+          ? codexSkills.written.length + codexSkills.skipped.length
+          : target === "claude" && effectiveSkills === "project"
+            ? listTemplateSkillNames().length
+            : 0,
+      enforcementTier: target === "claude" ? "hook" : target === "codex" ? "commands-only" : "none",
+    });
+  }
 
   // A plain `init` over a project that started minimal is how it grows into the
   // full workflow. The files were just laid down; the record has to follow, or
@@ -362,13 +433,24 @@ if (command === "init") {
     log(describeSkillsMode(skills, reason));
   }
 
+  const upgradeTarget = readConfig(cwd).target;
+
   upgrade({
     force: flags.has("--force"),
     dryRun: flags.has("--dry-run"),
     json: flags.has("--json"),
-    includeSkills: skills === "project",
+    includeSkills: upgradeTarget === "claude" && skills === "project",
     skillsMode: skills,
+    platform: upgradeTarget,
   });
+
+  if (upgradeTarget === "codex") {
+    const codexSkills = copyCodexSkills({ force: flags.has("--force"), dryRun: flags.has("--dry-run") });
+
+    if (!flags.has("--json")) {
+      log(`Skills: ${codexSkills.written.length} written to .codex/skills (${codexSkills.skipped.length} kept)`);
+    }
+  }
 
   // The hook command hard-codes the absolute path of the binary that wrote it
   // (see settings.js). Upgrading the package leaves that path pointing at the
@@ -377,7 +459,7 @@ if (command === "init") {
   // with the version it was installed with, forever. Every guard fix would ship
   // to npm and reach nobody. Re-wiring here also promotes a matcher we shipped
   // as a default before it covered `Bash`.
-  if (!flags.has("--no-guard")) {
+  if (!flags.has("--no-guard") && upgradeTarget === "claude") {
     const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
 
     if (!flags.has("--json")) {

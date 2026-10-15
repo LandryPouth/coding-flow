@@ -14,12 +14,14 @@ const {
   getTemplateSpecs,
   manifestPath,
   copyTemplates,
+  copyCodexSkills,
   writeManifest,
   readManifest,
   ensureConvenienceFiles,
 } = require("./templates");
 const { collectHarnessReport } = require("./harness");
 const { readConfig } = require("./config");
+const { CODEX_SKILLS_DIR } = require("./platforms/codex");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
@@ -197,6 +199,12 @@ function checkDuplicateNumbering(warnings) {
 // is an error, not a warning. A stale command still enforces, just via the
 // slower fallback — that one stays a warning.
 function checkGuardWiring(errors, warnings) {
+  // The Claude hook is Claude's guard; another platform's guard is judged by its
+  // own check (a later story), and `.claude/settings.json` is not its business.
+  if (readConfig(cwd).target !== "claude") {
+    return;
+  }
+
   const settings = readJson(path.join(cwd, ".claude", "settings.json"), null);
 
   // No settings.json yet is init's job to create, not doctor's to flag — this
@@ -319,13 +327,34 @@ function collectDoctorReport({ strict = false } = {}) {
     "docs/architecture.md",
     "docs/conventions.md",
     "docs/roadmap.md",
-    "CLAUDE.md",
   ];
+
+  // CLAUDE.md and the Claude skills belong to a Claude install only; a Codex
+  // project is judged against its own commands, and an unrecognized one against
+  // the shared files alone.
+  if (config.target === "claude") {
+    required.push("CLAUDE.md");
+  }
+
+  if (config.target === "codex") {
+    for (const name of skillNames) {
+      required.push(`${CODEX_SKILLS_DIR}/${name}/SKILL.md`);
+    }
+  }
 
   const errors = [];
   const warnings = [];
 
-  for (const spec of getTemplateSpecs({ includeSkills })) {
+  if (config.target === "unrecognized") {
+    warnings.push({
+      code: "platform_unrecognized",
+      message:
+        "no platform was recognized at init, so no commands and no guard were installed — " +
+        "run `ai-flow init --target claude` or `--target codex`",
+    });
+  }
+
+  for (const spec of getTemplateSpecs({ includeSkills, target: config.target })) {
     required.push(spec.targetRel);
   }
 
@@ -470,11 +499,18 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
   }
 
   if (fix) {
+    const fixConfig = readConfig(cwd);
+
     copyTemplates({
       force: false,
       dryRun: false,
-      includeSkills: readConfig(cwd).skills === "project",
+      includeSkills: fixConfig.target === "claude" && fixConfig.skills === "project",
+      target: fixConfig.target,
     });
+
+    if (fixConfig.target === "codex") {
+      copyCodexSkills({ force: false, dryRun: false });
+    }
     writeManifest(readManifest());
     ensureConvenienceFiles({ dryRun: false, force: false });
   }

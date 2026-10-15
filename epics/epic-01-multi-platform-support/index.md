@@ -42,7 +42,8 @@ absence) becomes visible evidence, never a silent claim`
 
 ```text
 s1
-├── s2 ── s3
+├── s2
+│   └── s3
 ├── s4
 └── s5
 ```
@@ -92,3 +93,24 @@ table). No open question remains that would change implementation.
 ## First story to run
 
 `story-01-01-detect-and-install-codex-commands` via `/flow-run`.
+
+## Testing notes — real binaries are available locally
+
+`codex` (0.138.0) **and `opencode` (1.19.0) are installed on the development
+machine**, so neither platform has to be tested by mocks alone. When the time
+comes — do not let this lapse into "the file was written, so it works":
+
+- **story-01-04 (OpenCode commands)**: after rendering the OpenCode command
+  files, prove in a throwaway project/sandbox (temp dir, isolated
+  `HOME`/`XDG_CONFIG_HOME`) that the real `opencode` binary actually discovers
+  and lists them — rendering valid markdown is not evidence that OpenCode loads
+  it. The same applies to whether OpenCode picks up project-scoped files at all.
+  `bin/lib/opencode.js` (the guard plugin, already shipped) is the precedent to
+  build the check on.
+- **story-01-01 / story-01-03 (Codex)**: story 1 chose project-scoped
+  `.codex/skills/<name>/SKILL.md`; whether Codex 0.138 discovers *project*
+  skills there (rather than only `~/.codex/skills`) is **not yet confirmed
+  against the binary** — verify it with the real `codex` before story 3 builds
+  on it, and record the outcome in story 1's Decisions.
+- Both checks must self-skip cleanly when the binary is absent (CI), recording
+  the skip as evidence like story 3 already specifies for the Codex probe.

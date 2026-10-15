@@ -79,7 +79,10 @@ function readRuns(root) {
     .sort()
     .map((name) => {
       const parsed = readJson(path.join(dir, name), null);
-      return parsed ? { ...parsed, file: name, kind: name.includes("verify") ? "verify" : "evidence" } : null;
+      // The record names its own kind. The filename is only the fallback for
+      // evidence written before records carried one.
+      const kind = parsed && typeof parsed.kind === "string" ? parsed.kind : name.includes("verify") ? "verify" : "evidence";
+      return parsed ? { ...parsed, file: name, kind } : null;
     })
     .filter(Boolean);
 }
@@ -153,6 +156,7 @@ function buildReport({ root = cwd, raw = false } = {}) {
   const runs = readRuns(root);
   const verifies = runs.filter((run) => run.kind === "verify");
   const evidence = runs.filter((run) => run.kind === "evidence");
+  const platforms = runs.filter((run) => run.kind === "platform");
   const denials = readDenials(root);
   const config = readJson(path.join(codingFlowDir(root), "config.json"), null);
   const harness = readJson(path.join(codingFlowDir(root), "harness.json"), null);
@@ -214,6 +218,13 @@ function buildReport({ root = cwd, raw = false } = {}) {
       recommendedModes: countBy(evidence, (run) => run.recommendedMode || null),
       coverageTiers: countBy(verifies, (run) => (run.coverage ? run.coverage.mode || run.coverage.tier : null)),
     },
+    platformCoverage: platforms.map((run) => ({
+      at: run.generatedAt || null,
+      target: run.target || null,
+      detectionSource: run.detectionSource || null,
+      commandsInstalled: typeof run.commandsInstalled === "number" ? run.commandsInstalled : null,
+      enforcementTier: run.enforcementTier || null,
+    })),
     denials: denials.slice(-MAX_DENIALS).map((entry) => ({
       at: entry.at || null,
       tool: entry.tool || null,
@@ -267,6 +278,25 @@ function renderMarkdown(report) {
   push(`- Coverage rungs: ${describeCounts(report.activity.coverageTiers)}`);
   push();
 
+  push("## Platform coverage");
+  push();
+
+  if (!report.platformCoverage.length) {
+    push("None recorded.");
+  } else {
+    push("| When | Target | Detected by | Commands | Enforcement |");
+    push("|---|---|---|---|---|");
+
+    for (const entry of report.platformCoverage) {
+      const when = entry.at ? entry.at.replace("T", " ").slice(0, 16) : "?";
+      push(
+        `| ${when} | ${entry.target || "?"} | ${entry.detectionSource || "?"} | ` +
+          `${entry.commandsInstalled === null ? "?" : entry.commandsInstalled} | enforcementTier: ${entry.enforcementTier || "?"} |`,
+      );
+    }
+  }
+
+  push();
   push(`## Guard denials (${report.denialsTotal})`);
   push();
 
