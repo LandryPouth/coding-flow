@@ -179,3 +179,8 @@ test('parseTestsCommands extracts only the fenced command lines', () => {
 
   assert.deepEqual(parseTestsCommands(md), ['npm run test', 'npm run lint']);
 });
+
+test('parseTestsCommands also reads labelled bullets, what a model writes for "a block"', () => {
+  const md = '# Plan\n\n## Commands\n\n- Command: `node --test`\n  - Expected: all tests pass.\n- Command: `node bin/todo.js list`\n  - Expected: exits 0.\n- not a command: `ignored`\n\n## Next\n\n- Command: `after-section`\n';
+  assert.deepEqual(parseTestsCommands(md), ['node --test', 'node bin/todo.js list']);
+});

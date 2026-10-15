@@ -1262,7 +1262,9 @@ function resolveStoryDir(story) {
     : path.dirname(resolved.fullPath);
 }
 
-// Extracts the command lines from the first fenced block under "## Commands".
+// Extracts the command lines under "## Commands": the lines of a fenced block, plus
+// labelled bullets (`- Command: `x``) because a model reading "a block" often writes
+// that instead, and verify must not silently find zero commands because of it.
 function parseTestsCommands(testsMarkdown) {
   const lines = testsMarkdown.split(/\r?\n/);
   const start = lines.findIndex((line) => line.trim().toLowerCase() === "## commands");
@@ -1290,6 +1292,12 @@ function parseTestsCommands(testsMarkdown) {
 
     if (inFence && trimmed && !trimmed.startsWith("#")) {
       commands.push(trimmed);
+    } else if (!inFence) {
+      const bullet = trimmed.match(/^[-*]\s+command:\s*`([^`]+)`/i);
+
+      if (bullet) {
+        commands.push(bullet[1].trim());
+      }
     }
   }
 
@@ -1453,7 +1461,8 @@ function printVerify(evidence, outputPath) {
 
   if (evidence.commandsFound === 0) {
     log("Harness verify: no validation commands found.");
-    log("Declare them in plan.md under '## Commands', or in config.validation.commands.");
+    log("Declare them in plan.md under '## Commands' as a fenced code block, one command per line,");
+    log("or in config.validation.commands.");
   } else if (coverageBlocked) {
     // Every command passed. The proof still does not hold, and saying "FAILED"
     // here would send someone hunting a broken test that does not exist.

@@ -151,3 +151,10 @@ test("labelForDir / dirForLabel round-trip", () => {
   assert.equal(labelForDir(dirs, "story-nope"), null);
   assert.equal(dirForLabel(dirs, "s99"), null);
 });
+
+test("parseBackbone reads checkbox and plain bullets, the form flow-plan's own template writes", () => {
+  const md = "# Epic\n\n## Stories\n\n- [ ] story-01-01-first (FAST)\n- [x] story-01-02-second\n* story-01-03-third\n1. **story-01-04-fourth**\n\n## Next\n";
+  const { storyDirs } = parseBackbone(md);
+  assert.deepEqual(storyDirs, ["story-01-01-first", "story-01-02-second", "story-01-03-third", "story-01-04-fourth"]);
+  assert.equal(labelForDir(storyDirs, "story-01-02-second"), "s2");
+});

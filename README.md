@@ -23,6 +23,7 @@ Coding Flow is **not** an application framework and does not replace your stack.
 ## Table Of Contents
 
 - [How it works](#how-it-works)
+- [Installation](#installation)
 - [Getting started](#getting-started)
 - [Choosing the mode](#choosing-the-mode)
 - [Core concepts](#core-concepts)
@@ -51,6 +52,44 @@ init once  →  /flow-plan  →  /flow-run (add STRICT for sensitive work)  → 
 ```
 
 You never chain ten commands by hand: the `/flow-run` skill calls the harness automatically when `ai-flow` is available.
+
+## Installation
+
+**Claude Code** installs through its plugin, once for every project. In the Claude Code prompt:
+
+```text
+/plugin marketplace add LandryPouth/coding-flow
+/plugin install coding-flow
+```
+
+Then run `/flow-setup` once in each repo (see [Getting started](#getting-started)).
+
+**Every other agent has no plugin.** Install the commands into each project instead, then **restart your agent** so it reloads them:
+
+```bash
+# in the root of your repo — pick the line for the agent you use
+npx @landry_pouth/coding-flow init --target codex
+npx @landry_pouth/coding-flow init --target opencode
+npx @landry_pouth/coding-flow init --target gemini
+npx @landry_pouth/coding-flow init --target antigravity
+```
+
+| Agent | How it installs | Commands land in | You type | Write guard |
+| --- | --- | --- | --- | --- |
+| **Claude Code** | plugin (global) + `/flow-setup` per repo | the plugin, or `.claude/skills/` without it | `/flow-run` | yes — hook |
+| **Codex** | `init --target codex` | `.codex/skills/` | `$flow-run` | yes — sandbox profile |
+| **OpenCode** | `init --target opencode` | `.opencode/command/` | `/flow-run` | opt-in — add `--opencode` |
+| **Gemini CLI** | `init --target gemini` | `.gemini/commands/coding-flow/` | `/coding-flow:flow-run` | no |
+| **Antigravity** | `init --target antigravity` | `.agent/skills/` | by name, e.g. `flow-run` | no |
+
+**The one trap: `--target`.** Without a plugin, Coding Flow only guesses your agent from Claude Code or Codex traces (`CLAUDECODE=1`, a `.claude/` or `.codex/` folder). In an OpenCode, Gemini or Antigravity project it cannot tell, so without `--target` it installs **no commands** and says `unrecognized`. If your commands do not show up, check that first: re-run `init` with `--target`.
+
+Other things that look like a bug and are not:
+
+- **Commands missing after a successful `init`** — restart the agent; it reads commands at startup.
+- **Using several agents in one repo** — run `init --target …` once per agent; each keeps its own files.
+- **OpenCode, upgrading from before 0.12** — commands used to live in `.opencode/command/coding-flow/` and were typed `/coding-flow/flow-run`. Re-run `init --target opencode`, then delete that old folder.
+- **`ai-flow: command not found`** — use `npx @landry_pouth/coding-flow <command>`, or `npm install -g @landry_pouth/coding-flow` once.
 
 ## Getting Started
 

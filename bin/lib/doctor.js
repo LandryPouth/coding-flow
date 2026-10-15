@@ -422,9 +422,13 @@ function collectDoctorReport({ strict = false } = {}) {
   // Known, permanent facts — not a problem to fix, so never an error or a warning.
   const notes = platforms
     .filter((p) => COMMANDS_ONLY_PLATFORMS[p])
+    // OpenCode can carry a guard plugin: it is only "unavailable" until it is wired.
+    .filter((p) => p !== "opencode" || inspectOpenCodePlugin().state === "absent")
     .map((p) => ({
       code: "guard_unavailable",
-      message: `guard not available on this host (${p}): commands are installed, writes are not mechanically protected`,
+      message:
+        `guard not available on this host (${p}): commands are installed, writes are not mechanically protected` +
+        (p === "opencode" ? " — run `ai-flow init --target opencode --opencode` to wire the guard plugin" : ""),
     }));
 
   if (config.target === "unrecognized") {

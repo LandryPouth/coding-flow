@@ -11,6 +11,9 @@ story — you rarely type it yourself.
 npx @landry_pouth/coding-flow init
 ```
 
+Not on Claude Code? Add `--target codex|opencode|gemini|antigravity` — see
+[Installation](../README.md#installation).
+
 Then, in Claude Code:
 
 ```

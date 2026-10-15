@@ -36,9 +36,12 @@ function parseStoryDirs(indexMdText) {
     if (/^##\s+/.test(lines[i])) {
       break;
     }
-    const match = lines[i].match(/^\d+\.\s+\*\*([^*]+)\*\*/);
+    // Numbered (`1. **dir**`, the original form) or a plain/checkbox bullet
+    // (`- [ ] dir`, what the shipped example and flow-plan's own template write).
+    // Position in the list is still the s<N> label either way.
+    const match = lines[i].match(/^(?:\d+\.|[-*])\s+(?:\[[ xX]\]\s+)?(?:\*\*([^*]+)\*\*|(story-[\w.-]+))/);
     if (match) {
-      dirs.push(match[1].trim());
+      dirs.push((match[1] || match[2]).trim());
     }
   }
   return dirs;
