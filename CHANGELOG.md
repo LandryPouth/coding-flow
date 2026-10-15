@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **OpenCode commands are flat.** They now install to `.opencode/command/` and are
+  typed `/flow-run` instead of `/coding-flow/flow-run`. An existing
+  `.opencode/command/coding-flow/` is left in place: delete it by hand after re-running
+  `init --target opencode`.
+- README gains an **Installation** section covering every platform.
+
 ## [0.11.0] - 2026-10-15
 
 ### Added
