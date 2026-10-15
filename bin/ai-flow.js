@@ -209,12 +209,21 @@ if (command === "init") {
     }
 
     const dryRun = flags.has("--dry-run");
+    // The minimal install is the Claude-native default; an explicit --target
+    // codex records Codex instead and must not get Claude's settings.json.
+    const minimalTarget = getFlagValue("--target", "claude");
+
+    if (!EXPLICIT_TARGETS.includes(minimalTarget)) {
+      fail(`unknown --target "${minimalTarget}". Use one of: ${EXPLICIT_TARGETS.join(", ")}.`);
+    }
+
     const configResult = ensureConfig(cwd, {
       dryRun,
       storage,
       branchPerEpic: !flags.has("--no-branch-per-epic"),
       skills: "plugin",
       install: "minimal",
+      target: minimalTarget,
     });
     const harnessCreated = ensureHarnessConfig({ dryRun });
     const frictionLog = ensureFrictionLog({ dryRun });
@@ -224,9 +233,11 @@ if (command === "init") {
     log(`Harness config: ${harnessCreated ? (dryRun ? "would create" : "created") : "unchanged"}`);
     log(`Friction log: docs/DOGFOODING.md ${frictionLog}`);
 
-    if (!flags.has("--no-guard")) {
+    if (!flags.has("--no-guard") && minimalTarget === "claude") {
       const hook = ensureHookSettings({ dryRun });
       log(`Guard hook: ${describeHookStatus(hook.status, dryRun)}`);
+    } else if (minimalTarget !== "claude") {
+      log(`Guard hook: none for "${minimalTarget}" yet (commands-only platform)`);
     }
 
     wireOpenCode({ dryRun });
@@ -328,7 +339,8 @@ if (command === "init") {
   } else {
     log(
       "Platform not recognized: no commands were installed. " +
-        "Re-run with `ai-flow init --target claude` or `--target codex`.",
+        "Re-run with `ai-flow init --target claude` or `--target codex`. " +
+        "Until then NO guard is installed.",
     );
   }
   printPrunedSkills(result.prunedSkills, { dryRun: flags.has("--dry-run") });

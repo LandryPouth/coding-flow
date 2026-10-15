@@ -263,3 +263,20 @@ test('re-running init --target codex does not repeat the "added alongside" messa
   assert.match(String(first), /added alongside/);
   assert.doesNotMatch(String(second), /added alongside/);
 });
+
+test('init --minimal --target codex records codex and writes no Claude settings', (t) => {
+  const dir = project(t);
+  init(dir, ['--minimal', '--target', 'codex']);
+  assert.equal(config(dir).target, 'codex');
+  assert.equal(fs.existsSync(path.join(dir, '.claude')), false);
+});
+
+test('init --minimal --target emacs is refused', (t) => {
+  const dir = project(t);
+  assert.throws(() => init(dir, ['--minimal', '--target', 'emacs']), (err) => /claude, codex/.test(`${err.stderr}`));
+});
+
+test('an unrecognized init says plainly that no guard is installed', (t) => {
+  const dir = project(t);
+  assert.match(init(dir), /NO guard is installed/);
+});
