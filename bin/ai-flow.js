@@ -97,6 +97,7 @@ const {
 } = require("./lib/config");
 const { detectPlugin } = require("./lib/claude-plugin");
 const { ensureHookSettings } = require("./lib/settings");
+const { ensureOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
 const { printCommands, printHelp } = require("./lib/commands");
@@ -122,6 +123,13 @@ function resolveSkillsMode() {
     return { mode: "plugin", reason: "--no-skills" };
   }
 
+  // The Claude Code plugin serves Claude Code only. OpenCode reads skills from
+  // the project (.claude/skills, .agents/skills), so a project that uses it
+  // needs its own copy even when the plugin is installed on this machine.
+  if (flags.has("--opencode") || usesOpenCode()) {
+    return { mode: "project", reason: "OpenCode reads skills from the project, not from the Claude Code plugin" };
+  }
+
   const detection = detectPlugin();
 
   return detection.installed
@@ -145,6 +153,27 @@ function describeHookStatus(status, dryRun) {
     return "already wired";
   }
   return "skipped (.claude/settings.json is not valid JSON — wire `guard` manually)";
+}
+
+// OpenCode has no settings.json: its guard is a plugin under .opencode/plugins/.
+// Wired when asked for (`--opencode`) or when the project already uses OpenCode;
+// never created for someone who does not.
+function wireOpenCode({ dryRun, quiet = false }) {
+  if (flags.has("--no-guard") || !(flags.has("--opencode") || usesOpenCode())) {
+    return;
+  }
+
+  const plugin = ensureOpenCodePlugin({ dryRun });
+  const words = {
+    created: dryRun ? "would create .opencode/plugins/coding-flow-guard.js" : "wired in .opencode/plugins/coding-flow-guard.js",
+    upgraded: dryRun ? "would upgrade the OpenCode plugin" : "OpenCode plugin upgraded",
+    unchanged: "OpenCode plugin already wired",
+    skipped: "skipped (.opencode/plugins/coding-flow-guard.js exists and is not ours — wire `guard` manually)",
+  };
+
+  if (!quiet) {
+    log(`Guard plugin (OpenCode): ${words[plugin.status]}`);
+  }
 }
 
 function describeSkillsMode(mode, reason) {
@@ -190,6 +219,8 @@ if (command === "init") {
       const hook = ensureHookSettings({ dryRun });
       log(`Guard hook: ${describeHookStatus(hook.status, dryRun)}`);
     }
+
+    wireOpenCode({ dryRun });
 
     log("");
     log("Installed: the guard hook, the proof layer, and the friction log. No RULES.md, no epics/, no skills.");
@@ -259,6 +290,8 @@ if (command === "init") {
     const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
     log(`Guard hook: ${describeHookStatus(hook.status, flags.has("--dry-run"))}`);
   }
+
+  wireOpenCode({ dryRun: flags.has("--dry-run") });
 
   // A plain `init` over a project that started minimal is how it grows into the
   // full workflow. The files were just laid down; the record has to follow, or
@@ -351,6 +384,8 @@ if (command === "init") {
       log(`Guard hook: ${describeHookStatus(hook.status, flags.has("--dry-run"))}`);
     }
   }
+
+  wireOpenCode({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json") });
 
   if (!flags.has("--json")) {
     log("");

@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **OpenCode guard.** `ai-flow init --opencode` (or any project that already
+  has `opencode.json` / `.opencode/`) writes `.opencode/plugins/coding-flow-guard.js`,
+  a plugin on OpenCode's `tool.execute.before` that feeds `write`, `edit`,
+  `bash` and `apply_patch` (every file section, added lines and `Move to`
+  targets) to the same `ai-flow guard` and throws on a deny. Same contract as
+  the Claude Code hook: resolved binary with a version-pinned npx fallback,
+  fail-open on anything but an explicit deny, denials logged to
+  `.coding-flow/denials.jsonl`, never overwrites a plugin it did not write.
+  `doctor` flags a project that uses OpenCode without it, and a stale one.
+- **Skills for OpenCode projects.** OpenCode reads skills from the project
+  (`.claude/skills`), not from the Claude Code plugin, so `init`/`upgrade` copy
+  them whenever OpenCode is in use, even with the plugin installed.
+
 ## [0.10.0] - 2026-08-30
 
 ### Added

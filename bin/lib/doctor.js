@@ -23,6 +23,7 @@ const { readConfig } = require("./config");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
+const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -225,6 +226,33 @@ function checkGuardWiring(errors, warnings) {
   }
 }
 
+// OpenCode's guard is a plugin file, so the same two silent failures apply: it
+// is missing while the project uses OpenCode (writes unprotected there), or it
+// is ours but written by another version. Not checked at all for a project that
+// does not use OpenCode — Claude-only installs stay exactly as they were.
+function checkOpenCodeWiring(errors, warnings) {
+  if (!usesOpenCode()) {
+    return;
+  }
+
+  const plugin = inspectOpenCodePlugin();
+  const file = ".opencode/plugins/coding-flow-guard.js";
+
+  if (plugin.state === "absent") {
+    errors.push({
+      code: "opencode_guard_not_wired",
+      file,
+      message: "this project uses OpenCode but no guard plugin is installed — writes are not protected there; run `ai-flow upgrade --opencode`",
+    });
+  } else if (plugin.state === "stale") {
+    warnings.push({
+      code: "opencode_guard_stale",
+      file,
+      message: "the OpenCode guard plugin does not match this install — run `ai-flow upgrade` to re-wire it",
+    });
+  }
+}
+
 // A minimal install owns exactly two things: the harness policy and the guard
 // wiring. Judging it against the full template list would report a correct
 // project as broken and push the user to "fix" it by installing a workflow they
@@ -254,6 +282,7 @@ function collectMinimalReport({ strict = false } = {}) {
   }
 
   checkGuardWiring(errors, warnings);
+  checkOpenCodeWiring(errors, warnings);
 
   return {
     ok: errors.length === 0,
@@ -410,6 +439,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
+  checkOpenCodeWiring(errors, warnings);
 
   return {
     ok: errors.length === 0,

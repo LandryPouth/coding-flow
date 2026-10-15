@@ -10,7 +10,7 @@
 
 Your CI already tells you whether the repository is green. Coding Flow answers the narrower question — *is **this change** proven?* — and answers it before the secret is written, not after the push.
 
-> **Claude Code only, for now.** The skills, the plugin, and the `guard` hook are wired for Claude Code. The CLI itself is host-agnostic — `verify`, `report`, `ship` and the harness work from any terminal — but the *deterministic* part of the promise, the guard refusing a write before it lands, exists only where a pre-tool hook does. Codex and OpenCode can both carry it now (their blocking gaps were fixed in April 2026); the wiring is not written yet. See [`docs/plans/multi-agent-install.md`](docs/plans/multi-agent-install.md) for what each host actually supports.
+> **Claude Code only, for now.** The skills, the plugin, and the `guard` hook are wired for Claude Code. The CLI itself is host-agnostic — `verify`, `report`, `ship` and the harness work from any terminal — but the *deterministic* part of the promise, the guard refusing a write before it lands, exists only where a pre-tool hook does. **OpenCode is wired**: `ai-flow init --opencode` installs a guard plugin on `tool.execute.before` (covers `write`, `edit`, `bash`, `apply_patch`). Codex can carry it too (its blocking gaps were fixed in April 2026); that wiring is not written yet. See [`docs/plans/multi-agent-install.md`](docs/plans/multi-agent-install.md) for what each host actually supports.
 
 **What you get over plain Claude Code + a good `CLAUDE.md`:** the `guard` hook refuses to write a `.env`, a key, or a secret **before it reaches the disk** — through the editing tools *and* through the common shell write forms (`> .env`, `tee`, `sed -i`, `cp`), so the obvious leak paths are closed rather than merely discouraged (what it does not read: writes performed inside an interpreter, e.g. `python -c`) — plus executed proof instead of the agent's word, fewer forgotten files, and less context burned per change. When you want it, the same executed proof doubles as an audit/evidence layer for teams that need governance. That machinery runs *for* you underneath a tiny front door; you rarely type it yourself.
 
@@ -250,7 +250,7 @@ current machine.
 
 | Command | Use |
 | --- | --- |
-| `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the hook. |
+| `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the hook, `--opencode` also wires the OpenCode guard plugin. |
 | `ai-flow upgrade` | Update installed files without overwriting local changes. |
 | `ai-flow doctor` | Check files, skills, frontmatter, manifest. `--fix` restores missing files, `--strict` adds checks. |
 | `ai-flow status` | List epics/stories, inferred status, and the linked worktree. |
