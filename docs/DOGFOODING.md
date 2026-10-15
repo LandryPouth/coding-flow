@@ -40,6 +40,10 @@ the honesty, not the prose.
   important value this column can hold; never leave it out to look better.
 - **Resolution** — the fix, the decision not to fix, or `open`.
 
+To notice that someone is running coding-flow on a platform it does not support yet,
+read the `unrecognized` line under `## Platform coverage` in `ai-flow report`: a
+count plus which allowlisted signals (booleans, never values) those installs showed.
+
 Anything that reaches `high` and has no resolution is the next thing to work on,
 ahead of whatever the roadmap says.
 

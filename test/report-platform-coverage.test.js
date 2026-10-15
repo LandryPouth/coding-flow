@@ -63,3 +63,38 @@ test('a record that declares its own kind wins over its filename', (t) => {
   assert.equal(report.activity.verifyRuns, 0);
   assert.equal(report.platformCoverage[0].target, 'codex');
 });
+
+function writePlatformRecord(dir, name, record) {
+  const runs = path.join(dir, '.coding-flow', 'runs');
+  fs.mkdirSync(runs, { recursive: true });
+  fs.writeFileSync(path.join(runs, name), JSON.stringify({ kind: 'platform', commandsInstalled: 0, ...record }));
+}
+
+test('report shows an unrecognized line with a count and the signals seen', (t) => {
+  const dir = project(t);
+  const signals = { 'env:CLAUDECODE': false, 'dir:.claude': false, 'dir:.codex': false, 'dir:.gemini': true, 'dir:.config/opencode': false };
+  writePlatformRecord(dir, 'a-platform-unrecognized.json', { target: 'unrecognized', detectionSource: 'none', enforcementTier: 'unrecognized', signals });
+  writePlatformRecord(dir, 'b-platform-unrecognized.json', { target: 'unrecognized', detectionSource: 'none', enforcementTier: 'unrecognized', signals });
+  const section = cli(dir, ['report']).split('## Platform coverage')[1].split('## Guard denials')[0];
+  assert.match(section, /\*\*unrecognized\*\* — 2 install/);
+  assert.match(section, /dir:\.gemini 2\/2/);
+  assert.match(section, /dir:\.codex 0\/2/);
+});
+
+test('report has no unrecognized line when no unrecognized record exists', (t) => {
+  const dir = project(t);
+  cli(dir, ['init', '--target', 'codex']);
+  const section = cli(dir, ['report']).split('## Platform coverage')[1].split('## Guard denials')[0];
+  assert.doesNotMatch(section, /unrecognized/);
+});
+
+test('an old unrecognized record missing a since-added signal reads as "not checked", not an error', (t) => {
+  const dir = project(t);
+  writePlatformRecord(dir, 'a-platform-unrecognized.json', { target: 'unrecognized', enforcementTier: 'unrecognized', signals: { 'dir:.gemini': true } });
+  writePlatformRecord(dir, 'b-platform-unrecognized.json', { target: 'unrecognized', enforcementTier: 'none' });
+  const out = cli(dir, ['report']);
+  const section = out.split('## Platform coverage')[1].split('## Guard denials')[0];
+  assert.match(section, /dir:\.gemini 1\/1 \(not checked in 1\)/);
+  assert.match(section, /dir:\.codex not checked/);
+  assert.equal(JSON.parse(cli(dir, ['report', '--json'])).unrecognized.count, 2);
+});

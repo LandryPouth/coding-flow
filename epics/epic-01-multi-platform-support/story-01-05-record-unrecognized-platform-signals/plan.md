@@ -27,7 +27,14 @@
 
 ## Decisions
 
-_(filled during implementation)_
+- `.codex` is a *known* signal (story 01-01 resolves it to `codex`), so the ambiguous-directory case is
+  exercised with `.gemini` / `.config/opencode`: present in the record, verdict still `unrecognized`.
+  A partial signal never changes `resolveTarget`.
+- Allowlist: `KNOWN_ENV_SIGNALS = ["CLAUDECODE"]` (the only env signal this epic confirmed) and
+  `KNOWN_DIR_SIGNALS = [".claude", ".codex", ".gemini", ".config/opencode"]`, in `detect.js`.
+- Signals are stored as `{ "env:NAME" | "dir:PATH": boolean }`; only unrecognized records carry them.
+- Report: one line under the table, `name seen/checked`, with records that predate a key shown as
+  "not checked". `docs/DOGFOODING.md` had no "Sending it upstream" heading; the pointer went under "How to record one".
 
 ## Test plan
 

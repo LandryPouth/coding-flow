@@ -20,6 +20,7 @@ const os = require("os");
 const path = require("path");
 
 const { cwd } = require("./context");
+const { collectSignals } = require("./detect");
 const { log, readJson, normalizePortable, selectFailureLines } = require("./util");
 
 const MAX_DENIALS = 40;
@@ -151,6 +152,32 @@ function describeCounts(counts) {
   return entries.length ? entries.map(([key, n]) => `${key} ${n}`).join(" · ") : "none recorded";
 }
 
+// How many installs nobody recognized, and which allowlisted signals they showed.
+// A signal a record predates (added to the allowlist later) counts as "not
+// checked" for that record, never as absent.
+function summarizeUnrecognized(records) {
+  if (!records.length) {
+    return null;
+  }
+
+  const names = new Set(Object.keys(collectSignals({ env: {}, cwd: "/" })));
+
+  for (const record of records) {
+    Object.keys(record.signals || {}).forEach((name) => names.add(name));
+  }
+
+  const signals = {};
+
+  for (const name of names) {
+    const seen = records.filter((r) => r.signals && r.signals[name] === true).length;
+    const checked = records.filter((r) => r.signals && typeof r.signals[name] === "boolean").length;
+
+    signals[name] = { seen, notChecked: records.length - checked };
+  }
+
+  return { count: records.length, signals };
+}
+
 function buildReport({ root = cwd, raw = false } = {}) {
   const redact = makeRedactor({ root, raw });
   const runs = readRuns(root);
@@ -224,7 +251,9 @@ function buildReport({ root = cwd, raw = false } = {}) {
       detectionSource: run.detectionSource || null,
       commandsInstalled: typeof run.commandsInstalled === "number" ? run.commandsInstalled : null,
       enforcementTier: run.enforcementTier || null,
+      signals: run.signals && typeof run.signals === "object" ? run.signals : null,
     })),
+    unrecognized: summarizeUnrecognized(platforms.filter((run) => run.target === "unrecognized")),
     denials: denials.slice(-MAX_DENIALS).map((entry) => ({
       at: entry.at || null,
       tool: entry.tool || null,
@@ -294,6 +323,17 @@ function renderMarkdown(report) {
           `${entry.commandsInstalled === null ? "?" : entry.commandsInstalled} | enforcementTier: ${entry.enforcementTier || "?"} |`,
       );
     }
+  }
+
+  if (report.unrecognized) {
+    const parts = Object.entries(report.unrecognized.signals).map(([name, s]) =>
+      s.notChecked === report.unrecognized.count
+        ? `${name} not checked`
+        : `${name} ${s.seen}/${report.unrecognized.count - s.notChecked}${s.notChecked ? ` (not checked in ${s.notChecked})` : ""}`,
+    );
+
+    push();
+    push(`**unrecognized** — ${report.unrecognized.count} install(s) on a platform nobody has verified yet. Signals seen: ${parts.join(" · ")}`);
   }
 
   push();

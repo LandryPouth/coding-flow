@@ -103,7 +103,7 @@ const {
   activeTargets,
   STORAGE_BACKENDS,
 } = require("./lib/config");
-const { EXPLICIT_TARGETS, resolveTarget } = require("./lib/detect");
+const { EXPLICIT_TARGETS, resolveTarget, collectSignals } = require("./lib/detect");
 const { COMMANDS_ONLY_PLATFORMS } = require("./lib/platforms/registry");
 const { writePlatformEvidence } = require("./lib/platforms/evidence");
 const { detectPlugin } = require("./lib/claude-plugin");
@@ -399,7 +399,17 @@ if (command === "init") {
       detectionSource,
       // For Codex this counts files present, including locally edited ones kept as-is.
       commandsInstalled: countInstalledCommands(),
-      enforcementTier: target === "claude" ? (hookWired ? "hook" : "none") : target === "codex" || platformCommands ? "commands-only" : "none",
+      enforcementTier:
+        target === "claude"
+          ? hookWired
+            ? "hook"
+            : "none"
+          : target === "codex" || platformCommands
+            ? "commands-only"
+            : target === "unrecognized"
+              ? "unrecognized"
+              : "none",
+      signals: target === "unrecognized" ? collectSignals({ env: process.env, cwd }) : undefined,
     });
   }
 

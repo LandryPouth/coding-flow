@@ -23,7 +23,7 @@ function latestPlatformRecord(runsDir, target) {
   return names.length ? readJson(path.join(runsDir, names[names.length - 1]), null) : null;
 }
 
-function writePlatformEvidence(root, { target, detectionSource, commandsInstalled, enforcementTier }) {
+function writePlatformEvidence(root, { target, detectionSource, commandsInstalled, enforcementTier, signals }) {
   const generatedAt = new Date().toISOString();
   const runsDir = path.join(root, ".coding-flow", "runs");
   const previous = latestPlatformRecord(runsDir, target);
@@ -34,14 +34,22 @@ function writePlatformEvidence(root, { target, detectionSource, commandsInstalle
     previous &&
     previous.detectionSource === detectionSource &&
     previous.commandsInstalled === commandsInstalled &&
-    previous.enforcementTier === enforcementTier
+    previous.enforcementTier === enforcementTier &&
+    JSON.stringify(previous.signals || null) === JSON.stringify(signals || null)
   ) {
     return null;
   }
 
   const file = path.join(runsDir, `${generatedAt.replace(/[:.]/g, "-")}-platform-${target}.json`);
 
-  writeJson(file, { kind: "platform", generatedAt, target, detectionSource, commandsInstalled, enforcementTier });
+  const record = { kind: "platform", generatedAt, target, detectionSource, commandsInstalled, enforcementTier };
+
+  // Only an unrecognized install carries signals: they are what makes it informative.
+  if (signals) {
+    record.signals = signals;
+  }
+
+  writeJson(file, record);
 
   return file;
 }

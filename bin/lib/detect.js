@@ -11,6 +11,13 @@ const path = require("path");
 // What `init --target` accepts. The rest of `TARGETS` (config.js) is derived.
 const EXPLICIT_TARGETS = ["claude", "codex", "gemini", "opencode", "antigravity"];
 
+// The only things recorded about an install nobody recognized: presence of these
+// named env vars and directories, as booleans. An explicit list on purpose — a
+// list derived from `process.env` is one refactor from capturing a value, or a
+// secret's name. Codex's `.codex` is not here: it is a recognized signal above.
+const KNOWN_ENV_SIGNALS = ["CLAUDECODE"];
+const KNOWN_DIR_SIGNALS = [".claude", ".codex", ".gemini", ".config/opencode"];
+
 function isDir(target) {
   try {
     return fs.statSync(target).isDirectory();
@@ -46,4 +53,20 @@ function resolveTarget({ flags = {}, env = process.env, cwd = process.cwd() } = 
   return { target: "unrecognized", source: "none" };
 }
 
-module.exports = { EXPLICIT_TARGETS, resolveTarget };
+// Booleans only: whether each allowlisted signal is present. Never a value, never
+// a directory listing.
+function collectSignals({ env = process.env, cwd = process.cwd() } = {}) {
+  const signals = {};
+
+  for (const name of KNOWN_ENV_SIGNALS) {
+    signals[`env:${name}`] = Boolean(env && Object.prototype.hasOwnProperty.call(env, name) && env[name] !== "");
+  }
+
+  for (const dir of KNOWN_DIR_SIGNALS) {
+    signals[`dir:${dir}`] = isDir(path.join(cwd, dir));
+  }
+
+  return signals;
+}
+
+module.exports = { EXPLICIT_TARGETS, KNOWN_ENV_SIGNALS, KNOWN_DIR_SIGNALS, resolveTarget, collectSignals };
