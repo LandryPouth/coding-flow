@@ -185,11 +185,12 @@ function describeCodexSandbox(status, dryRun) {
 // OpenCode has no settings.json: its guard is a plugin under .opencode/plugins/.
 // Wired when asked for (`--opencode`) or when the project already uses OpenCode;
 // never created for someone who does not.
-// `target: "opencode"` is a commands-only install: init itself creates `.opencode/`,
-// which would make `usesOpenCode()` true and wire a guard the install says it lacks.
-// Only an explicit `--opencode` opts in there.
+// A commands-only target (Gemini, OpenCode, Antigravity) never auto-wires: an
+// OpenCode install creates `.opencode/` itself, and a later init for another target
+// would then see it, making `usesOpenCode()` true and wiring a guard the install says
+// it lacks. Only an explicit `--opencode` opts in there.
 function wireOpenCode({ dryRun, quiet = false, target = null }) {
-  const selfCreatedDir = target === "opencode" && !flags.has("--opencode");
+  const selfCreatedDir = Boolean(COMMANDS_ONLY_PLATFORMS[target]) && !flags.has("--opencode");
 
   if (flags.has("--no-guard") || selfCreatedDir || !(flags.has("--opencode") || usesOpenCode())) {
     return;

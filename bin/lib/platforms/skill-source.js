@@ -18,10 +18,12 @@ function parseSkill(markdown) {
     const value = line ? line.slice(key.length + 1).trim() : "";
 
     // Tolerate a source that already quotes its value, undoing the escapes the
-    // renderers will apply again (otherwise `\"` would be escaped twice).
-    return value.length >= 2 && value.startsWith('"') && value.endsWith('"')
-      ? value.slice(1, -1).replace(/\\(["\\])/g, "$1")
-      : value;
+    // renderers will apply again (otherwise `\"` would be escaped twice). A value
+    // with an unescaped inner quote (`"a" and "b"`) is plain text, not one string.
+    const inner = value.slice(1, -1);
+    const preQuoted = value.length >= 2 && value.startsWith('"') && value.endsWith('"') && !/(^|[^\\])"/.test(inner);
+
+    return preQuoted ? inner.replace(/\\(["\\])/g, "$1") : value;
   };
 
   return { name: field("name"), description: field("description"), body: match[2].replace(/^\n+/, "") };

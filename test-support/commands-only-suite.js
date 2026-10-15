@@ -98,6 +98,15 @@ function defineSuite({ target, files, parser, describe }) {
     assert.match(evidence, /enforcementTier: commands-only/);
   });
 
+  test(`${target}: a commands-only install added beside OpenCode's wires no guard plugin`, (t) => {
+    const dir = project(t);
+    cli(dir, ['init', '--target', 'opencode']);
+    const out = cli(dir, ['init', '--target', target]);
+    assert.doesNotMatch(out, /Guard plugin/);
+    assert.equal(fs.existsSync(path.join(dir, '.opencode', 'plugins')), false);
+    assert.deepEqual(JSON.parse(cli(dir, ['doctor', '--json'])).errors, []);
+  });
+
   test(`${target}: doctor states the guard gap as a note, never as an error or warning`, (t) => {
     const dir = project(t);
     cli(dir, ['init', '--target', target]);

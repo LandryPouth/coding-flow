@@ -297,9 +297,10 @@ function checkOpenCodeWiring(errors, warnings) {
   const plugin = inspectOpenCodePlugin();
   const file = ".opencode/plugins/coding-flow-guard.js";
 
-  // A commands-only OpenCode install has `.opencode/` from its own commands and
-  // no guard by design (reported as a note), so an absent plugin is not an error.
-  if (plugin.state === "absent" && readConfig(cwd).target === "opencode") {
+  // A commands-only install (OpenCode's own, or another target added beside it) has
+  // `.opencode/` from those commands and no guard by design (reported as a note),
+  // so an absent plugin is not an error.
+  if (plugin.state === "absent" && COMMANDS_ONLY_PLATFORMS[readConfig(cwd).target]) {
     return;
   }
 
