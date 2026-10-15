@@ -116,7 +116,7 @@ The shape follows the story's size. Leave the `## Result` section empty for
 
 A copy change, an isolated fix, a low-risk local change: write a single
 **`story.md`** with the sections that actually carry information — a `# Title`,
-acceptance criteria, a `## Commands` block, and an empty `## Result`. Skip the rest.
+acceptance criteria, a `## Commands` fenced code block (one command per line), and an empty `## Result`. Skip the rest.
 
 Three files for a one-line change means three files to create, three to re-read on
 every later turn, and two to update at the end — to record that a heading changed.
@@ -134,7 +134,8 @@ The split earns itself once a story is worth a day's work:
   anchors, execution mode `QUICK|FAST|STANDARD|STRICT`, scout pre-step `yes/no`,
   areas to avoid), technical notes, `## Decisions` (meaningful tradeoffs), a test
   plan, `## Acceptance Traceability` (criterion → `file::test`), and a `## Commands`
-  block with the validation commands.
+  block with the validation commands: a fenced code block, one command per line,
+  no bullets or labels (`verify` reads only that).
 - **`tasks.md`** — the execution checklist starting with targeted discovery, plus an
   empty `## Result` section (with `### Rollback Notes`) the worker fills after running.
 

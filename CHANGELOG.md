@@ -16,6 +16,11 @@ All notable changes to this project are documented here. The format is based on
 - **`.opencode/`, `.codex/`, `.gemini/`, `.agent/` are not "existing code".**
   A fresh OpenCode install no longer reports a brownfield project.
 
+- **`## Commands` written as labelled bullets is read.** A weaker model (DeepSeek in
+  OpenCode) wrote `- Command: \`…\`` instead of a fenced block, so `verify` found zero
+  commands. Both forms are parsed, and `flow-plan` now says "fenced code block, one
+  command per line".
+
 ### Changed
 
 - **OpenCode commands are flat.** They now install to `.opencode/command/` and are
