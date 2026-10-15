@@ -76,7 +76,7 @@ function defineSuite({ target, files, parser, describe }) {
 
   test(`${target}: a description with ":", quotes and backslashes survives a round trip`, (t) => {
     const hostile = 'Run it: say "go" \\ then `stop`';
-    const { render } = require('../bin/lib/platforms/registry').COMMANDS_ONLY_PLATFORMS[target];
+    const { render } = require('../bin/lib/platforms/registry').COMMAND_PLATFORMS[target];
     const { relPath, content } = render(`---\nname: flow-x\ndescription: ${hostile}\n---\n\nBody with a \\ backslash and """ quotes and ''' too.\n`);
     const dir = project(t);
     const file = path.join(dir, relPath);

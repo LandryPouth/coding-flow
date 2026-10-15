@@ -105,7 +105,7 @@ const {
   STORAGE_BACKENDS,
 } = require("./lib/config");
 const { EXPLICIT_TARGETS, resolveTarget, collectSignals } = require("./lib/detect");
-const { COMMANDS_ONLY_PLATFORMS } = require("./lib/platforms/registry");
+const { COMMAND_PLATFORMS } = require("./lib/platforms/registry");
 const { writePlatformEvidence } = require("./lib/platforms/evidence");
 const { detectPlugin } = require("./lib/claude-plugin");
 const { ensureHookSettings } = require("./lib/settings");
@@ -197,7 +197,7 @@ function describeCodexSandbox(status, dryRun) {
 // would then see it, making `usesOpenCode()` true and wiring a guard the install says
 // it lacks. Only an explicit `--opencode` opts in there.
 function wireOpenCode({ dryRun, quiet = false, target = null }) {
-  const selfCreatedDir = Boolean(COMMANDS_ONLY_PLATFORMS[target]) && !flags.has("--opencode");
+  const selfCreatedDir = Boolean(COMMAND_PLATFORMS[target]) && !flags.has("--opencode");
 
   if (flags.has("--no-guard") || selfCreatedDir || !(flags.has("--opencode") || usesOpenCode())) {
     return;
@@ -427,7 +427,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
         target,
       });
   const codexSkills = target === "codex" ? copyCodexSkills({ force: flags.has("--force"), dryRun }) : null;
-  const platformCommands = COMMANDS_ONLY_PLATFORMS[target]
+  const platformCommands = COMMAND_PLATFORMS[target]
     ? copyPlatformCommands(target, { force: flags.has("--force"), dryRun })
     : null;
   const convenience = platformOnly
@@ -453,7 +453,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     log(`Skills: ${codexSkills.written.length} written to .codex/skills as $flow-* (${codexSkills.skipped.length} kept)`);
   } else if (platformCommands) {
     log(
-      `Commands: ${platformCommands.written.length} written to ${COMMANDS_ONLY_PLATFORMS[target].dir} ` +
+      `Commands: ${platformCommands.written.length} written to ${COMMAND_PLATFORMS[target].dir} ` +
         `(${platformCommands.skipped.length} kept)`,
     );
     // OpenCode has an opt-in guard plugin: its own line below says what was wired,
@@ -645,14 +645,14 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     platform: upgradeTarget,
   });
 
-  for (const platform of platforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+  for (const platform of platforms.filter((p) => COMMAND_PLATFORMS[p])) {
     const commands = copyPlatformCommands(platform, {
       force: flags.has("--force"),
       dryRun: flags.has("--dry-run"),
     });
 
     if (!flags.has("--json")) {
-      log(`Commands (${platform}): ${commands.written.length} written to ${COMMANDS_ONLY_PLATFORMS[platform].dir} (${commands.skipped.length} kept)`);
+      log(`Commands (${platform}): ${commands.written.length} written to ${COMMAND_PLATFORMS[platform].dir} (${commands.skipped.length} kept)`);
     }
   }
 

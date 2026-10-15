@@ -9,7 +9,7 @@ const path = require("path");
 
 const { templatesRoot, cwd, packageJson, npxCommand, flowScripts } = require("./context");
 const { CODEX_SKILLS_DIR, renderSkill: renderCodexSkill } = require("./platforms/codex");
-const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
+const { COMMAND_PLATFORMS } = require("./platforms/registry");
 const {
   log,
   fail,
@@ -562,7 +562,7 @@ function copyCodexSkills({ force = false, dryRun = false } = {}) {
 // attached: the global OpenCode install writes them somewhere else.
 function renderPlatformCommands(target) {
   return sourceSkills().map((markdown) => {
-    const { relPath, content } = COMMANDS_ONLY_PLATFORMS[target].render(markdown);
+    const { relPath, content } = COMMAND_PLATFORMS[target].render(markdown);
 
     return { name: path.basename(relPath), content };
   });
@@ -571,7 +571,7 @@ function renderPlatformCommands(target) {
 // Gemini, OpenCode and Antigravity: same sources, each rendered in its own format.
 function copyPlatformCommands(target, { force = false, dryRun = false } = {}) {
   const files = sourceSkills().map((markdown) => {
-    const { relPath, content } = COMMANDS_ONLY_PLATFORMS[target].render(markdown);
+    const { relPath, content } = COMMAND_PLATFORMS[target].render(markdown);
 
     return { rel: relPath, content };
   });

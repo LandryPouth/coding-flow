@@ -23,7 +23,7 @@ const {
 const { collectHarnessReport } = require("./harness");
 const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
-const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
+const { COMMAND_PLATFORMS } = require("./platforms/registry");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
@@ -322,7 +322,7 @@ function checkOpenCodeWiring(errors, warnings) {
   // so an absent plugin is not an error.
   if (
     plugin.state === "absent" &&
-    (COMMANDS_ONLY_PLATFORMS[readConfig(cwd).target] || activeTargets(readConfig(cwd)).includes("opencode"))
+    (COMMAND_PLATFORMS[readConfig(cwd).target] || activeTargets(readConfig(cwd)).includes("opencode"))
   ) {
     return;
   }
@@ -429,9 +429,9 @@ function collectDoctorReport({ strict = false } = {}) {
   }
 
   // The exact files each commands-only platform's renderer writes.
-  for (const platform of platforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+  for (const platform of platforms.filter((p) => COMMAND_PLATFORMS[p])) {
     for (const name of skillNames) {
-      required.push(COMMANDS_ONLY_PLATFORMS[platform].render(`---\nname: ${name}\ndescription: x\n---\n`).relPath);
+      required.push(COMMAND_PLATFORMS[platform].render(`---\nname: ${name}\ndescription: x\n---\n`).relPath);
     }
   }
 
@@ -439,7 +439,7 @@ function collectDoctorReport({ strict = false } = {}) {
   const warnings = [];
   // Known, permanent facts — not a problem to fix, so never an error or a warning.
   const notes = platforms
-    .filter((p) => COMMANDS_ONLY_PLATFORMS[p])
+    .filter((p) => COMMAND_PLATFORMS[p])
     // OpenCode can carry a guard plugin: it is only "unavailable" until it is wired.
     .filter((p) => p !== "opencode" || inspectOpenCodePlugin().state === "absent")
     .map((p) => ({
@@ -623,7 +623,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
       target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
     });
 
-    for (const platform of fixPlatforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+    for (const platform of fixPlatforms.filter((p) => COMMAND_PLATFORMS[p])) {
       copyPlatformCommands(platform, { force: false, dryRun: false });
     }
 
