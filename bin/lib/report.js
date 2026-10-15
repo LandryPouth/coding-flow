@@ -176,7 +176,10 @@ function summarizeUnrecognized(records) {
   const names = new Set(Object.keys(collectSignals({ env: {}, cwd: "/" })));
 
   for (const record of records) {
-    Object.keys(record.signals || {}).forEach((name) => names.add(name));
+    // Only well-formed `env:`/`dir:` keys: a record is a local file anyone can edit.
+    Object.keys(record.signals || {})
+      .filter((name) => /^(env|dir):[\w./-]+$/.test(name))
+      .forEach((name) => names.add(name));
   }
 
   const signals = {};

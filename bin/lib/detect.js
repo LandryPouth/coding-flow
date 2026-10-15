@@ -14,7 +14,9 @@ const EXPLICIT_TARGETS = ["claude", "codex", "gemini", "opencode", "antigravity"
 // The only things recorded about an install nobody recognized: presence of these
 // named env vars and directories, as booleans. An explicit list on purpose — a
 // list derived from `process.env` is one refactor from capturing a value, or a
-// secret's name. Codex's `.codex` is not here: it is a recognized signal above.
+// secret's name. `.claude`, `.codex` and CLAUDECODE=1 resolve to a target above, so
+// they read false in an unrecognized record: kept as a negative confirmation of
+// that resolution order, not as a signal expected to fire.
 const KNOWN_ENV_SIGNALS = ["CLAUDECODE"];
 const KNOWN_DIR_SIGNALS = [".claude", ".codex", ".gemini", ".config/opencode"];
 
