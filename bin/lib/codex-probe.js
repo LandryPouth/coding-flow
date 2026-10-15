@@ -24,7 +24,6 @@ const { spawnSync } = require("child_process");
 const { cwd } = require("./context");
 const { loadPolicy } = require("./guard");
 const { PROFILE_NAME } = require("./codex-settings");
-const { isCommandAvailable } = require("./util");
 
 // Insurance against a hung subprocess, not a tight budget (same reasoning as the
 // guard hook's own timeout): a probe must never be able to hang doctor or init.
@@ -36,6 +35,19 @@ const PROBE_TIMEOUT_MS = 20000;
 // sandbox that failed to start (bwrap, config EACCES) — that proves nothing was enforced.
 const DENIAL_SIGNAL = /(cannot create [^\n]*|\.coding-flow-probe-[^\n]*): (permission denied|read-only file system)/i;
 const UNTRUSTED_SIGNAL = /requires a `?\[permissions\]`? table|unknown permissions? profile|not found in/i;
+
+// Bounded `codex --version`: "ok", "absent" (not on PATH) or a "broken: ..." reason
+// (found but failing or hung). The generic isCommandAvailable has no timeout, so a
+// hung codex would block doctor/init before the probe's own limit even starts.
+function checkCodexBinary(timeoutMs = PROBE_TIMEOUT_MS) {
+  const result = spawnSync("codex", ["--version"], { stdio: "ignore", timeout: timeoutMs });
+
+  if (result.error) {
+    return result.error.code === "ENOENT" ? "absent" : `broken: ${result.error.code === "ETIMEDOUT" ? "`codex --version` timed out" : result.error.message}`;
+  }
+
+  return result.status === 0 ? "ok" : `broken: \`codex --version\` exited ${result.status}`;
+}
 
 // The first denied path that is a plain directory (`dir/**` with no glob in `dir`).
 function probeDirectory(root) {
@@ -86,7 +98,9 @@ function interpretProbe({ status, signal, error, stderr, wrote, directory }) {
     return { ran: true, ok: true, detail: `a write into ${directory}/ was denied by the sandbox` };
   }
 
-  const reason = firstLine(stderr) || `exit ${status}`;
+  // The probe file name embeds pid and time: keep it out of the detail so an
+  // unchanged failure stays identical between runs (evidence dedupes on detail).
+  const reason = (firstLine(stderr) || `exit ${status}`).replace(/\S*\.coding-flow-probe-[\w-]+/g, "<probe file>");
 
   return {
     ran: true,
@@ -99,15 +113,22 @@ function interpretProbe({ status, signal, error, stderr, wrote, directory }) {
 
 // `spawn` and `available` are injectable so the outcomes are testable without a
 // real codex. Always cleans up what it created, whatever the outcome.
-function probeCodexSandbox({ root = cwd, spawn = spawnSync, available = isCommandAvailable, timeoutMs = PROBE_TIMEOUT_MS } = {}) {
-  if (!available("codex")) {
-    return { ran: false, ok: null, detail: "codex is not on PATH — sandbox not checked" };
+// `available` returns true/false or the string result of checkCodexBinary.
+function probeCodexSandbox({ root = cwd, spawn = spawnSync, available = () => checkCodexBinary(timeoutMs), timeoutMs = PROBE_TIMEOUT_MS } = {}) {
+  const binary = available("codex");
+
+  if (binary === false || binary === "absent") {
+    return { ran: false, ok: null, reason: "no-binary", detail: "codex is not on PATH — sandbox not checked" };
+  }
+
+  if (typeof binary === "string" && binary !== "ok") {
+    return { ran: true, ok: null, detail: `codex itself failed unrelated to the sandbox: ${binary.replace(/^broken: /, "")}` };
   }
 
   const directory = probeDirectory(root);
 
   if (!directory) {
-    return { ran: false, ok: null, detail: "no directory-type blocked path (`dir/**`) to probe — sandbox not checked" };
+    return { ran: false, ok: null, reason: "no-directory", detail: "no directory-type blocked path (`dir/**`) to probe — sandbox not checked" };
   }
 
   const dirPath = path.join(root, directory);
@@ -163,4 +184,4 @@ function describeProbe(probe) {
   return `could not be confirmed — ${probe.detail}`;
 }
 
-module.exports = { probeCodexSandbox, interpretProbe, describeProbe, probeDirectory, PROBE_TIMEOUT_MS };
+module.exports = { probeCodexSandbox, interpretProbe, describeProbe, probeDirectory, checkCodexBinary, PROBE_TIMEOUT_MS };

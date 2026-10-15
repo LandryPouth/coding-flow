@@ -56,6 +56,10 @@ Observed against codex-cli 0.138 (a real install, isolated `CODEX_HOME`):
   A hard kill (SIGKILL, power loss) mid-probe can leave the created directory behind; delete it by hand.
 - `ok:false` is an error (`codex_sandbox_not_enforcing`); `ok:null` is a warning (`codex_sandbox_unconfirmed`); `ran:false` (no codex, or no directory entry to probe) is silent. Evidence tier is `sandbox` only on `ok:true`.
 - Probe runs in `doctor` and `init` (full and minimal-less; not `upgrade`, not `--dry-run`). `doctor` writes a platform record too, deduplicated on (tier, probe), carrying the install record forward.
+- **Two spawns per run, not one**: `checkCodexBinary` runs a bounded `codex --version` before the sandbox spawn (the generic `isCommandAvailable` has no timeout, so a hung codex would block doctor/init). Worst case is about 2 x `PROBE_TIMEOUT_MS` (40 s); a normal run is one quick version check plus one sandbox spawn.
+- **codex found but broken**: a codex that fails or hangs on `--version` is `ran:true, ok:null` (warning `codex_sandbox_unconfirmed`), no longer silently "absent".
+- **Glob-only policy**: no `dir/**` entry means nothing to probe (`ran:false, reason:"no-directory"`), and doctor warns `codex_sandbox_unprobed`, because a profile that was never exercised is a claim, not proof. `ran:false` results carry a `reason` (`no-binary` | `no-directory`).
+- The probe file name is stripped from `detail`, so an unchanged failure dedupes in the evidence.
 
 ### Findings about story 01-02's profile (answers to the carried-over questions)
 
@@ -85,7 +89,7 @@ Observed against codex-cli 0.138 (a real install, isolated `CODEX_HOME`):
 | profile misconfigured → doctor error, `probe.ok: false` | `test/codex-probe.test.js` (integration) |
 | codex absent → no spawn, `probe.ran: false`, no error | `test/codex-probe.test.js` (unit) |
 | report shows confirmed enforcement tier | extend `test/report-platform-coverage.test.js` |
-| bounded runtime, no hang | `test/codex-probe.test.js` (timeout case) |
+| bounded runtime, no hang (one version check + one sandbox spawn) | `test/codex-probe.test.js` (timeout case) |
 
 ## Commands
 

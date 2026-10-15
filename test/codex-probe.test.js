@@ -13,7 +13,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
-const { probeCodexSandbox, interpretProbe, describeProbe } = require('../bin/lib/codex-probe');
+const { probeCodexSandbox, interpretProbe, describeProbe, checkCodexBinary } = require('../bin/lib/codex-probe');
 
 const codexAvailable = (() => {
   try {
@@ -36,8 +36,8 @@ function fakeCodex(t) {
   const dir = project(t);
   const log = path.join(dir, 'invocations.log');
   const script = `#!/bin/sh
-if [ "$1" = "--version" ]; then echo "codex-cli fake"; exit 0; fi
 echo "$@" >> "${log}"
+if [ "$1" = "--version" ]; then echo "codex-cli fake"; exit 0; fi
 for a in "$@"; do f="$a"; done
 case "$FAKE_CODEX_MODE" in
   deny) echo "sh: 1: cannot create $f: Permission denied" >&2; exit 2 ;;
@@ -199,6 +199,26 @@ test('a hung codex is cut off by the timeout and read as inconclusive, not as a 
   assert.deepEqual(leftovers(dir), []);
 });
 
+test('a codex that is found but fails or hangs on --version is inconclusive, not "absent"', (t) => {
+  const dir = project(t);
+  const original = process.env.PATH;
+  t.after(() => { process.env.PATH = original; });
+  process.env.PATH = `${dir}:${original}`;
+
+  fs.writeFileSync(path.join(dir, 'codex'), '#!/bin/sh\nexit 3\n', { mode: 0o755 });
+  assert.match(checkCodexBinary(), /^broken: .*exited 3/);
+  assert.deepEqual([probeCodexSandbox({ root: dir }).ran, probeCodexSandbox({ root: dir }).ok], [true, null]);
+
+  fs.writeFileSync(path.join(dir, 'codex'), '#!/bin/sh\nsleep 5\n', { mode: 0o755 });
+  const started = Date.now();
+  assert.match(checkCodexBinary(200), /^broken: .*timed out/);
+  assert.ok(Date.now() - started < 3000);
+
+  fs.rmSync(path.join(dir, 'codex'));
+  process.env.PATH = dir;
+  assert.equal(checkCodexBinary(), 'absent');
+});
+
 test('a policy with no plain directory entry is not probed (never a guessed target)', (t) => {
   const dir = project(t);
   fs.mkdirSync(path.join(dir, '.coding-flow'));
@@ -258,7 +278,17 @@ test('doctor: no codex on PATH spawns nothing, exits 0 and records probe.ran:fal
   assert.equal(last.probe.ran, false);
 });
 
-test('doctor twice on an unchanged project spawns one codex per run and adds no duplicate evidence', (t) => {
+test('doctor: a glob-only policy warns that the profile could not be probed', (t) => {
+  const fake = fakeCodex(t);
+  const dir = codexProject(t, { fake, mode: 'deny' });
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'harness.json'), JSON.stringify({ blockedPaths: ['.env', '**/*.pem'] }));
+  cli(dir, ['upgrade'], { fake, mode: 'deny' });
+  const report = JSON.parse(cli(dir, ['doctor', '--json'], { fake, mode: 'deny' }).output);
+  assert.ok(report.warnings.some((w) => w.code === 'codex_sandbox_unprobed'));
+  assert.equal(report.errors.some((e) => e.code === 'codex_sandbox_not_enforcing'), false);
+});
+
+test('doctor twice on an unchanged project runs one version check and one sandbox spawn per run and adds no duplicate evidence', (t) => {
   const fake = fakeCodex(t);
   const dir = codexProject(t, { fake, mode: 'deny' });
   const before = fs.readFileSync(fake.log, 'utf8').trim().split('\n').length;
@@ -266,8 +296,8 @@ test('doctor twice on an unchanged project spawns one codex per run and adds no 
   const afterOne = fs.readFileSync(fake.log, 'utf8').trim().split('\n').length;
   const rows = platformRecords(dir).length;
   cli(dir, ['doctor'], { fake, mode: 'deny' });
-  assert.equal(afterOne - before, 1);
-  assert.equal(fs.readFileSync(fake.log, 'utf8').trim().split('\n').length - afterOne, 1);
+  assert.equal(afterOne - before, 2);
+  assert.equal(fs.readFileSync(fake.log, 'utf8').trim().split('\n').length - afterOne, 2);
   assert.equal(platformRecords(dir).length, rows);
 });
 

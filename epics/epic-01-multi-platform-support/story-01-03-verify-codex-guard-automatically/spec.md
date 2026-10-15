@@ -59,8 +59,8 @@ by hand, never something the shipped tool runs itself.
       enforcement tier, not merely "commands installed."
 - [x] Given `doctor` runs twice in a row on an unchanged, correctly-wired
       project, when comparing the two runs, then both complete in a
-      reasonable time for a command run routinely (the probe spawns at most
-      one `codex` process per run — no retry storm, no hang without a
+      reasonable time for a command run routinely (doctor runs one bounded
+      `codex --version` and at most one sandbox `codex` spawn per run — no retry storm, no hang without a
       timeout).
 
 ## Edge cases

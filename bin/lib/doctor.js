@@ -282,6 +282,11 @@ function checkCodexSandbox(errors, warnings) {
     warnings.push({ code: "codex_sandbox_unconfirmed", file, message: `Codex sandbox ${describeProbe(probe)}` });
   }
 
+  // A profile nothing could be probed against is a claim again, not proof: say so.
+  if (!probe.ran && probe.reason === "no-directory") {
+    warnings.push({ code: "codex_sandbox_unprobed", file, message: `Codex sandbox ${describeProbe(probe)}; deny globs do not stop new files, so add a directory entry (e.g. \`.ssh/**\`)` });
+  }
+
   return { ...probe, baseTier: "sandbox-profile" };
 }
 
