@@ -9,14 +9,21 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 
 - **OpenCode, once for every project.** `ai-flow init --global --target opencode`
-  writes the 7 commands to `~/.config/opencode/command/` (or `$XDG_CONFIG_HOME`);
-  `--guard` also wires the guard plugin there. `upgrade --global` refreshes,
+  writes the 7 commands to `~/.config/opencode/command/` (or `$XDG_CONFIG_HOME`)
+  and the guard plugin beside them. `upgrade --global` refreshes,
   `uninstall --global` removes only what is still ours. Checked on OpenCode 1.19:
   a global command runs in a repo that has no install, and the global plugin refuses
   a `.env` write in one.
 - **OpenCode is detected from `OPENCODE=1`**, so `/flow-setup` run inside OpenCode
   installs for OpenCode without `--target`. With both `CLAUDECODE=1` and
   `OPENCODE=1` set (one agent launched from the other) neither is trusted.
+- **OpenCode installs get the write guard by default.** `init --target opencode`
+  and `init --global` now wire the guard plugin without an extra flag
+  (`--opencode` / `--guard` are still accepted); `--no-guard` opts out and says so.
+  OpenCode's `tool.execute.before` refuses a call on a throw, subagents included,
+  so it is a verified mechanism, not a guessed one. `doctor` errors when a project
+  uses OpenCode without the plugin, and `report` records `enforcementTier: plugin`
+  for it instead of `commands-only`.
 - **`RULES.md` reaches OpenCode.** OpenCode does not expand `CLAUDE.md`'s `@RULES.md`,
   so `init`/`upgrade` add `"instructions": ["RULES.md"]` to `opencode.json` (merged,
   never overwriting; a config with comments is left alone and named). `doctor` warns

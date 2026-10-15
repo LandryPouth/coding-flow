@@ -124,7 +124,7 @@ Most of these are invoked automatically by the skills, CI, or the git hook. As a
 user you mainly need: init, status, next, ship (and the /flow-plan, /flow-run skills).
 
 Usage:
-  ai-flow init [--target claude|codex|gemini|opencode|antigravity] [--opencode] [--minimal] [--global [--guard]] [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
+  ai-flow init [--target claude|codex|gemini|opencode|antigravity] [--opencode] [--minimal] [--global] [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
   ai-flow upgrade [--global] [--with-skills|--no-skills] [--no-guard] [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]

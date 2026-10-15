@@ -10,7 +10,7 @@
 
 Your CI already tells you whether the repository is green. Coding Flow answers the narrower question — *is **this change** proven?* — and answers it before the secret is written, not after the push.
 
-> **Enforcement differs per host.** The CLI is host-agnostic — `verify`, `report`, `ship` and the harness work from any terminal — but the *deterministic* part of the promise, the guard refusing a write before it lands, exists only where the host can enforce it. **Claude Code**: `guard` hook. **OpenCode**: guard plugin on `tool.execute.before` (`ai-flow init --opencode`). **Codex**: a sandbox profile in `.codex/config.toml`, exercised for real by `doctor`/`init` (`codex sandbox`), so the `sandbox` tier is proven, not claimed. **Gemini and Antigravity** (and OpenCode via `--target opencode`): commands only, no verified write guard. `ai-flow report` shows the tier reached per platform. See [`docs/plans/multi-agent-install.md`](docs/plans/multi-agent-install.md) for what each host actually supports.
+> **Enforcement differs per host.** The CLI is host-agnostic — `verify`, `report`, `ship` and the harness work from any terminal — but the *deterministic* part of the promise, the guard refusing a write before it lands, exists only where the host can enforce it. **Claude Code**: `guard` hook. **OpenCode**: guard plugin on `tool.execute.before`, wired by default by `init --target opencode` and `init --global`. **Codex**: a sandbox profile in `.codex/config.toml`, exercised for real by `doctor`/`init` (`codex sandbox`), so the `sandbox` tier is proven, not claimed. **Gemini and Antigravity**: commands only, no verified write guard. `ai-flow report` shows the tier reached per platform. See [`docs/plans/multi-agent-install.md`](docs/plans/multi-agent-install.md) for what each host actually supports.
 
 **What you get over plain Claude Code + a good `CLAUDE.md`:** the `guard` hook refuses to write a `.env`, a key, or a secret **before it reaches the disk** — through the editing tools *and* through the common shell write forms (`> .env`, `tee`, `sed -i`, `cp`), so the obvious leak paths are closed rather than merely discouraged (what it does not read: writes performed inside an interpreter, e.g. `python -c`) — plus executed proof instead of the agent's word, fewer forgotten files, and less context burned per change. When you want it, the same executed proof doubles as an audit/evidence layer for teams that need governance. That machinery runs *for* you underneath a tiny front door; you rarely type it yourself.
 
@@ -78,15 +78,14 @@ npx @landry_pouth/coding-flow init --target antigravity
 | --- | --- | --- | --- | --- |
 | **Claude Code** | plugin (global) + `/flow-setup` per repo | the plugin, or `.claude/skills/` without it | `/flow-run` | yes — hook |
 | **Codex** | `init --target codex` | `.codex/skills/` | `$flow-run` | yes — sandbox profile |
-| **OpenCode** | `init --target opencode` | `.opencode/command/` | `/flow-run` | opt-in — add `--opencode` |
+| **OpenCode** | `init --target opencode` | `.opencode/command/` | `/flow-run` | yes — plugin |
 | **Gemini CLI** | `init --target gemini` | `.gemini/commands/coding-flow/` | `/coding-flow:flow-run` | no |
 | **Antigravity** | `init --target antigravity` | `.agent/skills/` | by name, e.g. `flow-run` | no |
 
 **OpenCode, once for every project.** OpenCode loads user-level commands, so you can install them one time instead of per repo:
 
 ```bash
-npx @landry_pouth/coding-flow init --global --target opencode            # the 7 /flow-* commands, everywhere
-npx @landry_pouth/coding-flow init --global --target opencode --guard    # + the write guard, everywhere
+npx @landry_pouth/coding-flow init --global --target opencode            # the 7 /flow-* commands + the write guard, everywhere
 ```
 
 Then open any repo in OpenCode and type `/flow-setup`: it scaffolds Coding Flow there (OpenCode is detected from `OPENCODE=1`, so no `--target`). Update with `ai-flow upgrade --global`, remove with `ai-flow uninstall --global`. The files live in `~/.config/opencode/` (or `$XDG_CONFIG_HOME/opencode`). A command you edited is never overwritten.
@@ -300,7 +299,7 @@ current machine.
 
 | Command | Use |
 | --- | --- |
-| `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the hook, `--opencode` also wires the OpenCode guard plugin. `--target claude\|codex\|gemini\|opencode\|antigravity` picks the platform: Codex gets `.codex/skills/` plus a sandbox profile that `doctor`/`init` test by running `codex sandbox`; Gemini, OpenCode and Antigravity get commands only. With no flag, no `CLAUDECODE=1` and no `.claude/`/`.codex/`, the platform is recorded as `unrecognized` and **no platform commands are installed** — re-run with `--target`. |
+| `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the guard, `--opencode` also wires the OpenCode guard plugin in a project whose target is another platform. `--target claude\|codex\|gemini\|opencode\|antigravity` picks the platform: Codex gets `.codex/skills/` plus a sandbox profile that `doctor`/`init` test by running `codex sandbox`; OpenCode gets commands plus the guard plugin; Gemini and Antigravity get commands only. With no flag, no `CLAUDECODE=1` and no `.claude/`/`.codex/`, the platform is recorded as `unrecognized` and **no platform commands are installed** — re-run with `--target`. |
 | `ai-flow upgrade` | Update installed files without overwriting local changes. |
 | `ai-flow doctor` | Check files, skills, frontmatter, manifest. `--fix` restores missing files, `--strict` adds checks. |
 | `ai-flow status` | List epics/stories, inferred status, and the linked worktree. |
