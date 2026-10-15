@@ -13,7 +13,7 @@ const ANTIGRAVITY_SKILLS_DIR = ".agent/skills";
 
 function renderSkill(markdown) {
   const { name, description, body } = parseSkill(markdown);
-  const text = rewriteInvocations(body, (n) => n).replace(/\.claude\/skills/g, ANTIGRAVITY_SKILLS_DIR);
+  const text = rewriteInvocations(body, (n) => n);
 
   return {
     relPath: `${ANTIGRAVITY_SKILLS_DIR}/${name}/SKILL.md`,

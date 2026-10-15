@@ -28,8 +28,17 @@ function cli(cwd, args) {
   return execFileSync(process.execPath, [CLI, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+// Without python the strict parse cannot run, so fall back to a structural check
+// of the one line that breaks: a double-quoted description whose inner quotes are
+// all escaped. Weaker than a parser, but a skip must not mean no evidence.
+function structuralCheck(kind, file) {
+  const text = fs.readFileSync(file, 'utf8');
+  const key = kind === 'toml' ? /^description = "((?:[^"\\]|\\.)*)"$/m : /^description: "((?:[^"\\]|\\.)*)"$/m;
+  assert.match(text, key, `${file}: description is not a well-formed quoted string`);
+}
+
 // A real parser, run through python3 (tomllib / PyYAML). Null when it is absent,
-// so the strict check skips instead of passing on nothing.
+// so the caller falls back to the structural check.
 function pythonParse(kind, file) {
   const code = kind === 'toml'
     ? 'import sys,tomllib,json;print(json.dumps(tomllib.load(open(sys.argv[1],"rb"))))'
@@ -58,7 +67,7 @@ function defineSuite({ target, files, parser, describe }) {
     cli(dir, ['init', '--target', target]);
     for (const name of SKILLS) {
       const parsed = pythonParse(parser, path.join(dir, files(name)));
-      if (parsed === null) return t.skip(`no python3 ${parser} parser available`);
+      if (parsed === null) { structuralCheck(parser, path.join(dir, files(name))); continue; }
       assert.ok(describe(parsed), `${name} lost its description`);
       assert.ok(String(describe(parsed)).length > 10);
     }
@@ -73,7 +82,7 @@ function defineSuite({ target, files, parser, describe }) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, content);
     const parsed = pythonParse(parser, file);
-    if (parsed === null) return t.skip(`no python3 ${parser} parser available`);
+    if (parsed === null) return structuralCheck(parser, file);
     assert.equal(describe(parsed), hostile);
     if (parser === 'toml') assert.match(parsed.prompt, /\\ backslash and """ quotes and ''' too/);
   });

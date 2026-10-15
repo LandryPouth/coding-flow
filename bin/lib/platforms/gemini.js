@@ -29,7 +29,7 @@ function tomlBody(body) {
 
 function renderSkill(markdown) {
   const { name, description, body } = parseSkill(markdown);
-  const prompt = rewriteInvocations(body, (n) => `/coding-flow:${n}`).replace(/\.claude\/skills/g, GEMINI_COMMANDS_DIR);
+  const prompt = rewriteInvocations(body, (n) => `/coding-flow:${n}`);
 
   return {
     relPath: `${GEMINI_COMMANDS_DIR}/${name}.toml`,

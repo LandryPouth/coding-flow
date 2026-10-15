@@ -3,7 +3,8 @@
 // The shared source of every rendered flavor: a coding-flow skill is
 // `---\nname: x\ndescription: y\n---\nbody`. Gemini, OpenCode and Antigravity
 // each re-render these three parts into their own format, so the split lives in
-// one place. The frontmatter is flat by design, so no YAML parser is needed.
+// one place. The frontmatter is flat by design, so no YAML parser is needed: a block scalar
+// (`description: >`) is not supported and would render as the literal `>`.
 
 function parseSkill(markdown) {
   const match = String(markdown).match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);

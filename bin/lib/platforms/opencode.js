@@ -9,7 +9,7 @@ const OPENCODE_COMMANDS_DIR = ".opencode/command/coding-flow";
 
 function renderSkill(markdown) {
   const { name, description, body } = parseSkill(markdown);
-  const template = rewriteInvocations(body, (n) => `/coding-flow/${n}`).replace(/\.claude\/skills/g, OPENCODE_COMMANDS_DIR);
+  const template = rewriteInvocations(body, (n) => `/coding-flow/${n}`);
 
   return {
     relPath: `${OPENCODE_COMMANDS_DIR}/${name}.md`,

@@ -381,6 +381,16 @@ if (command === "init") {
 
   wireOpenCode({ dryRun: flags.has("--dry-run") });
 
+  const countInstalledCommands = () => {
+    const rendered = target === "codex" ? codexSkills : platformCommands;
+
+    if (rendered) {
+      return rendered.written.length + rendered.skipped.length;
+    }
+
+    return target === "claude" && effectiveSkills === "project" ? listTemplateSkillNames().length : 0;
+  };
+
   // What this install did for its platform, as evidence: a missing guard has to
   // show up in `ai-flow report` as a fact, not stay an absence nobody can see.
   if (!dryRun) {
@@ -388,14 +398,7 @@ if (command === "init") {
       target,
       detectionSource,
       // For Codex this counts files present, including locally edited ones kept as-is.
-      commandsInstalled:
-        target === "codex"
-          ? codexSkills.written.length + codexSkills.skipped.length
-          : platformCommands
-            ? platformCommands.written.length + platformCommands.skipped.length
-            : target === "claude" && effectiveSkills === "project"
-            ? listTemplateSkillNames().length
-            : 0,
+      commandsInstalled: countInstalledCommands(),
       enforcementTier: target === "claude" ? (hookWired ? "hook" : "none") : target === "codex" || platformCommands ? "commands-only" : "none",
     });
   }
