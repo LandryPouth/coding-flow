@@ -241,3 +241,25 @@ test('upgrade on a Codex-only project does not claim the Claude plugin channel',
   const out = execFileSync('node', [CLI, 'upgrade'], { cwd: dir, encoding: 'utf8' });
   assert.doesNotMatch(out, /served by the plugin/);
 });
+
+test('init --no-guard on Claude records enforcementTier none, not hook', (t) => {
+  const dir = project(t);
+  init(dir, ['--target', 'claude', '--no-guard']);
+  assert.equal(fs.existsSync(path.join(dir, '.claude', 'settings.json')), false);
+  assert.equal(platformRecords(dir)[0].enforcementTier, 'none');
+});
+
+test('init on Claude with the guard records enforcementTier hook', (t) => {
+  const dir = project(t);
+  init(dir, ['--target', 'claude']);
+  assert.equal(platformRecords(dir)[0].enforcementTier, 'hook');
+});
+
+test('re-running init --target codex does not repeat the "added alongside" message', (t) => {
+  const dir = project(t);
+  init(dir, ['--target', 'claude']);
+  const first = init(dir, ['--target', 'codex']);
+  const second = init(dir, ['--target', 'codex']);
+  assert.match(String(first), /added alongside/);
+  assert.doesNotMatch(String(second), /added alongside/);
+});

@@ -289,8 +289,13 @@ if (command === "init") {
     // The recorded platform stays the project's first decision. An explicit
     // --target for another one is added alongside, so doctor and upgrade keep
     // judging the files of both instead of dropping the first one's checks.
+    const alreadyAlongside = recorded.alsoTargets.includes(requestedTarget);
+
     configResult.config = writeConfigAlsoTarget(cwd, requestedTarget, skills.mode);
-    log(`Target: "${requestedTarget}" added alongside "${recorded.target}"; both are kept up to date`);
+
+    if (!alreadyAlongside) {
+      log(`Target: "${requestedTarget}" added alongside "${recorded.target}"; both are kept up to date`);
+    }
   }
 
   const effectiveSkills = configResult.config.skills;
@@ -343,8 +348,11 @@ if (command === "init") {
   // paths refused BEFORE the write). Non-destructive merge into settings.json.
   // `.claude/settings.json` is Claude's file: a Codex or unrecognized install
   // must not create it (Codex's guard is a sandbox profile, a later story).
+  let hookWired = false;
+
   if (!flags.has("--no-guard") && target === "claude") {
     const hook = ensureHookSettings({ dryRun: flags.has("--dry-run") });
+    hookWired = hook.status !== "unparseable";
     log(`Guard hook: ${describeHookStatus(hook.status, flags.has("--dry-run"))}`);
   }
 
@@ -356,13 +364,14 @@ if (command === "init") {
     writePlatformEvidence(cwd, {
       target,
       detectionSource,
+      // For Codex this counts files present, including locally edited ones kept as-is.
       commandsInstalled:
         target === "codex"
           ? codexSkills.written.length + codexSkills.skipped.length
           : target === "claude" && effectiveSkills === "project"
             ? listTemplateSkillNames().length
             : 0,
-      enforcementTier: target === "claude" ? "hook" : target === "codex" ? "commands-only" : "none",
+      enforcementTier: target === "claude" ? (hookWired ? "hook" : "none") : target === "codex" ? "commands-only" : "none",
     });
   }
 
