@@ -23,6 +23,7 @@ function project(t, dirs = []) {
 function init(cwd, args = []) {
   const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(cwd, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
   delete env.CLAUDECODE;
+  delete env.OPENCODE;
   return execFileSync(process.execPath, [CLI, 'init', ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
@@ -134,6 +135,7 @@ test('doctor judges a Codex install against its own files, not CLAUDE.md', (t) =
 function cli(cwd, args) {
   const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(cwd, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
   delete env.CLAUDECODE;
+  delete env.OPENCODE;
   return execFileSync(process.execPath, [CLI, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
@@ -176,6 +178,7 @@ test('upgrade on an unrecognized project writes no Claude file either', (t) => {
 function doctorJson(dir) {
   const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(dir, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
   delete env.CLAUDECODE;
+  delete env.OPENCODE;
   try {
     return JSON.parse(execFileSync(process.execPath, [CLI, 'doctor', '--json'], { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
   } catch (error) {
@@ -189,7 +192,7 @@ test('adding Codex to a Claude project keeps the first target and its guard chec
   init(dir, ['--target', 'codex']);
   assert.equal(config(dir).target, 'claude');
   assert.equal(config(dir).skills, 'project', 'adding Codex must not overwrite the Claude skills mode');
-  execFileSync(process.execPath, [CLI, 'upgrade'], { cwd: dir, env: { ...process.env, CLAUDECODE: '' }, stdio: 'ignore' });
+  execFileSync(process.execPath, [CLI, 'upgrade'], { cwd: dir, env: { ...process.env, CLAUDECODE: '', OPENCODE: '' }, stdio: 'ignore' });
   assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md')), 'upgrade keeps .claude/skills');
   assert.deepEqual(config(dir).alsoTargets, ['codex']);
   assert.equal(SKILLS.every((n) => fs.existsSync(path.join(dir, '.codex', 'skills', n, 'SKILL.md'))), true);

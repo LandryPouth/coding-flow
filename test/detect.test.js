@@ -52,3 +52,17 @@ test('CLAUDECODE only counts when it is exactly "1", and an unknown flag value i
   assert.equal(resolveTarget({ env: { CLAUDECODE: 'true' }, cwd }).target, 'unrecognized');
   assert.equal(resolveTarget({ flags: { target: 'emacs' }, env: {}, cwd }).target, 'unrecognized');
 });
+
+test('OPENCODE=1 alone resolves to opencode', (t) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-detect-oc-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  assert.deepEqual(resolveTarget({ flags: {}, env: { OPENCODE: '1' }, cwd }), { target: 'opencode', source: 'env:OPENCODE' });
+});
+
+test('both CLAUDECODE=1 and OPENCODE=1 trust neither: one agent was launched from the other', (t) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-detect-both-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  assert.equal(resolveTarget({ flags: {}, env: { CLAUDECODE: '1', OPENCODE: '1' }, cwd }).target, 'unrecognized');
+  fs.mkdirSync(path.join(cwd, '.claude'));
+  assert.equal(resolveTarget({ flags: {}, env: { CLAUDECODE: '1', OPENCODE: '1' }, cwd }).source, 'dir:.claude');
+});

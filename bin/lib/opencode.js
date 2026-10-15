@@ -128,8 +128,8 @@ function isOurs(source) {
 
 // Statuses: "created", "upgraded" (ours, regenerated), "unchanged",
 // "skipped" (a plugin at that path that is not ours — left untouched).
-function ensureOpenCodePlugin({ dryRun = false, root = cwd } = {}) {
-  const target = pluginPath(root);
+function ensureOpenCodePlugin({ dryRun = false, root = cwd, file = null } = {}) {
+  const target = file || pluginPath(root);
   const next = pluginSource();
   const existed = fs.existsSync(target);
 
@@ -153,6 +153,23 @@ function ensureOpenCodePlugin({ dryRun = false, root = cwd } = {}) {
   return { status: existed ? "upgraded" : "created", path: target };
 }
 
+// The global install owns a plugin too: remove it only when it is still ours.
+function removeOpenCodePlugin({ file, dryRun = false }) {
+  if (!fs.existsSync(file)) {
+    return { status: "absent" };
+  }
+
+  if (!isOurs(fs.readFileSync(file, "utf8"))) {
+    return { status: "foreign" };
+  }
+
+  if (!dryRun) {
+    fs.unlinkSync(file);
+  }
+
+  return { status: "removed" };
+}
+
 // What `doctor` reads back: present + ours + current. "absent" is only a
 // problem when OpenCode is in use.
 function inspectOpenCodePlugin(root = cwd) {
@@ -173,6 +190,7 @@ function inspectOpenCodePlugin(root = cwd) {
 
 module.exports = {
   ensureOpenCodePlugin,
+  removeOpenCodePlugin,
   inspectOpenCodePlugin,
   usesOpenCode,
   pluginSource,

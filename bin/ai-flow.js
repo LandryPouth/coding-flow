@@ -68,6 +68,7 @@ const {
   copyTemplates,
   copyCodexSkills,
   copyPlatformCommands,
+  renderPlatformCommands,
   listTemplateSkillNames,
   ensureConvenienceFiles,
   ensureFrictionLog,
@@ -108,10 +109,16 @@ const { COMMANDS_ONLY_PLATFORMS } = require("./lib/platforms/registry");
 const { writePlatformEvidence } = require("./lib/platforms/evidence");
 const { detectPlugin } = require("./lib/claude-plugin");
 const { ensureHookSettings } = require("./lib/settings");
+const {
+  ensureOpenCodeInstructions,
+  globalOpenCodeDir,
+  installGlobalCommands,
+  uninstallGlobalCommands,
+} = require("./lib/opencode-config");
 const { ensureCodexSandbox } = require("./lib/codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./lib/codex-probe");
 const { tierFor } = require("./lib/platforms/evidence");
-const { ensureOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
+const { ensureOpenCodePlugin, removeOpenCodePlugin, inspectOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
 const { printCommands, printHelp } = require("./lib/commands");
@@ -209,13 +216,83 @@ function wireOpenCode({ dryRun, quiet = false, target = null }) {
   }
 }
 
+// OpenCode does not expand CLAUDE.md's `@RULES.md`, so the rulebook is pointed at
+// from opencode.json instead. Only when OpenCode is one of this project's targets.
+function wireOpenCodeInstructions({ dryRun, quiet = false, targets }) {
+  if (!targets.includes("opencode")) {
+    return;
+  }
+
+  const result = ensureOpenCodeInstructions({ root: cwd, dryRun });
+  const words = {
+    created: dryRun ? "would create opencode.json" : "opencode.json created",
+    merged: dryRun ? "would add RULES.md to opencode.json" : "RULES.md added to opencode.json",
+    unchanged: "RULES.md already in opencode.json",
+    skipped: `skipped (${result.path ? path.basename(result.path) : "opencode.json"} is not plain JSON — add "instructions": ["RULES.md"] by hand)`,
+  };
+
+  if (!quiet && words[result.status]) {
+    log(`Rules (OpenCode): ${words[result.status]}`);
+  }
+}
+
 function describeSkillsMode(mode, reason) {
   return mode === "plugin"
     ? `Skills: served by the plugin as coding-flow:flow-* — no project copy (${reason})`
     : `Skills: installed in .claude/skills as /flow-* (${reason})`;
 }
 
-if (command === "init") {
+// `--global` installs for the USER, not the project: OpenCode loads
+// ~/.config/opencode/command in every project, so one install gives the same
+// reach the Claude plugin gives. It writes nothing under the current directory.
+function globalCommand(name) {
+  const target = getFlagValue("--target", "opencode");
+
+  if (target !== "opencode") {
+    fail(`--global only exists for OpenCode (its commands load from ~/.config/opencode). Got --target ${target}.`);
+  }
+
+  const dryRun = flags.has("--dry-run");
+  const pluginFile = path.join(globalOpenCodeDir(), "plugins", "coding-flow-guard.js");
+
+  if (name === "uninstall") {
+    const result = uninstallGlobalCommands({ dryRun });
+    const plugin = removeOpenCodePlugin({ file: pluginFile, dryRun });
+
+    if (plugin.status === "removed") {
+      log(`${dryRun ? "Would remove" : "Removed"} the global guard plugin`);
+    }
+
+    log(`${dryRun ? "Would remove" : "Removed"} ${result.removed.length} global OpenCode command(s) from ${result.dir}`);
+    for (const file of result.modified) {
+      log(`Kept ${file}: you edited it`);
+    }
+    return;
+  }
+
+  const result = installGlobalCommands(renderPlatformCommands("opencode"), {
+    force: flags.has("--force"),
+    dryRun,
+    version: require("../package.json").version,
+  });
+
+  log(dryRun ? "Dry run complete." : "Coding Flow installed for OpenCode, in every project.");
+  log(`Commands: ${result.written.length} written to ${result.dir} (${result.skipped.length} kept)`);
+  // Opt-in like the project one: a guard is wired because someone asked, never as a side effect.
+  if (flags.has("--guard") && !flags.has("--no-guard")) {
+    const plugin = ensureOpenCodePlugin({ dryRun, file: pluginFile });
+
+    log(`Guard plugin (OpenCode, all projects): ${plugin.status === "skipped" ? "skipped (a plugin that is not ours is already there)" : `${plugin.status} at ${pluginFile}`}`);
+  } else {
+    log("Guard: none globally — add it with `ai-flow init --global --guard` (or per project: `ai-flow init --target opencode --opencode`).");
+  }
+
+  log("Start in any project with `/flow-setup`; it scaffolds Coding Flow there. Update later with `ai-flow upgrade --global` (add --guard to keep the guard current).");
+}
+
+if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command)) {
+  globalCommand(command);
+} else if (command === "init") {
   const storage = getFlagValue("--storage", "local");
 
   if (!STORAGE_BACKENDS.includes(storage)) {
@@ -337,20 +414,28 @@ if (command === "init") {
   }
 
   const effectiveSkills = configResult.config.skills;
-  const result = copyTemplates({
-    force: flags.has("--force"),
-    dryRun,
-    includeSkills: target === "claude" && effectiveSkills === "project",
-    target,
-  });
+  // Adding a platform to a minimal install is not a request for the full workflow:
+  // it gets that platform's commands and nothing else. A plain `init` (no
+  // --target) is still how a minimal install grows.
+  const platformOnly = hadConfig && recorded.install === "minimal" && Boolean(requestedTarget);
+  const result = platformOnly
+    ? { copied: [], updated: [], skipped: [], prunedSkills: null, harnessCreated: false }
+    : copyTemplates({
+        force: flags.has("--force"),
+        dryRun,
+        includeSkills: target === "claude" && effectiveSkills === "project",
+        target,
+      });
   const codexSkills = target === "codex" ? copyCodexSkills({ force: flags.has("--force"), dryRun }) : null;
   const platformCommands = COMMANDS_ONLY_PLATFORMS[target]
     ? copyPlatformCommands(target, { force: flags.has("--force"), dryRun })
     : null;
-  const convenience = ensureConvenienceFiles({
-    force: flags.has("--force"),
-    dryRun: flags.has("--dry-run"),
-  });
+  const convenience = platformOnly
+    ? null
+    : ensureConvenienceFiles({
+        force: flags.has("--force"),
+        dryRun: flags.has("--dry-run"),
+      });
 
   if (flags.has("--dry-run")) {
     log("Dry run complete.");
@@ -373,7 +458,7 @@ if (command === "init") {
     );
     // OpenCode has an opt-in guard plugin: its own line below says what was wired,
     // so claiming "no guard" here would contradict it.
-    if (target !== "opencode" || !flags.has("--opencode")) {
+    if (target !== "opencode" || (!flags.has("--opencode") && inspectOpenCodePlugin().state === "absent")) {
       log(
         target === "opencode"
           ? "Guard: none yet for OpenCode — writes are not mechanically protected. Re-run with --opencode to wire the guard plugin."
@@ -432,6 +517,10 @@ if (command === "init") {
   }
 
   wireOpenCode({ dryRun: flags.has("--dry-run"), target });
+  wireOpenCodeInstructions({
+    dryRun: flags.has("--dry-run"),
+    targets: [...new Set([target, requestedTarget, ...readConfig(cwd).alsoTargets].filter(Boolean))],
+  });
 
   const countInstalledCommands = () => {
     const rendered = target === "codex" ? codexSkills : platformCommands;
@@ -471,12 +560,14 @@ if (command === "init") {
   // A plain `init` over a project that started minimal is how it grows into the
   // full workflow. The files were just laid down; the record has to follow, or
   // doctor keeps judging it as a minimal install forever.
-  if (!flags.has("--dry-run") && readConfig(cwd).install === "minimal") {
+  if (!platformOnly && !flags.has("--dry-run") && readConfig(cwd).install === "minimal") {
     writeConfigInstall(cwd, "full");
     log("Install: promoted from minimal to full");
   }
 
-  printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });
+  if (convenience) {
+    printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });
+  }
 
   // Name them. On a brownfield repo the collision is typically the project's own
   // docs/architecture.md, and "use --force to overwrite them" then reads as advice
@@ -599,6 +690,7 @@ if (command === "init") {
   }
 
   wireOpenCode({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), target: upgradeConfig.target });
+  wireOpenCodeInstructions({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), targets: platforms });
 
   if (!flags.has("--json")) {
     log("");

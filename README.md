@@ -82,13 +82,24 @@ npx @landry_pouth/coding-flow init --target antigravity
 | **Gemini CLI** | `init --target gemini` | `.gemini/commands/coding-flow/` | `/coding-flow:flow-run` | no |
 | **Antigravity** | `init --target antigravity` | `.agent/skills/` | by name, e.g. `flow-run` | no |
 
-**The one trap: `--target`.** Without a plugin, Coding Flow only guesses your agent from Claude Code or Codex traces (`CLAUDECODE=1`, a `.claude/` or `.codex/` folder). In an OpenCode, Gemini or Antigravity project it cannot tell, so without `--target` it installs **no commands** and says `unrecognized`. If your commands do not show up, check that first: re-run `init` with `--target`.
+**OpenCode, once for every project.** OpenCode loads user-level commands, so you can install them one time instead of per repo:
+
+```bash
+npx @landry_pouth/coding-flow init --global --target opencode            # the 7 /flow-* commands, everywhere
+npx @landry_pouth/coding-flow init --global --target opencode --guard    # + the write guard, everywhere
+```
+
+Then open any repo in OpenCode and type `/flow-setup`: it scaffolds Coding Flow there (OpenCode is detected from `OPENCODE=1`, so no `--target`). Update with `ai-flow upgrade --global`, remove with `ai-flow uninstall --global`. The files live in `~/.config/opencode/` (or `$XDG_CONFIG_HOME/opencode`). A command you edited is never overwritten.
+
+OpenCode reads `CLAUDE.md` as a fallback but does not follow its `@RULES.md` import, so a per-project install also adds `"instructions": ["RULES.md"]` to `opencode.json` — that is what puts your rulebook in the model's context.
+
+**The one trap: `--target`.** Without a plugin, Coding Flow only guesses your agent from what it can confirm: `CLAUDECODE=1` or `OPENCODE=1` in the environment, or a `.claude/` or `.codex/` folder. In a Gemini or Antigravity project (or an OpenCode started from a terminal that is also inside Claude Code) it cannot tell, so without `--target` it installs **no commands** and says `unrecognized`. If your commands do not show up, check that first: re-run `init` with `--target`.
 
 Other things that look like a bug and are not:
 
 - **Commands missing after a successful `init`** — restart the agent; it reads commands at startup.
 - **Using several agents in one repo** — run `init --target …` once per agent; each keeps its own files.
-- **OpenCode, upgrading from before 0.12** — commands used to live in `.opencode/command/coding-flow/` and were typed `/coding-flow/flow-run`. Re-run `init --target opencode`, then delete that old folder.
+- **OpenCode, upgrading from before 0.11** — commands used to live in `.opencode/command/coding-flow/` and were typed `/coding-flow/flow-run`. Re-run `init --target opencode`, then delete that old folder.
 - **`ai-flow: command not found`** — use `npx @landry_pouth/coding-flow <command>`, or `npm install -g @landry_pouth/coding-flow` once.
 
 ## Getting Started

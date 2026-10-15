@@ -31,6 +31,7 @@ const { inspectCodexSandbox } = require("./codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./codex-probe");
 const { recordProbeEvidence } = require("./platforms/evidence");
 const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
+const { inspectOpenCodeInstructions } = require("./opencode-config");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -299,13 +300,30 @@ function checkOpenCodeWiring(errors, warnings) {
     return;
   }
 
+  // OpenCode never expands CLAUDE.md's `@RULES.md`: without `instructions` in
+  // opencode.json the rulebook is not in the model's context at all.
+  if (
+    activeTargets(readConfig(cwd)).includes("opencode") &&
+    fs.existsSync(path.join(cwd, "RULES.md")) &&
+    inspectOpenCodeInstructions(cwd) === "absent"
+  ) {
+    warnings.push({
+      code: "opencode_rules_not_loaded",
+      file: "opencode.json",
+      message: 'OpenCode does not load RULES.md (no "instructions" entry in opencode.json) — run `ai-flow upgrade` to wire it',
+    });
+  }
+
   const plugin = inspectOpenCodePlugin();
   const file = ".opencode/plugins/coding-flow-guard.js";
 
   // A commands-only install (OpenCode's own, or another target added beside it) has
   // `.opencode/` from those commands and no guard by design (reported as a note),
   // so an absent plugin is not an error.
-  if (plugin.state === "absent" && COMMANDS_ONLY_PLATFORMS[readConfig(cwd).target]) {
+  if (
+    plugin.state === "absent" &&
+    (COMMANDS_ONLY_PLATFORMS[readConfig(cwd).target] || activeTargets(readConfig(cwd)).includes("opencode"))
+  ) {
     return;
   }
 

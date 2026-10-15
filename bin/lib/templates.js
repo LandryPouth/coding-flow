@@ -7,7 +7,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-const { templatesRoot, cwd, packageJson, githubNpxCommand, flowScripts } = require("./context");
+const { templatesRoot, cwd, packageJson, npxCommand, flowScripts } = require("./context");
 const { CODEX_SKILLS_DIR, renderSkill: renderCodexSkill } = require("./platforms/codex");
 const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
 const {
@@ -178,27 +178,27 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     ? [
         "npm run flow:status                 # where each story stands",
         "npm run flow:next                   # the one thing worth doing right now",
-        `${githubNpxCommand} ship   # push the branch and open/update the PR`,
+        `${npxCommand} ship   # push the branch and open/update the PR`,
       ]
     : [
-        `${githubNpxCommand} status`,
-        `${githubNpxCommand} next`,
-        `${githubNpxCommand} ship`,
+        `${npxCommand} status`,
+        `${npxCommand} next`,
+        `${npxCommand} ship`,
       ];
   const setupCommands = hasPackageJson
     ? [
-        `${githubNpxCommand} init`,
+        `${npxCommand} init`,
         "npm run flow:upgrade",
         "npm run flow:fix",
         "npm run flow:uninstall -- --dry-run",
         "npm run flow:uninstall",
       ]
     : [
-        `${githubNpxCommand} init`,
-        `${githubNpxCommand} upgrade`,
-        `${githubNpxCommand} doctor --fix`,
-        `${githubNpxCommand} uninstall --dry-run`,
-        `${githubNpxCommand} uninstall`,
+        `${npxCommand} init`,
+        `${npxCommand} upgrade`,
+        `${npxCommand} doctor --fix`,
+        `${npxCommand} uninstall --dry-run`,
+        `${npxCommand} uninstall`,
       ];
   // Rarely typed by hand: the skills, CI, and the git hook run these for you.
   const machinery = hasPackageJson
@@ -209,10 +209,10 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
         "npm run flow:harness  # quick security evidence check",
       ]
     : [
-        `${githubNpxCommand} doctor`,
-        `${githubNpxCommand} doctor --strict`,
-        `${githubNpxCommand} list-skills`,
-        `${githubNpxCommand} harness check --quick`,
+        `${npxCommand} doctor`,
+        `${npxCommand} doctor --strict`,
+        `${npxCommand} list-skills`,
+        `${npxCommand} harness check --quick`,
       ];
 
   return [
@@ -222,7 +222,7 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     "",
     "## Start Here",
     "",
-    "In Claude Code (the daily driver):",
+    "In your agent (Claude Code, OpenCode, Gemini, Antigravity: `/flow-*`; Codex: `$flow-*`):",
     "",
     "```txt",
     'Use /flow-plan to turn an objective into implementation-ready stories.',
@@ -231,7 +231,7 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     "Then /flow-review before merge, and /flow-ship to open the PR.",
     "/flow-run captures the verify proof itself — you never run it by hand.",
     "",
-    "With the plugin installed the same skills answer to coding-flow:flow-*.",
+    "With the Claude plugin installed the same skills answer to coding-flow:flow-*.",
     "```",
     "",
     "In the terminal:",
@@ -256,7 +256,7 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     ...machinery,
     "```",
     "",
-    `Full command reference: \`${githubNpxCommand} help --all\``,
+    `Full command reference: \`${npxCommand} help --all\``,
     "",
   ].join("\n");
 }
@@ -558,6 +558,16 @@ function copyCodexSkills({ force = false, dryRun = false } = {}) {
   return syncRendered(files, "codexSkills", { force, dryRun });
 }
 
+// The rendered command files of one commands-only platform, with no location
+// attached: the global OpenCode install writes them somewhere else.
+function renderPlatformCommands(target) {
+  return sourceSkills().map((markdown) => {
+    const { relPath, content } = COMMANDS_ONLY_PLATFORMS[target].render(markdown);
+
+    return { name: path.basename(relPath), content };
+  });
+}
+
 // Gemini, OpenCode and Antigravity: same sources, each rendered in its own format.
 function copyPlatformCommands(target, { force = false, dryRun = false } = {}) {
   const files = sourceSkills().map((markdown) => {
@@ -789,6 +799,7 @@ module.exports = {
   copyTemplates,
   copyCodexSkills,
   copyPlatformCommands,
+  renderPlatformCommands,
   ensureConvenienceFiles,
   ensureFrictionLog,
   printConvenienceSummary,

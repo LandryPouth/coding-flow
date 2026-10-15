@@ -12,7 +12,9 @@ npx @landry_pouth/coding-flow init
 ```
 
 Not on Claude Code? Add `--target codex|opencode|gemini|antigravity` — see
-[Installation](../README.md#installation).
+[Installation](../README.md#installation). On OpenCode you can install once for every
+project instead: `npx @landry_pouth/coding-flow init --global --target opencode`, then
+type `/flow-setup` in any repo.
 
 Then, in Claude Code:
 

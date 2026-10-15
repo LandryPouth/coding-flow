@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **OpenCode, once for every project.** `ai-flow init --global --target opencode`
+  writes the 7 commands to `~/.config/opencode/command/` (or `$XDG_CONFIG_HOME`);
+  `--guard` also wires the guard plugin there. `upgrade --global` refreshes,
+  `uninstall --global` removes only what is still ours. Checked on OpenCode 1.19:
+  a global command runs in a repo that has no install, and the global plugin refuses
+  a `.env` write in one.
+- **OpenCode is detected from `OPENCODE=1`**, so `/flow-setup` run inside OpenCode
+  installs for OpenCode without `--target`. With both `CLAUDECODE=1` and
+  `OPENCODE=1` set (one agent launched from the other) neither is trusted.
+- **`RULES.md` reaches OpenCode.** OpenCode does not expand `CLAUDE.md`'s `@RULES.md`,
+  so `init`/`upgrade` add `"instructions": ["RULES.md"]` to `opencode.json` (merged,
+  never overwriting; a config with comments is left alone and named). `doctor` warns
+  when it is missing.
+
+### Fixed
+
+- **`COMMANDS.md` said `undefined ship`/`undefined status`** (since 0.6.0): a renamed
+  export. Every install was affected.
+- **Adding a platform to a `--minimal` install no longer promotes it to full** (no
+  `RULES.md`, `docs/`, `examples/`, `package.json` appear, `doctor` stays satisfied).
+- **`doctor` no longer fails when OpenCode is added beside another target** without a
+  guard plugin: that is a note, as for an OpenCode-first install.
+- `init` no longer says "Guard: none yet" when the plugin is already wired.
+- The help and `COMMANDS.md` name every supported agent and `--target`, not only
+  Claude Code. README: "before 0.12" is "before 0.11".
+
 ## [0.11.1] - 2026-10-15
 
 ### Fixed

@@ -52,6 +52,7 @@ esac
 function cli(cwd, args, { fake, mode, noCodex } = {}) {
   const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(cwd, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
   delete env.CLAUDECODE;
+  delete env.OPENCODE;
   if (fake) {
     env.PATH = `${fake.dir}:/usr/bin:/bin`;
     env.FAKE_CODEX_MODE = mode;
