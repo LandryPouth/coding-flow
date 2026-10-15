@@ -3,6 +3,7 @@
 // Installation and update of the template files: copy, manifest (fingerprints to
 // detect local edits), convenience npm scripts, and cheat-sheet.
 
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -132,6 +133,10 @@ function buildManifestFromCurrentTargets(previous = null) {
     updatedAt: new Date().toISOString(),
     packageJsonCreated: Boolean(previous && previous.packageJsonCreated),
     files,
+    // Codex skills are rendered, so they are tracked by the hash of what was
+    // written; carried forward untouched because this builder only knows the
+    // Claude targets.
+    codexSkills: (previous && previous.codexSkills) || {},
   };
 }
 
@@ -480,29 +485,54 @@ function copyFileToTarget(source, targetRel, { force = false, dryRun = false } =
 
 // The Codex flavor of the skills: one `.codex/skills/<name>/SKILL.md` per
 // coding-flow skill, rendered from the same sources the Claude copy uses. Same
-// skip-unless-force contract as `copyFileToTarget`, so a second run is a no-op.
+// contract as the Claude templates: an untouched file (its hash matches what the
+// manifest recorded) is refreshed, a locally edited one is kept unless forced,
+// and an up-to-date one is a no-op.
+function hashText(text) {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
 function copyCodexSkills({ force = false, dryRun = false } = {}) {
   ensureTemplatesExist();
 
   const written = [];
   const skipped = [];
+  const manifest = readManifest();
+  const recorded = { ...(manifest.codexSkills || {}) };
 
   for (const name of listTemplateSkillNames()) {
     const source = path.join(templatesRoot, ".claude", "skills", name, "SKILL.md");
     const targetRel = `${CODEX_SKILLS_DIR}/${name}/SKILL.md`;
     const target = path.join(cwd, targetRel);
+    const rendered = renderCodexSkill(fs.readFileSync(source, "utf8"));
+    const renderedHash = hashText(rendered);
 
-    if (fs.existsSync(target) && !force) {
-      skipped.push(targetRel);
-      continue;
+    if (fs.existsSync(target)) {
+      const currentHash = hashText(fs.readFileSync(target, "utf8"));
+
+      if (currentHash === renderedHash) {
+        recorded[targetRel] = renderedHash;
+        skipped.push(targetRel);
+        continue;
+      }
+
+      if (!force && recorded[targetRel] !== currentHash) {
+        skipped.push(targetRel);
+        continue;
+      }
     }
 
     if (!dryRun) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, renderCodexSkill(fs.readFileSync(source, "utf8")));
+      fs.writeFileSync(target, rendered);
+      recorded[targetRel] = renderedHash;
     }
 
     written.push(targetRel);
+  }
+
+  if (!dryRun) {
+    writeJson(manifestPath(), { ...manifest, codexSkills: recorded });
   }
 
   return { written, skipped };

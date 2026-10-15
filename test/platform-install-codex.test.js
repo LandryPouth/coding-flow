@@ -214,3 +214,30 @@ test('an idempotent re-run adds no second platform record', (t) => {
   init(dir, ['--target', 'codex']);
   assert.equal(platformRecords(dir).length, 1);
 });
+
+test('upgrade refreshes an untouched Codex skill but keeps a locally edited one', (t) => {
+  const dir = project(t);
+  init(dir, ['--target', 'codex']);
+  const run = path.join(dir, '.codex', 'skills', 'flow-run', 'SKILL.md');
+  const plan = path.join(dir, '.codex', 'skills', 'flow-plan', 'SKILL.md');
+  const good = fs.readFileSync(run, 'utf8');
+  // Simulates an older package version having written different content.
+  const manifestFile = path.join(dir, '.coding-flow', 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const crypto = require('node:crypto');
+  fs.writeFileSync(run, 'old version\n');
+  manifest.codexSkills['.codex/skills/flow-run/SKILL.md'] = crypto.createHash('sha256').update('old version\n').digest('hex');
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  fs.appendFileSync(plan, '\nlocal edit\n');
+  const edited = fs.readFileSync(plan, 'utf8');
+  execFileSync('node', [CLI, 'upgrade'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(fs.readFileSync(run, 'utf8'), good, 'an untouched skill must follow the package');
+  assert.equal(fs.readFileSync(plan, 'utf8'), edited, 'a locally edited skill must be kept');
+});
+
+test('upgrade on a Codex-only project does not claim the Claude plugin channel', (t) => {
+  const dir = project(t);
+  init(dir, ['--target', 'codex']);
+  const out = execFileSync('node', [CLI, 'upgrade'], { cwd: dir, encoding: 'utf8' });
+  assert.doesNotMatch(out, /served by the plugin/);
+});

@@ -431,14 +431,16 @@ if (command === "init") {
     writeConfigSkills(cwd, skills);
   }
 
-  if (!flags.has("--json")) {
-    log(describeSkillsMode(skills, reason));
-  }
-
   const upgradeConfig = readConfig(cwd);
   const platforms = activeTargets(upgradeConfig);
   const hasClaude = platforms.includes("claude");
   const hasCodex = platforms.includes("codex");
+
+  // The skills mode describes the Claude install; saying it for a Codex-only
+  // project would claim a plugin channel that project does not use.
+  if (!flags.has("--json") && hasClaude) {
+    log(describeSkillsMode(skills, reason));
+  }
   const upgradeTarget = hasClaude ? "claude" : upgradeConfig.target;
 
   upgrade({
