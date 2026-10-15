@@ -39,9 +39,10 @@ test('init --target codex writes a marker-stamped profile denying exactly the ha
   assert.equal(cli(dir, ['init', '--target', 'codex']).code, 0);
   const toml = fs.readFileSync(tomlPath(dir), 'utf8');
   assert.ok(toml.startsWith(MARKER));
-  const blocked = JSON.parse(fs.readFileSync(harnessPath(dir), 'utf8')).blockedPaths;
-  const expected = new Set(blocked.flatMap((g) => (g.endsWith('/**') ? [g, g.slice(0, -3)] : [g])));
-  assert.deepEqual(new Set(denied(toml)), expected);
+  // Hard-coded on purpose: re-deriving it with the implementation's own rule could not catch a mistake in that rule.
+  assert.deepEqual(new Set(denied(toml)), new Set([
+    '.env', '.env.*', '.ssh/**', '.ssh', '**/id_rsa', '**/id_ed25519', '**/*.pem', '**/*.key', 'node_modules/**', 'node_modules',
+  ]));
   assert.match(toml, /^"\/" = "read"$/m);
 });
 

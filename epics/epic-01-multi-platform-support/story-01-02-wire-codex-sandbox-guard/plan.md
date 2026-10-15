@@ -58,7 +58,7 @@
 | fresh init writes correct marker + denies | `test/codex-settings.test.js` |
 | foreign file untouched, no error | `test/codex-settings.test.js` |
 | upgrade regenerates stale marker-stamped file | `test/codex-settings.test.js` |
-| missing profile on codex target → doctor error | `test/doctor-guard-wiring.test.js` (extended) |
+| missing profile on codex target → doctor error | `test/codex-settings.test.js` (doctor cases live there) |
 
 ## Commands
 
