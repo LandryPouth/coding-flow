@@ -101,6 +101,13 @@ test('a worktree add records the fork point and verify measures from it', (t) =>
   assert.equal(evidence.diffBase.scope, 'story');
 });
 
+test('a worktree add without --from records the branch checked out in the primary', (t) => {
+  const dir = epicRepo(t);
+  assert.equal(run(dir, ['worktree', 'add', 'story-07-01-geo']).code, 0);
+
+  assert.equal(git(dir, ['config', '--get', 'branch.story-07-01-geo.codingFlowBase']), 'feature/EPIC-07-x');
+});
+
 test('a plain git switch -c from the epic branch resolves to the nearest base', (t) => {
   const dir = epicRepo(t);
   git(dir, ['switch', '-c', 'story-07-01-geo']);
