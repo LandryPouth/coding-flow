@@ -118,6 +118,54 @@ function checkOversizedEpics(warnings) {
   }
 }
 
+const GENERATED_DIR_NAMES = new Set(["generated", "__generated__", "gen"]);
+const GENERATED_DIR_THRESHOLD = 20;
+
+// The last verify's changed files are the ones coverage and risk judged. A big
+// generated directory in there is noise a person did not write, and the fix is
+// one line in `ignoredPaths`. Files already ignored never reach that list, so
+// the hint stops once the project has acted on it.
+function checkGeneratedDirectories(warnings) {
+  const runsDir = path.join(cwd, ".coding-flow", "runs");
+  let latest;
+
+  try {
+    latest = fs.readdirSync(runsDir).filter((name) => name.endsWith("-verify.json")).sort().pop();
+  } catch {
+    return;
+  }
+
+  const evidence = latest ? readJson(path.join(runsDir, latest), null) : null;
+  const files = evidence && evidence.coverage && Array.isArray(evidence.coverage.changedFiles)
+    ? evidence.coverage.changedFiles
+    : [];
+  const counts = new Map();
+
+  for (const file of files) {
+    const parts = toPortable(file).split("/");
+
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      if (GENERATED_DIR_NAMES.has(parts[index])) {
+        const dir = parts.slice(0, index + 1).join("/");
+        counts.set(dir, (counts.get(dir) || 0) + 1);
+        break;
+      }
+    }
+  }
+
+  for (const [dir, count] of counts) {
+    if (count > GENERATED_DIR_THRESHOLD) {
+      warnings.push({
+        code: "generated_not_ignored",
+        file: dir,
+        message:
+          `the last verify counted ${count} changed files under ${dir}/ — if they are generated, ` +
+          `add "${dir}/**" to ignoredPaths in .coding-flow/harness.json`,
+      });
+    }
+  }
+}
+
 // The epic/story number is picked from a local, unsynced scan of `epics/` at
 // plan time. Two people branching from the same base can independently land
 // on `epic-05-` (or the same story number inside one epic) with different
@@ -640,6 +688,7 @@ function collectDoctorReport({ strict = false } = {}) {
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
   checkOversizedEpics(warnings);
+  checkGeneratedDirectories(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);

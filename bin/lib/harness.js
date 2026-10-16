@@ -236,6 +236,10 @@ function defaultHarnessConfig() {
     highRiskPaths: defaultHighRiskPaths(),
     testGlobs: defaultTestGlobs(),
     nonBehaviorGlobs: defaultNonBehaviorGlobs(),
+    // Paths that are output, not authorship (a regenerated client, an OpenAPI
+    // dump): left out of coverage, risk, weakening and deleted-test signals.
+    // Never consulted by the guard (`blockedPaths`) or by secret scanning.
+    ignoredPaths: [],
     blockedPaths: [
       ".env",
       ".env.*",
@@ -308,6 +312,7 @@ function readHarnessConfig(root = cwd) {
         : defaults.secretScanAllowlist,
       highRiskPaths: Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaults.highRiskPaths,
       testGlobs: Array.isArray(config.testGlobs) ? config.testGlobs : defaults.testGlobs,
+      ignoredPaths: Array.isArray(config.ignoredPaths) ? config.ignoredPaths : defaults.ignoredPaths,
       nonBehaviorGlobs: Array.isArray(config.nonBehaviorGlobs)
         ? config.nonBehaviorGlobs
         : defaults.nonBehaviorGlobs,
@@ -1659,6 +1664,23 @@ function captureEnvironment() {
 // Everything this branch contributes, not just what is uncommitted: a story whose
 // tests are already committed must not read as "no test changed". Falls back to
 // the working tree when there is no base to compare against.
+// The tool's own run files are never a change a person or agent made; the
+// project's `ignoredPaths` are the generated ones. This is the single choke
+// point for the diff-derived signals (coverage, risk, weakening, deleted tests).
+// Secret scanning and the guard read other lists and keep seeing everything.
+function isScopedOut(file, config) {
+  const portable = normalizePortable(file);
+
+  return (
+    portable.startsWith(".coding-flow/") ||
+    (config.ignoredPaths || []).some((pattern) => typeof pattern === "string" && matchesPattern(portable, pattern))
+  );
+}
+
+function filterScopedFiles(files, config) {
+  return files.filter((file) => !isScopedOut(file, config));
+}
+
 function changedFilesForCoverage(root = cwd) {
   const files = new Set();
   const { mergeBase } = currentDiffBase(root);
@@ -1679,7 +1701,7 @@ function changedFilesForCoverage(root = cwd) {
     files.add(file);
   }
 
-  return [...files].map(normalizePortable).sort();
+  return filterScopedFiles([...files].map(normalizePortable), readHarnessConfig(root).config).sort();
 }
 
 // The lines this change ADDED, per file. Only added lines: a deleted line has no
@@ -1768,7 +1790,9 @@ function changedLinesForCoverage() {
     }
   }
 
-  return byFile;
+  const config = readHarnessConfig(cwd).config;
+
+  return Object.fromEntries(Object.entries(byFile).filter(([file]) => !isScopedOut(file, config)));
 }
 
 // An escape hatch that leaves a mark. Some real changes cannot carry a test (a
@@ -1980,7 +2004,9 @@ function deletedFilesInDiff() {
     }
   }
 
-  return [...deleted];
+  const config = readHarnessConfig(cwd).config;
+
+  return filterScopedFiles([...deleted], config);
 }
 
 // Per test file: did this diff make it stronger, weaker, or neither?
@@ -1996,7 +2022,7 @@ function scanTestWeakening(config) {
 
   for (const argsForGit of diffs) {
     for (const [file, change] of Object.entries(parseChangedText(runGitText(argsForGit)))) {
-      if (!isTest(file)) {
+      if (!isTest(file) || isScopedOut(file, config)) {
         continue;
       }
 
@@ -2643,6 +2669,7 @@ module.exports = {
   harnessRunsDir,
   defaultHarnessConfig,
   readHarnessConfig,
+  filterScopedFiles,
   ensureHarnessConfig,
   collectHarnessReport,
   parseTestsCommands,

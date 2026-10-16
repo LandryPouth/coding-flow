@@ -21,6 +21,14 @@ All notable changes to this project are documented here. The format is based on
   "unshipped work" from the same base, and a configured `baseBranch` that does not
   resolve is recorded as `configUnresolved` instead of being dropped silently.
 
+- **The tool's own run files and generated code are not "changes".** `.coding-flow/**`
+  is always left out of the changed-file sets that feed coverage, risk, test-weakening
+  and deleted-test detection, and `harness.json` gains `ignoredPaths` (globs, default
+  `[]`) for the project's generated output (`apps/api/generated/**`, `**/openapi.json`).
+  The guard (`blockedPaths`) and secret scanning do not read it. `doctor` suggests
+  `ignoredPaths` when the last verify counted more than 20 files under a `generated/`,
+  `__generated__/` or `gen/` directory.
+
 ## [0.12.1] - 2026-10-16
 
 ### Fixed
