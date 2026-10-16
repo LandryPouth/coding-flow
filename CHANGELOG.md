@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Guard: directory destinations and download targets** (story 05-03 review). `mv /tmp/x/.env .`, `cp -t . …` and `install … .` are judged as `DIR/<source name>`; `curl -o` and `wget -O` are write targets; `tee out < .env` no longer counts the input as a write. `tar -x`, `unzip` and `curl -O` stay unread (known limits).
+
 ### Added
 
 - **`mode: strict` fails closed** (story 05-04). With `"mode": "strict"` in `harness.json`, a call the guard could not check is refused with "not checked, refused in strict mode: …" — by the Claude hook (exit 2) and by the OpenCode plugin (throw), including when the plugin can neither load the guard nor spawn it. `standard` is unchanged; an unreadable `harness.json` is `standard`; a write to `harness.json` itself is never refused for strictness alone. `ai-flow doctor` prints `guard: strict (unchecked writes are refused)` or `guard: standard (unchecked writes are allowed and logged)`.

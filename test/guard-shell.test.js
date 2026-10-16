@@ -280,3 +280,27 @@ test('a bare open() mode in inline code is not a path', (t) => {
   fs.writeFileSync(path.join(dir, '.coding-flow', 'harness.json'), JSON.stringify({ blockedPaths: ['w'] }));
   assert.equal(run(dir, `python3 -c "open('notes.txt','w')"`), 'allow');
 });
+
+test('a directory destination receives the source name', (t) => {
+  const dir = project(t);
+  for (const command of ['mv /tmp/x/.env .', 'cp /tmp/x/.env ./', 'install /tmp/x/.env .', 'cp -t . /tmp/x/.env', 'cp --target-directory=. /tmp/x/.env']) {
+    assert.equal(run(dir, command), 'deny', command);
+  }
+  for (const command of ['cp /tmp/x/.env sub/', 'cp x sub/', 'cp -t sub /tmp/x/.env', 'cp -r /tmp/x/. .']) {
+    assert.equal(run(dir, command), 'allow', command);
+  }
+});
+
+test('curl and wget output files are write targets', (t) => {
+  const dir = project(t);
+  for (const command of ['curl -o .env http://x', 'curl --output .env http://x', 'wget -O .env http://x', 'wget --output-document=.env http://x']) {
+    assert.equal(run(dir, command), 'deny', command);
+  }
+  assert.equal(run(dir, 'curl -o out.txt http://x'), 'allow');
+});
+
+test('a redirected input is not a file tee writes', (t) => {
+  const dir = project(t);
+  assert.equal(run(dir, 'tee out.log < .env'), 'allow');
+  assert.equal(run(dir, 'tee .env < in.txt'), 'deny');
+});

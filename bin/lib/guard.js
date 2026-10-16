@@ -494,7 +494,9 @@ function shellWrites(command, startCwd = process.cwd()) {
 
     const name = path.basename(tokens[index] || "");
     const args = tokens.slice(index + 1);
-    const files = args.filter((arg) => classify(arg) !== "skip");
+    // `< input` and `<<EOF` read; their operand is not a file the command writes.
+    const operands = args.filter((arg, i) => !/^<{1,3}$/.test(arg) && !/^<{1,3}$/.test(args[i - 1] || "") && !arg.startsWith("<"));
+    const files = operands.filter((arg) => classify(arg) !== "skip");
 
     if (tokens.length === 0) {
       // nothing to read
@@ -518,8 +520,40 @@ function shellWrites(command, startCwd = process.cwd()) {
       const symbolic = args.some((arg) => /^-[A-Za-z]*[sl]/.test(arg) || arg === "--symbolic" || arg === "--link" || arg === "--symbolic-link");
       const aliasing = name === "ln" || (name === "cp" && symbolic);
 
-      if (files.length >= 2) {
-        add(files[files.length - 1], "write");
+      // `cp -t DIR src…` / `--target-directory=DIR`: DIR is the destination, not a source.
+      const optionAt = operands.findIndex((arg) => arg === "-t" || arg === "--target-directory" || arg.startsWith("--target-directory="));
+      let directory = null;
+      let sources = files;
+      if (optionAt !== -1) {
+        const option = operands[optionAt];
+        directory = option.includes("=") ? option.slice(option.indexOf("=") + 1) : operands[optionAt + 1];
+        sources = files.filter((arg) => arg !== directory);
+        if (directory !== undefined) {
+          add(directory, "write");
+        }
+      } else if (files.length >= 2) {
+        directory = files[files.length - 1];
+        sources = files.slice(0, -1);
+        add(directory, "write");
+      }
+
+      // A directory destination receives `DIR/<name of each source>`: that is the file written.
+      if (typeof directory === "string" && classify(directory) === "path") {
+        const base = cwd === null ? null : path.resolve(cwd, expandHome(directory));
+        let isDirectory = /(?:^|\/)\.{0,2}\/?$/.test(directory) || optionAt !== -1;
+        try {
+          isDirectory = isDirectory || (base !== null && fs.statSync(base).isDirectory());
+        } catch {
+          // a missing destination is a file name
+        }
+        if (isDirectory) {
+          for (const source of sources) {
+            const name = path.posix.basename(source);
+            if (classify(source) === "path" && name !== "." && name !== ".." && !source.endsWith("/")) {
+              add(path.posix.join(directory, name), "write");
+            }
+          }
+        }
       }
 
       if (aliasing) {
@@ -544,6 +578,17 @@ function shellWrites(command, startCwd = process.cwd()) {
       // truncate -s N <files…>: the size (or reference file) is an option value, not a target.
       const skip = args.findIndex((arg) => arg === "-s" || arg === "-r" || arg === "--size" || arg === "--reference");
       files.filter((arg) => skip === -1 || arg !== args[skip + 1]).forEach((file) => add(file, "write"));
+    } else if (name === "curl" || name === "wget") {
+      // curl -o FILE / --output FILE; wget -O FILE / --output-document / -o logfile.
+      const options = name === "curl" ? /^(?:-[A-Za-z]*o|--output)$/ : /^(?:-[A-Za-z]*[oO]|--output-document|--output-file)$/;
+      operands.forEach((arg, i) => {
+        const long = arg.match(/^--(?:output|output-document|output-file)=(.*)$/);
+        if (long) {
+          add(long[1], "write");
+        } else if (options.test(arg) && operands[i + 1] !== undefined) {
+          add(operands[i + 1], "write");
+        }
+      });
     } else if (name === "dd") {
       for (const arg of args) {
         if (arg.startsWith("of=")) {
