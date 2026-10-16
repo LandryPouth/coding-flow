@@ -538,11 +538,22 @@ function syncRendered(files, manifestKey, { force, dryRun }) {
   return { written, skipped };
 }
 
+// A rendered skill outlives the process that wrote it, and a bare
+// `npx @scope/pkg` resolves to whatever npm calls latest at the moment the agent
+// runs it — not the version that rendered the skill (npx ignores a global
+// install). Pinning keeps `/flow-setup` and the other skills on the release that
+// wrote them; `ai-flow upgrade` re-renders with the new pin.
+function pinNpx(markdown) {
+  const name = packageJson.name.replace(/[/@.]/g, (c) => `\\${c}`);
+
+  return String(markdown).replace(new RegExp(`npx ${name}(?![@\\w-])`, "g"), `npx ${packageJson.name}@${packageJson.version}`);
+}
+
 function sourceSkills() {
   ensureTemplatesExist();
 
   return listTemplateSkillNames().map((name) =>
-    fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8"),
+    pinNpx(fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8")),
   );
 }
 
@@ -552,7 +563,7 @@ function copyCodexSkills({ force = false, dryRun = false } = {}) {
   const files = listTemplateSkillNames().map((name) => ({
     rel: `${CODEX_SKILLS_DIR}/${name}/SKILL.md`,
     content: renderCodexSkill(
-      fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8"),
+      pinNpx(fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8")),
     ),
   }));
 

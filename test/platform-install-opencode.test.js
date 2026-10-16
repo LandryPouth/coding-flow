@@ -120,3 +120,12 @@ test('opencode: upgrade retires the .opencode/command files an earlier version w
   assert.equal(fs.existsSync(path.join(dir, '.opencode', 'command', 'flow-run.md')), false);
   assert.equal(fs.readFileSync(path.join(dir, '.opencode', 'command', 'flow-plan.md'), 'utf8'), 'my edit');
 });
+
+test('opencode: rendered skills pin npx to the version that wrote them', (t) => {
+  const { dir, run } = sharedProject(t);
+  run(['init', '--target', 'opencode']);
+  const { version } = require('../package.json');
+  const setup = fs.readFileSync(path.join(dir, '.opencode', 'skills', 'flow-setup', 'SKILL.md'), 'utf8');
+  assert.ok(setup.includes(`npx @landry_pouth/coding-flow@${version} init`), 'flow-setup runs the pinned init');
+  assert.doesNotMatch(setup, /npx @landry_pouth\/coding-flow(?![@\w-])/);
+});
