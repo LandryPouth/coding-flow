@@ -21,11 +21,11 @@ reviewed only by its own author is visibly so.
 
 ## Acceptance Criteria
 
-- [ ] `review capture --verdict pass --p1 1` → exit 1, nothing written.
-- [ ] Same with `--accept "tracked in #12"` → written, `acceptedRisk` set.
-- [ ] STRICT story with a self review → status shows `(self)`.
-- [ ] Audit lists the accepted-risk pass.
-- [ ] `plugin check` passes after the skill edit.
+- [x] `review capture --verdict pass --p1 1` → exit 1, nothing written.
+- [x] Same with `--accept "tracked in #12"` → written, `acceptedRisk` set.
+- [x] STRICT story with a self review → status shows `(self)`.
+- [x] Audit lists the accepted-risk pass.
+- [x] `plugin check` passes after the skill edit.
 
 ## Edge Cases
 

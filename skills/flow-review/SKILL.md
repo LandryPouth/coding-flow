@@ -253,8 +253,11 @@ ai-flow review capture --story <story-dir> --verdict pass|fail \
   --architecture quick|deep|skipped --tests quick|deep|skipped \
   --security quick|deep|skipped --quality quick|deep|skipped --e2e quick|deep|skipped \
   --p0 <count> --p1 <count> --p2 <count> --p3 <count> \
-  [--reviewer self|subagent]
+  [--reviewer self|subagent] [--accept "<reason>"]
 ```
+
+A `pass` with an open P0 or P1 is refused unless you add `--accept "<reason>"` — only
+with the user's agreement, never on your own. The reason is stored as `acceptedRisk`.
 
 - `--verdict` is this pass's own Verdict line.
 - Each dimension flag is `deep` if that dimension's Deep section ran, `quick`

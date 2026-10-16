@@ -87,6 +87,20 @@ function reviewCapture({ getFlagValue, flags, json = false }) {
     p3: parseCount(getFlagValue, "--p3"),
   };
 
+  // A pass is a claim that nothing blocking was left open. Recording one next to
+  // an open P0/P1 needs a written reason, which is stored with the verdict.
+  const accept = getFlagValue("--accept", null);
+  const openBlocking = findingCounts.p0 + findingCounts.p1;
+  const needsAcceptance = verdict === "pass" && openBlocking > 0;
+
+  if (needsAcceptance && !(accept && accept.trim())) {
+    fail(
+      `review capture refuses --verdict pass with ${findingCounts.p0} P0 and ${findingCounts.p1} P1 open. ` +
+        'Fix them and re-review, capture --verdict fail, or accept the risk with --accept "<reason>" ' +
+        "(with the user's agreement).",
+    );
+  }
+
   const evidence = {
     generatedAt: new Date().toISOString(),
     story: normalizePortable(path.relative(cwd, storyDir)),
@@ -95,6 +109,7 @@ function reviewCapture({ getFlagValue, flags, json = false }) {
     dimensions,
     findingCounts,
     reviewer,
+    ...(needsAcceptance ? { acceptedRisk: accept.trim() } : {}),
     provenance: captureIdentity(cwd),
   };
 
