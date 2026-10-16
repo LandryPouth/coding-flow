@@ -42,6 +42,20 @@ const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./ut
 // Grep…) are not our business here: immediate allow.
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
+// Tools known to leave the disk alone, in Claude Code and OpenCode spellings. Any
+// OTHER tool that carries a path is a write tool we have not met yet: the guard
+// cannot judge it, and says so (`unchecked`) instead of waving it through.
+const READ_ONLY_TOOLS = new Set(
+  [
+    "Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite", "TodoRead",
+    "Skill", "SlashCommand", "AskUserQuestion", "ExitPlanMode", "EnterPlanMode", "BashOutput",
+    "KillShell", "KillBash", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch", "Monitor",
+    "read", "glob", "grep", "list", "ls", "webfetch", "websearch", "todowrite", "todoread", "skill",
+    "task", "question", "lsp", "codesearch",
+  ].map((name) => name.toLowerCase()),
+);
+const PATH_FIELDS = ["file_path", "path", "filePath", "notebook_path"];
+
 function readHookInput({ inputFile = null } = {}) {
   try {
     if (inputFile) {
@@ -299,7 +313,7 @@ function primaryCheckout(root) {
 // that do not exist yet (a file about to be created). A dangling link is followed
 // to where it WOULD create the file — `alias -> .env` with no `.env` yet is `.env`.
 // A loop falls back to the lexical path: never throws.
-function realPathOf(file, depth = 0) {
+function realPathOf(file, depth = 0, issues = null) {
   const rest = [];
   let dir = file;
 
@@ -308,16 +322,22 @@ function realPathOf(file, depth = 0) {
       return path.join(fs.realpathSync.native(dir), ...rest);
     } catch (err) {
       if (!err || (err.code !== "ENOENT" && err.code !== "ENOTDIR")) {
+        if (issues) {
+          issues.push(`could not resolve a path (${(err && err.code) || "error"})`);
+        }
         return file;
       }
 
       try {
         if (fs.lstatSync(dir).isSymbolicLink()) {
           if (depth > 16) {
+            if (issues) {
+              issues.push("could not resolve a path (too many links)");
+            }
             return file;
           }
           const target = path.resolve(path.dirname(dir), fs.readlinkSync(dir));
-          return path.join(realPathOf(target, depth + 1), ...rest);
+          return path.join(realPathOf(target, depth + 1, issues), ...rest);
         }
       } catch {
         // not a link either: keep walking up
@@ -351,7 +371,7 @@ function within(base, file) {
 // relative to the project root, else to the primary checkout, else to $HOME.
 function resolveTargets(ctx, target) {
   const lexical = path.resolve(ctx.cwd, expandHome(target));
-  const real = realPathOf(lexical);
+  const real = realPathOf(lexical, 0, ctx.issues);
   const bases = [ctx.root, ctx.realRoot, ctx.primary, ctx.primary && realPathOf(ctx.primary), os.homedir()].filter(Boolean);
   const found = [];
 
@@ -378,7 +398,7 @@ function hookCwd(hook, fallback) {
 function context(hook, root) {
   const cwd = hookCwd(hook, root);
   const top = projectRoot(cwd);
-  return { cwd: path.resolve(cwd), root: top, realRoot: realPathOf(top), primary: primaryCheckout(top) };
+  return { cwd: path.resolve(cwd), root: top, realRoot: realPathOf(top), primary: primaryCheckout(top), issues: [] };
 }
 
 // Whether writing to this path is refused by policy. Returns the matched pattern,
@@ -414,7 +434,7 @@ const CASE_INSENSITIVE = process.platform === "win32" || process.platform === "d
 // Pure decision: from the hook input + root, returns allow/deny + reason.
 function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   if (!hook || typeof hook !== "object") {
-    return { decision: "allow", reason: "no parseable hook input" };
+    return { decision: "unchecked", reason: "no parseable hook input" };
   }
 
   const toolName = hook.tool_name;
@@ -425,6 +445,12 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   }
 
   if (!WRITE_TOOLS.has(toolName)) {
+    const input = toolInput && typeof toolInput === "object" ? toolInput : {};
+
+    if (!READ_ONLY_TOOLS.has(String(toolName || "").toLowerCase()) && PATH_FIELDS.some((field) => input[field])) {
+      return { decision: "unchecked", reason: `tool ${toolName || "?"} is unknown to the guard and carries a path` };
+    }
+
     return { decision: "allow", reason: `tool ${toolName || "?"} is not a write tool` };
   }
 
@@ -441,6 +467,10 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
       reason: `${found.relative}${viaNote(found, relative)} matches a blocked harness path (${found.hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
       path: found.relative,
     };
+  }
+
+  if (!filePath) {
+    return { decision: "unchecked", reason: `${toolName} carried no target path` };
   }
 
   // Check 2 — secret in the written content. On an allowlisted path (docs,
@@ -463,6 +493,10 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
     }
   }
 
+  if (ctx.issues.length) {
+    return { decision: "unchecked", reason: ctx.issues[0] };
+  }
+
   return { decision: "allow", reason: "no blocked path or secret detected" };
 }
 
@@ -472,6 +506,10 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
 // cries wolf on them is a guard people route around.
 function decideBash(toolInput, hook, root, caseInsensitive) {
   const command = toolInput && typeof toolInput.command === "string" ? toolInput.command : "";
+
+  if (toolInput && typeof toolInput === "object" && "command" in toolInput && typeof toolInput.command !== "string") {
+    return { decision: "unchecked", reason: "Bash carried no readable command" };
+  }
 
   if (!command.trim()) {
     return { decision: "allow", reason: "no command to inspect" };
@@ -507,6 +545,10 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     };
   }
 
+  if (ctx.issues.length) {
+    return { decision: "unchecked", reason: ctx.issues[0] };
+  }
+
   return { decision: "allow", reason: "no blocked write target or secret detected" };
 }
 
@@ -523,7 +565,7 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
 // pattern's name, never the matched text.
 const DENIAL_LOG_MAX_BYTES = 256 * 1024;
 
-function recordDenial({ root, hook, result }) {
+function recordEvent(file, { root, hook, result }) {
   try {
     const dir = path.join(root, ".coding-flow");
 
@@ -531,7 +573,7 @@ function recordDenial({ root, hook, result }) {
       return;
     }
 
-    const logPath = path.join(dir, "denials.jsonl");
+    const logPath = path.join(dir, file);
 
     // Bounded on purpose: this is a diagnostic tail, not an audit ledger. The
     // audit ledger is `ai-flow audit`, and it is opt-in.
@@ -540,13 +582,21 @@ function recordDenial({ root, hook, result }) {
       fs.writeFileSync(logPath, kept.length ? `${kept.join("\n")}\n` : "");
     }
 
-    const target = result.path || (hook && hook.tool_input && hook.tool_input.file_path) || null;
+    // A hook that made the decision throw can throw here too: read it defensively.
+    const field = (read) => {
+      try {
+        return read() || null;
+      } catch {
+        return null;
+      }
+    };
+    const target = result.path || field(() => hook.tool_input.file_path);
 
     fs.appendFileSync(
       logPath,
       `${JSON.stringify({
         at: new Date().toISOString(),
-        tool: (hook && hook.tool_name) || null,
+        tool: field(() => hook.tool_name),
         // Relative when it is inside the project, so the log carries no home
         // directory and no username. `report` redacts anything left over.
         path: target ? normalizePortable(path.isAbsolute(target) ? path.relative(root, target) : target) : null,
@@ -556,6 +606,17 @@ function recordDenial({ root, hook, result }) {
   } catch {
     // Diagnostics are never worth failing a security decision over.
   }
+}
+
+function recordDenial(event) {
+  recordEvent("denials.jsonl", event);
+}
+
+// The guard could not judge this call. Not a refusal, so not in `denials.jsonl`
+// (whose readers mean "the guard refused this"); a separate file `report` and
+// `doctor` read, so silence is never mistaken for protection.
+function recordUnchecked(event) {
+  recordEvent("guard-unchecked.jsonl", event);
 }
 
 // Appended to what the agent reads (never to the denial log). Observed on
@@ -575,7 +636,16 @@ function guardCommand({ getFlagValue, flags }) {
   // Root: cwd provided by the hook if present, otherwise the process cwd.
   const root = projectRoot(hookCwd(hook, process.cwd()));
 
-  const result = decide(hook, root);
+  let result;
+  try {
+    result = decide(hook, root);
+  } catch (err) {
+    result = { decision: "unchecked", reason: `guard error: ${err && err.message}` };
+  }
+
+  if (result.decision === "unchecked") {
+    recordUnchecked({ root, hook, result });
+  }
 
   if (result.decision === "deny") {
     // Hook decision (stdout) + blocking message (stderr) + exit 2: we cover both
@@ -619,10 +689,16 @@ function evaluate(hook, root) {
       return { ...result, reason: forAgent(result.reason) };
     }
 
+    if (result.decision === "unchecked") {
+      recordUnchecked({ root: projectRoot(hookCwd(hook, root)), hook, result });
+    }
+
     return result;
   } catch (err) {
-    return { decision: "allow", reason: `guard error, failing open: ${err && err.message}` };
+    const result = { decision: "unchecked", reason: `guard error: ${err && err.message}` };
+    recordUnchecked({ root, hook, result });
+    return result;
   }
 }
 
-module.exports = { guardCommand, decide, evaluate, shellWriteTargets, loadPolicy };
+module.exports = { guardCommand, decide, evaluate, recordUnchecked, shellWriteTargets, loadPolicy };

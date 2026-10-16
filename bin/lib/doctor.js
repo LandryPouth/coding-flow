@@ -277,6 +277,37 @@ function checkDuplicateNumbering(warnings) {
   }
 }
 
+// Calls the guard let through because it could not judge them. Silence there
+// reads as protection; a recent entry says it was not.
+function checkGuardUnchecked(warnings) {
+  const file = path.join(cwd, ".coding-flow", "guard-unchecked.jsonl");
+  let recent = 0;
+
+  try {
+    const since = Date.now() - 7 * 24 * 3600 * 1000;
+
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      try {
+        if (line && Date.parse(JSON.parse(line).at) >= since) {
+          recent += 1;
+        }
+      } catch {
+        // a torn line is not an entry
+      }
+    }
+  } catch {
+    return;
+  }
+
+  if (recent) {
+    warnings.push({
+      code: "guard_unchecked",
+      file: ".coding-flow/guard-unchecked.jsonl",
+      message: `the guard could not check ${recent} write(s) in the last 7 days — they were allowed, not protected; see \`ai-flow report\``,
+    });
+  }
+}
+
 // The guard is the one part of the install where "wired" and "wired correctly"
 // silently diverge: a stale command still runs (settings.js falls back to npx
 // when the resolved binary is gone) so it never crashes, and a project that
@@ -539,6 +570,7 @@ function collectMinimalReport({ strict = false } = {}) {
   }
 
   checkGuardWiring(errors, warnings);
+  checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings, notes);
 
@@ -753,6 +785,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOriginHead(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
+  checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings, notes);
 

@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **"The guard did not look" is no longer "allowed".** A call the guard cannot judge —
+  unparseable input, an internal error, an unknown tool carrying a path, a write with
+  no readable target, a path that cannot be resolved, and in OpenCode an unreadable
+  write/patch or a guard that could not run — is `unchecked`: still let through, but
+  logged to `.coding-flow/guard-unchecked.jsonl`, counted by `ai-flow report`, and
+  warned about by `ai-flow doctor` for 7 days.
 - **The guard judges the file a write reaches, not the string it was given.** The
   project root is the outermost `.coding-flow/` within the git toplevel (else the toplevel), not the
   hook cwd; each target is checked by its lexical and its real path (symlinks,

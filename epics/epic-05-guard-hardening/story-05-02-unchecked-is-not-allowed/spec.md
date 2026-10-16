@@ -30,21 +30,21 @@ which tool, why — instead of reading silence as protection.
 
 ## Acceptance Criteria
 
-- [ ] Given `evaluate(null, root)`, then `decision: "unchecked"` and a reason.
-- [ ] Given `decide` throws (inject a policy file that is a directory), then
+- [x] Given `evaluate(null, root)`, then `decision: "unchecked"` and a reason.
+- [x] Given `decide` throws (inject a policy file that is a directory), then
       `evaluate` returns `unchecked`, not `allow`, and a line is logged.
-- [ ] Given the OpenCode plugin receives a known write tool (`write`, `edit`,
+- [x] Given the OpenCode plugin receives a known write tool (`write`, `edit`,
       `patch`, `shell`) whose arguments resolve no path or command (e.g. V2
       renames `path` or `patchText`), or an unknown one like `multiedit`, then
       `unchecked` with a stderr "NOT checked" line, not a silent allow (found
       by the 06-01 STRICT review).
-- [ ] Given tool `MultiEdit2` with `{ file_path: ".env" }`, then `unchecked`;
+- [x] Given tool `MultiEdit2` with `{ file_path: ".env" }`, then `unchecked`;
       given tool `Read` with `{ file_path: ".env" }`, then `allow`.
-- [ ] Given `ai-flow guard` (Claude hook) receives an unchecked case, then
+- [x] Given `ai-flow guard` (Claude hook) receives an unchecked case, then
       exit code 0 and the log has one line.
-- [ ] Given three unchecked lines, then `report` shows the count and reasons
+- [x] Given three unchecked lines, then `report` shows the count and reasons
       and `doctor` warns.
-- [ ] Given a deny, then nothing is written to the unchecked log (denials keep
+- [x] Given a deny, then nothing is written to the unchecked log (denials keep
       their own file).
 
 ## Edge Cases
@@ -55,3 +55,11 @@ which tool, why — instead of reading silence as protection.
   everyday use logs nothing. A test asserts a normal session's tool names
   produce zero lines.
 - **Privacy**: same redaction as `denials.jsonl` (relative path, no home).
+
+## Status: done
+
+## Result
+
+`decide`/`evaluate` return a third outcome, `unchecked` (logged to `.coding-flow/guard-unchecked.jsonl`, exit 0 / no throw): no parseable input, an exception, an unknown tool carrying a path, a write tool with no path or a Bash call with no readable command, an unresolvable path (ELOOP, EACCES). The OpenCode plugin reports an unreadable write/patch, an unknown path-bearing tool, a spawn failure and a missing module as "NOT checked". `report` shows the count and top reasons; `doctor` warns on entries from the last 7 days.
+
+Deviation: a `harness.json` that is a directory does not make `decide` throw (`loadPolicy` already degrades to defaults), so the exception case is tested with a hook whose field throws.

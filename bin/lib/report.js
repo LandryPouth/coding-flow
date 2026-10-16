@@ -101,8 +101,8 @@ function readRuns(root) {
     .filter(Boolean);
 }
 
-function readDenials(root) {
-  const logPath = path.join(codingFlowDir(root), "denials.jsonl");
+function readDenials(root, file = "denials.jsonl") {
+  const logPath = path.join(codingFlowDir(root), file);
 
   if (!fs.existsSync(logPath)) {
     return [];
@@ -201,6 +201,7 @@ function buildReport({ root = cwd, raw = false } = {}) {
   const evidence = runs.filter((run) => run.kind === "evidence");
   const platforms = runs.filter((run) => run.kind === "platform");
   const denials = readDenials(root);
+  const unchecked = readDenials(root, "guard-unchecked.jsonl");
   const config = readJson(path.join(codingFlowDir(root), "config.json"), null);
   const harness = readJson(path.join(codingFlowDir(root), "harness.json"), null);
   const settings = readJson(path.join(root, ".claude", "settings.json"), null);
@@ -278,6 +279,11 @@ function buildReport({ root = cwd, raw = false } = {}) {
       reason: redact(entry.reason || ""),
     })),
     denialsTotal: denials.length,
+    uncheckedTotal: unchecked.length,
+    uncheckedReasons: Object.entries(countBy(unchecked, (entry) => redact(entry.reason || "?")))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([reason, count]) => ({ reason, count })),
     failures: failures.slice(-MAX_FAILURES),
     failuresTotal: failures.length,
   };
@@ -366,6 +372,21 @@ function renderMarkdown(report) {
     for (const denial of report.denials) {
       const when = denial.at ? denial.at.replace("T", " ").slice(0, 16) : "?";
       push(`| ${when} | ${denial.tool || "?"} | \`${denial.path || "?"}\` | ${denial.reason} |`);
+    }
+  }
+
+  push();
+  push(`## Unchecked writes (${report.uncheckedTotal})`);
+  push();
+
+  if (!report.uncheckedTotal) {
+    push("None recorded.");
+  } else {
+    push("The guard could not judge these calls; they were allowed, not protected.");
+    push();
+
+    for (const { reason, count } of report.uncheckedReasons) {
+      push(`- ${count} × ${reason}`);
     }
   }
 
