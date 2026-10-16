@@ -451,12 +451,19 @@ function collectDoctorReport({ strict = false } = {}) {
   // The exact files each platform's renderer writes. OpenCode needs none of its
   // own when `.claude/skills` already carries them: it reads them there.
   for (const platform of platforms.filter((p) => COMMAND_PLATFORMS[p])) {
-    if (platform === "opencode" && servedByClaude(cwd, skillNames)) {
-      continue;
-    }
+    const { render, renderCommand } = COMMAND_PLATFORMS[platform];
 
     for (const name of skillNames) {
-      required.push(COMMAND_PLATFORMS[platform].render(`---\nname: ${name}\ndescription: x\n---\n`).relPath);
+      const source = `---\nname: ${name}\ndescription: x\n---\n`;
+
+      if (!(platform === "opencode" && servedByClaude(cwd, skillNames))) {
+        required.push(render(source).relPath);
+      }
+
+      // The `/` menu entry: without it OpenCode's TUI shows no /flow-* at all.
+      if (renderCommand) {
+        required.push(renderCommand(source).relPath);
+      }
     }
   }
 

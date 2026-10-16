@@ -12,7 +12,14 @@ const COMMAND_PLATFORMS = {
   gemini: { render: gemini.renderSkill, dir: gemini.GEMINI_COMMANDS_DIR },
   // OpenCode's guard is a plugin on `tool.execute.before` (bin/lib/opencode.js),
   // verified against the OpenCode binary: a throw refuses the call.
-  opencode: { render: opencode.renderSkill, dir: opencode.OPENCODE_SKILLS_DIR, guard: "plugin" },
+  // `renderCommand` adds the `/` menu entry OpenCode's TUI does not give skills.
+  opencode: {
+    render: opencode.renderSkill,
+    renderCommand: opencode.renderCommand,
+    dir: opencode.OPENCODE_SKILLS_DIR,
+    commandDir: opencode.OPENCODE_SLASH_DIR,
+    guard: "plugin",
+  },
   antigravity: { render: antigravity.renderSkill, dir: antigravity.ANTIGRAVITY_SKILLS_DIR },
 };
 

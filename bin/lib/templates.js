@@ -638,11 +638,11 @@ function copyCodexSkills({ force = false, dryRun = false } = {}) {
 // (`.opencode/skills/flow-run/SKILL.md` -> `skills/flow-run/SKILL.md`): the
 // global OpenCode install writes them under ~/.config/opencode instead.
 function renderPlatformCommands(target) {
-  return sourceSkills().map((markdown) => {
-    const { relPath, content } = COMMAND_PLATFORMS[target].render(markdown);
+  const { render, renderCommand } = COMMAND_PLATFORMS[target];
 
-    return { rel: relPath.split("/").slice(1).join("/"), content };
-  });
+  return sourceSkills()
+    .flatMap((markdown) => (renderCommand ? [render(markdown), renderCommand(markdown)] : [render(markdown)]))
+    .map(({ relPath, content }) => ({ rel: relPath.split("/").slice(1).join("/"), content }));
 }
 
 // Removes rendered files this install wrote under `prefixes` (manifest entries
@@ -694,31 +694,33 @@ function retireRendered(prefixes, manifestKey, { dryRun = false } = {}) {
 // rendered before that is retired. The `.opencode/command/` files earlier
 // versions wrote are retired in every case — the skills replace them.
 function copyPlatformCommands(target, { force = false, dryRun = false } = {}) {
+  const { render, renderCommand } = COMMAND_PLATFORMS[target];
   let retired = { removed: [], modified: [] };
+  let servedBy = null;
 
   if (target === "opencode") {
     retired = retireRendered([`${OPENCODE_COMMANDS_DIR}/`], "platformCommands", { dryRun });
 
     if (servedByOpenCodeFromClaude(listTemplateSkillNames())) {
       const own = retireRendered([`${OPENCODE_SKILLS_DIR}/`], "platformCommands", { dryRun });
-
-      return {
-        written: [],
-        skipped: [],
-        edited: [],
-        servedBy: "claude",
-        retired: { removed: [...retired.removed, ...own.removed], modified: [...retired.modified, ...own.modified] },
-      };
+      retired = { removed: [...retired.removed, ...own.removed], modified: [...retired.modified, ...own.modified] };
+      servedBy = "claude";
     }
   }
 
-  const files = sourceSkills().map((markdown) => {
-    const { relPath, content } = COMMAND_PLATFORMS[target].render(markdown);
+  const toFile = ({ relPath, content }) => ({ rel: relPath, content });
+  const sources = sourceSkills();
+  const result = servedBy
+    ? { written: [], skipped: [], edited: [] }
+    : syncRendered(sources.map(render).map(toFile), "platformCommands", { force, dryRun });
 
-    return { rel: relPath, content };
-  });
+  // The `/` menu entries (OpenCode): written even when the skills come from
+  // .claude/skills, since OpenCode's TUI lists no skill under `/`.
+  const commands = renderCommand
+    ? syncRendered(sources.map(renderCommand).map(toFile), "platformCommands", { force, dryRun })
+    : null;
 
-  return { ...syncRendered(files, "platformCommands", { force, dryRun }), servedBy: null, retired };
+  return { ...result, servedBy, retired, commands };
 }
 
 function servedByOpenCodeFromClaude(names) {
