@@ -261,3 +261,20 @@ test('setup returns quietly when OpenCode 1.x hands it a context without `tool`'
   const before = (await mod.default.server({ directory: dir }))['tool.execute.before'];
   await assert.rejects(before({ tool: 'write' }, { args: { filePath: path.join(dir, '.env'), content: 'A=1' } }), /blocked harness path/);
 });
+
+test('setup falls back to the process directory when 2.x sends no `location`', async (t) => {
+  const dir = tmp(t, 'oc-v2-nolocation');
+  assert.equal(run(dir, ['init', '--opencode']).code, 0);
+  const copy = path.join(dir, 'plugin-nolocation.mjs');
+  fs.copyFileSync(path.join(dir, PLUGIN), copy);
+  const mod = await import(pathToFileURL(copy).href);
+  const hooks = [];
+  const previous = process.cwd();
+  process.chdir(dir);
+  try {
+    await mod.default.setup({ tool: { hook: async (name, fn) => hooks.push({ name, fn }) } });
+    await assert.rejects(hooks[0].fn({ tool: 'write', input: { path: '.env', content: 'A=1' } }), /blocked harness path/);
+  } finally {
+    process.chdir(previous);
+  }
+});
