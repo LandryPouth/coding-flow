@@ -23,8 +23,8 @@ A monorepo that already produces coverage gets `verified` instead of the
   report's package root; otherwise it is *unmeasured*. Patch coverage is
   computed over measured files; unmeasured behaviour files fall back to the
   test-file rule for their package; the run's rung is the weakest of the two.
-- Evidence: `coverage.reports: [{ path, format, package, files }]`,
-  `coverage.unmeasured: [files]`.
+- Evidence: `coverage.patch.report.reports: [{ path, format, package, files }]`,
+  `coverage.patch.unmeasured: [files]` (nested under `patch`, beside `uncovered`).
 
 ## Acceptance Criteria
 
@@ -50,7 +50,9 @@ A monorepo that already produces coverage gets `verified` instead of the
 
 ## Result
 
-bethl read-only check: not run (project unavailable in this session).
+bethl read-only check: **not run** — the project was unavailable. Open follow-up:
+run it before release (real Jest `SF:` paths and mtimes are what the synthetic
+fixtures cannot prove). Fixtures only cover this story until then.
 
 ### Rollback Notes
 

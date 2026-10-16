@@ -156,6 +156,20 @@ test('a file outside every report is unmeasured, not uncovered, and the rung is 
   assert.deepEqual(res.coverage.patch.uncovered, [], 'unmeasured is not uncovered');
 });
 
+test('a root-level report still measures a file in a nested package it does not list', (t) => {
+  const dir = monorepo(t, {
+    reports: [{ file: 'coverage/lcov.info', content: lcov('apps/api/src/auth.js', [1, 2, 3, 4, 5, 6]) }],
+    sources: ['apps/api/src/auth.js', 'apps/api/src/other.js'],
+    tests: ['apps/api/src/other.test.js'],
+  });
+
+  const res = verify(dir);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(res.coverage.patch.unmeasured, [], 'inside the root package: measured');
+  assert.deepEqual(res.coverage.patch.uncovered.map((u) => u.file), ['apps/api/src/other.js']);
+});
+
 test('an unmeasured file with no test in its package blocks', (t) => {
   const dir = monorepo(t, {
     reports: [{ file: 'apps/api/coverage/lcov.info', content: lcov('src/auth.js', [1, 2, 3, 4, 5, 6]) }],

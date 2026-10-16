@@ -455,7 +455,12 @@ function measurePatchCoverage({ report, changedLinesByFile, packageOf = null }) 
 
     // Outside every loaded report's package: nobody measured it, so it is
     // neither covered nor uncovered. Never extrapolate one package to another.
-    if (packageRoots && packageOf && !report.files.has(file) && !packageRoots.includes(packageOf(file))) {
+    // "Inside" is containment: a root-level report speaks for every package under it.
+    const insideARoot = (packageRoots || []).some(
+      (pkg) => pkg === "" || file === pkg || file.startsWith(`${pkg}/`),
+    );
+
+    if (packageRoots && packageOf && !report.files.has(file) && !insideARoot) {
       unmeasured.push(file);
       continue;
     }
