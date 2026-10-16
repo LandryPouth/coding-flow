@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Guard: `ed`, `ex`, `patch` FILE are writes** (story 05-03 review). `patch` without a FILE (paths read from the diff) and `find -exec` stay unread (known limits).
 - **Guard: quote-spliced and glob targets** (story 05-03 review). `echo A > .e""nv`, `.e''nv` and `.e\nv` are the file the shell opens and are judged as `.env`; an unquoted glob or brace list in a write target (`cp x .e*`, `> .en{v,}`) is `unchecked` instead of allowed.
 - **Guard: spliced redirection targets, `-t` clusters, `sponge`** (story 05-03 review). `echo A > '.e'nv` is read as one word and judged as `.env`; `cp -rt DIR`, `mv -ft DIR` and `install -Dt DIR` name their destination directory like `-t`; `sponge FILE` is a write; a backslash-newline inside a target is joined first.
 - **Guard: directory destinations and download targets** (story 05-03 review). `mv /tmp/x/.env .`, `cp -t . …` and `install … .` are judged as `DIR/<source name>`; `curl -o` and `wget -O` are write targets; `tee out < .env` no longer counts the input as a write. `tar -x`, `unzip` and `curl -O` stay unread (known limits).

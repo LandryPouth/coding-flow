@@ -75,3 +75,10 @@ Review follow-up 2: quote/backslash splicing in a word is removed before resolvi
 Rollback: revert the commit; `shellWriteTargets` kept its signature.
 
 Review follow-up 3: a redirection target is one word (quoted parts glued to bare characters), `-t` inside a flag cluster is read, `sponge` is a write, backslash-newline is joined. More limit (for 05-05): `find … -exec cp {} .env \;` writes and is not read (same family as `xargs`).
+
+## Known limits (consolidated, for 05-05)
+
+- A `cd` is assumed to succeed; a `cd` in a pipeline or backgrounded is ignored; `cd a || cd b` keeps only the first branch.
+- Commands that build a command from input: `xargs`, `find -exec`, `git apply`, `git stash pop`, `tar -x`, `unzip`, `curl -O`, `patch` without a FILE.
+- `:/path` pathspec magic; concatenated literals (`'.e'+'nv'`).
+- An inline literal that merely names a protected file is refused (cannot be told from a write).

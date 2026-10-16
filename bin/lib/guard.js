@@ -592,6 +592,9 @@ function shellWrites(command, startCwd = process.cwd()) {
     } else if (name === "awk" && args.includes("-i") && args.includes("inplace")) {
       // awk -i inplace '<program>' <files…>
       files.filter((arg) => arg !== "inplace").slice(1).forEach((file) => add(file, "write"));
+    } else if (name === "ed" || name === "ex" || name === "patch") {
+      // ed/ex/patch FILE edit the named file in place (patch with no FILE reads the diff's own paths: not read).
+      files.forEach((file) => add(file, "write"));
     } else if (name === "truncate") {
       // truncate -s N <files…>: the size (or reference file) is an option value, not a target.
       const skip = args.findIndex((arg) => arg === "-s" || arg === "-r" || arg === "--size" || arg === "--reference");

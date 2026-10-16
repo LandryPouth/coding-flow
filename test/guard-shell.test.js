@@ -271,6 +271,8 @@ test('in-place editors other than sed -i are write targets', (t) => {
     "awk -i inplace '{print}' .env",
     'truncate -s0 .env',
     'truncate --size 0 .env',
+    'ed .env',
+    'patch .env fix.diff',
   ]);
   expectAll(t, 'allow', ["perl -pi -e 's/a/b/' README.md", 'truncate -s 0 notes.txt', 'awk \'{print}\' README.md']);
 });
