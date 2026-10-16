@@ -12,6 +12,7 @@ node_modules/
 # rendered from templates/ (refresh with `node bin/ai-flow.js upgrade`), and the
 # rest is what OpenCode installs for its plugins.
 .opencode/skills/
+.opencode/commands/
 .opencode/node_modules/
 .opencode/package.json
 .opencode/package-lock.json

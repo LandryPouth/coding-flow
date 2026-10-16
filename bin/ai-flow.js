@@ -260,6 +260,10 @@ function describePlatformFiles(platform, result) {
     lines.push(`${label} (${platform}): ${renderedCounts(result)} — ${COMMAND_PLATFORMS[platform].dir}`);
   }
 
+  if (result.commands) {
+    lines.push(`Slash commands (${platform}): ${renderedCounts(result.commands)} — ${COMMAND_PLATFORMS[platform].commandDir} (type /flow- in OpenCode)`);
+  }
+
   const retired = result.retired || { removed: [], modified: [] };
 
   if (retired.removed.length > 0) {
@@ -314,7 +318,14 @@ function globalCommand(name) {
   });
 
   log(dryRun ? "Dry run complete." : "Coding Flow installed for OpenCode, in every project.");
-  log(`Skills: ${renderedCounts(result)} — ${result.dir}`);
+  const isCommand = (rel) => rel.startsWith("commands/");
+  const part = (filter) => ({
+    written: result.written.filter(filter),
+    skipped: result.skipped.filter(filter),
+    edited: result.edited.filter(filter),
+  });
+  log(`Skills: ${renderedCounts(part((rel) => !isCommand(rel)))} — ${result.dir}`);
+  log(`Slash commands: ${renderedCounts(part(isCommand))} — ${path.join(path.dirname(result.dir), "commands")} (type /flow- in OpenCode)`);
   if (result.retired.length > 0) {
     log(`Retired ${result.retired.length} global command(s) an earlier version wrote (the skills replace them)`);
   }

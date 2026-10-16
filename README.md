@@ -78,21 +78,21 @@ npx @landry_pouth/coding-flow init --target antigravity
 | --- | --- | --- | --- | --- |
 | **Claude Code** | plugin (global) + `/flow-setup` per repo | the plugin, or `.claude/skills/` without it | `/flow-run` | yes — hook |
 | **Codex** | `init --target codex` | `.codex/skills/` | `$flow-run` | yes — sandbox profile |
-| **OpenCode** | `init --target opencode` | `.opencode/skills/` (or `.claude/skills/`, see below) | `/flow-run` | yes — plugin |
+| **OpenCode** | `init --target opencode` | `.opencode/skills/` (or `.claude/skills/`, see below) + `.opencode/commands/` | `/flow-run` | yes — plugin |
 | **Gemini CLI** | `init --target gemini` | `.gemini/commands/coding-flow/` | `/coding-flow:flow-run` | no |
 | **Antigravity** | `init --target antigravity` | `.agent/skills/` | by name, e.g. `flow-run` | no |
 
-**OpenCode gets skills, like Claude Code.** OpenCode loads `SKILL.md` files and also makes each one a slash command, so `/flow-run` works and the model can pick a skill up on its own from its description. The guard is a plugin on `tool.execute.before` that runs inside OpenCode's own process (no `node` needed on `PATH`) and covers `write`, `edit`, `apply_patch` and `bash`, subagents included.
+**OpenCode gets skills, like Claude Code, plus a `/` menu entry for each.** The model picks a `flow-*` skill up on its own from its description. OpenCode's TUI does not list skills in its `/` autocomplete (only under `/skills`), so each skill also gets a short command of the same name in `.opencode/commands/` that hands over to it: type `/flow-` and the seven appear. The guard is a plugin on `tool.execute.before` that runs inside OpenCode's own process (no `node` needed on `PATH`) and covers `write`, `edit`, `apply_patch` and `bash`, subagents included.
 
 **Claude Code and OpenCode in the same repo.** OpenCode also reads `.claude/skills/`, so when the Claude skills are in the project it uses them and Coding Flow writes no second copy into `.opencode/skills/` (two copies of one skill make OpenCode warn and keep one). Each agent keeps its own guard: the hook for Claude Code, the plugin for OpenCode. Run `init --target …` once per agent; `init` and `upgrade` keep every recorded agent in step. With a global OpenCode install as well, OpenCode prefers the global copy of a skill over the project's `.claude/skills/` one, so keep it current with `ai-flow upgrade --global`.
 
 **OpenCode, once for every project.** OpenCode loads user-level skills, so you can install them one time instead of per repo:
 
 ```bash
-npx @landry_pouth/coding-flow init --global --target opencode            # the 7 flow-* skills + the write guard, everywhere
+npx @landry_pouth/coding-flow init --global --target opencode            # the 7 flow-* skills, their /flow-* commands + the write guard, everywhere
 ```
 
-Then open any repo in OpenCode and type `/flow-setup`: it scaffolds Coding Flow there (OpenCode is detected from `OPENCODE=1`, so no `--target`). Update with `ai-flow upgrade --global`, remove with `ai-flow uninstall --global`. The files live in `~/.config/opencode/skills/` and `~/.config/opencode/plugins/` (or under `$XDG_CONFIG_HOME/opencode`). A skill you edited is never overwritten.
+Then open any repo in OpenCode and type `/flow-setup`: it scaffolds Coding Flow there (OpenCode is detected from `OPENCODE=1`, so no `--target`). Update with `ai-flow upgrade --global`, remove with `ai-flow uninstall --global`. The files live in `~/.config/opencode/skills/`, `~/.config/opencode/commands/` and `~/.config/opencode/plugins/` (or under `$XDG_CONFIG_HOME/opencode`). A skill you edited is never overwritten.
 
 OpenCode reads `CLAUDE.md` as a fallback but does not follow its `@RULES.md` import, so a per-project install also adds `"instructions": ["RULES.md"]` to `opencode.json` — that is what puts your rulebook in the model's context.
 

@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-16
+
+### Fixed
+
+- **`/flow-*` shows up in OpenCode's `/` menu.** OpenCode's TUI leaves skills out
+  of its `/` autocomplete (they are only under `/skills`), so a user with only
+  OpenCode typed `/flow` and saw "No matching items". Each skill now also gets a
+  short command of the same name — `.opencode/commands/flow-*.md`, or
+  `~/.config/opencode/commands/` for `init --global` — that hands over to the skill.
+  It is written even when the skills come from `.claude/skills/`. The command does
+  not copy the skill text, which OpenCode would expand (`` !`…` `` runs a shell
+  command, `@path` attaches a file). `doctor` reports a missing one, `upgrade`
+  restores it, `uninstall` removes it. Checked in the OpenCode 1.19 TUI: `/flow`
+  lists the seven, and `/flow-setup` loads its skill and installs the project.
+
 ## [0.12.0] - 2026-10-16
 
 OpenCode becomes a first-class host: skills instead of commands, a write guard on
