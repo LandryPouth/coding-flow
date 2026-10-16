@@ -148,6 +148,7 @@ const CodingFlowGuard = async ({ directory }) => ({
   "tool.execute.before": async (input, output) => {
     for (const payload of toPayloads(input.tool, output.args)) {
       const hook = { ...payload, cwd: directory };
+      // Defensive: a generated plugin always carries FALLBACK; a hand-edited one may not.
       if (!local && !(BINARY && existsSync(BINARY)) && !FALLBACK) {
         noteUnchecked(hook, "no guard module to run");
         continue;

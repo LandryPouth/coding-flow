@@ -5,6 +5,7 @@ node_modules/
 # a run produced is local evidence, not source.
 .coding-flow/runs/
 .coding-flow/denials.jsonl
+.coding-flow/guard-unchecked.jsonl
 .coding-flow/manifest.json
 .coding-flow/active-story.json
 
