@@ -2208,7 +2208,9 @@ function scanTestWeakening(config) {
   return { findings, strengthened, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
 }
 
-function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }, ctx = {}) {
+// `ctx.riskLevel` is null until the risk is scored: a result returned before that
+// point (coverage off, no diff) has no level, so no floor applies to it.
+function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }, ctx = { riskLevel: null }) {
   const skip = (reason) => ({ required: false, ok: true, reason, changedFiles: [], testFiles: [] });
 
   if (!config.requireTestChange) {
@@ -2459,11 +2461,13 @@ function printOpenCriteria(evidence) {
 // no return path can forget it, and so `mode` stays what it has always been —
 // how the answer was obtained — while `tier` says how strong the answer is.
 function evaluateCoverage(options) {
-  const ctx = {};
+  const ctx = { riskLevel: null };
   const result = evaluateCoverageResult(options, ctx);
   const floored = applyCoverageFloor(result, ctx.riskLevel, options.config);
 
-  return { ...floored, tier: coverageTier(floored) };
+  // A run held back by its floor keeps the rung it reached; `ok: false` and
+  // `floor` say it is not enough.
+  return { ...floored, tier: floored.floor ? floored.floor.reached : coverageTier(floored) };
 }
 
 // A run can pass its checks and still sit below the rung this project asks of

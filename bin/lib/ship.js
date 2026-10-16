@@ -200,7 +200,9 @@ function buildEvidenceBlock(evidence) {
     const tier = coverage.tier || coverageTier(coverage);
     const reason = coverage.reason || "";
 
-    if (tier === "exempted") {
+    if (coverage.floor) {
+      lines.push(`**Coverage:** ❌ not proven — reached ${tier}, ${coverage.floor.required} required — ${reason}`);
+    } else if (tier === "exempted") {
       lines.push(`**Coverage:** ⚠️ exempted — ${(coverage.exemption || reason).split(/\r?\n/)[0]}`);
     } else if (tier === "verified") {
       lines.push(`**Coverage:** ✅ verified — ${reason}`);

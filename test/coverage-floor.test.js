@@ -135,7 +135,7 @@ test('strict mode: evidence on high risk is below the floor and says how to reac
   const json = JSON.parse(run(dir, ['verify', '--json']).output);
   assert.equal(json.ok, false);
   assert.equal(json.coverage.ok, false);
-  assert.equal(json.coverage.tier, 'missing', 'a blocked run is never labelled with a passing rung');
+  assert.equal(json.coverage.tier, 'evidence', 'a blocked run keeps the rung it reached');
   assert.deepEqual(json.coverage.floor, { required: 'verified', reached: 'evidence' });
 
   const text = run(dir, ['verify', '--no-cache']);
@@ -207,6 +207,39 @@ test('audit counts verify runs per rung', (t) => {
   const dir = repo(t, 'floor-audit', { writeReport: false });
   writeAuth(dir, { withTest: true });
   assert.equal(run(dir, ['verify']).code, 0);
+
+  const res = run(dir, ['audit', '--dry-run']);
+  assert.match(res.output, /Verify runs per coverage rung: evidence 1/, res.output);
+});
+
+test('evidence written before the floor existed is re-run once, never read as failed', (t) => {
+  const dir = repo(t, 'floor-legacy', { writeReport: false });
+  writeAuth(dir, { withTest: true });
+
+  assert.equal(run(dir, ['verify']).code, 0);
+
+  const runsDir = path.join(dir, '.coding-flow', 'runs');
+  for (const name of fs.readdirSync(runsDir).filter((n) => n.endsWith('.json'))) {
+    const file = path.join(runsDir, name);
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    delete data.coverageFloor;
+    if (data.coverage) {
+      delete data.coverage.tier;
+      delete data.coverage.floor;
+    }
+    fs.writeFileSync(file, JSON.stringify(data));
+  }
+
+  const res = run(dir, ['verify', '--json']);
+  assert.equal(res.code, 0, res.output);
+  assert.equal(JSON.parse(res.output).coverage.tier, 'evidence');
+});
+
+test('audit counts a floor-blocked run under the rung it reached', (t) => {
+  const dir = repo(t, 'floor-audit-blocked', { writeReport: false });
+  setHarness(dir, { mode: 'strict' });
+  writeAuth(dir, { withTest: true });
+  assert.equal(run(dir, ['verify']).code, 1);
 
   const res = run(dir, ['audit', '--dry-run']);
   assert.match(res.output, /Verify runs per coverage rung: evidence 1/, res.output);
