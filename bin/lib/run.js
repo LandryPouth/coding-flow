@@ -139,7 +139,7 @@ function printReport(report, reportPath) {
     const label = entry.ok ? "pass" : coverageBlocked ? "no proof" : "FAIL";
     // Ten stories that all say "pass" hide which of them were measured and which
     // merely moved a test file. Over a batch that difference is the whole report.
-    const tier = entry.coverage ? coverageTier(entry.coverage) : "not-required";
+    const tier = entry.coverage ? entry.coverage.tier || coverageTier(entry.coverage) : "not-required";
     const proof = entry.ok && tier !== "not-required" ? ` — coverage: ${tier}` : "";
     log(`- [${label}] ${entry.story} (${entry.commandsFound} cmd(s), ${duration}ms)${proof}`);
 

@@ -22,15 +22,15 @@ test file was touched; it is verified when the added lines were measured.
 
 ## Acceptance Criteria
 
-- [ ] Default standard config, high risk, `test-file` mode → `ok: true`,
+- [x] Default standard config, high risk, `test-file` mode → `ok: true`,
       tier `evidence` (unchanged behaviour).
-- [ ] `mode: strict`, high risk, `test-file` mode → `ok: false`, reason names
+- [x] `mode: strict`, high risk, `test-file` mode → `ok: false`, reason names
       the floor and how to reach it (emit a coverage report, or exempt).
-- [ ] `mode: strict`, high risk, fresh lcov covering the added lines →
+- [x] `mode: strict`, high risk, fresh lcov covering the added lines →
       `verified`, `ok: true`.
-- [ ] `coverageFloor.medium: "verified"` explicit in standard → applies.
-- [ ] Exemption on a strict high-risk story → `ok: true`, tier `exempted`.
-- [ ] `status --json` exposes `coverageTier`; `ship --dry-run` PR body
+- [x] `coverageFloor.medium: "verified"` explicit in standard → applies.
+- [x] Exemption on a strict high-risk story → `ok: true`, tier `exempted`.
+- [x] `status --json` exposes `coverageTier`; `ship --dry-run` PR body
       contains the rung.
 
 ## Edge Cases
@@ -38,3 +38,5 @@ test file was touched; it is verified when the added lines were measured.
 - Evidence written by older versions has no `floor`: readers derive the tier
   with `coverageTier()` as today and treat the floor as "unknown", never as
   failed.
+
+## Status: done

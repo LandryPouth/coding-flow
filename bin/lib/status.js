@@ -206,6 +206,7 @@ function buildStatusModel(config) {
         worktree: wtEntry ? wtEntry.path : null,
         ...(wtEntry ? { landReady } : {}),
         review,
+        ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
         ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
       };

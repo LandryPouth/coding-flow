@@ -561,7 +561,43 @@ function coverageTier(coverage) {
   return coverage.mode === "test-file" ? "evidence" : "not-required";
 }
 
+// Strongest first. `missing` is not a rung a floor can name: it always fails.
+const TIER_RANK = { verified: 3, evidence: 2, exempted: 1, "not-required": 0 };
+const FLOOR_TIERS = Object.keys(TIER_RANK);
+
+// What each risk level must reach, by harness mode. Standard keeps today's
+// behaviour (a moved test file is enough); strict asks for a measurement on
+// high risk. A floor that blocks most runs on day one gets switched off.
+function defaultCoverageFloor(mode) {
+  return {
+    high: mode === "strict" ? "verified" : "evidence",
+    medium: "evidence",
+    low: "not-required",
+  };
+}
+
+// Config wins key by key; an unknown value falls back to the mode default
+// rather than silently disarming the floor.
+function resolveCoverageFloor(config) {
+  const defaults = defaultCoverageFloor(config && config.mode);
+  const given = config && config.coverageFloor && typeof config.coverageFloor === "object" ? config.coverageFloor : {};
+  const floor = {};
+
+  for (const level of ["high", "medium", "low"]) {
+    floor[level] = FLOOR_TIERS.includes(given[level]) ? given[level] : defaults[level];
+  }
+
+  return floor;
+}
+
+function tierRank(tier) {
+  return Object.prototype.hasOwnProperty.call(TIER_RANK, tier) ? TIER_RANK[tier] : -1;
+}
+
 module.exports = {
+  tierRank,
+  resolveCoverageFloor,
+  defaultCoverageFloor,
   DEFAULT_REPORT_PATHS,
   parseLcov,
   parseIstanbulJson,

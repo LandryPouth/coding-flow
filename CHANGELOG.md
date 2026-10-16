@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **The coverage rung can gate `ok`.** `harness.json` `coverageFloor`
+  (`{ high, medium, low }`, each `verified | evidence | exempted | not-required`)
+  sets the rung a risk level must reach. Defaults keep `standard` as it was
+  (`evidence` on high/medium) and require `verified` on high risk in `strict`.
+  A run below its floor reports `NOT PROVEN` with `coverage.floor`
+  (`{ required, reached }`) and how to climb (emit a coverage report, or write an
+  exemption, which satisfies any floor). `status --json` exposes `coverageTier`
+  and `audit` counts verify runs per rung.
+
 - **The command time limit is configurable.** `validation.timeoutMs` in
   `config.json` replaces the fixed 600 s, and an entry of `validation.commands` /
   `quality` may be `{ "command": "...", "timeoutMs": 1200000 }` (strings still

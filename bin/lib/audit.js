@@ -200,6 +200,9 @@ function entryFromRunFile(file, root) {
     // proof that still describes the current code from a stale one. Absent on
     // pre-freshness or non-git evidence -> treated leniently (never stale).
     treeToken: git ? git.treeToken || null : null,
+    // The rung this run reached (verify only), so the ledger can count runs per
+    // rung without reopening every run file. Null on evidence written before it.
+    coverageTier: type === "verify" && data.coverage ? data.coverage.tier || coverageTier(data.coverage) : null,
     summary,
   };
 }
@@ -557,6 +560,15 @@ function audit({
 
   const passed = entries.filter((entry) => entry.ok).length;
   log(`Audit ledger: ${entries.length} entr(ies), ${passed} passed, ${entries.length - passed} failed.`);
+  const perRung = {};
+  for (const entry of entries) {
+    if (entry.type === "verify" && entry.coverageTier) {
+      perRung[entry.coverageTier] = (perRung[entry.coverageTier] || 0) + 1;
+    }
+  }
+  if (Object.keys(perRung).length > 0) {
+    log(`Verify runs per coverage rung: ${Object.entries(perRung).map(([tier, n]) => `${tier} ${n}`).join(", ")}.`);
+  }
   log(`${dryRun ? "Would append" : "Appended"} ${sync.added.length} new run(s) to ${normalizePortable(path.relative(root, ledgerPath(root)))}.`);
   if (!exportMd) {
     log("Run `ai-flow audit --export` to write docs/AUDIT.md, or `--check` to gate on the latest verify.");

@@ -20,6 +20,8 @@ const {
   packageOfFile,
   measurePatchCoverage,
   coverageTier,
+  tierRank,
+  resolveCoverageFloor,
   DEFAULT_REPORT_PATHS,
 } = require("./coverage");
 const { PART_FILES, readStoryPart, storyPartPath } = require("./story");
@@ -1621,8 +1623,13 @@ function printVerify(evidence, outputPath) {
     }
 
     printWeakenedTests(coverage);
-    log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
-    log('  or re-run with --test-exemption "<reason>" if there is no story.');
+    if (coverage.floor) {
+      log("  Emit a coverage report (lcov.info / coverage-final.json) so the added lines are measured,");
+      log("  or declare a '## Test Exemption' section (or --test-exemption) to ship on a written reason.");
+    } else {
+      log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
+      log('  or re-run with --test-exemption "<reason>" if there is no story.');
+    }
   } else if (evidence.ok) {
     log(`Harness verify passed (${evidence.results.length} command(s)).`);
 
@@ -2201,7 +2208,7 @@ function scanTestWeakening(config) {
   return { findings, strengthened, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
 }
 
-function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }) {
+function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }, ctx = {}) {
   const skip = (reason) => ({ required: false, ok: true, reason, changedFiles: [], testFiles: [] });
 
   if (!config.requireTestChange) {
@@ -2224,6 +2231,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
     ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
     : { level: "low", matchedTerms: [], reason: "no story to read." };
   const risk = combineRisk(storyRisk, scoreDiffRisk(changedFiles, config));
+  ctx.riskLevel = risk.level;
 
   if (risk.level === "low") {
     return skip(`risk is low (${risk.reason})`);
@@ -2451,9 +2459,37 @@ function printOpenCriteria(evidence) {
 // no return path can forget it, and so `mode` stays what it has always been —
 // how the answer was obtained — while `tier` says how strong the answer is.
 function evaluateCoverage(options) {
-  const result = evaluateCoverageResult(options);
+  const ctx = {};
+  const result = evaluateCoverageResult(options, ctx);
+  const floored = applyCoverageFloor(result, ctx.riskLevel, options.config);
 
-  return { ...result, tier: coverageTier(result) };
+  return { ...floored, tier: coverageTier(floored) };
+}
+
+// A run can pass its checks and still sit below the rung this project asks of
+// its risk level. Only a measured-or-proxy pass is judged: an exemption is a
+// written reason and satisfies any floor, and "not-required" never reached the
+// bar to begin with. The reached rung is kept; only `ok` and the reason change.
+function applyCoverageFloor(result, riskLevel, config) {
+  if (!result.required || !result.ok || result.exemption || !riskLevel) {
+    return result;
+  }
+
+  const reached = coverageTier(result);
+  const required = resolveCoverageFloor(config)[riskLevel];
+
+  if (reached === "not-required" || tierRank(reached) >= tierRank(required)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    ok: false,
+    floor: { required, reached },
+    reason:
+      `coverage reached '${reached}' but ${riskLevel} risk requires '${required}' ` +
+      `(coverageFloor.${riskLevel}). ${result.reason}`,
+  };
 }
 
 // Executes the declared validation commands for one story and returns the
@@ -2533,6 +2569,9 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     commandsFound: resolution.commands.length,
     // Recorded so a later verify can recognise this proof as still applicable.
     commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
+    // The floor this verdict was judged against. `.coding-flow/` is outside the
+    // tree token, so without it an edit to the floor would leave a stale "ok".
+    coverageFloor: resolveCoverageFloor(config),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
     environment: captureEnvironment(),
     commandsOk,
@@ -2592,6 +2631,7 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
 
   const untracked = untrackedDigest();
   const fingerprint = commandsFingerprint(commands, timeouts);
+  const floor = JSON.stringify(resolveCoverageFloor(readHarnessConfig().config));
   const runsDir = harnessRunsDir();
 
   if (!fs.existsSync(runsDir)) {
@@ -2619,6 +2659,9 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
     if (
       provenanceToken === token &&
       evidence.commandsFingerprint === fingerprint &&
+      // A proof judged under another floor is a different proof; evidence from
+      // before the floor existed has none and is re-run once.
+      JSON.stringify(evidence.coverageFloor || null) === floor &&
       // A proof made against another base is a different proof.
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
       evidence.untrackedDigest === untracked
