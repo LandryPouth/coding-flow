@@ -36,23 +36,23 @@ checkout, or a session opened in a subdirectory each bypass the policy.
 
 ## Acceptance Criteria
 
-- [ ] Given `alias -> .env` in the project, when Write targets `alias`, then
+- [x] Given `alias -> .env` in the project, when Write targets `alias`, then
       deny, and the reason names `alias` and `.env`.
-- [ ] Given the same link, when Bash runs `echo A=1 > alias`, then deny.
-- [ ] Given a git worktree whose `.env` links to the primary checkout's
+- [x] Given the same link, when Bash runs `echo A=1 > alias`, then deny.
+- [x] Given a git worktree whose `.env` links to the primary checkout's
       `.env`, when Write targets the primary `.env` by absolute path from the
       worktree, then deny; when Write targets the worktree's `.env`, then deny.
-- [ ] Given a session cwd `apps/api` inside a repo with `.coding-flow/` at the
+- [x] Given a session cwd `apps/api` inside a repo with `.coding-flow/` at the
       top, when Write targets `../../.env`, then deny.
-- [ ] Given `echo k >> ~/.ssh/authorized_keys`, then deny (`.ssh/**`).
-- [ ] Given a new file `src/new.js` (does not exist yet, parent exists), then
+- [x] Given `echo k >> ~/.ssh/authorized_keys`, then deny (`.ssh/**`).
+- [x] Given a new file `src/new.js` (does not exist yet, parent exists), then
       allow — the nearest-ancestor resolution must not fail on non-existent
       targets.
-- [ ] Given a case-insensitive filesystem (`win32`, default `darwin`), when
+- [x] Given a case-insensitive filesystem (`win32`, default `darwin`), when
       Write targets `.ENV`, then deny — today it is allowed (found by the
       06-01 STRICT review).
-- [ ] Given a link whose real path is `/tmp/elsewhere/file.txt`, then allow.
-- [ ] Given `node_modules` itself being a symlink (pnpm, worktree deps link),
+- [x] Given a link whose real path is `/tmp/elsewhere/file.txt`, then allow.
+- [x] Given `node_modules` itself being a symlink (pnpm, worktree deps link),
       when Write targets `src/a.js`, then allow; when Edit targets a file
       under `node_modules/…`, then deny (lexical hit) — unchanged from today.
 
@@ -65,3 +65,18 @@ checkout, or a session opened in a subdirectory each bypass the policy.
   `win32`; `normalizePortable` on every compared path.
 - **Performance**: the plugin calls `evaluate` per tool call; root and
   common-dir lookups are memoised per root.
+
+## Status: done
+
+## Result
+
+Guard resolves lexical + real paths (dangling links followed), the outermost
+`.coding-flow/` within the git toplevel, the primary checkout of a linked
+worktree, `$HOME`, and `~`/`$HOME` in shell targets. Independent STRICT review
+found a dangling-link bypass and a nested-`.coding-flow` policy swap; both fixed
+and tested. Known limits left for 05-03/05-05: a link created in the same command,
+`$PWD`/`cd` forms, case-insensitive mounts on Linux (WSL `/mnt/c`).
+
+### Rollback Notes
+
+`git revert` the commit; no data or config migration.

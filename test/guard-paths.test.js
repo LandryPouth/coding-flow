@@ -1,0 +1,155 @@
+'use strict';
+
+// The guard judges the file a write will reach — through symlinks, `..`, `~`, the
+// primary checkout seen from a worktree — not the string it was handed.
+
+const { test } = require('node:test');
+const assert = require('node:assert');
+const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
+const { decide } = require('../bin/lib/guard');
+
+function tmp(t) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-guard-paths-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+function guard(cwd, payload, env = {}) {
+  try {
+    execFileSync(process.execPath, [CLI, 'guard'], {
+      cwd,
+      input: JSON.stringify({ cwd, ...payload }),
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, ...env },
+    });
+    return { code: 0, stderr: '' };
+  } catch (err) {
+    return { code: err.status ?? 1, stderr: err.stderr || '' };
+  }
+}
+
+const write = (file_path) => ({ tool_name: 'Write', tool_input: { file_path, content: 'A=1' } });
+const bash = (command) => ({ tool_name: 'Bash', tool_input: { command } });
+
+test('a symlink to .env is refused by Write and by a shell redirection', (t) => {
+  const dir = tmp(t);
+  fs.writeFileSync(path.join(dir, '.env'), 'X=1');
+  fs.symlinkSync('.env', path.join(dir, 'alias'));
+
+  const viaWrite = guard(dir, write('alias'));
+  assert.equal(viaWrite.code, 2);
+  assert.match(viaWrite.stderr, /\.env \(via alias\)/);
+  assert.equal(guard(dir, bash('echo A=1 > alias')).code, 2);
+});
+
+test('a dangling link to a protected file that does not exist yet is refused', (t) => {
+  const dir = tmp(t);
+  fs.symlinkSync('.env', path.join(dir, 'alias'));
+  assert.equal(guard(dir, write('alias')).code, 2);
+  assert.equal(guard(dir, bash('echo A=1 > alias')).code, 2);
+});
+
+test('a nested .coding-flow cannot swap in a weaker policy', (t) => {
+  const dir = tmp(t);
+  execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  const sub = path.join(dir, 'sub');
+  fs.mkdirSync(path.join(sub, '.coding-flow'), { recursive: true });
+  fs.writeFileSync(path.join(sub, '.coding-flow', 'harness.json'), '{"blockedPaths":[]}');
+  assert.equal(guard(sub, write('../.env')).code, 2);
+});
+
+test('a first path segment that merely starts with .. is not outside the root', (t) => {
+  const dir = tmp(t);
+  assert.equal(guard(dir, write('..foo/server.pem')).code, 2);
+});
+
+test('a link to an unprotected file elsewhere is allowed', (t) => {
+  const dir = tmp(t);
+  const elsewhere = tmp(t);
+  fs.writeFileSync(path.join(elsewhere, 'file.txt'), 'x');
+  fs.symlinkSync(path.join(elsewhere, 'file.txt'), path.join(dir, 'link.txt'));
+  assert.equal(guard(dir, write('link.txt')).code, 0);
+});
+
+test('a new file whose parent exists is allowed', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, 'src'));
+  assert.equal(guard(dir, write('src/new.js')).code, 0);
+  assert.equal(guard(dir, write('missing/deeper/new.js')).code, 0);
+});
+
+test('a dangling or looping link never throws', (t) => {
+  const dir = tmp(t);
+  fs.symlinkSync('nowhere', path.join(dir, 'dangling'));
+  fs.symlinkSync('b', path.join(dir, 'a'));
+  fs.symlinkSync('a', path.join(dir, 'b'));
+  assert.equal(guard(dir, write('dangling')).code, 0);
+  assert.equal(guard(dir, write('a')).code, 0);
+});
+
+test('a session in a subdirectory still protects the repository .env', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  fs.mkdirSync(path.join(dir, 'apps', 'api'), { recursive: true });
+  assert.equal(guard(path.join(dir, 'apps', 'api'), write('../../.env')).code, 2);
+  assert.equal(guard(path.join(dir, 'apps', 'api'), write('src.js')).code, 0);
+});
+
+test('a story worktree protects its own .env and the primary checkout .env', (t) => {
+  const primary = tmp(t);
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+  git(primary, 'init', '-q');
+  git(primary, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init');
+  fs.writeFileSync(path.join(primary, '.env'), 'X=1');
+  const worktree = path.join(tmp(t), 'wt');
+  git(primary, 'worktree', 'add', '-q', worktree);
+  fs.symlinkSync(path.join(primary, '.env'), path.join(worktree, '.env'));
+
+  assert.equal(guard(worktree, write('.env')).code, 2);
+  assert.equal(guard(worktree, write(path.join(primary, '.env'))).code, 2);
+  assert.equal(guard(worktree, write('src/a.js')).code, 0);
+});
+
+test('~ and $HOME reach the home directory policy', (t) => {
+  const dir = tmp(t);
+  const home = tmp(t);
+  const env = { HOME: home, USERPROFILE: home };
+  const keys = '.ssh/authorized_keys';
+
+  assert.equal(guard(dir, bash(`echo k >> ~/${keys}`), env).code, 2);
+  assert.equal(guard(dir, bash(`echo k >> $HOME/${keys}`), env).code, 2);
+  assert.equal(guard(dir, bash('echo k >> ${HOME}/' + keys), env).code, 2);
+  assert.equal(guard(dir, bash('echo k >> ~/notes.txt'), env).code, 0);
+});
+
+test('node_modules as a symlink does not block src, but a write under it is refused', (t) => {
+  const dir = tmp(t);
+  const store = tmp(t);
+  fs.mkdirSync(path.join(store, 'pkg'));
+  fs.symlinkSync(store, path.join(dir, 'node_modules'));
+  fs.mkdirSync(path.join(dir, 'src'));
+
+  assert.equal(guard(dir, write('src/a.js')).code, 0);
+  assert.equal(guard(dir, write('node_modules/pkg/index.js')).code, 2);
+});
+
+test('.env.example stays allowed through a link', (t) => {
+  const dir = tmp(t);
+  fs.writeFileSync(path.join(dir, '.env.example'), 'X=');
+  fs.symlinkSync('.env.example', path.join(dir, 'sample'));
+  assert.equal(guard(dir, write('sample')).code, 0);
+});
+
+test('a case-insensitive filesystem treats .ENV as .env', (t) => {
+  const dir = tmp(t);
+  const hook = { cwd: dir, ...write('.ENV') };
+  assert.equal(decide(hook, dir, { caseInsensitive: true }).decision, 'deny');
+  assert.equal(decide(hook, dir, { caseInsensitive: false }).decision, 'allow');
+});

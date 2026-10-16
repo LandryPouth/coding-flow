@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **The guard judges the file a write reaches, not the string it was given.** The
+  project root is the outermost `.coding-flow/` within the git toplevel (else the toplevel), not the
+  hook cwd; each target is checked by its lexical and its real path (symlinks,
+  nearest existing parent for new files); a path outside the root is matched
+  against the primary checkout (a story worktree's `.env` link) and `$HOME`
+  (`.ssh/**`); `~`, `$HOME` and `${HOME}` expand in shell targets; `.ENV` is
+  `.env` on case-insensitive platforms. A denial through a link names both
+  (`… (via alias)`).
+
 ### Added
 
 - **The command time limit is configurable.** `validation.timeoutMs` in

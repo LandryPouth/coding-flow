@@ -26,7 +26,9 @@
 // deterministic and explicit match.
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const {
   defaultHarnessConfig,
@@ -151,9 +153,16 @@ function tokenize(segment) {
   return tokens;
 }
 
+const HOME_PREFIX = /^(?:\$HOME|\$\{HOME\})(?=\/|$)/;
+
 // Not a file: flags, fd duplications, and the null sink.
 function isCandidatePath(token) {
-  if (!token || token.startsWith("-") || token.startsWith("&") || token.startsWith("$")) {
+  if (!token || token.startsWith("-") || token.startsWith("&")) {
+    return false;
+  }
+
+  // `$HOME/…` is a path; any other variable is not something we can resolve.
+  if (token.startsWith("$") && !HOME_PREFIX.test(token)) {
     return false;
   }
 
@@ -220,22 +229,190 @@ function shellWriteTargets(command) {
   return [...targets];
 }
 
+// --- path resolution --------------------------------------------------------
+//
+// A write is judged on the file it will REACH, not on the string it was given:
+// through a symlink, a `..`, a `~`, or an absolute path into the primary checkout.
+
+const gitMemo = new Map();
+
+function git(cwd, args) {
+  const key = `${cwd}\0${args.join(" ")}`;
+  if (!gitMemo.has(key)) {
+    let out = null;
+    try {
+      out = execFileSync("git", ["-C", cwd, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 2000,
+      }).trim();
+    } catch {
+      out = null;
+    }
+    gitMemo.set(key, out || null);
+  }
+  return gitMemo.get(key);
+}
+
+// The OUTERMOST `.coding-flow/` between `cwd` and the git toplevel (so a nested
+// one cannot swap in a weaker policy), else the git toplevel, else `cwd` itself.
+function projectRoot(cwd) {
+  const start = path.resolve(cwd);
+  const top = git(start, ["rev-parse", "--show-toplevel"]);
+  let found = null;
+
+  for (let dir = start; ; dir = path.dirname(dir)) {
+    try {
+      if (fs.statSync(path.join(dir, ".coding-flow")).isDirectory()) {
+        found = dir;
+        if (!top) {
+          break; // no repo to bound the search: nearest wins
+        }
+      }
+    } catch {
+      // not here
+    }
+    if (dir === top || path.dirname(dir) === dir) {
+      break;
+    }
+  }
+
+  return found || top || start;
+}
+
+// When `root` is a linked worktree (its `.git` is a file), the primary checkout.
+function primaryCheckout(root) {
+  try {
+    if (!fs.statSync(path.join(root, ".git")).isFile()) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const common = git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+
+  return common && path.basename(common) === ".git" ? path.dirname(path.resolve(common)) : null;
+}
+
+// realpath of the target, or of its nearest existing ancestor plus the segments
+// that do not exist yet (a file about to be created). A dangling link is followed
+// to where it WOULD create the file — `alias -> .env` with no `.env` yet is `.env`.
+// A loop falls back to the lexical path: never throws.
+function realPathOf(file, depth = 0) {
+  const rest = [];
+  let dir = file;
+
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(dir), ...rest);
+    } catch (err) {
+      if (!err || (err.code !== "ENOENT" && err.code !== "ENOTDIR")) {
+        return file;
+      }
+
+      try {
+        if (fs.lstatSync(dir).isSymbolicLink()) {
+          if (depth > 16) {
+            return file;
+          }
+          const target = path.resolve(path.dirname(dir), fs.readlinkSync(dir));
+          return path.join(realPathOf(target, depth + 1), ...rest);
+        }
+      } catch {
+        // not a link either: keep walking up
+      }
+
+      const parent = path.dirname(dir);
+      if (parent === dir) {
+        return file;
+      }
+      rest.unshift(path.basename(dir));
+      dir = parent;
+    }
+  }
+}
+
+function expandHome(target) {
+  const home = os.homedir();
+  if (target === "~" || target.startsWith("~/")) {
+    return path.join(home, target.slice(1));
+  }
+  const match = HOME_PREFIX.exec(target);
+  return match ? path.join(home, target.slice(match[0].length)) : target;
+}
+
+function within(base, file) {
+  const rel = path.relative(base, file);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) ? rel : null;
+}
+
+// The policy-relative names a target answers to: lexical and real, each made
+// relative to the project root, else to the primary checkout, else to $HOME.
+function resolveTargets(ctx, target) {
+  const lexical = path.resolve(ctx.cwd, expandHome(target));
+  const real = realPathOf(lexical);
+  const bases = [ctx.root, ctx.realRoot, ctx.primary, ctx.primary && realPathOf(ctx.primary), os.homedir()].filter(Boolean);
+  const found = [];
+
+  for (const file of [lexical, real]) {
+    for (const base of bases) {
+      const rel = within(base, file);
+      if (rel !== null) {
+        const relative = normalizePortable(rel);
+        if (!found.some((entry) => entry.relative === relative)) {
+          found.push({ relative });
+        }
+        break;
+      }
+    }
+  }
+
+  return found;
+}
+
+function hookCwd(hook, fallback) {
+  return hook && typeof hook.cwd === "string" && hook.cwd ? hook.cwd : fallback;
+}
+
+function context(hook, root) {
+  const cwd = hookCwd(hook, root);
+  const top = projectRoot(cwd);
+  return { cwd: path.resolve(cwd), root: top, realRoot: realPathOf(top), primary: primaryCheckout(top) };
+}
+
 // Whether writing to this path is refused by policy. Returns the matched pattern,
-// or null.
-function blockedPathHit(relative, policy) {
+// or null. On a case-insensitive filesystem `.ENV` is `.env`.
+function blockedPathHit(relative, policy, caseInsensitive = false) {
   if (isAllowedEnvExample(relative)) {
     return null;
   }
 
-  return policy.blockedPaths.find((pattern) => matchesPattern(relative, pattern)) || null;
+  const fold = (value) => (caseInsensitive ? value.toLowerCase() : value);
+
+  return policy.blockedPaths.find((pattern) => matchesPattern(fold(relative), fold(pattern))) || null;
 }
 
-function toRelative(root, filePath) {
-  return normalizePortable(path.relative(root, path.resolve(root, filePath)));
+// First blocked name among everything this target resolves to.
+function firstHit(ctx, target, policy, caseInsensitive) {
+  for (const entry of resolveTargets(ctx, target)) {
+    const hit = blockedPathHit(entry.relative, policy, caseInsensitive);
+    if (hit) {
+      return { hit, relative: entry.relative };
+    }
+  }
+  return null;
 }
+
+function viaNote(found, given) {
+  const lexical = normalizePortable(given);
+  return lexical && lexical !== found.relative ? ` (via ${lexical})` : "";
+}
+
+const CASE_INSENSITIVE = process.platform === "win32" || process.platform === "darwin";
 
 // Pure decision: from the hook input + root, returns allow/deny + reason.
-function decide(hook, root) {
+function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   if (!hook || typeof hook !== "object") {
     return { decision: "allow", reason: "no parseable hook input" };
   }
@@ -244,28 +421,26 @@ function decide(hook, root) {
   const toolInput = hook.tool_input;
 
   if (toolName === "Bash") {
-    return decideBash(toolInput, root);
+    return decideBash(toolInput, hook, root, caseInsensitive);
   }
 
   if (!WRITE_TOOLS.has(toolName)) {
     return { decision: "allow", reason: `tool ${toolName || "?"} is not a write tool` };
   }
 
-  const policy = loadPolicy(root);
+  const ctx = context(hook, root);
+  const policy = loadPolicy(ctx.root);
   const filePath = targetPath(toolInput);
-  const relative = filePath ? toRelative(root, filePath) : null;
+  const found = filePath ? firstHit(ctx, filePath, policy, caseInsensitive) : null;
+  const relative = filePath ? normalizePortable(path.relative(ctx.root, path.resolve(ctx.cwd, filePath))) : null;
 
   // Check 1 — path blocked by the policy.
-  if (relative) {
-    const hit = blockedPathHit(relative, policy);
-
-    if (hit) {
-      return {
-        decision: "deny",
-        reason: `${relative} matches a blocked harness path (${hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
-        path: relative,
-      };
-    }
+  if (found) {
+    return {
+      decision: "deny",
+      reason: `${found.relative}${viaNote(found, relative)} matches a blocked harness path (${found.hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
+      path: found.relative,
+    };
   }
 
   // Check 2 — secret in the written content. On an allowlisted path (docs,
@@ -274,15 +449,15 @@ function decide(hook, root) {
   const content = writtenContent(toolName, toolInput);
 
   if (content) {
-    const found = findSecretsInContent(content, getSecretPatterns(policy), {
+    const secret = findSecretsInContent(content, getSecretPatterns(policy), {
       skipHeuristics: relative ? isHeuristicAllowlisted(relative, policy) : false,
       first: true,
     })[0];
 
-    if (found) {
+    if (secret) {
       return {
         decision: "deny",
-        reason: `Potential secret detected in written content (${found.name}). Refused before it can reach the disk.`,
+        reason: `Potential secret detected in written content (${secret.name}). Refused before it can reach the disk.`,
         path: relative,
       };
     }
@@ -295,39 +470,39 @@ function decide(hook, root) {
 // visible in the command text. Heuristic patterns are not applied to a command
 // line: `psql "password=…"` and `export TOKEN=$(…)` are normal, and a guard that
 // cries wolf on them is a guard people route around.
-function decideBash(toolInput, root) {
+function decideBash(toolInput, hook, root, caseInsensitive) {
   const command = toolInput && typeof toolInput.command === "string" ? toolInput.command : "";
 
   if (!command.trim()) {
     return { decision: "allow", reason: "no command to inspect" };
   }
 
-  const policy = loadPolicy(root);
+  const ctx = context(hook, root);
+  const policy = loadPolicy(ctx.root);
 
   for (const target of shellWriteTargets(command)) {
-    const relative = toRelative(root, target);
-    const hit = blockedPathHit(relative, policy);
+    const found = firstHit(ctx, target, policy, caseInsensitive);
 
-    if (hit) {
+    if (found) {
       return {
         decision: "deny",
         reason:
-          `this command writes to ${relative}, which matches a blocked harness path (${hit}). ` +
+          `this command writes to ${found.relative}${viaNote(found, target)}, which matches a blocked harness path (${found.hit}). ` +
           "Shell redirection is not a way around the policy.",
-        path: relative,
+        path: found.relative,
       };
     }
   }
 
-  const found = findSecretsInContent(command, getSecretPatterns(policy), {
+  const secret = findSecretsInContent(command, getSecretPatterns(policy), {
     skipHeuristics: true,
     first: true,
   })[0];
 
-  if (found) {
+  if (secret) {
     return {
       decision: "deny",
-      reason: `Potential secret detected in the command itself (${found.name}). Refused before it can reach the disk.`,
+      reason: `Potential secret detected in the command itself (${secret.name}). Refused before it can reach the disk.`,
       path: null,
     };
   }
@@ -398,7 +573,7 @@ function guardCommand({ getFlagValue, flags }) {
   const raw = readHookInput({ inputFile });
   const hook = parseHookInput(raw);
   // Root: cwd provided by the hook if present, otherwise the process cwd.
-  const root = hook && typeof hook.cwd === "string" && hook.cwd ? hook.cwd : process.cwd();
+  const root = projectRoot(hookCwd(hook, process.cwd()));
 
   const result = decide(hook, root);
 
@@ -440,7 +615,7 @@ function evaluate(hook, root) {
     const result = decide(hook, root);
 
     if (result.decision === "deny") {
-      recordDenial({ root, hook, result });
+      recordDenial({ root: projectRoot(hookCwd(hook, root)), hook, result });
       return { ...result, reason: forAgent(result.reason) };
     }
 
