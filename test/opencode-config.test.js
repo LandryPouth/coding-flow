@@ -66,28 +66,47 @@ test('instructions: a config with comments is left byte-for-byte alone', (t) => 
 
 test('global: installs, refreshes a pristine file, keeps an edited one, uninstalls only what is ours', (t) => {
   const dir = tmp(t, 'cf-oc-global-');
-  const v1 = [{ name: 'flow-run.md', content: 'v1 run' }, { name: 'flow-plan.md', content: 'v1 plan' }];
-  const first = installGlobalCommands(v1, { dir });
-  assert.deepEqual(first.written.sort(), ['flow-plan.md', 'flow-run.md']);
+  const run = 'skills/flow-run/SKILL.md';
+  const plan = 'skills/flow-plan/SKILL.md';
+  const first = installGlobalCommands([{ rel: run, content: 'v1 run' }, { rel: plan, content: 'v1 plan' }], { dir });
+  assert.deepEqual(first.written.sort(), [plan, run]);
 
-  const v2 = [{ name: 'flow-run.md', content: 'v2 run' }, { name: 'flow-plan.md', content: 'v2 plan' }];
-  fs.writeFileSync(path.join(dir, 'command', 'flow-plan.md'), 'my edit');
-  const second = installGlobalCommands(v2, { dir });
-  assert.deepEqual(second.written, ['flow-run.md']);
-  assert.deepEqual(second.skipped, ['flow-plan.md']);
-  assert.equal(fs.readFileSync(path.join(dir, 'command', 'flow-run.md'), 'utf8'), 'v2 run');
+  fs.writeFileSync(path.join(dir, plan), 'my edit');
+  const second = installGlobalCommands([{ rel: run, content: 'v2 run' }, { rel: plan, content: 'v2 plan' }], { dir });
+  assert.deepEqual(second.written, [run]);
+  assert.deepEqual(second.skipped, [plan]);
+  assert.equal(fs.readFileSync(path.join(dir, run), 'utf8'), 'v2 run');
 
   const gone = uninstallGlobalCommands({ dir });
-  assert.deepEqual(gone.removed, ['flow-run.md']);
-  assert.deepEqual(gone.modified, ['flow-plan.md']);
+  assert.deepEqual(gone.removed, [run]);
+  assert.deepEqual(gone.modified, [plan]);
+  assert.equal(fs.existsSync(path.join(dir, 'skills', 'flow-run')), false, 'an emptied skill directory goes too');
+  assert.equal(fs.readFileSync(path.join(dir, plan), 'utf8'), 'my edit');
+});
+
+test('global: the commands an earlier version wrote are retired, an edited one is kept', (t) => {
+  const dir = tmp(t, 'cf-oc-global-');
+  fs.mkdirSync(path.join(dir, 'command'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'command', 'flow-run.md'), 'old run');
+  fs.writeFileSync(path.join(dir, 'command', 'flow-plan.md'), 'my edit');
+  const sha = (text) => require('node:crypto').createHash('sha256').update(text).digest('hex');
+  fs.writeFileSync(
+    path.join(dir, 'coding-flow-global.json'),
+    JSON.stringify({ version: '0.11.1', files: { 'flow-run.md': sha('old run'), 'flow-plan.md': sha('old plan') } }),
+  );
+
+  const result = installGlobalCommands([{ rel: 'skills/flow-run/SKILL.md', content: 'skill' }], { dir });
+  assert.deepEqual(result.retired, ['command/flow-run.md']);
+  assert.equal(fs.existsSync(path.join(dir, 'command', 'flow-run.md')), false);
   assert.equal(fs.readFileSync(path.join(dir, 'command', 'flow-plan.md'), 'utf8'), 'my edit');
+  assert.deepEqual(uninstallGlobalCommands({ dir }).modified, ['flow-plan.md']);
 });
 
 test('global: --dry-run writes nothing', (t) => {
   const dir = tmp(t, 'cf-oc-global-');
-  const result = installGlobalCommands([{ name: 'flow-run.md', content: 'x' }], { dir, dryRun: true });
-  assert.deepEqual(result.written, ['flow-run.md']);
-  assert.equal(fs.existsSync(path.join(dir, 'command')), false);
+  const result = installGlobalCommands([{ rel: 'skills/flow-run/SKILL.md', content: 'x' }], { dir, dryRun: true });
+  assert.deepEqual(result.written, ['skills/flow-run/SKILL.md']);
+  assert.equal(fs.existsSync(path.join(dir, 'skills')), false);
 });
 
 test('global: the directory follows XDG_CONFIG_HOME, else ~/.config', () => {
@@ -95,13 +114,14 @@ test('global: the directory follows XDG_CONFIG_HOME, else ~/.config', () => {
   assert.equal(globalOpenCodeDir({ env: {}, home: '/h' }), path.join('/h', '.config', 'opencode'));
 });
 
-test('cli: `init --global` writes the seven commands to the user dir and nothing in the project', (t) => {
+test('cli: `init --global` writes the seven skills to the user dir and nothing in the project', (t) => {
   const home = tmp(t, 'cf-oc-home-');
   const project = tmp(t, 'cf-oc-proj-');
   const env = cleanEnv({ HOME: home, XDG_CONFIG_HOME: '' });
   const out = execFileSync(process.execPath, [CLI, 'init', '--global'], { cwd: project, env, encoding: 'utf8' });
-  assert.match(out, /Commands: 7 written/);
-  assert.equal(fs.readdirSync(path.join(home, '.config', 'opencode', 'command')).length, 7);
+  assert.match(out, /Skills: 7 written/);
+  assert.equal(fs.readdirSync(path.join(home, '.config', 'opencode', 'skills')).length, 7);
+  assert.ok(fs.existsSync(path.join(home, '.config', 'opencode', 'skills', 'flow-run', 'SKILL.md')));
   assert.deepEqual(fs.readdirSync(project), []);
   assert.throws(() => execFileSync(process.execPath, [CLI, 'init', '--global', '--target', 'codex'], { cwd: project, env, stdio: 'pipe' }));
 });
@@ -120,7 +140,7 @@ test('cli: init for OpenCode wires RULES.md into opencode.json; doctor warns whe
 test('cli: OPENCODE=1 alone is enough to pick OpenCode, no --target needed', (t) => {
   const project = tmp(t, 'cf-oc-proj-');
   const out = execFileSync(process.execPath, [CLI, 'init'], { cwd: project, env: cleanEnv({ OPENCODE: '1' }), encoding: 'utf8' });
-  assert.match(out, /Commands: 7 written to \.opencode\/command/);
+  assert.match(out, /Skills \(opencode\): 7 written to \.opencode\/skills/);
 });
 
 test('cli: adding OpenCode to a minimal install does not promote it to full', (t) => {

@@ -4,7 +4,7 @@ const { defineSuite } = require('../test-support/commands-only-suite');
 
 defineSuite({
   target: 'opencode',
-  files: (name) => `.opencode/command/${name}.md`,
+  files: (name) => `.opencode/skills/${name}/SKILL.md`,
   parser: 'yaml',
   describe: (parsed) => parsed.description,
 });
@@ -59,4 +59,64 @@ test('opencode: report records enforcementTier plugin when the guard is wired, c
   };
   assert.match(report(initOpenCode(t, []).dir), /\| opencode \|.*enforcementTier: plugin/);
   assert.match(report(initOpenCode(t, ['--no-guard']).dir), /\| opencode \|.*enforcementTier: commands-only/);
+});
+
+// Claude and OpenCode in the same project: OpenCode reads `.claude/skills`, so one
+// skill set serves both and no second copy is written (OpenCode would keep one
+// and warn "duplicate skill name").
+function sharedProject(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-oc-shared-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(dir, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
+  delete env.CLAUDECODE;
+  delete env.OPENCODE;
+  const run = (args) => execFileSync(process.execPath, [CLI, ...args], { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return { dir, run };
+}
+
+test('opencode beside claude: the .claude/skills copy serves both, no .opencode/skills duplicate', (t) => {
+  const { dir, run } = sharedProject(t);
+  run(['init', '--target', 'claude', '--with-skills']);
+  const out = run(['init', '--target', 'opencode']);
+  assert.match(out, /Skills \(opencode\): served from \.claude\/skills/);
+  assert.equal(fs.existsSync(path.join(dir, '.opencode', 'skills')), false);
+  assert.ok(fs.existsSync(path.join(dir, '.opencode', 'plugins', 'coding-flow-guard.js')), 'the OpenCode guard is still wired');
+  assert.ok(fs.existsSync(path.join(dir, '.claude', 'settings.json')), 'the Claude hook is kept');
+  const doctor = JSON.parse(run(['doctor', '--json']));
+  assert.deepEqual(doctor.errors, []);
+  assert.equal(doctor.warnings.some((w) => /opencode/.test(w.code)), false);
+});
+
+test('opencode first, claude added later: upgrade retires the .opencode/skills copy', (t) => {
+  const { dir, run } = sharedProject(t);
+  run(['init', '--target', 'opencode']);
+  assert.ok(fs.existsSync(path.join(dir, '.opencode', 'skills', 'flow-run', 'SKILL.md')));
+  run(['init', '--target', 'claude', '--with-skills']);
+  assert.ok(JSON.parse(run(['doctor', '--json'])).warnings.some((w) => w.code === 'opencode_skills_duplicated'));
+  run(['upgrade']);
+  assert.equal(fs.existsSync(path.join(dir, '.opencode', 'skills', 'flow-run')), false);
+  assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md')));
+});
+
+test('opencode: upgrade retires the .opencode/command files an earlier version wrote, keeps an edited one', (t) => {
+  const { dir, run } = sharedProject(t);
+  run(['init', '--target', 'opencode']);
+  // Simulate the earlier layout: commands recorded in the manifest.
+  const manifestFile = path.join(dir, '.coding-flow', 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const sha = (text) => require('node:crypto').createHash('sha256').update(text).digest('hex');
+  fs.mkdirSync(path.join(dir, '.opencode', 'command'), { recursive: true });
+  for (const [name, text] of [['flow-run', 'old run'], ['flow-plan', 'old plan']]) {
+    fs.writeFileSync(path.join(dir, '.opencode', 'command', `${name}.md`), text);
+    manifest.platformCommands[`.opencode/command/${name}.md`] = sha(text);
+  }
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  fs.writeFileSync(path.join(dir, '.opencode', 'command', 'flow-plan.md'), 'my edit');
+
+  assert.ok(JSON.parse(run(['doctor', '--json'])).warnings.some((w) => w.code === 'opencode_legacy_commands'));
+  const out = run(['upgrade']);
+  assert.match(out, /Retired 1 file/);
+  assert.match(out, /Kept \.opencode\/command\/flow-plan\.md: you edited it/);
+  assert.equal(fs.existsSync(path.join(dir, '.opencode', 'command', 'flow-run.md')), false);
+  assert.equal(fs.readFileSync(path.join(dir, '.opencode', 'command', 'flow-plan.md'), 'utf8'), 'my edit');
 });

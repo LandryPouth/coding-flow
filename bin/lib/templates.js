@@ -10,6 +10,7 @@ const path = require("path");
 const { templatesRoot, cwd, packageJson, npxCommand, flowScripts } = require("./context");
 const { CODEX_SKILLS_DIR, renderSkill: renderCodexSkill } = require("./platforms/codex");
 const { COMMAND_PLATFORMS } = require("./platforms/registry");
+const { OPENCODE_SKILLS_DIR, OPENCODE_COMMANDS_DIR, servedByClaude } = require("./platforms/opencode");
 const {
   log,
   fail,
@@ -558,25 +559,94 @@ function copyCodexSkills({ force = false, dryRun = false } = {}) {
   return syncRendered(files, "codexSkills", { force, dryRun });
 }
 
-// The rendered command files of one commands-only platform, with no location
-// attached: the global OpenCode install writes them somewhere else.
+// The rendered files of one platform, relative to its config directory
+// (`.opencode/skills/flow-run/SKILL.md` -> `skills/flow-run/SKILL.md`): the
+// global OpenCode install writes them under ~/.config/opencode instead.
 function renderPlatformCommands(target) {
   return sourceSkills().map((markdown) => {
     const { relPath, content } = COMMAND_PLATFORMS[target].render(markdown);
 
-    return { name: path.basename(relPath), content };
+    return { rel: relPath.split("/").slice(1).join("/"), content };
   });
 }
 
+// Removes rendered files this install wrote under `prefixes` (manifest entries
+// whose file still matches the recorded hash) and forgets them. A file the user
+// edited is kept and reported, never deleted.
+function retireRendered(prefixes, manifestKey, { dryRun = false } = {}) {
+  const manifest = readManifest();
+  const recorded = { ...(manifest[manifestKey] || {}) };
+  const removed = [];
+  const modified = [];
+
+  for (const [rel, hash] of Object.entries(recorded)) {
+    if (!prefixes.some((prefix) => rel.startsWith(prefix))) {
+      continue;
+    }
+
+    const target = path.join(cwd, rel);
+
+    if (!fs.existsSync(target)) {
+      delete recorded[rel];
+      continue;
+    }
+
+    if (hashText(fs.readFileSync(target, "utf8")) !== hash) {
+      modified.push(rel);
+      continue;
+    }
+
+    if (!dryRun) {
+      fs.unlinkSync(target);
+      removeEmptyDirsUpward(path.dirname(target), cwd, { dryRun });
+    }
+
+    delete recorded[rel];
+    removed.push(rel);
+  }
+
+  if (!dryRun && removed.length > 0) {
+    writeJson(manifestPath(), { ...manifest, [manifestKey]: recorded });
+  }
+
+  return { removed, modified };
+}
+
 // Gemini, OpenCode and Antigravity: same sources, each rendered in its own format.
+//
+// OpenCode reads `.claude/skills/` too, so when the Claude copy is there it
+// serves both agents and nothing is rendered (`servedBy: "claude"`); a copy we
+// rendered before that is retired. The `.opencode/command/` files earlier
+// versions wrote are retired in every case — the skills replace them.
 function copyPlatformCommands(target, { force = false, dryRun = false } = {}) {
+  let retired = { removed: [], modified: [] };
+
+  if (target === "opencode") {
+    retired = retireRendered([`${OPENCODE_COMMANDS_DIR}/`], "platformCommands", { dryRun });
+
+    if (servedByOpenCodeFromClaude(listTemplateSkillNames())) {
+      const own = retireRendered([`${OPENCODE_SKILLS_DIR}/`], "platformCommands", { dryRun });
+
+      return {
+        written: [],
+        skipped: [],
+        servedBy: "claude",
+        retired: { removed: [...retired.removed, ...own.removed], modified: [...retired.modified, ...own.modified] },
+      };
+    }
+  }
+
   const files = sourceSkills().map((markdown) => {
     const { relPath, content } = COMMAND_PLATFORMS[target].render(markdown);
 
     return { rel: relPath, content };
   });
 
-  return syncRendered(files, "platformCommands", { force, dryRun });
+  return { ...syncRendered(files, "platformCommands", { force, dryRun }), servedBy: null, retired };
+}
+
+function servedByOpenCodeFromClaude(names) {
+  return servedByClaude(cwd, names);
 }
 
 // The friction log is the one piece of documentation a minimal install still
@@ -799,6 +869,7 @@ module.exports = {
   copyTemplates,
   copyCodexSkills,
   copyPlatformCommands,
+  retireRendered,
   renderPlatformCommands,
   ensureConvenienceFiles,
   ensureFrictionLog,

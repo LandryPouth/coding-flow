@@ -231,6 +231,30 @@ function wireOpenCodeInstructions({ dryRun, quiet = false, targets }) {
   }
 }
 
+// One wording for what a rendered platform got, shared by init and upgrade.
+function describePlatformFiles(platform, result) {
+  const lines = [];
+  const label = platform === "opencode" ? "Skills" : "Commands";
+
+  if (result.servedBy === "claude") {
+    lines.push(`${label} (${platform}): served from .claude/skills — OpenCode reads them there, no second copy`);
+  } else {
+    lines.push(`${label} (${platform}): ${result.written.length} written to ${COMMAND_PLATFORMS[platform].dir} (${result.skipped.length} kept)`);
+  }
+
+  const retired = result.retired || { removed: [], modified: [] };
+
+  if (retired.removed.length > 0) {
+    lines.push(`Retired ${retired.removed.length} file(s) an earlier install wrote (now replaced): ${retired.removed.map((f) => path.dirname(f)).filter((d, i, a) => a.indexOf(d) === i).join(", ")}`);
+  }
+
+  for (const file of retired.modified) {
+    lines.push(`Kept ${file}: you edited it — remove it by hand once you no longer need it`);
+  }
+
+  return lines;
+}
+
 function describeSkillsMode(mode, reason) {
   return mode === "plugin"
     ? `Skills: served by the plugin as coding-flow:flow-* — no project copy (${reason})`
@@ -258,7 +282,7 @@ function globalCommand(name) {
       log(`${dryRun ? "Would remove" : "Removed"} the global guard plugin`);
     }
 
-    log(`${dryRun ? "Would remove" : "Removed"} ${result.removed.length} global OpenCode command(s) from ${result.dir}`);
+    log(`${dryRun ? "Would remove" : "Removed"} ${result.removed.length} global OpenCode file(s) from ${result.dir}`);
     for (const file of result.modified) {
       log(`Kept ${file}: you edited it`);
     }
@@ -272,7 +296,10 @@ function globalCommand(name) {
   });
 
   log(dryRun ? "Dry run complete." : "Coding Flow installed for OpenCode, in every project.");
-  log(`Commands: ${result.written.length} written to ${result.dir} (${result.skipped.length} kept)`);
+  log(`Skills: ${result.written.length} written to ${result.dir} (${result.skipped.length} kept)`);
+  if (result.retired.length > 0) {
+    log(`Retired ${result.retired.length} global command(s) an earlier version wrote (the skills replace them)`);
+  }
   // On by default, like the project one; `--no-guard` opts out. (`--guard` is still
   // accepted, and is now the default.)
   if (!flags.has("--no-guard")) {
@@ -452,10 +479,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   } else if (target === "codex") {
     log(`Skills: ${codexSkills.written.length} written to .codex/skills as $flow-* (${codexSkills.skipped.length} kept)`);
   } else if (platformCommands) {
-    log(
-      `Commands: ${platformCommands.written.length} written to ${COMMAND_PLATFORMS[target].dir} ` +
-        `(${platformCommands.skipped.length} kept)`,
-    );
+    describePlatformFiles(target, platformCommands).forEach((line) => log(line));
     // A platform with its own guard says what was wired on its own line below.
     if (!COMMAND_PLATFORMS[target].guard) {
       log(`Guard hook: none for "${target}" — commands-only platform, writes are not mechanically protected`);
@@ -465,7 +489,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   } else {
     log(
       "Platform not recognized: no commands were installed. " +
-        "Re-run with `ai-flow init --target claude` or `--target codex`. " +
+        `Re-run with \`ai-flow init --target <platform>\` (${EXPLICIT_TARGETS.join(", ")}). ` +
         "Until then NO guard is installed.",
     );
   }
@@ -519,6 +543,10 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
 
   const countInstalledCommands = () => {
     const rendered = target === "codex" ? codexSkills : platformCommands;
+
+    if (rendered && rendered.servedBy === "claude") {
+      return listTemplateSkillNames().length;
+    }
 
     if (rendered) {
       return rendered.written.length + rendered.skipped.length;
@@ -651,7 +679,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     });
 
     if (!flags.has("--json")) {
-      log(`Commands (${platform}): ${commands.written.length} written to ${COMMAND_PLATFORMS[platform].dir} (${commands.skipped.length} kept)`);
+      describePlatformFiles(platform, commands).forEach((line) => log(line));
     }
   }
 

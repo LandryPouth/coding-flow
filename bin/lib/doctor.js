@@ -31,6 +31,8 @@ const { inspectCodexSandbox } = require("./codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./codex-probe");
 const { recordProbeEvidence } = require("./platforms/evidence");
 const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
+const { servedByClaude } = require("./platforms/opencode");
+const { EXPLICIT_TARGETS } = require("./detect");
 const { inspectOpenCodeInstructions } = require("./opencode-config");
 
 // Past this many stories, an epic is no longer one shippable capability (see
@@ -314,6 +316,31 @@ function checkOpenCodeWiring(errors, warnings) {
     });
   }
 
+  // Leftovers `upgrade` retires: the commands earlier versions rendered (the
+  // skills replace them), and an `.opencode/skills` copy next to the Claude one
+  // OpenCode already reads (it keeps one and warns "duplicate skill name").
+  const names = listTemplateSkillNames();
+  const legacy = names.filter((n) => fs.existsSync(path.join(cwd, ".opencode", "command", `${n}.md`)));
+  const duplicated = servedByClaude(cwd, names)
+    ? names.filter((n) => fs.existsSync(path.join(cwd, ".opencode", "skills", n, "SKILL.md")))
+    : [];
+
+  if (legacy.length > 0) {
+    warnings.push({
+      code: "opencode_legacy_commands",
+      file: ".opencode/command",
+      message: `${legacy.length} coding-flow command(s) from an earlier install are still in .opencode/command (the skills replace them) — run \`ai-flow upgrade\``,
+    });
+  }
+
+  if (duplicated.length > 0) {
+    warnings.push({
+      code: "opencode_skills_duplicated",
+      file: ".opencode/skills",
+      message: `${duplicated.length} skill(s) exist both in .claude/skills and .opencode/skills; OpenCode reads .claude/skills — run \`ai-flow upgrade\` to drop the second copy`,
+    });
+  }
+
   const plugin = inspectOpenCodePlugin();
   const file = ".opencode/plugins/coding-flow-guard.js";
 
@@ -421,8 +448,13 @@ function collectDoctorReport({ strict = false } = {}) {
     }
   }
 
-  // The exact files each commands-only platform's renderer writes.
+  // The exact files each platform's renderer writes. OpenCode needs none of its
+  // own when `.claude/skills` already carries them: it reads them there.
   for (const platform of platforms.filter((p) => COMMAND_PLATFORMS[p])) {
+    if (platform === "opencode" && servedByClaude(cwd, skillNames)) {
+      continue;
+    }
+
     for (const name of skillNames) {
       required.push(COMMAND_PLATFORMS[platform].render(`---\nname: ${name}\ndescription: x\n---\n`).relPath);
     }
@@ -445,7 +477,7 @@ function collectDoctorReport({ strict = false } = {}) {
       code: "platform_unrecognized",
       message:
         "no platform was recognized at init, so no commands and no guard were installed — " +
-        "run `ai-flow init --target claude` or `--target codex`",
+        `run \`ai-flow init --target <platform>\` (${EXPLICIT_TARGETS.join(", ")})`,
     });
   }
 
