@@ -5,6 +5,10 @@
   "autoMergeEpic": false,
   "skills": "plugin",
   "install": "minimal",
+  "target": "claude",
+  "alsoTargets": [
+    "opencode"
+  ],
   "validation": {
     "commands": [
       "npm test"
