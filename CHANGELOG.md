@@ -91,6 +91,9 @@ the same repo.
   prose fallback read the whole checklist, so `## Validation Tasks` /
   `- [ ] npm test passes` counted as "validation … pass". Headings and unchecked
   items are skipped now.
+- **"N written (M kept)" no longer suggests edited files.** Rendered skills and
+  commands now report "written", "up to date" and "kept because you edited
+  it: <file>" separately.
 - `init` no longer says "Guard: none yet" when the plugin is already wired.
 - The help, `COMMANDS.md` and the "platform not recognized" message name every
   supported agent and `--target`, not only Claude Code.

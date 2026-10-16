@@ -139,6 +139,7 @@ function installGlobalCommands(files, { dir = globalOpenCodeDir(), force = false
   const recorded = { ...(manifest.files || {}) };
   const written = [];
   const skipped = [];
+  const edited = [];
   const retired = [];
 
   for (const [key, hash] of Object.entries(recorded)) {
@@ -172,6 +173,7 @@ function installGlobalCommands(files, { dir = globalOpenCodeDir(), force = false
 
       if (!force && recorded[rel] !== current) {
         skipped.push(rel);
+        edited.push(rel);
         continue;
       }
     }
@@ -190,7 +192,7 @@ function installGlobalCommands(files, { dir = globalOpenCodeDir(), force = false
     fs.writeFileSync(path.join(dir, GLOBAL_MANIFEST), `${JSON.stringify({ version, files: recorded }, null, 2)}\n`);
   }
 
-  return { dir: path.join(dir, "skills"), written, skipped, retired };
+  return { dir: path.join(dir, "skills"), written, skipped, edited, retired };
 }
 
 // Removes only the files still matching what we wrote; edited ones are reported.

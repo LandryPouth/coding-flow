@@ -535,6 +535,7 @@ function hashText(text) {
 function syncRendered(files, manifestKey, { force, dryRun }) {
   const written = [];
   const skipped = [];
+  const edited = [];
   const manifest = readManifest();
   const recorded = { ...(manifest[manifestKey] || {}) };
 
@@ -553,6 +554,7 @@ function syncRendered(files, manifestKey, { force, dryRun }) {
 
       if (!force && recorded[rel] !== currentHash) {
         skipped.push(rel);
+        edited.push(rel);
         continue;
       }
     }
@@ -570,7 +572,7 @@ function syncRendered(files, manifestKey, { force, dryRun }) {
     writeJson(manifestPath(), { ...manifest, [manifestKey]: recorded });
   }
 
-  return { written, skipped };
+  return { written, skipped, edited };
 }
 
 // A rendered skill outlives the process that wrote it, and a bare
@@ -676,6 +678,7 @@ function copyPlatformCommands(target, { force = false, dryRun = false } = {}) {
       return {
         written: [],
         skipped: [],
+        edited: [],
         servedBy: "claude",
         retired: { removed: [...retired.removed, ...own.removed], modified: [...retired.modified, ...own.modified] },
       };

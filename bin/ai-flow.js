@@ -231,6 +231,24 @@ function wireOpenCodeInstructions({ dryRun, quiet = false, targets }) {
   }
 }
 
+// "N written (M kept)" read as M files the user had edited, when nearly always
+// they were simply up to date. Only an edited file is "kept".
+function renderedCounts(result) {
+  const edited = result.edited || [];
+  const upToDate = result.skipped.length - edited.length;
+  const parts = [`${result.written.length} written`];
+
+  if (upToDate > 0) {
+    parts.push(`${upToDate} up to date`);
+  }
+
+  if (edited.length > 0) {
+    parts.push(`${edited.length} kept because you edited ${edited.length === 1 ? "it" : "them"}: ${edited.join(", ")}`);
+  }
+
+  return parts.join(", ");
+}
+
 // One wording for what a rendered platform got, shared by init and upgrade.
 function describePlatformFiles(platform, result) {
   const lines = [];
@@ -239,7 +257,7 @@ function describePlatformFiles(platform, result) {
   if (result.servedBy === "claude") {
     lines.push(`${label} (${platform}): served from .claude/skills — OpenCode reads them there, no second copy`);
   } else {
-    lines.push(`${label} (${platform}): ${result.written.length} written to ${COMMAND_PLATFORMS[platform].dir} (${result.skipped.length} kept)`);
+    lines.push(`${label} (${platform}): ${renderedCounts(result)} — ${COMMAND_PLATFORMS[platform].dir}`);
   }
 
   const retired = result.retired || { removed: [], modified: [] };
@@ -296,7 +314,7 @@ function globalCommand(name) {
   });
 
   log(dryRun ? "Dry run complete." : "Coding Flow installed for OpenCode, in every project.");
-  log(`Skills: ${result.written.length} written to ${result.dir} (${result.skipped.length} kept)`);
+  log(`Skills: ${renderedCounts(result)} — ${result.dir}`);
   if (result.retired.length > 0) {
     log(`Retired ${result.retired.length} global command(s) an earlier version wrote (the skills replace them)`);
   }
@@ -477,7 +495,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   if (target === "claude") {
     log(describeSkillsMode(effectiveSkills, configResult.created ? skills.reason : "recorded at init"));
   } else if (target === "codex") {
-    log(`Skills: ${codexSkills.written.length} written to .codex/skills as $flow-* (${codexSkills.skipped.length} kept)`);
+    log(`Skills: ${renderedCounts(codexSkills)} — .codex/skills, as $flow-*`);
   } else if (platformCommands) {
     describePlatformFiles(target, platformCommands).forEach((line) => log(line));
     // A platform with its own guard says what was wired on its own line below.
@@ -717,7 +735,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     const codexSkills = copyCodexSkills({ force: flags.has("--force"), dryRun: flags.has("--dry-run") });
 
     if (!flags.has("--json")) {
-      log(`Skills: ${codexSkills.written.length} written to .codex/skills (${codexSkills.skipped.length} kept)`);
+      log(`Skills: ${renderedCounts(codexSkills)} — .codex/skills`);
     }
   }
 
