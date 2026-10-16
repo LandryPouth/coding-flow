@@ -385,6 +385,9 @@ function shellWrites(command, startCwd = process.cwd()) {
     return [];
   }
 
+  // The shell drops a backslash-newline continuation before it reads any word.
+  command = command.replace(/\\\n/g, "");
+
   const found = [];
   const seen = new Set();
   const stack = [];
@@ -429,10 +432,11 @@ function shellWrites(command, startCwd = process.cwd()) {
   // descriptor and write to no path — the (?!&) drops them.
   // Spaces around the operator are optional (`echo a>.env`), and `>|` (clobber) and
   // `&>` (both streams) write too; `>&file` is a write, `>&2` and `2>&1` are not.
-  const TARGET = `("[^"]+"|'[^']+'|[^\\s;&|<>()]+)`;
+  // The target is one shell word: quoted parts and bare characters glued together (`'.e'nv`).
+  const TARGET = `((?:"(?:\\\\[\\s\\S]|[^"\\\\])*"|'[^']*'|[^\\s;&|<>()"'])+)`;
   const redirections = [
-    new RegExp(`(?<![<>&\\d])\\d?(?:&>>?|>>|>\\|?)(?!&)\\s*${TARGET}`, "g"),
-    new RegExp(`(?<![<>&\\d])\\d?>&\\s*(?![\\d-])${TARGET}`, "g"),
+    new RegExp(`(?<![<>&\\d])\\d?(?:&>>?|>>|>\\|?)(?!&)\\s*${TARGET}`, "gd"),
+    new RegExp(`(?<![<>&\\d])\\d?>&\\s*(?![\\d-])${TARGET}`, "gd"),
   ];
 
   // A script handed to `bash -c` / `eval` runs from the current directory. With the
@@ -471,9 +475,12 @@ function shellWrites(command, startCwd = process.cwd()) {
     }
     beforeCd = null;
 
+    // An operator inside quotes is text: scan a copy whose quoted contents are blanked out
+    // (same offsets), and read the target from the original.
+    const masked = segment.text.replace(/"(?:\\[\s\S]|[^"\\])*"|'[^']*'/g, (quoted) => quoted[0] + "_".repeat(quoted.length - 2) + quoted[quoted.length - 1]);
     for (const redirection of redirections) {
-      for (const match of segment.text.matchAll(redirection)) {
-        add(unquote(match[1]), "write");
+      for (const match of masked.matchAll(redirection)) {
+        add(segment.text.slice(...match.indices[1]), "write");
       }
     }
 
@@ -520,7 +527,7 @@ function shellWrites(command, startCwd = process.cwd()) {
       }
     } else if (name === "popd") {
       cwd = null;
-    } else if (name === "tee") {
+    } else if (name === "tee" || name === "sponge") {
       files.forEach((file) => add(file, "write"));
     } else if (name === "sed" && args.some((arg) => arg === "--in-place" || arg.startsWith("--in-place=") || /^-[A-Za-z]*i/.test(arg))) {
       // sed -i '<script>' <files…>: the script is the first non-flag argument.
@@ -530,12 +537,14 @@ function shellWrites(command, startCwd = process.cwd()) {
       const aliasing = name === "ln" || (name === "cp" && symbolic);
 
       // `cp -t DIR src…` / `--target-directory=DIR`: DIR is the destination, not a source.
-      const optionAt = operands.findIndex((arg) => arg === "-t" || arg === "--target-directory" || arg.startsWith("--target-directory="));
+      // `-t` may end a cluster (`cp -rt DIR`, `install -Dt DIR`) or carry the value (`-tDIR`).
+      const optionAt = operands.findIndex((arg) => /^-[A-Za-z]*t/.test(arg) || arg === "--target-directory" || arg.startsWith("--target-directory="));
       let directory = null;
       let sources = files;
       if (optionAt !== -1) {
         const option = operands[optionAt];
-        directory = option.includes("=") ? option.slice(option.indexOf("=") + 1) : operands[optionAt + 1];
+        const glued = option.match(/^-[A-Za-z]*t(.+)$/);
+        directory = option.startsWith("--target-directory=") ? option.slice(option.indexOf("=") + 1) : glued ? glued[1] : operands[optionAt + 1];
         sources = files.filter((arg) => arg !== directory);
         if (directory !== undefined) {
           add(directory, "write");

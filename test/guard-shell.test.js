@@ -316,3 +316,16 @@ test('a target spliced from quotes or escapes is the file the shell opens', (t) 
 test('a glob or brace list in a write target is unchecked', (t) => {
   expectAll(t, 'unchecked', ['cp x .e*', 'cp x .en?', 'echo A > {.env,b}', 'echo A > .en{v,}']);
 });
+
+test('a redirection target spliced from a quoted part and bare characters is the file the shell opens', (t) => {
+  expectAll(t, 'deny', ["echo A > '.e'nv", 'echo A > ".e"nv', `echo A > '.e'"nv"`, "echo A >> '.e'nv", 'echo A > sub/../.en\\\nv']);
+});
+
+test('-t inside a flag cluster still names the destination directory', (t) => {
+  expectAll(t, 'deny', ['cp -rt . sub/.env', 'cp -at . sub/.env', 'mv -ft . sub/.env', 'install -Dt . sub/.env', 'cp -rt. sub/.env']);
+  expectAll(t, 'allow', ['cp -rt sub README.md']);
+});
+
+test('sponge writes its operand like tee', (t) => {
+  expectAll(t, 'deny', ['cat x | sponge .env']);
+});
