@@ -52,6 +52,7 @@ esac
 function cli(cwd, args, { fake, mode, noCodex } = {}) {
   const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(cwd, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
   delete env.CLAUDECODE;
+  delete env.OPENCODE;
   if (fake) {
     env.PATH = `${fake.dir}:/usr/bin:/bin`;
     env.FAKE_CODEX_MODE = mode;
@@ -118,7 +119,9 @@ test('a bash-style denial of the probe file is still a pass', () => {
 test('an untrusted project is named as such, not read as a guard failure', () => {
   const probe = interpretProbe({ status: 1, stderr: 'Error: default_permissions requires a `[permissions]` table', wrote: false, directory: '.ssh' });
   assert.equal(probe.ok, null);
-  assert.match(probe.detail, /trusted/);
+  assert.match(probe.detail, /not trusted in Codex yet/);
+  assert.match(probe.detail, /trust_level = "trusted"/);
+  assert.doesNotMatch(probe.detail, /default_permissions/, 'the raw Codex error is not the explanation');
 });
 
 test('describeProbe gives three distinct plain-language messages', () => {

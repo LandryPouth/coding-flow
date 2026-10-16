@@ -6,6 +6,108 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-16
+
+OpenCode becomes a first-class host: skills instead of commands, a write guard on
+by default that runs inside OpenCode, and one skill set shared with Claude Code in
+the same repo.
+
+### Added
+
+- **OpenCode gets skills, not commands.** `init --target opencode` writes the 7
+  `flow-*` skills to `.opencode/skills/<name>/SKILL.md`. OpenCode makes every skill
+  a slash command too, so `/flow-run` still works, and the model can now pick a
+  skill up from its description as Claude Code does. Checked on OpenCode 1.19.
+- **Claude Code and OpenCode in one repo share one skill set.** OpenCode also reads
+  `.claude/skills/`; when the Claude skills are there, no second copy is written
+  (two copies make OpenCode warn and keep one) and an existing one is retired.
+  `doctor` warns when both are present.
+- **OpenCode, once for every project.** `ai-flow init --global --target opencode`
+  writes the 7 skills to `~/.config/opencode/skills/` (or `$XDG_CONFIG_HOME`) and
+  the guard plugin beside them. `upgrade --global` refreshes, `uninstall --global`
+  removes only what is still ours. A global skill runs in a repo with no install,
+  and the global plugin refuses a `.env` write in one.
+- **OpenCode is detected from `OPENCODE=1`**, so `/flow-setup` run inside OpenCode
+  installs for OpenCode without `--target`. With both `CLAUDECODE=1` and
+  `OPENCODE=1` set (one agent launched from the other) neither is trusted.
+- **OpenCode installs get the write guard by default.** `init --target opencode`
+  and `init --global` wire the guard plugin without an extra flag (`--opencode` /
+  `--guard` are still accepted); `--no-guard` opts out and says so. OpenCode's
+  `tool.execute.before` refuses a call on a throw, subagents included, so it is a
+  verified mechanism. The plugin covers `write`, `edit`, `bash` and `apply_patch`
+  (every file of a patch, moves included). `doctor` errors when a project uses
+  OpenCode without the plugin, and `report` records `enforcementTier: plugin`.
+- **`RULES.md` reaches OpenCode.** OpenCode does not expand `CLAUDE.md`'s
+  `@RULES.md`, so `init`/`upgrade` add `"instructions": ["RULES.md"]` to
+  `opencode.json` (merged, never overwriting; a config with comments is left alone
+  and named). `doctor` warns when it is missing.
+- **A guard refusal tells the agent not to route around it.** The reason now ends
+  with "Do not retry this under another name, path or tool…": a model refused on
+  `.env` had written `env` instead. The denial log keeps the bare reason.
+- **This repository can be developed from OpenCode**: `AGENTS.md` holds the
+  contributor rules (`CLAUDE.md` imports it) and the OpenCode guard is wired.
+
+### Fixed
+
+- **The OpenCode guard no longer needs `node` on `PATH`.** It runs in OpenCode's
+  own (Bun) process; with no `node` it used to fail open silently. When it cannot
+  run at all it now says on stderr that the write was not checked.
+- **`/flow-setup` installs the version it ships with.** It ran `npx` unpinned,
+  which fetched whatever npm had (an older release with no OpenCode detection),
+  installed `unrecognized` with no guard, and reported success. It now prefers
+  `ai-flow` on `PATH`, runs a pinned `npx` otherwise, re-runs with `--target` on
+  "Platform not recognized", and counts a platform or guard warning from `doctor`
+  as not done.
+- **The project copy of the Claude skills pins `npx` too** (`.claude/skills/`, which
+  OpenCode also reads). In a real `/flow-run` in OpenCode the agent ran the bare
+  `npx` from it and got an older `verify` than the project's. An unpinned copy from
+  an earlier release is refreshed by `upgrade`.
+- **`uninstall` takes everything back**: the Codex and OpenCode skills and
+  commands, `config.json`, `denials.jsonl`, the Claude hook entry, the Codex
+  sandbox profile, the OpenCode plugin and the `RULES.md` entry in `opencode.json`
+  — keeping the user's own settings in those files. It used to leave every guard
+  behind, refusing writes in a project that no longer had Coding Flow.
+- **`upgrade` keeps a `--minimal` install minimal.** It used to lay down
+  `RULES.md`, `docs/`, `examples/`, `epics/` and the npm scripts on the first run.
+- **`init` keeps every recorded platform in step**, including the primary one, so
+  adding Claude Code to an OpenCode project retires the duplicate skills at once
+  rather than at the next `upgrade`. A platform-only add no longer runs the
+  brownfield scan.
+- **No `package.json` in a project of another ecosystem.** With a
+  `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`… `init` no longer creates one
+  just to hold the `flow:*` scripts, and says why.
+- **Evidence time never goes backwards.** On WSL2 the wall clock steps back every
+  few seconds; a newer red run could sort before an older green one and be ignored.
+  Evidence files now take `max(now, newest + 1 ms)`.
+- **Codex: an untrusted project is named as the cause.** Codex ignores a project's
+  `.codex/config.toml` until it is trusted; `doctor` now says so and how to fix it
+  instead of reporting a generic failed sandbox probe.
+- **OpenCode skill descriptions are quoted** in the frontmatter: two contained
+  `: `, which a strict YAML parser rejects.
+- **`COMMANDS.md` said `undefined ship`/`undefined status`** (since 0.6.0): a renamed
+  export. Every install was affected.
+- **Adding a platform to a `--minimal` install no longer promotes it to full** (no
+  `RULES.md`, `docs/`, `examples/`, `package.json` appear, `doctor` stays satisfied).
+- **A second `init` for another agent no longer calls our files the user's.** It
+  listed every template it had installed itself, byte for byte, as "Kept … (yours,
+  not overwritten)"; only files that differ are listed now.
+- **An untouched story is no longer reported `done`.** With no `## Result`, the
+  prose fallback read the whole checklist, so `## Validation Tasks` /
+  `- [ ] npm test passes` counted as "validation … pass". Headings and unchecked
+  items are skipped now.
+- **"N written (M kept)" no longer suggests edited files.** Rendered skills and
+  commands now report "written", "up to date" and "kept because you edited
+  it: <file>" separately.
+- `init` no longer says "Guard: none yet" when the plugin is already wired.
+- The help, `COMMANDS.md` and the "platform not recognized" message name every
+  supported agent and `--target`, not only Claude Code.
+
+### Changed
+
+- **OpenCode, upgrading from 0.11:** the commands in `.opencode/command/` (and
+  `~/.config/opencode/command/` for a global install) are retired by `upgrade` in
+  favour of the skills; one you edited is kept and named.
+
 ## [0.11.1] - 2026-10-15
 
 ### Fixed

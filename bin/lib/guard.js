@@ -383,6 +383,16 @@ function recordDenial({ root, hook, result }) {
   }
 }
 
+// Appended to what the agent reads (never to the denial log). Observed on
+// OpenCode: refused `.env`, a model wrote the same content to `env` instead. The
+// guard cannot see intent, so it says it plainly to the one that can.
+const AGENT_ADVICE =
+  "Do not retry this under another name, path or tool to get around the guard: tell the user what was refused and why.";
+
+function forAgent(reason) {
+  return `${reason} ${AGENT_ADVICE}`;
+}
+
 function guardCommand({ getFlagValue, flags }) {
   const inputFile = getFlagValue("--input", null);
   const raw = readHookInput({ inputFile });
@@ -400,12 +410,12 @@ function guardCommand({ getFlagValue, flags }) {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          permissionDecisionReason: result.reason,
+          permissionDecisionReason: forAgent(result.reason),
         },
         systemMessage: result.reason,
       })}\n`,
     );
-    process.stderr.write(`coding-flow guard: ${result.reason}\n`);
+    process.stderr.write(`coding-flow guard: ${forAgent(result.reason)}\n`);
     recordDenial({ root, hook, result });
     process.exit(2);
   }
@@ -422,4 +432,22 @@ function guardCommand({ getFlagValue, flags }) {
   process.exit(0);
 }
 
-module.exports = { guardCommand, decide, shellWriteTargets, loadPolicy };
+// The same decision for a host that loads this module in its own process (the
+// OpenCode plugin) instead of spawning `ai-flow guard`: decide, record a denial,
+// return the result. Never throws — a guard that crashes its host gets removed.
+function evaluate(hook, root) {
+  try {
+    const result = decide(hook, root);
+
+    if (result.decision === "deny") {
+      recordDenial({ root, hook, result });
+      return { ...result, reason: forAgent(result.reason) };
+    }
+
+    return result;
+  } catch (err) {
+    return { decision: "allow", reason: `guard error, failing open: ${err && err.message}` };
+  }
+}
+
+module.exports = { guardCommand, decide, evaluate, shellWriteTargets, loadPolicy };

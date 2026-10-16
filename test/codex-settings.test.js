@@ -23,6 +23,7 @@ function project(t) {
 function cli(cwd, args) {
   const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(cwd, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
   delete env.CLAUDECODE;
+  delete env.OPENCODE;
   try {
     return { code: 0, output: execFileSync(process.execPath, [CLI, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
   } catch (err) {

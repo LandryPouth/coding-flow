@@ -68,6 +68,7 @@ const {
   copyTemplates,
   copyCodexSkills,
   copyPlatformCommands,
+  renderPlatformCommands,
   listTemplateSkillNames,
   ensureConvenienceFiles,
   ensureFrictionLog,
@@ -104,14 +105,20 @@ const {
   STORAGE_BACKENDS,
 } = require("./lib/config");
 const { EXPLICIT_TARGETS, resolveTarget, collectSignals } = require("./lib/detect");
-const { COMMANDS_ONLY_PLATFORMS } = require("./lib/platforms/registry");
+const { COMMAND_PLATFORMS } = require("./lib/platforms/registry");
 const { writePlatformEvidence } = require("./lib/platforms/evidence");
 const { detectPlugin } = require("./lib/claude-plugin");
 const { ensureHookSettings } = require("./lib/settings");
+const {
+  ensureOpenCodeInstructions,
+  globalOpenCodeDir,
+  installGlobalCommands,
+  uninstallGlobalCommands,
+} = require("./lib/opencode-config");
 const { ensureCodexSandbox } = require("./lib/codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./lib/codex-probe");
 const { tierFor } = require("./lib/platforms/evidence");
-const { ensureOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
+const { ensureOpenCodePlugin, removeOpenCodePlugin, inspectOpenCodePlugin, usesOpenCode } = require("./lib/opencode");
 const { listSkills } = require("./lib/skills");
 const { uninstall } = require("./lib/uninstall");
 const { printCommands, printHelp } = require("./lib/commands");
@@ -183,16 +190,11 @@ function describeCodexSandbox(status, dryRun) {
 }
 
 // OpenCode has no settings.json: its guard is a plugin under .opencode/plugins/.
-// Wired when asked for (`--opencode`) or when the project already uses OpenCode;
-// never created for someone who does not.
-// A commands-only target (Gemini, OpenCode, Antigravity) never auto-wires: an
-// OpenCode install creates `.opencode/` itself, and a later init for another target
-// would then see it, making `usesOpenCode()` true and wiring a guard the install says
-// it lacks. Only an explicit `--opencode` opts in there.
-function wireOpenCode({ dryRun, quiet = false, target = null }) {
-  const selfCreatedDir = Boolean(COMMANDS_ONLY_PLATFORMS[target]) && !flags.has("--opencode");
-
-  if (flags.has("--no-guard") || selfCreatedDir || !(flags.has("--opencode") || usesOpenCode())) {
+// Wired whenever OpenCode is one of this project's platforms (`--target opencode`,
+// a target recorded earlier), when asked for (`--opencode`), or when the project
+// already uses OpenCode — the same default as the Claude hook. `--no-guard` opts out.
+function wireOpenCode({ dryRun, quiet = false, targets = [] }) {
+  if (flags.has("--no-guard") || !(targets.includes("opencode") || flags.has("--opencode") || usesOpenCode())) {
     return;
   }
 
@@ -209,13 +211,129 @@ function wireOpenCode({ dryRun, quiet = false, target = null }) {
   }
 }
 
+// OpenCode does not expand CLAUDE.md's `@RULES.md`, so the rulebook is pointed at
+// from opencode.json instead. Only when OpenCode is one of this project's targets.
+function wireOpenCodeInstructions({ dryRun, quiet = false, targets }) {
+  if (!targets.includes("opencode")) {
+    return;
+  }
+
+  const result = ensureOpenCodeInstructions({ root: cwd, dryRun });
+  const words = {
+    created: dryRun ? "would create opencode.json" : "opencode.json created",
+    merged: dryRun ? "would add RULES.md to opencode.json" : "RULES.md added to opencode.json",
+    unchanged: "RULES.md already in opencode.json",
+    skipped: `skipped (${result.path ? path.basename(result.path) : "opencode.json"} is not plain JSON — add "instructions": ["RULES.md"] by hand)`,
+  };
+
+  if (!quiet && words[result.status]) {
+    log(`Rules (OpenCode): ${words[result.status]}`);
+  }
+}
+
+// "N written (M kept)" read as M files the user had edited, when nearly always
+// they were simply up to date. Only an edited file is "kept".
+function renderedCounts(result) {
+  const edited = result.edited || [];
+  const upToDate = result.skipped.length - edited.length;
+  const parts = [`${result.written.length} written`];
+
+  if (upToDate > 0) {
+    parts.push(`${upToDate} up to date`);
+  }
+
+  if (edited.length > 0) {
+    parts.push(`${edited.length} kept because you edited ${edited.length === 1 ? "it" : "them"}: ${edited.join(", ")}`);
+  }
+
+  return parts.join(", ");
+}
+
+// One wording for what a rendered platform got, shared by init and upgrade.
+function describePlatformFiles(platform, result) {
+  const lines = [];
+  const label = platform === "opencode" ? "Skills" : "Commands";
+
+  if (result.servedBy === "claude") {
+    lines.push(`${label} (${platform}): served from .claude/skills — OpenCode reads them there, no second copy`);
+  } else {
+    lines.push(`${label} (${platform}): ${renderedCounts(result)} — ${COMMAND_PLATFORMS[platform].dir}`);
+  }
+
+  const retired = result.retired || { removed: [], modified: [] };
+
+  if (retired.removed.length > 0) {
+    lines.push(`Retired ${retired.removed.length} file(s) an earlier install wrote (now replaced): ${retired.removed.map((f) => path.dirname(f)).filter((d, i, a) => a.indexOf(d) === i).join(", ")}`);
+  }
+
+  for (const file of retired.modified) {
+    lines.push(`Kept ${file}: you edited it — remove it by hand once you no longer need it`);
+  }
+
+  return lines;
+}
+
 function describeSkillsMode(mode, reason) {
   return mode === "plugin"
     ? `Skills: served by the plugin as coding-flow:flow-* — no project copy (${reason})`
     : `Skills: installed in .claude/skills as /flow-* (${reason})`;
 }
 
-if (command === "init") {
+// `--global` installs for the USER, not the project: OpenCode loads
+// ~/.config/opencode/command in every project, so one install gives the same
+// reach the Claude plugin gives. It writes nothing under the current directory.
+function globalCommand(name) {
+  const target = getFlagValue("--target", "opencode");
+
+  if (target !== "opencode") {
+    fail(`--global only exists for OpenCode (its commands load from ~/.config/opencode). Got --target ${target}.`);
+  }
+
+  const dryRun = flags.has("--dry-run");
+  const pluginFile = path.join(globalOpenCodeDir(), "plugins", "coding-flow-guard.js");
+
+  if (name === "uninstall") {
+    const result = uninstallGlobalCommands({ dryRun });
+    const plugin = removeOpenCodePlugin({ file: pluginFile, dryRun });
+
+    if (plugin.status === "removed") {
+      log(`${dryRun ? "Would remove" : "Removed"} the global guard plugin`);
+    }
+
+    log(`${dryRun ? "Would remove" : "Removed"} ${result.removed.length} global OpenCode file(s) from ${result.dir}`);
+    for (const file of result.modified) {
+      log(`Kept ${file}: you edited it`);
+    }
+    return;
+  }
+
+  const result = installGlobalCommands(renderPlatformCommands("opencode"), {
+    force: flags.has("--force"),
+    dryRun,
+    version: require("../package.json").version,
+  });
+
+  log(dryRun ? "Dry run complete." : "Coding Flow installed for OpenCode, in every project.");
+  log(`Skills: ${renderedCounts(result)} — ${result.dir}`);
+  if (result.retired.length > 0) {
+    log(`Retired ${result.retired.length} global command(s) an earlier version wrote (the skills replace them)`);
+  }
+  // On by default, like the project one; `--no-guard` opts out. (`--guard` is still
+  // accepted, and is now the default.)
+  if (!flags.has("--no-guard")) {
+    const plugin = ensureOpenCodePlugin({ dryRun, file: pluginFile });
+
+    log(`Guard plugin (OpenCode, all projects): ${plugin.status === "skipped" ? "skipped (a plugin that is not ours is already there)" : `${plugin.status} at ${pluginFile}`}`);
+  } else {
+    log("Guard: skipped (--no-guard) — writes are not mechanically protected in OpenCode. Re-run without --no-guard to wire it.");
+  }
+
+  log("Start in any project with `/flow-setup`; it scaffolds Coding Flow there. Update later with `ai-flow upgrade --global`.");
+}
+
+if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command)) {
+  globalCommand(command);
+} else if (command === "init") {
   const storage = getFlagValue("--storage", "local");
 
   if (!STORAGE_BACKENDS.includes(storage)) {
@@ -263,11 +381,15 @@ if (command === "init") {
     } else if (!flags.has("--no-guard") && minimalTarget === "codex") {
       const sandbox = ensureCodexSandbox({ dryRun });
       log(`Guard sandbox: ${describeCodexSandbox(sandbox.status, dryRun)}`);
-    } else if (minimalTarget !== "claude" && minimalTarget !== "codex") {
+    } else if (
+      minimalTarget !== "claude" &&
+      minimalTarget !== "codex" &&
+      !(COMMAND_PLATFORMS[minimalTarget] && COMMAND_PLATFORMS[minimalTarget].guard)
+    ) {
       log(`Guard hook: none for "${minimalTarget}" yet (commands-only platform)`);
     }
 
-    wireOpenCode({ dryRun, target: minimalTarget });
+    wireOpenCode({ dryRun, targets: [minimalTarget] });
 
     log("");
     log("Installed: the guard hook, the proof layer, and the friction log. No RULES.md, no epics/, no skills.");
@@ -337,20 +459,28 @@ if (command === "init") {
   }
 
   const effectiveSkills = configResult.config.skills;
-  const result = copyTemplates({
-    force: flags.has("--force"),
-    dryRun,
-    includeSkills: target === "claude" && effectiveSkills === "project",
-    target,
-  });
+  // Adding a platform to a minimal install is not a request for the full workflow:
+  // it gets that platform's commands and nothing else. A plain `init` (no
+  // --target) is still how a minimal install grows.
+  const platformOnly = hadConfig && recorded.install === "minimal" && Boolean(requestedTarget);
+  const result = platformOnly
+    ? { copied: [], updated: [], skipped: [], prunedSkills: null, harnessCreated: false }
+    : copyTemplates({
+        force: flags.has("--force"),
+        dryRun,
+        includeSkills: target === "claude" && effectiveSkills === "project",
+        target,
+      });
   const codexSkills = target === "codex" ? copyCodexSkills({ force: flags.has("--force"), dryRun }) : null;
-  const platformCommands = COMMANDS_ONLY_PLATFORMS[target]
+  const platformCommands = COMMAND_PLATFORMS[target]
     ? copyPlatformCommands(target, { force: flags.has("--force"), dryRun })
     : null;
-  const convenience = ensureConvenienceFiles({
-    force: flags.has("--force"),
-    dryRun: flags.has("--dry-run"),
-  });
+  const convenience = platformOnly
+    ? null
+    : ensureConvenienceFiles({
+        force: flags.has("--force"),
+        dryRun: flags.has("--dry-run"),
+      });
 
   if (flags.has("--dry-run")) {
     log("Dry run complete.");
@@ -365,25 +495,19 @@ if (command === "init") {
   if (target === "claude") {
     log(describeSkillsMode(effectiveSkills, configResult.created ? skills.reason : "recorded at init"));
   } else if (target === "codex") {
-    log(`Skills: ${codexSkills.written.length} written to .codex/skills as $flow-* (${codexSkills.skipped.length} kept)`);
+    log(`Skills: ${renderedCounts(codexSkills)} — .codex/skills, as $flow-*`);
   } else if (platformCommands) {
-    log(
-      `Commands: ${platformCommands.written.length} written to ${COMMANDS_ONLY_PLATFORMS[target].dir} ` +
-        `(${platformCommands.skipped.length} kept)`,
-    );
-    // OpenCode has an opt-in guard plugin: its own line below says what was wired,
-    // so claiming "no guard" here would contradict it.
-    if (target !== "opencode" || !flags.has("--opencode")) {
-      log(
-        target === "opencode"
-          ? "Guard: none yet for OpenCode — writes are not mechanically protected. Re-run with --opencode to wire the guard plugin."
-          : `Guard hook: none for "${target}" — commands-only platform, writes are not mechanically protected`,
-      );
+    describePlatformFiles(target, platformCommands).forEach((line) => log(line));
+    // A platform with its own guard says what was wired on its own line below.
+    if (!COMMAND_PLATFORMS[target].guard) {
+      log(`Guard hook: none for "${target}" — commands-only platform, writes are not mechanically protected`);
+    } else if (flags.has("--no-guard")) {
+      log(`Guard: skipped (--no-guard) — writes are not mechanically protected in ${target}`);
     }
   } else {
     log(
       "Platform not recognized: no commands were installed. " +
-        "Re-run with `ai-flow init --target claude` or `--target codex`. " +
+        `Re-run with \`ai-flow init --target <platform>\` (${EXPLICIT_TARGETS.join(", ")}). ` +
         "Until then NO guard is installed.",
     );
   }
@@ -431,10 +555,29 @@ if (command === "init") {
     }
   }
 
-  wireOpenCode({ dryRun: flags.has("--dry-run"), target });
+  const installTargets = [
+    ...new Set([target, requestedTarget, readConfig(cwd).target, ...readConfig(cwd).alsoTargets].filter((p) => p && p !== "unrecognized")),
+  ];
+
+  // The platforms already recorded beside this one are kept in step too, as
+  // upgrade does: adding Claude's skills to an OpenCode project must retire the
+  // .opencode/skills copy now, not on the next upgrade.
+  for (const platform of installTargets.filter((p) => p !== target && COMMAND_PLATFORMS[p])) {
+    const other = copyPlatformCommands(platform, { force: flags.has("--force"), dryRun: flags.has("--dry-run") });
+
+    if (other.servedBy || other.retired.removed.length > 0 || other.written.length > 0) {
+      describePlatformFiles(platform, other).forEach((line) => log(line));
+    }
+  }
+  wireOpenCode({ dryRun: flags.has("--dry-run"), targets: installTargets });
+  wireOpenCodeInstructions({ dryRun: flags.has("--dry-run"), targets: installTargets });
 
   const countInstalledCommands = () => {
     const rendered = target === "codex" ? codexSkills : platformCommands;
+
+    if (rendered && rendered.servedBy === "claude") {
+      return listTemplateSkillNames().length;
+    }
 
     if (rendered) {
       return rendered.written.length + rendered.skipped.length;
@@ -459,7 +602,11 @@ if (command === "init") {
           : target === "codex"
             ? tierFor(sandboxWired ? "sandbox-profile" : "commands-only", codexProbe)
             : platformCommands
-              ? "commands-only"
+              ? // A platform with its own guard is only "plugin" once that guard is
+                // actually on disk (--no-guard leaves it commands-only, and says so).
+                COMMAND_PLATFORMS[target].guard === "plugin" && inspectOpenCodePlugin().state !== "absent"
+                ? "plugin"
+                : "commands-only"
               : target === "unrecognized"
                 ? "unrecognized"
                 : "none",
@@ -471,12 +618,14 @@ if (command === "init") {
   // A plain `init` over a project that started minimal is how it grows into the
   // full workflow. The files were just laid down; the record has to follow, or
   // doctor keeps judging it as a minimal install forever.
-  if (!flags.has("--dry-run") && readConfig(cwd).install === "minimal") {
+  if (!platformOnly && !flags.has("--dry-run") && readConfig(cwd).install === "minimal") {
     writeConfigInstall(cwd, "full");
     log("Install: promoted from minimal to full");
   }
 
-  printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });
+  if (convenience) {
+    printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });
+  }
 
   // Name them. On a brownfield repo the collision is typically the project's own
   // docs/architecture.md, and "use --force to overwrite them" then reads as advice
@@ -493,7 +642,11 @@ if (command === "init") {
   // Brownfield detection, last so it reads as the next step. The scan is a
   // function call, not an artifact: nothing is written, and the deliverable is
   // the pointer to /flow-plan — the expensive half of onboarding it cannot do.
-  printProjectScanSummary(scanProject(), { dryRun: flags.has("--dry-run") });
+  // Adding a platform to a minimal install lays down no docs, so pointing at
+  // empty project docs would be noise there.
+  if (!platformOnly) {
+    printProjectScanSummary(scanProject(), { dryRun: flags.has("--dry-run") });
+  }
 
   // Right after install is exactly when "will the commands I'm about to be
   // told to type actually work" matters most — answer it here instead of
@@ -545,23 +698,36 @@ if (command === "init") {
   }
   const upgradeTarget = hasClaude ? "claude" : upgradeConfig.target;
 
-  upgrade({
-    force: flags.has("--force"),
-    dryRun: flags.has("--dry-run"),
-    json: flags.has("--json"),
-    includeSkills: upgradeTarget === "claude" && skills === "project",
-    skillsMode: skills,
-    platform: upgradeTarget,
-  });
+  // A minimal install never had the templates: copying them here would turn it
+  // into a full one (RULES.md, docs/, examples/, npm scripts) behind the user's
+  // back. Upgrading it means refreshing its guards and platform files only; a
+  // plain `init` is still how it grows.
+  if (upgradeConfig.install === "minimal") {
+    if (flags.has("--json")) {
+      log(JSON.stringify({ install: "minimal", copied: [], updated: [] }, null, 2));
+    } else {
+      log(flags.has("--dry-run") ? "Upgrade dry run complete." : "Coding Flow upgraded.");
+      log("Templates: none (minimal install) — `ai-flow init` lays down the full workflow when you want it.");
+    }
+  } else {
+    upgrade({
+      force: flags.has("--force"),
+      dryRun: flags.has("--dry-run"),
+      json: flags.has("--json"),
+      includeSkills: upgradeTarget === "claude" && skills === "project",
+      skillsMode: skills,
+      platform: upgradeTarget,
+    });
+  }
 
-  for (const platform of platforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+  for (const platform of platforms.filter((p) => COMMAND_PLATFORMS[p])) {
     const commands = copyPlatformCommands(platform, {
       force: flags.has("--force"),
       dryRun: flags.has("--dry-run"),
     });
 
     if (!flags.has("--json")) {
-      log(`Commands (${platform}): ${commands.written.length} written to ${COMMANDS_ONLY_PLATFORMS[platform].dir} (${commands.skipped.length} kept)`);
+      describePlatformFiles(platform, commands).forEach((line) => log(line));
     }
   }
 
@@ -569,7 +735,7 @@ if (command === "init") {
     const codexSkills = copyCodexSkills({ force: flags.has("--force"), dryRun: flags.has("--dry-run") });
 
     if (!flags.has("--json")) {
-      log(`Skills: ${codexSkills.written.length} written to .codex/skills (${codexSkills.skipped.length} kept)`);
+      log(`Skills: ${renderedCounts(codexSkills)} — .codex/skills`);
     }
   }
 
@@ -598,7 +764,8 @@ if (command === "init") {
     }
   }
 
-  wireOpenCode({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), target: upgradeConfig.target });
+  wireOpenCode({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), targets: platforms });
+  wireOpenCodeInstructions({ dryRun: flags.has("--dry-run"), quiet: flags.has("--json"), targets: platforms });
 
   if (!flags.has("--json")) {
     log("");

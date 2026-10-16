@@ -18,7 +18,9 @@ enforcement mechanism), an automatic self-test of that guard, an evidence
 `kind` for platform wiring surfaced in `ai-flow report`, and an honest
 fallback for platforms nobody has verified yet.
 
-Out of scope: a write guard for Gemini CLI, OpenCode, or Antigravity (no
+Out of scope: a write guard for Gemini CLI or Antigravity (OpenCode's was
+built outside this epic and is on by default since 2026-10-16 — see
+`docs/design-decisions.md` entry 10). Originally: a write guard for Gemini CLI, OpenCode, or Antigravity (no
 verified mechanism exists — see story 4's spec for why guessing one is
 explicitly refused) — ships commands-only, gap stated out loud. Also out of
 scope: any change to `decide()`'s policy logic itself in `bin/lib/guard.js`

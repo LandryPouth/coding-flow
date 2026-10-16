@@ -78,11 +78,12 @@ function printCommands({ json = false } = {}) {
 // Golden-path help: the 95% front door. Machinery is one command away, not in
 // your face. `ai-flow help --all` prints the full reference below.
 function printGoldenPath() {
-  log(`Coding Flow — AI-native engineering workflow for Claude Code
+  log(`Coding Flow — AI-native engineering workflow for coding agents
+(Claude Code, Codex, OpenCode, Gemini CLI, Antigravity)
 
 START HERE
 
-  In Claude Code (daily):
+  In your agent (daily; Codex types $flow-run, the rest /flow-run):
     /flow-plan     turn an objective into implementation-ready stories
     /flow-run      execute one story end-to-end (picks QUICK..STRICT by risk)
     /flow-review   findings-first pre-merge review
@@ -93,6 +94,9 @@ START HERE
 
   In the terminal:
     ai-flow init     install into the current project (once)
+                     not in Claude Code? add --target opencode|codex|gemini|antigravity
+    ai-flow init --global --target opencode
+                     OpenCode only: the commands in every project, once
     ai-flow status   where each story stands
     ai-flow next     the one thing worth doing right now
     ai-flow ship     push the branch and open/update the PR
@@ -120,8 +124,8 @@ Most of these are invoked automatically by the skills, CI, or the git hook. As a
 user you mainly need: init, status, next, ship (and the /flow-plan, /flow-run skills).
 
 Usage:
-  ai-flow init [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
-  ai-flow upgrade [--with-skills|--no-skills] [--no-guard] [--force] [--dry-run] [--json]
+  ai-flow init [--target claude|codex|gemini|opencode|antigravity] [--opencode] [--minimal] [--global] [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
+  ai-flow upgrade [--global] [--with-skills|--no-skills] [--no-guard] [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
   ai-flow next [--all] [--json]
@@ -149,7 +153,7 @@ Usage:
                [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
   ai-flow hook install|uninstall|status [--dry-run] [--json]
   ai-flow commands [--json]
-  ai-flow uninstall [--dry-run] [--force] [--json]
+  ai-flow uninstall [--global] [--dry-run] [--force] [--json]
   ai-flow list-skills [--json]
   ai-flow version
   ai-flow help [--all]

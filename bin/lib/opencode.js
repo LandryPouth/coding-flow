@@ -33,6 +33,7 @@ const MARKER = "// coding-flow:guard-plugin";
 const PLUGIN_BODY = `
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 
 const BINARY = __BINARY__;
 const FALLBACK = __FALLBACK__;
@@ -79,22 +80,43 @@ function toPayloads(tool, args) {
   return [];
 }
 
+// In-process first: OpenCode runs on Bun, which loads the guard's CommonJS
+// directly — no \`node\` needed on OpenCode's PATH (an IDE or desktop launcher
+// often has none, and a spawn that cannot find \`node\` would fail open in
+// silence), and no process per write. The spawn is the fallback for a package
+// that is no longer at BINARY (npx, pinned to the version that wrote this).
+let local = null;
+try {
+  if (BINARY && existsSync(BINARY)) {
+    local = createRequire(BINARY)("./lib/guard.js");
+  }
+} catch {
+  local = null;
+}
+
+function spawnGuard(payload) {
+  const [cmd, args] =
+    BINARY && existsSync(BINARY) ? ["node", [BINARY, "guard"]] : ["npx", ["--yes", FALLBACK, "guard"]];
+  const res = spawnSync(cmd, args, { input: JSON.stringify(payload), encoding: "utf8", timeout: 60000 });
+
+  if (res.error) {
+    // Cannot enforce: say so where it can be seen instead of allowing silently.
+    process.stderr.write(\`coding-flow guard: could not run (\${res.error.code || res.error.message}); this write was NOT checked\\n\`);
+  }
+
+  return res.status === 2 ? { decision: "deny", reason: (res.stderr || "").replace(/^coding-flow guard: /, "").trim() } : null;
+}
+
 export const CodingFlowGuard = async ({ directory }) => ({
   "tool.execute.before": async (input, output) => {
-    const [cmd, args] =
-      BINARY && existsSync(BINARY) ? ["node", [BINARY, "guard"]] : ["npx", ["--yes", FALLBACK, "guard"]];
-
     for (const payload of toPayloads(input.tool, output.args)) {
-      const res = spawnSync(cmd, args, {
-        input: JSON.stringify({ ...payload, cwd: directory }),
-        encoding: "utf8",
-        timeout: 60000,
-      });
+      const hook = { ...payload, cwd: directory };
+      const result = local && typeof local.evaluate === "function" ? local.evaluate(hook, directory) : spawnGuard(hook);
 
-      // Only an explicit deny (exit 2) blocks. A crash, a timeout or a missing
-      // binary is fail-open: the write proceeds and the harness scan is the net.
-      if (res.status === 2) {
-        throw new Error((res.stderr || "coding-flow guard: refused").trim());
+      // Only an explicit deny blocks. A crash, a timeout or a missing binary is
+      // fail-open: the write proceeds and the harness scan is the net.
+      if (result && result.decision === "deny") {
+        throw new Error(\`coding-flow guard: \${result.reason}\`);
       }
     }
   },
@@ -128,8 +150,8 @@ function isOurs(source) {
 
 // Statuses: "created", "upgraded" (ours, regenerated), "unchanged",
 // "skipped" (a plugin at that path that is not ours — left untouched).
-function ensureOpenCodePlugin({ dryRun = false, root = cwd } = {}) {
-  const target = pluginPath(root);
+function ensureOpenCodePlugin({ dryRun = false, root = cwd, file = null } = {}) {
+  const target = file || pluginPath(root);
   const next = pluginSource();
   const existed = fs.existsSync(target);
 
@@ -153,6 +175,23 @@ function ensureOpenCodePlugin({ dryRun = false, root = cwd } = {}) {
   return { status: existed ? "upgraded" : "created", path: target };
 }
 
+// The global install owns a plugin too: remove it only when it is still ours.
+function removeOpenCodePlugin({ file, dryRun = false }) {
+  if (!fs.existsSync(file)) {
+    return { status: "absent" };
+  }
+
+  if (!isOurs(fs.readFileSync(file, "utf8"))) {
+    return { status: "foreign" };
+  }
+
+  if (!dryRun) {
+    fs.unlinkSync(file);
+  }
+
+  return { status: "removed" };
+}
+
 // What `doctor` reads back: present + ours + current. "absent" is only a
 // problem when OpenCode is in use.
 function inspectOpenCodePlugin(root = cwd) {
@@ -173,6 +212,7 @@ function inspectOpenCodePlugin(root = cwd) {
 
 module.exports = {
   ensureOpenCodePlugin,
+  removeOpenCodePlugin,
   inspectOpenCodePlugin,
   usesOpenCode,
   pluginSource,

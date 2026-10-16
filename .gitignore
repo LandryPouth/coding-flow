@@ -7,3 +7,12 @@ node_modules/
 .coding-flow/denials.jsonl
 .coding-flow/manifest.json
 .coding-flow/active-story.json
+
+# OpenCode: the guard plugin is tracked like .claude/settings.json; the skills are
+# rendered from templates/ (refresh with `node bin/ai-flow.js upgrade`), and the
+# rest is what OpenCode installs for its plugins.
+.opencode/skills/
+.opencode/node_modules/
+.opencode/package.json
+.opencode/package-lock.json
+.opencode/.gitignore

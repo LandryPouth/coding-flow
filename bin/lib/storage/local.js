@@ -22,7 +22,11 @@ function resultNotes(raw) {
   const start = lines.findIndex((line) => /^##\s+Result\s*$/i.test(line));
 
   if (start === -1) {
-    return raw;
+    // No `## Result`: the prose is whatever is not the plan. Headings and
+    // unchecked items are the plan — a fresh `## Validation Tasks` /
+    // `- [ ] npm test passes` read as "validation … pass" and called an
+    // untouched story done.
+    return lines.filter((line) => !/^\s*#/.test(line) && !/^\s*[-*]\s+\[ \]/.test(line)).join("\n");
   }
 
   const section = [];

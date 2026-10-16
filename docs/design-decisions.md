@@ -374,6 +374,16 @@ before: an automatic, no-user-action self-test of the Codex sandbox inside
 `doctor`/`init`, so a claimed guard is never asserted without having been
 executed and observed.
 
+**Amended 2026-10-16 — OpenCode has a verified guard.** The spike's finding for
+OpenCode did not hold: its plugin hook `tool.execute.before` runs for every tool
+call (subagents included, fixed upstream in anomalyco/opencode#5894) and a
+`throw` refuses the call. Verified against the installed OpenCode 1.19 binary and
+in a real session (a `.env` write refused and logged), and covered by tests that
+load the generated plugin and feed it OpenCode-shaped `write`/`edit`/`bash`/
+`apply_patch` calls. OpenCode therefore moves out of "commands only": its
+installs wire the guard plugin by default, `report` records
+`enforcementTier: plugin`. Gemini CLI and Antigravity stay commands-only.
+
 **The precedent from entry 6 still holds and is reaffirmed, not loosened**:
 a freeze exception requires the premise to have changed, stated out loud —
 this is the second time that has happened, five days apart, on two

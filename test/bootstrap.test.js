@@ -273,7 +273,11 @@ test('a package.json that is a JSON array is treated as unreadable', (t) => {
 });
 
 test('a corrupt manifest degrades the scan without breaking it', (t) => {
-  const dir = pythonProject(t, 'scan-broken-manifest');
+  // No manifest of its own, so init creates the package.json the scan must then
+  // tell apart from a project's (a Python project no longer gets one).
+  const dir = project(t, 'scan-broken-manifest');
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'app.lua'), 'return 1\n');
   assert.equal(run(dir, ['init']).code, 0);
   fs.writeFileSync(path.join(dir, '.coding-flow', 'manifest.json'), 'not json');
 

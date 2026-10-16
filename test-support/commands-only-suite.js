@@ -1,10 +1,12 @@
 'use strict';
 
-// The same contract for every commands-only platform (Gemini, OpenCode,
-// Antigravity): init renders valid files, a hostile description survives the
-// renderer's escaping, doctor states the missing guard without counting it as an
-// error, and report shows the commands-only tier. Each platform's test file calls
-// `defineSuite` with its own location and strict parser.
+// The same contract for every platform whose skills are rendered as host commands
+// (Gemini, OpenCode, Antigravity): init renders valid files and a hostile
+// description survives the renderer's escaping. The guard tests split on whether
+// the platform has a verified guard: without one (Gemini, Antigravity), doctor
+// states the gap as a note and report shows commands-only; with one (OpenCode),
+// it is wired by default. Each platform's test file calls `defineSuite` with its
+// own location and strict parser.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -25,6 +27,7 @@ function project(t) {
 function cli(cwd, args) {
   const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(cwd, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
   delete env.CLAUDECODE;
+  delete env.OPENCODE;
   return execFileSync(process.execPath, [CLI, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
@@ -52,6 +55,10 @@ function pythonParse(kind, file) {
 function defineSuite({ target, files, parser, describe }) {
   // `files(name)` is the project-relative path of one rendered command.
   const read = (dir, name) => fs.readFileSync(path.join(dir, files(name)), 'utf8');
+  const guarded = Boolean(require('../bin/lib/platforms/registry').COMMAND_PLATFORMS[target].guard);
+  // The gap tests describe a platform with no guard: not declared at all for one
+  // that has it (its own test file covers the guard), rather than shown as skipped.
+  const gapTest = guarded ? () => {} : test;
 
   test(`${target}: init writes one command per skill and records the target`, (t) => {
     const dir = project(t);
@@ -75,7 +82,7 @@ function defineSuite({ target, files, parser, describe }) {
 
   test(`${target}: a description with ":", quotes and backslashes survives a round trip`, (t) => {
     const hostile = 'Run it: say "go" \\ then `stop`';
-    const { render } = require('../bin/lib/platforms/registry').COMMANDS_ONLY_PLATFORMS[target];
+    const { render } = require('../bin/lib/platforms/registry').COMMAND_PLATFORMS[target];
     const { relPath, content } = render(`---\nname: flow-x\ndescription: ${hostile}\n---\n\nBody with a \\ backslash and """ quotes and ''' too.\n`);
     const dir = project(t);
     const file = path.join(dir, relPath);
@@ -87,7 +94,7 @@ function defineSuite({ target, files, parser, describe }) {
     if (parser === 'toml') assert.match(parsed.prompt, /\\ backslash and """ quotes and ''' too/);
   });
 
-  test(`${target}: the guard gap is real — init wires no guard file or hook`, (t) => {
+  gapTest(`${target}: the guard gap is real — init wires no guard file or hook`, (t) => {
     const dir = project(t);
     cli(dir, ['init', '--target', target]);
     const out = cli(dir, ['upgrade']);
@@ -98,16 +105,19 @@ function defineSuite({ target, files, parser, describe }) {
     assert.match(evidence, /enforcementTier: commands-only/);
   });
 
-  test(`${target}: a commands-only install added beside OpenCode's wires no guard plugin`, (t) => {
+  gapTest(`${target}: an install added beside OpenCode's keeps its guard and adds none`, (t) => {
     const dir = project(t);
     cli(dir, ['init', '--target', 'opencode']);
-    const out = cli(dir, ['init', '--target', target]);
-    assert.doesNotMatch(out, /Guard plugin/);
-    assert.equal(fs.existsSync(path.join(dir, '.opencode', 'plugins')), false);
+    const plugin = path.join(dir, '.opencode', 'plugins', 'coding-flow-guard.js');
+    const before = fs.readFileSync(plugin, 'utf8');
+    cli(dir, ['init', '--target', target]);
+    // OpenCode's own guard is kept as it was; this platform adds no hook of its own.
+    assert.equal(fs.readFileSync(plugin, 'utf8'), before);
+    assert.equal(fs.existsSync(path.join(dir, '.claude', 'settings.json')), false);
     assert.deepEqual(JSON.parse(cli(dir, ['doctor', '--json'])).errors, []);
   });
 
-  test(`${target}: doctor states the guard gap as a note, never as an error or warning`, (t) => {
+  gapTest(`${target}: doctor states the guard gap as a note, never as an error or warning`, (t) => {
     const dir = project(t);
     cli(dir, ['init', '--target', target]);
     const report = JSON.parse(cli(dir, ['doctor', '--json']));
@@ -128,7 +138,7 @@ function defineSuite({ target, files, parser, describe }) {
     assert.ok(fs.existsSync(path.join(dir, files('flow-run'))));
   });
 
-  test(`${target}: report shows enforcementTier commands-only and no probe result`, (t) => {
+  gapTest(`${target}: report shows enforcementTier commands-only and no probe result`, (t) => {
     const dir = project(t);
     cli(dir, ['init', '--target', target]);
     const out = cli(dir, ['report']);

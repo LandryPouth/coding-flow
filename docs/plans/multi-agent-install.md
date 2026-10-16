@@ -80,8 +80,9 @@ plan originally proposed — plus, new here, an automated self-test of that
 sandbox profile that runs inside `doctor`/`init` rather than relying on a
 one-time manual `codex sandbox` check the way the verification above was
 done. Gemini CLI and Antigravity are out of scope for any guard in that epic
-(no verified mechanism for either); OpenCode's `tool.execute.before` plugin
-route (row above) remains unbuilt there too.
+(no verified mechanism for either). OpenCode's `tool.execute.before` plugin
+route (row above) was built outside the epic and is on by default since
+2026-10-16 (see the update at the top and `docs/design-decisions.md` entry 10).
 
 ### The one that must not be missed
 

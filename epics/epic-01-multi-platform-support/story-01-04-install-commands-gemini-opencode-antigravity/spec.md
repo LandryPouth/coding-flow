@@ -1,5 +1,12 @@
 # Story 01-04 — Commands for Gemini CLI, OpenCode, and Antigravity
 
+> **Superseded for OpenCode (2026-10-16).** This story's premise that OpenCode
+> has no verified guard mechanism was wrong: its `tool.execute.before` plugin
+> hook refuses a call on a throw, verified against the binary and in a real
+> session. OpenCode installs now wire the guard plugin by default and record
+> `enforcementTier: plugin`; the "commands-only" requirements below still hold
+> for Gemini CLI and Antigravity. See `docs/design-decisions.md` entry 10.
+
 ## User value
 
 Users on Gemini CLI, OpenCode, or Antigravity get working coding-flow

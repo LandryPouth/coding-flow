@@ -23,7 +23,7 @@ const {
 const { collectHarnessReport } = require("./harness");
 const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
-const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
+const { COMMAND_PLATFORMS } = require("./platforms/registry");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
@@ -31,6 +31,9 @@ const { inspectCodexSandbox } = require("./codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./codex-probe");
 const { recordProbeEvidence } = require("./platforms/evidence");
 const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
+const { servedByClaude } = require("./platforms/opencode");
+const { EXPLICIT_TARGETS } = require("./detect");
+const { inspectOpenCodeInstructions } = require("./opencode-config");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -299,21 +302,56 @@ function checkOpenCodeWiring(errors, warnings) {
     return;
   }
 
+  // OpenCode never expands CLAUDE.md's `@RULES.md`: without `instructions` in
+  // opencode.json the rulebook is not in the model's context at all.
+  if (
+    activeTargets(readConfig(cwd)).includes("opencode") &&
+    fs.existsSync(path.join(cwd, "RULES.md")) &&
+    inspectOpenCodeInstructions(cwd) === "absent"
+  ) {
+    warnings.push({
+      code: "opencode_rules_not_loaded",
+      file: "opencode.json",
+      message: 'OpenCode does not load RULES.md (no "instructions" entry in opencode.json) — run `ai-flow upgrade` to wire it',
+    });
+  }
+
+  // Leftovers `upgrade` retires: the commands earlier versions rendered (the
+  // skills replace them), and an `.opencode/skills` copy next to the Claude one
+  // OpenCode already reads (it keeps one and warns "duplicate skill name").
+  const names = listTemplateSkillNames();
+  const legacy = names.filter((n) => fs.existsSync(path.join(cwd, ".opencode", "command", `${n}.md`)));
+  const duplicated = servedByClaude(cwd, names)
+    ? names.filter((n) => fs.existsSync(path.join(cwd, ".opencode", "skills", n, "SKILL.md")))
+    : [];
+
+  if (legacy.length > 0) {
+    warnings.push({
+      code: "opencode_legacy_commands",
+      file: ".opencode/command",
+      message: `${legacy.length} coding-flow command(s) from an earlier install are still in .opencode/command (the skills replace them) — run \`ai-flow upgrade\``,
+    });
+  }
+
+  if (duplicated.length > 0) {
+    warnings.push({
+      code: "opencode_skills_duplicated",
+      file: ".opencode/skills",
+      message: `${duplicated.length} skill(s) exist both in .claude/skills and .opencode/skills; OpenCode reads .claude/skills — run \`ai-flow upgrade\` to drop the second copy`,
+    });
+  }
+
   const plugin = inspectOpenCodePlugin();
   const file = ".opencode/plugins/coding-flow-guard.js";
 
-  // A commands-only install (OpenCode's own, or another target added beside it) has
-  // `.opencode/` from those commands and no guard by design (reported as a note),
-  // so an absent plugin is not an error.
-  if (plugin.state === "absent" && COMMANDS_ONLY_PLATFORMS[readConfig(cwd).target]) {
-    return;
-  }
-
+  // OpenCode always gets the guard (`--target opencode`, `--opencode`, or a project
+  // that already uses it), so an absent plugin here is a hole, not a design choice —
+  // the same rule as a .claude/settings.json without the hook.
   if (plugin.state === "absent") {
     errors.push({
       code: "opencode_guard_not_wired",
       file,
-      message: "this project uses OpenCode but no guard plugin is installed — writes are not protected there; run `ai-flow upgrade --opencode`",
+      message: "this project uses OpenCode but no guard plugin is installed — writes are not protected there; run `ai-flow upgrade`",
     });
   } else if (plugin.state === "stale") {
     warnings.push({
@@ -410,25 +448,28 @@ function collectDoctorReport({ strict = false } = {}) {
     }
   }
 
-  // The exact files each commands-only platform's renderer writes.
-  for (const platform of platforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+  // The exact files each platform's renderer writes. OpenCode needs none of its
+  // own when `.claude/skills` already carries them: it reads them there.
+  for (const platform of platforms.filter((p) => COMMAND_PLATFORMS[p])) {
+    if (platform === "opencode" && servedByClaude(cwd, skillNames)) {
+      continue;
+    }
+
     for (const name of skillNames) {
-      required.push(COMMANDS_ONLY_PLATFORMS[platform].render(`---\nname: ${name}\ndescription: x\n---\n`).relPath);
+      required.push(COMMAND_PLATFORMS[platform].render(`---\nname: ${name}\ndescription: x\n---\n`).relPath);
     }
   }
 
   const errors = [];
   const warnings = [];
   // Known, permanent facts — not a problem to fix, so never an error or a warning.
+  // OpenCode has its own guard (a plugin, checked by checkOpenCodeWiring), so only
+  // the platforms with no verified mechanism get this note.
   const notes = platforms
-    .filter((p) => COMMANDS_ONLY_PLATFORMS[p])
-    // OpenCode can carry a guard plugin: it is only "unavailable" until it is wired.
-    .filter((p) => p !== "opencode" || inspectOpenCodePlugin().state === "absent")
+    .filter((p) => COMMAND_PLATFORMS[p] && !COMMAND_PLATFORMS[p].guard)
     .map((p) => ({
       code: "guard_unavailable",
-      message:
-        `guard not available on this host (${p}): commands are installed, writes are not mechanically protected` +
-        (p === "opencode" ? " — run `ai-flow init --target opencode --opencode` to wire the guard plugin" : ""),
+      message: `guard not available on this host (${p}): commands are installed, writes are not mechanically protected`,
     }));
 
   if (config.target === "unrecognized") {
@@ -436,7 +477,7 @@ function collectDoctorReport({ strict = false } = {}) {
       code: "platform_unrecognized",
       message:
         "no platform was recognized at init, so no commands and no guard were installed — " +
-        "run `ai-flow init --target claude` or `--target codex`",
+        `run \`ai-flow init --target <platform>\` (${EXPLICIT_TARGETS.join(", ")})`,
     });
   }
 
@@ -605,7 +646,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
       target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
     });
 
-    for (const platform of fixPlatforms.filter((p) => COMMANDS_ONLY_PLATFORMS[p])) {
+    for (const platform of fixPlatforms.filter((p) => COMMAND_PLATFORMS[p])) {
       copyPlatformCommands(platform, { force: false, dryRun: false });
     }
 

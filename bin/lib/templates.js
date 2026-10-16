@@ -5,11 +5,13 @@
 
 const crypto = require("crypto");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
-const { templatesRoot, cwd, packageJson, githubNpxCommand, flowScripts } = require("./context");
+const { templatesRoot, cwd, packageJson, npxCommand, flowScripts } = require("./context");
 const { CODEX_SKILLS_DIR, renderSkill: renderCodexSkill } = require("./platforms/codex");
-const { COMMANDS_ONLY_PLATFORMS } = require("./platforms/registry");
+const { COMMAND_PLATFORMS } = require("./platforms/registry");
+const { OPENCODE_SKILLS_DIR, OPENCODE_COMMANDS_DIR, servedByClaude } = require("./platforms/opencode");
 const {
   log,
   fail,
@@ -60,6 +62,32 @@ const CLAUDE_ONLY_TEMPLATES = ["CLAUDE.md"];
 
 // `target` is "claude" by default so every existing caller keeps its behavior.
 // Anything else (codex, unrecognized) gets the shared files only.
+// The Claude skills are copied file for file, so pinning them (see pinNpx) means
+// handing the copy a pinned source. It lives in a per-version temp directory, so
+// every hash comparison (upgrade, manifest, uninstall) sees the pinned bytes as
+// "what we install" with no other change. OpenCode reads .claude/skills too: an
+// unpinned copy there sent `npx` to whatever npm called latest.
+function pinnedSkillSource(source, relativePath) {
+  const original = fs.readFileSync(source, "utf8");
+  const pinned = pinNpx(original);
+
+  if (pinned === original) {
+    return source;
+  }
+
+  const target = path.join(os.tmpdir(), `coding-flow-pinned-${packageJson.version}`, relativePath);
+
+  if (!fs.existsSync(target) || fs.readFileSync(target, "utf8") !== pinned) {
+    // Written aside then renamed: parallel runs never read a half-written file.
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const partial = `${target}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(partial, pinned);
+    fs.renameSync(partial, target);
+  }
+
+  return target;
+}
+
 function getTemplateSpecs({ includeSkills = true, target = "claude" } = {}) {
   ensureTemplatesExist();
 
@@ -77,7 +105,7 @@ function getTemplateSpecs({ includeSkills = true, target = "claude" } = {}) {
     }
 
     specs.push({
-      source,
+      source: isSkillTarget(relativePath) ? pinnedSkillSource(source, relativePath) : source,
       sourceRel: relativePath,
       targetRel: relativePath,
       kind: "template",
@@ -178,27 +206,27 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     ? [
         "npm run flow:status                 # where each story stands",
         "npm run flow:next                   # the one thing worth doing right now",
-        `${githubNpxCommand} ship   # push the branch and open/update the PR`,
+        `${npxCommand} ship   # push the branch and open/update the PR`,
       ]
     : [
-        `${githubNpxCommand} status`,
-        `${githubNpxCommand} next`,
-        `${githubNpxCommand} ship`,
+        `${npxCommand} status`,
+        `${npxCommand} next`,
+        `${npxCommand} ship`,
       ];
   const setupCommands = hasPackageJson
     ? [
-        `${githubNpxCommand} init`,
+        `${npxCommand} init`,
         "npm run flow:upgrade",
         "npm run flow:fix",
         "npm run flow:uninstall -- --dry-run",
         "npm run flow:uninstall",
       ]
     : [
-        `${githubNpxCommand} init`,
-        `${githubNpxCommand} upgrade`,
-        `${githubNpxCommand} doctor --fix`,
-        `${githubNpxCommand} uninstall --dry-run`,
-        `${githubNpxCommand} uninstall`,
+        `${npxCommand} init`,
+        `${npxCommand} upgrade`,
+        `${npxCommand} doctor --fix`,
+        `${npxCommand} uninstall --dry-run`,
+        `${npxCommand} uninstall`,
       ];
   // Rarely typed by hand: the skills, CI, and the git hook run these for you.
   const machinery = hasPackageJson
@@ -209,10 +237,10 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
         "npm run flow:harness  # quick security evidence check",
       ]
     : [
-        `${githubNpxCommand} doctor`,
-        `${githubNpxCommand} doctor --strict`,
-        `${githubNpxCommand} list-skills`,
-        `${githubNpxCommand} harness check --quick`,
+        `${npxCommand} doctor`,
+        `${npxCommand} doctor --strict`,
+        `${npxCommand} list-skills`,
+        `${npxCommand} harness check --quick`,
       ];
 
   return [
@@ -222,7 +250,7 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     "",
     "## Start Here",
     "",
-    "In Claude Code (the daily driver):",
+    "In your agent (Claude Code, OpenCode, Gemini, Antigravity: `/flow-*`; Codex: `$flow-*`):",
     "",
     "```txt",
     'Use /flow-plan to turn an objective into implementation-ready stories.',
@@ -231,7 +259,7 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     "Then /flow-review before merge, and /flow-ship to open the PR.",
     "/flow-run captures the verify proof itself — you never run it by hand.",
     "",
-    "With the plugin installed the same skills answer to coding-flow:flow-*.",
+    "With the Claude plugin installed the same skills answer to coding-flow:flow-*.",
     "```",
     "",
     "In the terminal:",
@@ -256,7 +284,7 @@ function buildCommandsMarkdown({ hasPackageJson = false } = {}) {
     ...machinery,
     "```",
     "",
-    `Full command reference: \`${githubNpxCommand} help --all\``,
+    `Full command reference: \`${npxCommand} help --all\``,
     "",
   ].join("\n");
 }
@@ -278,15 +306,46 @@ function ensureCommandsFile({ dryRun = false, force = false, hasPackageJson = fa
   return exists ? "updated" : "created";
 }
 
+// The manifests of other ecosystems. A project that has one and no package.json
+// is not a Node project: a package.json there exists only to hold `flow:*`
+// shortcuts, and it confuses that project's own tooling and reviewers. The CLI
+// works the same without it (`ai-flow …` or `npx @landry_pouth/coding-flow …`).
+const OTHER_ECOSYSTEM_MANIFESTS = [
+  "pyproject.toml",
+  "setup.py",
+  "requirements.txt",
+  "Pipfile",
+  "go.mod",
+  "Cargo.toml",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "Gemfile",
+  "composer.json",
+  "mix.exs",
+  "pubspec.yaml",
+  "Package.swift",
+];
+
+function otherEcosystemManifest() {
+  return OTHER_ECOSYSTEM_MANIFESTS.find((name) => fs.existsSync(path.join(cwd, name))) || null;
+}
+
 function ensurePackageScripts({ dryRun = false } = {}) {
   const detected = detectProjectPackageJson();
+  const foreign = detected.exists ? null : otherEcosystemManifest();
   const result = {
     packageJsonExists: detected.exists,
-    packageJsonCreated: !detected.exists,
+    packageJsonCreated: !detected.exists && !foreign,
+    notNode: foreign,
     added: [],
     existing: [],
     conflicts: [],
   };
+
+  if (foreign) {
+    return result;
+  }
 
   if (detected.exists && (!detected.packageJson || typeof detected.packageJson !== "object")) {
     result.conflicts.push({
@@ -416,6 +475,10 @@ function ensureConvenienceFiles({ dryRun = false, force = false } = {}) {
 }
 
 function printConvenienceSummary(convenience, { dryRun = false } = {}) {
+  if (convenience.scripts.notNode) {
+    log(`Package.json: not created (${convenience.scripts.notNode} found — not a Node project); use \`ai-flow <command>\` or \`${npxCommand} <command>\``);
+  }
+
   if (convenience.scripts.packageJsonCreated) {
     log(`Package.json: ${dryRun ? "would create" : "created"} at project root`);
   }
@@ -499,6 +562,7 @@ function hashText(text) {
 function syncRendered(files, manifestKey, { force, dryRun }) {
   const written = [];
   const skipped = [];
+  const edited = [];
   const manifest = readManifest();
   const recorded = { ...(manifest[manifestKey] || {}) };
 
@@ -517,6 +581,7 @@ function syncRendered(files, manifestKey, { force, dryRun }) {
 
       if (!force && recorded[rel] !== currentHash) {
         skipped.push(rel);
+        edited.push(rel);
         continue;
       }
     }
@@ -534,14 +599,25 @@ function syncRendered(files, manifestKey, { force, dryRun }) {
     writeJson(manifestPath(), { ...manifest, [manifestKey]: recorded });
   }
 
-  return { written, skipped };
+  return { written, skipped, edited };
+}
+
+// A rendered skill outlives the process that wrote it, and a bare
+// `npx @scope/pkg` resolves to whatever npm calls latest at the moment the agent
+// runs it — not the version that rendered the skill (npx ignores a global
+// install). Pinning keeps `/flow-setup` and the other skills on the release that
+// wrote them; `ai-flow upgrade` re-renders with the new pin.
+function pinNpx(markdown) {
+  const name = packageJson.name.replace(/[/@.]/g, (c) => `\\${c}`);
+
+  return String(markdown).replace(new RegExp(`npx ${name}(?![@\\w-])`, "g"), `npx ${packageJson.name}@${packageJson.version}`);
 }
 
 function sourceSkills() {
   ensureTemplatesExist();
 
   return listTemplateSkillNames().map((name) =>
-    fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8"),
+    pinNpx(fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8")),
   );
 }
 
@@ -551,22 +627,102 @@ function copyCodexSkills({ force = false, dryRun = false } = {}) {
   const files = listTemplateSkillNames().map((name) => ({
     rel: `${CODEX_SKILLS_DIR}/${name}/SKILL.md`,
     content: renderCodexSkill(
-      fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8"),
+      pinNpx(fs.readFileSync(path.join(templatesRoot, ".claude", "skills", name, "SKILL.md"), "utf8")),
     ),
   }));
 
   return syncRendered(files, "codexSkills", { force, dryRun });
 }
 
+// The rendered files of one platform, relative to its config directory
+// (`.opencode/skills/flow-run/SKILL.md` -> `skills/flow-run/SKILL.md`): the
+// global OpenCode install writes them under ~/.config/opencode instead.
+function renderPlatformCommands(target) {
+  return sourceSkills().map((markdown) => {
+    const { relPath, content } = COMMAND_PLATFORMS[target].render(markdown);
+
+    return { rel: relPath.split("/").slice(1).join("/"), content };
+  });
+}
+
+// Removes rendered files this install wrote under `prefixes` (manifest entries
+// whose file still matches the recorded hash) and forgets them. A file the user
+// edited is kept and reported, never deleted.
+function retireRendered(prefixes, manifestKey, { dryRun = false } = {}) {
+  const manifest = readManifest();
+  const recorded = { ...(manifest[manifestKey] || {}) };
+  const removed = [];
+  const modified = [];
+
+  for (const [rel, hash] of Object.entries(recorded)) {
+    if (!prefixes.some((prefix) => rel.startsWith(prefix))) {
+      continue;
+    }
+
+    const target = path.join(cwd, rel);
+
+    if (!fs.existsSync(target)) {
+      delete recorded[rel];
+      continue;
+    }
+
+    if (hashText(fs.readFileSync(target, "utf8")) !== hash) {
+      modified.push(rel);
+      continue;
+    }
+
+    if (!dryRun) {
+      fs.unlinkSync(target);
+      removeEmptyDirsUpward(path.dirname(target), cwd, { dryRun });
+    }
+
+    delete recorded[rel];
+    removed.push(rel);
+  }
+
+  if (!dryRun && removed.length > 0) {
+    writeJson(manifestPath(), { ...manifest, [manifestKey]: recorded });
+  }
+
+  return { removed, modified };
+}
+
 // Gemini, OpenCode and Antigravity: same sources, each rendered in its own format.
+//
+// OpenCode reads `.claude/skills/` too, so when the Claude copy is there it
+// serves both agents and nothing is rendered (`servedBy: "claude"`); a copy we
+// rendered before that is retired. The `.opencode/command/` files earlier
+// versions wrote are retired in every case — the skills replace them.
 function copyPlatformCommands(target, { force = false, dryRun = false } = {}) {
+  let retired = { removed: [], modified: [] };
+
+  if (target === "opencode") {
+    retired = retireRendered([`${OPENCODE_COMMANDS_DIR}/`], "platformCommands", { dryRun });
+
+    if (servedByOpenCodeFromClaude(listTemplateSkillNames())) {
+      const own = retireRendered([`${OPENCODE_SKILLS_DIR}/`], "platformCommands", { dryRun });
+
+      return {
+        written: [],
+        skipped: [],
+        edited: [],
+        servedBy: "claude",
+        retired: { removed: [...retired.removed, ...own.removed], modified: [...retired.modified, ...own.modified] },
+      };
+    }
+  }
+
   const files = sourceSkills().map((markdown) => {
-    const { relPath, content } = COMMANDS_ONLY_PLATFORMS[target].render(markdown);
+    const { relPath, content } = COMMAND_PLATFORMS[target].render(markdown);
 
     return { rel: relPath, content };
   });
 
-  return syncRendered(files, "platformCommands", { force, dryRun });
+  return { ...syncRendered(files, "platformCommands", { force, dryRun }), servedBy: null, retired };
+}
+
+function servedByOpenCodeFromClaude(names) {
+  return servedByClaude(cwd, names);
 }
 
 // The friction log is the one piece of documentation a minimal install still
@@ -647,6 +803,7 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true, ta
   const copied = [];
   const updated = [];
   const skipped = [];
+  const unchanged = [];
 
   for (const spec of getTemplateSpecs({ includeSkills, target })) {
     const result = copyFileToTarget(spec.source, spec.targetRel, { force, dryRun });
@@ -655,6 +812,10 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true, ta
       copied.push(spec.targetRel);
     } else if (result === "updated") {
       updated.push(spec.targetRel);
+    } else if (hashFile(path.join(cwd, spec.targetRel)) === hashFile(spec.source)) {
+      // Still exactly what we installed (a second `init` for another agent):
+      // not the user's file, so not reported as one kept from them.
+      unchanged.push(spec.targetRel);
     } else {
       skipped.push(spec.targetRel);
     }
@@ -673,7 +834,7 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true, ta
 
   const harnessCreated = ensureHarnessConfig({ dryRun });
 
-  return { copied, updated, skipped, harnessCreated, prunedSkills };
+  return { copied, updated, skipped, unchanged, harnessCreated, prunedSkills };
 }
 
 function upgrade({
@@ -789,6 +950,8 @@ module.exports = {
   copyTemplates,
   copyCodexSkills,
   copyPlatformCommands,
+  retireRendered,
+  renderPlatformCommands,
   ensureConvenienceFiles,
   ensureFrictionLog,
   printConvenienceSummary,

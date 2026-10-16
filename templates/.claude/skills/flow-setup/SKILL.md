@@ -1,6 +1,6 @@
 ---
 name: flow-setup
-description: Scaffold Coding Flow into the current project from Claude Code (runs the published `init`). Use once per repo, right after installing the plugin, so setup happens in one place without switching to a terminal. Use when the user wants to install, set up, or scaffold Coding Flow in a repository.
+description: Scaffold Coding Flow into the current project from inside your coding agent (Claude Code, OpenCode, Codex…) by running `init`. Use once per repo, right after installing the plugin or the global skills, so setup happens in one place without switching to a terminal. Use when the user wants to install, set up, or scaffold Coding Flow in a repository.
 ---
 
 # Setup
@@ -20,11 +20,18 @@ then `/flow-setup`.
 
 1. Confirm the working directory is the project root (the git repo root, or where
    `package.json` lives if there is one). Stop and ask if it is not.
-2. Run the scaffold:
+2. Run the scaffold. Use `ai-flow` when it is on the PATH (`command -v ai-flow`):
+   it is the version this machine installed. Otherwise use npx exactly as written
+   below — do not drop or change a version pinned there:
 
    ```bash
    npx @landry_pouth/coding-flow init
    ```
+
+   `init` detects the agent you are running in (Claude Code, OpenCode) and installs
+   its skills and its write guard. If it prints **"Platform not recognized"**, it
+   installed neither: re-run it with the agent you are in, e.g.
+   `init --target opencode` (or `claude`, `codex`, `gemini`, `antigravity`).
 
    - `init` is **non-destructive by default**: it never overwrites your files. An
      existing file is left untouched, so re-running is safe.
@@ -50,11 +57,15 @@ Before reporting the setup as done:
 
 - [ ] `init` ran, and its output was read rather than assumed — including its
       brownfield verdict, which is relayed either way.
-- [ ] `doctor` ran and reported the install as correct.
+- [ ] `init` did not report "Platform not recognized" — or it was re-run with
+      `--target` until it named the agent you are in.
+- [ ] `doctor` ran and reported the install as correct, with no warning about the
+      platform or the guard (a warning there means writes are not protected).
 - [ ] `RULES.md`, `epics/`, and `.coding-flow/` exist in the project root.
 - [ ] The next step was named: `/flow-plan`.
 
-If `doctor` reported a problem, the setup is not done. Report the problem instead
+If `doctor` reported a problem — an error, or a warning about the platform or the
+guard — the setup is not done. Report the problem instead
 of the list of files `init` created — a scaffold that `doctor` rejects is worse
 than no scaffold, because it looks installed.
 

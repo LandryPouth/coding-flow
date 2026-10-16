@@ -17,7 +17,7 @@ const EXPLICIT_TARGETS = ["claude", "codex", "gemini", "opencode", "antigravity"
 // secret's name. `.claude`, `.codex` and CLAUDECODE=1 resolve to a target above, so
 // they read false in an unrecognized record: kept as a negative confirmation of
 // that resolution order, not as a signal expected to fire.
-const KNOWN_ENV_SIGNALS = ["CLAUDECODE"];
+const KNOWN_ENV_SIGNALS = ["CLAUDECODE", "OPENCODE"];
 const KNOWN_DIR_SIGNALS = [".claude", ".codex", ".gemini", ".config/opencode"];
 
 function isDir(target) {
@@ -30,7 +30,10 @@ function isDir(target) {
 
 // First to answer wins:
 //   1. an explicit --target
-//   2. CLAUDECODE=1 (the one environment signal confirmed reliable)
+//   2. CLAUDECODE=1 or OPENCODE=1, each exported by its own agent into the shells it
+//      spawns (OPENCODE confirmed on OpenCode 1.19). Both at once means one agent
+//      was launched from the other's terminal: the innermost cannot be told from
+//      the outer, so neither is trusted and detection falls through to the directories.
 //   3. a .claude/ or .codex/ directory already in the project
 //   4. "unrecognized"
 // When both directories exist, claude wins: this tool is Claude-native, and a
@@ -40,8 +43,15 @@ function resolveTarget({ flags = {}, env = process.env, cwd = process.cwd() } = 
     return { target: flags.target, source: "flag" };
   }
 
-  if (env && env.CLAUDECODE === "1") {
+  const inClaude = Boolean(env) && env.CLAUDECODE === "1";
+  const inOpenCode = Boolean(env) && env.OPENCODE === "1";
+
+  if (inClaude && !inOpenCode) {
     return { target: "claude", source: "env:CLAUDECODE" };
+  }
+
+  if (inOpenCode && !inClaude) {
+    return { target: "opencode", source: "env:OPENCODE" };
   }
 
   if (isDir(path.join(cwd, ".claude"))) {

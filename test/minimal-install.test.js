@@ -167,3 +167,22 @@ test('a minimal install is idempotent', (t) => {
   assert.match(res.output, /Config: unchanged/);
   assert.match(res.output, /Harness config: unchanged/);
 });
+
+// upgrade used to run the full template copy on any install, so the first
+// `upgrade` of a minimal project quietly turned it into a full one: RULES.md,
+// docs/, examples/, epics/ and a dozen npm scripts appeared in a repo that had
+// asked for none of them.
+test('upgrade keeps a minimal install minimal', (t) => {
+  const dir = project(t, 'min-upgrade');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"x","scripts":{"test":"true"}}\n');
+  assert.equal(run(dir, ['init', '--minimal']).code, 0);
+
+  const res = run(dir, ['upgrade']);
+  assert.equal(res.code, 0, res.output);
+  assert.match(res.output, /Templates: none \(minimal install\)/);
+  for (const file of [...WORKFLOW_FILES, 'docs/architecture.md', 'examples', '.coding-flow/COMMANDS.md']) {
+    assert.equal(fs.existsSync(path.join(dir, file)), false, `${file} must not appear on upgrade`);
+  }
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).scripts, { test: 'true' });
+  assert.ok(fs.existsSync(path.join(dir, '.claude', 'settings.json')), 'the guard is still wired');
+});
