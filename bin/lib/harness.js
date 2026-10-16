@@ -971,7 +971,7 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
   }
 }
 
-function collectHarnessReport({ quick = false, strict = false, story = null } = {}) {
+function collectHarnessReport({ quick = false, strict = false, story = null, files: onlyFiles = null } = {}) {
   const { config, exists } = readHarnessConfig();
   const report = {
     ok: false,
@@ -1001,7 +1001,8 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
     );
   }
 
-  const files = walkProjectFiles(cwd, { quick });
+  // An explicit list (what `ship` is about to stage) replaces the tree walk.
+  const files = Array.isArray(onlyFiles) ? onlyFiles : walkProjectFiles(cwd, { quick });
   report.stats.filesScanned = files.length;
 
   checkSensitivePaths(files, config, report);

@@ -149,7 +149,7 @@ Usage:
   ai-flow worktree land <name>|--story <path>
   ai-flow worktree place --epic <path> --story <path> [--json]
   ai-flow worktree autoland --epic <path> --story <path> [--json]
-  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit]
+  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit] [--all]
                [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
   ai-flow hook install|uninstall|status [--dry-run] [--json]
   ai-flow commands [--json]
@@ -214,6 +214,7 @@ Flags:
   --web      Open the pull request in the browser after ship.
   --no-evidence  Do not attach the latest verify evidence to ship's PR body.
   --no-commit  Do not auto-commit a dirty tree before ship pushes (push existing commits only).
+  --all  With ship: commit the whole dirty tree, not only the story's files (the default in a story worktree).
   --auto-merge  Force-enable ship's auto-merge for this run (overrides autoMergeEpic config).
   --no-auto-merge  Force-disable ship's auto-merge for this run.
   --merge-method  Merge strategy for ship's auto-merge: merge (default), squash, or rebase.

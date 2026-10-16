@@ -25,13 +25,13 @@ that work into the PR.
 
 ## Acceptance Criteria
 
-- [ ] Shared checkout, story touched `src/geo/a.ts`; dirty: `src/geo/a.ts`,
+- [x] Shared checkout, story touched `src/geo/a.ts`; dirty: `src/geo/a.ts`,
       `src/billing/b.ts`, new `src/geo/c.ts`, story `tasks.md` → commit holds
       `a.ts`, `c.ts`, `tasks.md`; `b.ts` listed as left out.
-- [ ] Same with `--all` → all four committed.
-- [ ] In a story worktree → all dirty files committed without `--all`.
-- [ ] `--dry-run` prints both lists, commits nothing.
-- [ ] A secret in a left-out file does not block the ship; a secret in a
+- [x] Same with `--all` → all four committed.
+- [x] In a story worktree → all dirty files committed without `--all`.
+- [x] `--dry-run` prints both lists, commits nothing.
+- [x] A secret in a left-out file does not block the ship; a secret in a
       staged file still does.
 
 ## Edge Cases

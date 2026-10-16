@@ -31,6 +31,9 @@ Useful flags:
 - `--web` — open the PR in the browser afterward.
 - `--no-evidence` — do not attach the latest verify evidence.
 - `--no-commit` — do not auto-commit a dirty tree; push existing commits only.
+- `--all` — commit the whole dirty tree. By default, outside a story worktree,
+  only the story's files are committed (its directory, files the branch already
+  touched, new files beside them) and the rest is listed as left out.
 - `--auto-merge` / `--no-auto-merge` — override the project's `autoMergeEpic`
   config for this run (see Auto-Merge below).
 - `--merge-method <merge|squash|rebase>` — merge strategy when auto-merging
@@ -52,7 +55,7 @@ A dirty tree is committed before it is pushed, so `ship` really is the last step
 a story instead of requiring a manual commit first. The commit message is generic:
 the title of the story linked to the current branch, or the branch name otherwise.
 Before committing, `ship` runs the same secret/sensitive-file scan as
-`ai-flow harness check --quick`; if that scan finds an issue, `ship` stops without
+`ai-flow harness check --quick` on the files it is about to commit; if that scan finds an issue, `ship` stops without
 committing or pushing — fix it (or commit by hand) and ship again. Skip this with
 `--no-commit`.
 

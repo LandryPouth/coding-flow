@@ -21,7 +21,7 @@ const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { collectHarnessReport } = require("./harness");
 const { coverageTier } = require("./coverage");
-const { describeScope } = require("./diff-base");
+const { describeScope, resolveDiffBase } = require("./diff-base");
 const { latestVerifyByStoryDir } = require("./audit");
 
 // Idempotent markers: the evidence section is replaced between them, never the
@@ -294,25 +294,151 @@ function autoCommitMessage(root, config, branch) {
   return `chore(ship): ${found ? found.story.title : branch}`;
 }
 
-// Commits whatever is sitting dirty in the tree before ship pushes it, so
-// "ship" is really the last step of a story instead of requiring a manual
-// commit first. Gated by the same secret/sensitive-file scan `harness check
-// --quick` runs: an automatic commit must never be the thing that leaks a
-// credential a human would have caught in review.
-function autoCommitDirtyTree(root, config, branch, { dryRun }) {
-  const dirty = git(root, ["status", "--porcelain"], { allowFail: true }).stdout.trim().length > 0;
+// Dirty entries as `git status` sees them, one per file (untracked directories
+// expanded). A rename is ONE entry carrying both sides, scoped as a unit.
+function dirtyEntries(root) {
+  const out = git(root, ["status", "--porcelain", "-z", "--untracked-files=all"], { allowFail: true }).stdout;
+  const tokens = out.split("\0").filter(Boolean);
+  const entries = [];
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const code = tokens[i].slice(0, 2);
+    const entry = { code, path: tokens[i].slice(3), paths: [tokens[i].slice(3)] };
+    if (/[RC]/.test(code)) {
+      i += 1;
+      entry.paths.push(tokens[i]);
+    }
+    entries.push(entry);
+  }
+
+  return entries;
+}
+
+// A linked worktree is isolated by construction: nothing in it belongs to
+// another piece of work.
+function inLinkedWorktree(root) {
+  const dir = git(root, ["rev-parse", "--path-format=absolute", "--git-dir"], { allowFail: true }).stdout.trim();
+  const common = git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"], { allowFail: true }).stdout.trim();
+  return Boolean(dir && common && path.resolve(dir) !== path.resolve(common));
+}
+
+// Whether a run file under .coding-flow/runs/ was produced for this story.
+function runBelongsToStory(root, file, storyPath) {
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(root, file), "utf8"));
+    const story = typeof data.story === "string" ? data.story.replace(/\\/g, "/").replace(/\/+$/, "") : "";
+    return story !== "" && (story === storyPath || storyPath.endsWith(`/${story}`));
+  } catch {
+    return false;
+  }
+}
+
+// What the automatic commit takes: the story's directory, files the branch has
+// already touched since its base, new files next to those, and the run files
+// produced for the story. Everything else is left out and listed.
+function planStaging(root, config, branch, { all }) {
+  const entries = dirtyEntries(root);
+  const paths = [...new Set(entries.flatMap((entry) => entry.paths))];
+  const everything = (reason) => ({ include: paths, exclude: [], entries, scoped: false, reason });
+
+  if (paths.length === 0) return everything(null);
+  if (all) return everything("--all");
+  if (inLinkedWorktree(root)) return everything("story worktree");
+
+  const found = findStoryAndEpic(root, config, branch);
+  if (!found) {
+    return { ...everything("no story linked"), warning: "no story is linked to this branch, cannot compute its scope — committing the whole dirty tree." };
+  }
+
+  let base = null;
+  try {
+    base = resolveDiffBase(root, { story: found.story.path });
+  } catch {
+    base = null;
+  }
+  if (!base || !base.mergeBase) {
+    return { ...everything("no base"), warning: "no base to measure the story's scope from — committing the whole dirty tree." };
+  }
+
+  const touched = git(root, ["diff", "--name-only", "--no-renames", "-z", `${base.mergeBase}..HEAD`], { allowFail: true })
+    .stdout.split("\0")
+    .filter(Boolean);
+  const touchedSet = new Set(touched);
+  // A file at the repo root says nothing about its siblings: "." is not a scope.
+  const touchedDirs = new Set(touched.map((file) => path.posix.dirname(file)).filter((dir) => dir !== "."));
+  const storyDir = `${found.story.path.replace(/\/+$/, "")}/`;
+  const include = [];
+  const exclude = [];
+  const keptEntries = [];
+
+  for (const entry of entries) {
+    const inScope = entry.paths.some(
+      (file) =>
+        file.startsWith(storyDir) ||
+        touchedSet.has(file) ||
+        (entry.code === "??" && touchedDirs.has(path.posix.dirname(file))) ||
+        (file.startsWith(".coding-flow/runs/") && runBelongsToStory(root, file, found.story.path)),
+    );
+    if (inScope) {
+      include.push(...entry.paths);
+      keptEntries.push(entry);
+    } else {
+      exclude.push(...entry.paths);
+    }
+  }
+
+  return { include, exclude, entries: keptEntries, scoped: true, reason: null };
+}
+
+// Literal pathspecs: a file named `*.ts` must not capture its siblings. Only
+// entries with a working-tree change need an add — a deletion or rename already
+// in the index has nothing to match (and would make `git add` fail).
+function addEntries(root, entries) {
+  const paths = entries.filter((entry) => entry.code[1] !== " ").map((entry) => entry.path);
+  for (let i = 0; i < paths.length; i += 200) {
+    git(root, ["--literal-pathspecs", "add", "-A", "--", ...paths.slice(i, i + 200)]);
+  }
+}
+
+// Commits what sits dirty in the tree before ship pushes it, so "ship" is
+// really the last step of a story instead of requiring a manual commit first.
+// Only the story's own changes by default (see planStaging); `--all` takes the
+// lot. Gated by the secret/sensitive-file scan of exactly the files being
+// committed: an automatic commit must never be the thing that leaks a
+// credential a human would have caught in review — and a secret in a file
+// that stays out of the commit is not this commit's business.
+function autoCommitDirtyTree(root, config, branch, { dryRun, all = false }) {
+  const plan = planStaging(root, config, branch, { all });
+  const dirty = plan.include.length + plan.exclude.length > 0;
 
   if (!dirty) {
     return { committed: false, dirty: false };
   }
 
   const message = autoCommitMessage(root, config, branch);
+  const leftOut = plan.exclude;
 
   if (dryRun) {
-    return { committed: false, dirty: true, message };
+    return { committed: false, dirty: true, message, include: plan.include, exclude: leftOut, warning: plan.warning };
   }
 
-  const report = collectHarnessReport({ quick: true });
+  if (plan.warning) log(`Warning: ${plan.warning}`);
+
+  if (plan.include.length === 0) {
+    log(`Nothing in this story's scope to commit.${listLeftOut(leftOut)}`);
+    return { committed: false, dirty: false, exclude: leftOut };
+  }
+
+  const present = plan.include
+    .map((file) => path.join(root, file))
+    .filter((file) => {
+      try {
+        return fs.statSync(file).isFile();
+      } catch {
+        return false;
+      }
+    });
+  const report = collectHarnessReport({ quick: true, files: present });
   if (!report.ok) {
     fail(
       "dirty working tree, but the secret/sensitive-file check found issues — not committing.\n" +
@@ -320,10 +446,21 @@ function autoCommitDirtyTree(root, config, branch, { dryRun }) {
     );
   }
 
-  git(root, ["add", "-A"]);
-  git(root, ["commit", "-m", message]);
+  addEntries(root, plan.entries);
+  if (plan.scoped) {
+    // --only: files staged beforehand by hand and left out stay out.
+    git(root, ["--literal-pathspecs", "commit", "-m", message, "--only", "--", ...plan.include]);
+  } else {
+    git(root, ["commit", "-m", message]);
+  }
   log(`Committed: ${message}`);
-  return { committed: true, dirty: false, message };
+  if (leftOut.length > 0) log(listLeftOut(leftOut).trim());
+  return { committed: true, dirty: false, message, exclude: leftOut };
+}
+
+function listLeftOut(files) {
+  if (files.length === 0) return "";
+  return ` Left out of the commit (not in this story's scope): ${files.join(", ")}.  Re-run with --all to include them.`;
 }
 
 // Whether every story of the branch's epic is proof-backed, so the PR is safe to
@@ -451,6 +588,7 @@ function ship({
   dryRun = false,
   includeEvidence = true,
   commit = true,
+  all = false,
   autoMerge = null,
   mergeMethod = "merge",
   cwd,
@@ -472,7 +610,7 @@ function ship({
   }
   const remoteUrl = originUrl.stdout.trim();
 
-  const commitResult = commit ? autoCommitDirtyTree(root, config, branch, { dryRun }) : { committed: false, dirty: false };
+  const commitResult = commit ? autoCommitDirtyTree(root, config, branch, { dryRun, all }) : { committed: false, dirty: false };
 
   // Commits to ship: above the base (local if present, otherwise origin).
   const baseRef = localRefExists(root, targetBase)
@@ -494,8 +632,16 @@ function ship({
     log("Dry run — nothing is pushed.");
     log(`  branch : ${branch}`);
     log(`  base   : ${targetBase}`);
-    if (commitResult.dirty && commit) {
-      log(`  commit : would commit the dirty tree as "${commitResult.message}"`);
+    if (commitResult.dirty && commit && commitResult.include.length === 0) {
+      log(`  commit : nothing in this story's scope to commit`);
+      log(`  exclude: ${commitResult.exclude.join(", ")}  (--all to include)`);
+    } else if (commitResult.dirty && commit) {
+      if (commitResult.warning) log(`  warning: ${commitResult.warning}`);
+      log(`  commit : would commit as "${commitResult.message}"`);
+      log(`  include: ${commitResult.include.length ? commitResult.include.join(", ") : "(nothing)"}`);
+      if (commitResult.exclude.length > 0) {
+        log(`  exclude: ${commitResult.exclude.join(", ")}  (not in this story's scope; --all to include)`);
+      }
     } else if (dirty) {
       log("  note   : dirty working tree (uncommitted changes will not be pushed; --no-commit).");
     }
@@ -619,6 +765,7 @@ function shipCommand({ getFlagValue, flags, cwd }) {
     dryRun: flags.has("--dry-run"),
     includeEvidence: !flags.has("--no-evidence"),
     commit: !flags.has("--no-commit"),
+    all: flags.has("--all"),
     autoMerge: flags.has("--auto-merge") ? true : flags.has("--no-auto-merge") ? false : null,
     mergeMethod,
     cwd,
