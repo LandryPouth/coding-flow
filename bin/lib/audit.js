@@ -414,11 +414,22 @@ function latestVerifyScopeByStoryDir(root) {
         generatedAt: data.generatedAt || "",
         tier: data.coverage ? data.coverage.tier || coverageTier(data.coverage) : null,
         scope: data.diffBase ? data.diffBase.scope || null : null,
+        warnings: contraryWarningCounts(data.contrary),
       });
     }
   }
 
   return byDir;
+}
+
+// How many deleted tests and open criteria a passing run still carries; null
+// when there are none, or when the evidence predates the signals.
+function contraryWarningCounts(contrary) {
+  const w = contrary && contrary.warnings;
+  const deletedTests = w && Array.isArray(w.deletedTests) ? w.deletedTests.length : 0;
+  const openCriteria = w && Array.isArray(w.openCriteria) ? w.openCriteria.length : 0;
+
+  return deletedTests + openCriteria > 0 ? { deletedTests, openCriteria } : null;
 }
 
 function buildAuditMarkdown(entries) {

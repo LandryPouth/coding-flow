@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Contrary signals can fail a strict run.** In `mode: strict` (or on a high-risk
+  story with `harness.json` `failOnContrarySignals: true`) a deleted test file and
+  an acceptance criterion still open make `verify` report `NOT PROVEN`, unless a
+  `## Test Exemption` names the deleted file, or the criterion is marked `[~]` /
+  listed under `## Deferred Criteria`. Removed assertions stay a warning. Elsewhere
+  the verdict is unchanged but the summary reads `passed, with warnings (3 deleted
+  test files, 5 open criteria)` and `status --json` exposes
+  `warnings: { deletedTests, openCriteria }`. A renamed test is not a deleted one
+  (`--find-renames`), and editing the policy re-runs an earlier proof.
+
 - **The coverage rung can gate `ok`.** `harness.json` `coverageFloor`
   (`{ high, medium, low }`, each `verified | evidence | exempted | not-required`)
   sets the rung a risk level must reach. Defaults keep `standard` as it was

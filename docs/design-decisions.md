@@ -342,6 +342,16 @@ the answer is not "later", it is "no".
 
 ---
 
+### Amended by story 08-03: surfaced by default, enforced on request
+
+Entry 9 held that criteria never change `ok`. That stays true by default. Where the
+project asks for strictness (`mode: strict`, or `failOnContrarySignals` on a
+high-risk story) an open criterion now fails the run, because an open criterion is
+the story's own written claim that the work is unfinished, and failing on it only
+**lowers** what the tool asserts. The direction rule above still holds: the escapes
+(`[~]`, `## Deferred Criteria`, a `## Test Exemption` naming a deleted file) lower
+the claim too, and there is still no binding of a criterion to a named test.
+
 ## 10. Multi-platform support — the second freeze exception
 
 **Decided 2026-08-23.** Planned as `epics/epic-01-multi-platform-support/`

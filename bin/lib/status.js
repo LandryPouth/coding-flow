@@ -207,6 +207,7 @@ function buildStatusModel(config) {
         ...(wtEntry ? { landReady } : {}),
         review,
         ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
+        ...(proof && proof.warnings ? { warnings: proof.warnings } : {}),
         ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
       };
@@ -280,7 +281,13 @@ function status({ json = false } = {}) {
               ? `  review: ${story.review}`
               : "";
         const scopeSuffix = story.scope ? `  coverage ${story.coverage || "?"} (${story.scope} scope)` : "";
-        log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}${reviewSuffix}${scopeSuffix}`);
+        const warningSuffix = story.warnings
+          ? `  ⚠ ${[
+              story.warnings.deletedTests ? `${story.warnings.deletedTests} deleted test(s)` : "",
+              story.warnings.openCriteria ? `${story.warnings.openCriteria} open criteria` : "",
+            ].filter(Boolean).join(", ")}`
+          : "";
+        log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}${reviewSuffix}${scopeSuffix}${warningSuffix}`);
       }
       log("");
     }

@@ -170,7 +170,16 @@ function buildEvidenceBlock(evidence) {
 
   const source = evidence.commandSource || "n/a";
   const count = evidence.commandsFound != null ? evidence.commandsFound : (evidence.results || []).length;
-  lines.push(`**Result:** ${evidence.ok ? "✅ passed" : "❌ FAILED"} — ${count} command(s), source: \`${source}\``);
+  // Every command passed but the run contradicts itself: "FAILED" would send a
+  // reader hunting for a broken test that does not exist.
+  const contraryBlocked = evidence.commandsOk && !evidence.ok && evidence.contrary && !evidence.contrary.ok;
+  lines.push(`**Result:** ${evidence.ok ? "✅ passed" : contraryBlocked ? "❌ NOT PROVEN" : "❌ FAILED"} — ${count} command(s), source: \`${source}\``);
+
+  if (contraryBlocked) {
+    for (const failure of evidence.contrary.failures) {
+      lines.push(`**Contrary signal:** ${failure.detail}`);
+    }
+  }
 
   const git = evidence.provenance && evidence.provenance.git;
   if (git) {

@@ -26,13 +26,13 @@ strictness, and stand out in the others.
 
 ## Acceptance Criteria
 
-- [ ] strict + a deleted `*.test.ts` in the story diff + no exemption →
+- [x] strict + a deleted `*.test.ts` in the story diff + no exemption →
       `ok: false`, reason lists the file.
-- [ ] strict + same + `## Test Exemption` mentioning the file → `ok: true`.
-- [ ] strict + assertions removed only → `ok: true` with warning.
-- [ ] strict + 2 unchecked criteria → `ok: false`; marking one `[~]` and
+- [x] strict + same + `## Test Exemption` mentioning the file → `ok: true`.
+- [x] strict + assertions removed only → `ok: true` with warning.
+- [x] strict + 2 unchecked criteria → `ok: false`; marking one `[~]` and
       the other `[x]` → `ok: true`.
-- [ ] standard + the same inputs → `ok: true`, summary says "with warnings",
+- [x] standard + the same inputs → `ok: true`, summary says "with warnings",
       `status --json` exposes `warnings: { deletedTests, openCriteria }`.
 
 ## Edge Cases
@@ -40,3 +40,5 @@ strictness, and stand out in the others.
 - A story without acceptance criteria (no spec) → no criteria signal.
 - Renamed test files (git rename detection) are not "deleted" — use
   `--find-renames` in `deletedFilesInDiff`.
+
+## Status: done
