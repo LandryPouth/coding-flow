@@ -628,10 +628,23 @@ function landCleanup(root, match, branch, found) {
   let remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
 
   // Windows releases a directory a moment after the last process using it (an
-  // antivirus scan, the indexer, a just-exited child) is gone: retry briefly
-  // before calling the removal failed.
+  // antivirus scan, the indexer, a just-exited child) is gone. Git may then
+  // have dropped the worktree's registration and left the directory: finish
+  // that deletion ourselves, retrying briefly, before calling the removal failed.
   for (let attempt = 0; process.platform === "win32" && remove.code !== 0 && attempt < 10; attempt += 1) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+
+    if (/is not a working tree/.test(remove.stderr)) {
+      try {
+        fs.rmSync(match.path, { recursive: true, force: true });
+      } catch {
+        continue;
+      }
+
+      remove = { code: 0, stdout: "", stderr: "" };
+      break;
+    }
+
     remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
   }
 
