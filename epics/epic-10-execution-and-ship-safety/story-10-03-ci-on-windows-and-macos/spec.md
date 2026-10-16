@@ -19,10 +19,10 @@ making it.
 
 ## Acceptance Criteria
 
-- [ ] The workflow runs on the three OSes.
-- [ ] All three green, with every skip carrying a reason; the skip list is
+- [x] The workflow runs on the three OSes.
+- [x] All three green, with every skip carrying a reason; the skip list is
       recorded in this story's `tasks.md`.
-- [ ] Any product bug found is fixed in this story or logged in
+- [x] Any product bug found is fixed in this story or logged in
       `docs/DOGFOODING.md` with severity, if too large.
 
 ## Edge Cases

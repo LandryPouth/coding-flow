@@ -20,7 +20,8 @@ All notable changes to this project are documented here. The format is based on
   symlink (`/var` → `/private/var`) or a Windows short name (`RUNNER~1`): placement refused with
   "project root is inside git repo", and `--story` paths were rejected. Paths are now compared by
   real path. `autoland` also leaves the worktree it removes (Windows cannot delete the current
-  directory) and retries the removal briefly there.
+  directory). On Windows the removal is retried briefly, best-effort: the landed directory can
+  still stay locked (open, logged in `docs/DOGFOODING.md`).
 
 ### Fixed
 

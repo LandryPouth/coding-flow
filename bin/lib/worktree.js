@@ -616,7 +616,8 @@ function landCleanup(root, match, branch, found) {
   // not silently swallow a real error either — surface it, once the lock is
   // already free, with a message that says what actually happened.
   // Windows cannot delete a directory that is some process's working directory,
-  // and `autoland` runs from inside the worktree it is about to remove.
+  // and `autoland` runs from inside the worktree it is about to remove (this
+  // moves the process's cwd; the CLI exits right after).
   try {
     if (samePath(process.cwd(), match.path) || canonicalPath(process.cwd()).startsWith(canonicalPath(match.path) + path.sep)) {
       process.chdir(root);
