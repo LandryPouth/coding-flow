@@ -20,7 +20,7 @@ function run(cwd, args, env = {}) {
       cwd,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, CI: '', AI_FLOW_FORCE_TTY: '', ...env },
+      env: { ...process.env, CI: '', AI_FLOW_FORCE_TTY: '', NODE_ENV: 'test', ...env },
     });
     return { code: 0, output };
   } catch (err) {
@@ -152,4 +152,25 @@ test('CI=1 counts as unattended too', (t) => {
   const dir = planProject(t);
   assert.notEqual(verify(dir, [], { CI: '1', AI_FLOW_FORCE_TTY: '1' }).code, 0);
   assert.equal(marker(dir), false);
+});
+
+test('AI_FLOW_FORCE_TTY alone does not skip the refusal outside NODE_ENV=test', (t) => {
+  const dir = planProject(t);
+  assert.notEqual(verify(dir, [], { AI_FLOW_FORCE_TTY: '1', NODE_ENV: 'production' }).code, 0);
+  assert.equal(marker(dir), false);
+});
+
+test('--clean-env keeps PATH, HOME and CI for the command', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-cleanenv-keep-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  run(dir, ['init']);
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = {
+    commands: [`node -e "console.log('keep=' + [process.env.PATH, process.env.HOME, process.env.CI].map(Boolean).join())"`],
+  };
+  fs.writeFileSync(configPath, JSON.stringify(config));
+  const { code, output } = run(dir, ['verify', '--json', '--clean-env'], { CI: 'true' });
+  assert.equal(code, 0, output);
+  assert.match(JSON.parse(output).results[0].stdoutTail, /keep=true,true,true/);
 });

@@ -17,7 +17,7 @@ All notable changes to this project are documented here. The format is based on
   environment and records their names, never their values. Evidence now carries
   `unattended`. A refusal is not recorded as a verify (it never turns a verified story
   into a blocked one) and `run` reports it as skipped; `--clean-env` never replays a
-  cached proof; any non-empty `CI` other than `0`/`false` counts as unattended.
+  cached proof; any non-empty `CI` other than `0`/`false` counts as unattended; `AI_FLOW_FORCE_TTY` is honoured under `NODE_ENV=test` only.
 - **`ship` commits the story, not the whole tree.** In a shared checkout the
   automatic commit takes the story's directory, dirty files the branch already
   touched since its base, new files beside those, and the story's run files; the

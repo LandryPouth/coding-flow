@@ -1511,7 +1511,8 @@ function cleanEnvironment(source = process.env) {
 }
 
 // Nobody is watching: no terminal on both ends, or a CI runner. Agents run with
-// no TTY, which is the point. AI_FLOW_FORCE_TTY=1 exists for tests only.
+// no TTY, which is the point. AI_FLOW_FORCE_TTY=1 exists for tests only, so it is
+// honoured under NODE_ENV=test alone: an agent cannot use it to skip the refusal.
 function isUnattended() {
   const ci = (process.env.CI || "").toLowerCase();
 
@@ -1519,7 +1520,7 @@ function isUnattended() {
     return true;
   }
 
-  if (process.env.AI_FLOW_FORCE_TTY === "1") {
+  if (process.env.NODE_ENV === "test" && process.env.AI_FLOW_FORCE_TTY === "1") {
     return false;
   }
 
