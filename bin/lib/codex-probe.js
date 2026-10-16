@@ -106,7 +106,9 @@ function interpretProbe({ status, signal, error, stderr, wrote, directory }) {
     ran: true,
     ok: null,
     detail: UNTRUSTED_SIGNAL.test(stderr || "")
-      ? `codex did not load the project profile (is this project trusted in Codex?): ${reason}`
+      ? "this project is not trusted in Codex yet, so Codex ignores its .codex/config.toml and the guard is not active — " +
+        "open the project once with `codex` and accept to trust it (or add `[projects.\"<this path>\"] trust_level = \"trusted\"` " +
+        "to ~/.codex/config.toml), then run `ai-flow doctor`"
       : `codex itself failed unrelated to the sandbox: ${reason}`,
   };
 }
