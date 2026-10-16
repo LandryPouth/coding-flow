@@ -1324,15 +1324,17 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
     // `fresh`: the story's risk asks for tests that really ran, so the project's
     // cache-bypassing commands stand in for the usual ones when it declared any.
     const freshCommands = Array.isArray(config.validation.freshCommands) ? config.validation.freshCommands : [];
+    const quality = Array.isArray(config.validation.quality) ? config.validation.quality : [];
     const declared = [
       ...(fresh && freshCommands.length > 0
         ? freshCommands
         : Array.isArray(config.validation.commands) ? config.validation.commands : []),
-      ...(Array.isArray(config.validation.quality) ? config.validation.quality : []),
+      ...quality,
     ];
 
     if (declared.length > 0) {
-      return { source: "config", commands: declared };
+      // `quality` is returned so a cached lint is not refused as stale tests.
+      return { source: "config", commands: declared, quality };
     }
   }
 
@@ -2403,13 +2405,15 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
 
     // A full replay is not wrong, but at this risk level it is not proof that the
     // tests ran against this code either.
-    if (freshRequired && item.ok && item.cache === "full") {
+    // Quality commands (lint, format) are exempt: `freshCommands` cannot replace them.
+    if (freshRequired && item.ok && item.cache === "full" && !(resolution.quality || []).includes(command)) {
       return {
         ...item,
         ok: false,
         freshRequired:
           "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
-          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands.",
+          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands " +
+          "(there is no `verify --no-cache`).",
       };
     }
 

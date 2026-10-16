@@ -15,7 +15,7 @@ All notable changes to this project are documented here. The format is based on
   tasks` and the PR evidence table marks the command. Opt in with `freshTestsFor:
   ["high"]` in `harness.json`: at those risk levels a full replay is not proof
   and the verify fails with advice; `validation.freshCommands` in `config.json`
-  run instead of `validation.commands` there (e.g. `npm run test -- --force`).
+  run instead of `validation.commands` there (e.g. `npm run test -- --force`); `quality` commands (lint, format) are never refused for replaying.
 - **Monorepo coverage: every package's report is read.** `coverageReports` entries
   may be globs (`apps/*/coverage/lcov.info`); in a workspace (`workspaces` in
   `package.json`, or `pnpm-workspace.yaml`) the defaults also include

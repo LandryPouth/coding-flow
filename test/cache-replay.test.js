@@ -207,3 +207,22 @@ test('the PR evidence marks a replayed command', (t) => {
 
   assert.match(block, /replayed from cache/);
 });
+
+test('freshTestsFor: a fully replayed quality command is not refused', (t) => {
+  const dir = project(t, {
+    command: 'Cached: 0 cached, 5 total\n',
+    source: 'src/auth/login.js',
+    harness: { freshTestsFor: ['high'] },
+  });
+  const lint = fakeCommand(dir, 'lint.js', 'Cached: 5 cached, 5 total\n');
+  editJson(dir, 'config.json', (config) => {
+    config.validation.quality = [lint];
+  });
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'lint']);
+
+  const { code, output, evidence } = verify(dir);
+
+  assert.equal(code, 0, output);
+  assert.equal(evidence.results[1].cache, 'full');
+});
