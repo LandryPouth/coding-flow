@@ -44,6 +44,12 @@ a phase, not an extra — the story is not finished until it has run. Fix real
 failures; never weaken tests to pass. Re-running an unchanged story replays the
 existing proof instead of re-executing, so calling it again is cheap.
 
+**In a strict project, settle the acceptance criteria before you verify.** An
+unchecked criterion in the story's `## Acceptance Criteria` makes `verify` report
+`NOT PROVEN`. Tick each one that is done (`[x]`), and mark one you are knowingly
+leaving out `[~]` (or list it under `## Deferred Criteria`) — never tick a criterion
+you did not meet. Likewise a deleted test file needs a `## Test Exemption` naming it.
+
 **A green suite is not the same claim as "this change is covered."** When the work
 is risky, `verify` also checks that the diff contains a test. If behavior changed
 and no test file moved, it reports `NOT PROVEN` — every command passed, and the

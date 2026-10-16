@@ -23,4 +23,3 @@ An independent adversarial review found loose exemption / deferred matching, a s
 - `ai-flow worktree land` verifies with coverage skipped, so contrary signals are not judged there (they are per-story, like coverage).
 - `run --epic` judges each story on the whole branch diff, so a deleted test fails every story in the batch (same shape as the coverage gate).
 - A later plain `verify` can reuse a proof earned with `--test-exemption` (pre-existing, same as the coverage exemption).
-- The flow-run / flow-review skills do not yet tell the agent to tick or defer criteria before verifying in a strict project.

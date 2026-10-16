@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- The `flow-run` and `flow-review` skills tell the agent to settle acceptance criteria
+  (`[x]` / `[~]`) and name deleted tests in a `## Test Exemption` before verifying in a
+  strict project.
+
 ### Added
 
 - **Contrary signals can fail a strict run.** In `mode: strict` (or on a high-risk

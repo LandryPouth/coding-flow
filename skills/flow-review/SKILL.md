@@ -39,6 +39,9 @@ separately-invoked path when that extra parallel coverage is worth its cost.
 - Read `RULES.md`, the relevant `docs/`, and the active story files before claiming.
 - Cite files and lines; rank findings by severity. Treat missing validation evidence
   as a risk, and any unrun command as an evidence gap.
+- In a strict project, check that no acceptance criterion is still open without `[~]` or
+  a `## Deferred Criteria` entry, and that every deleted test file is named in a
+  `## Test Exemption`; `verify` fails on both.
 - Run the suite yourself when in doubt — never trust a reported result. When `ai-flow`
   is present, run `ai-flow verify --story <dir>` and read the captured evidence.
 

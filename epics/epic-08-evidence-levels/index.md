@@ -92,3 +92,6 @@ and can run in parallel with the `s1 → s3` chain.
   in strict. A floor that blocks most runs on day one gets switched off.
 - **Depends on epic-07.** A floor on a rung computed over the wrong diff
   would block or pass for the wrong reasons; run 07-01 first.
+- **Follow-up (from the 08-03 review).** `ai-flow worktree land` verifies with coverage
+  skipped, so neither the floor nor contrary signals are judged at landing; plan a
+  story to judge them there.
