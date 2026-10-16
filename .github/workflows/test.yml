@@ -7,15 +7,28 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         node-version: [18.x, 20.x, 22.x]
+        include:
+          - os: windows-latest
+            node-version: 22.x
+          - os: macos-latest
+            node-version: 22.x
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+      # The tests create throwaway git repositories: they need an identity and
+      # no CRLF rewriting (Windows runners default to autocrlf=true).
+      - name: Configure git
+        run: |
+          git config --global user.name "coding-flow CI"
+          git config --global user.email "ci@coding-flow.invalid"
+          git config --global core.autocrlf false
       # No dependency to install: the CLI is zero-dep, we run it directly.
       - run: npm test
