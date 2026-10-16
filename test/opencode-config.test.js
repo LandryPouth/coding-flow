@@ -117,7 +117,7 @@ test('global: the directory follows XDG_CONFIG_HOME, else ~/.config', () => {
 test('cli: `init --global` writes the seven skills to the user dir and nothing in the project', (t) => {
   const home = tmp(t, 'cf-oc-home-');
   const project = tmp(t, 'cf-oc-proj-');
-  const env = cleanEnv({ HOME: home, XDG_CONFIG_HOME: '' });
+  const env = cleanEnv({ HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: '' });
   const out = execFileSync(process.execPath, [CLI, 'init', '--global'], { cwd: project, env, encoding: 'utf8' });
   assert.match(out, /Skills: 7 written/);
   assert.equal(fs.readdirSync(path.join(home, '.config', 'opencode', 'skills')).length, 7);
@@ -173,7 +173,7 @@ test('cli: the generated COMMANDS.md never contains a literal "undefined"', (t) 
 test('cli: `init --global` wires the guard plugin in the user dir by default; --no-guard skips it; uninstall removes it, and only if ours', (t) => {
   const home = tmp(t, 'cf-oc-home-');
   const project = tmp(t, 'cf-oc-proj-');
-  const env = cleanEnv({ HOME: home, XDG_CONFIG_HOME: '' });
+  const env = cleanEnv({ HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: '' });
   const run = (args) => execFileSync(process.execPath, [CLI, ...args], { cwd: project, env, encoding: 'utf8' });
   const plugin = path.join(home, '.config', 'opencode', 'plugins', 'coding-flow-guard.js');
 

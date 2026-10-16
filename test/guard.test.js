@@ -365,7 +365,7 @@ test('init merges the guard hook into an existing settings.json without clobberi
   assert.ok(settings.hooks.PreToolUse.some((e) => /guard/.test(e.hooks[0].command)));
 });
 
-test('the wired hook runs the resolved binary directly (fast path, no npx)', (t) => {
+test('the wired hook runs the resolved binary directly (fast path, no npx)', { skip: process.platform === 'win32' && 'the wired Claude hook is a POSIX sh command' }, (t) => {
   const dir = project(t, 'guard-fastpath');
   runCli(dir, ['init']);
   const settings = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
@@ -440,7 +440,7 @@ test('upgrading widens a matcher we shipped, and only one we shipped', (t) => {
   assert.equal(kept.hooks.PreToolUse[0].matcher, 'Write', 'a customized matcher is never rewritten');
 });
 
-test('init upgrades an existing npx-based guard hook to the resolved binary', (t) => {
+test('init upgrades an existing npx-based guard hook to the resolved binary', { skip: process.platform === 'win32' && 'the wired Claude hook is a POSIX sh command' }, (t) => {
   const dir = project(t, 'guard-upgrade');
   fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
   const existing = {
@@ -535,7 +535,7 @@ test('guard stays silent on stderr when it allows', (t) => {
 // version it was set up with forever — every guard fix would ship to npm and
 // reach nobody. Found by reading a real project's settings.json: it pointed at
 // an npx cache directory holding a two-releases-old copy.
-test('upgrade re-points the hook at the current binary', (t) => {
+test('upgrade re-points the hook at the current binary', { skip: process.platform === 'win32' && 'the wired Claude hook is a POSIX sh command' }, (t) => {
   const dir = project(t, 'guard-upgrade-path');
   runCli(dir, ['init']);
 

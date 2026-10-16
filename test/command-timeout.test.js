@@ -27,7 +27,7 @@ function run(cwd, args) {
 
 function project(t, validation) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-timeout-')));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }));
   assert.equal(run(dir, ['init', '--minimal']).code, 0);
   fs.writeFileSync(path.join(dir, 'slow.js'), 'setTimeout(() => {}, 2000);\n');
   fs.writeFileSync(path.join(dir, 'fast.js'), "console.log('fast');\n");

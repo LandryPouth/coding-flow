@@ -615,6 +615,16 @@ function landCleanup(root, match, branch, found) {
   // cleanup failure here must not be reported as a failed land, but it must
   // not silently swallow a real error either — surface it, once the lock is
   // already free, with a message that says what actually happened.
+  // Windows cannot delete a directory that is some process's working directory,
+  // and `autoland` runs from inside the worktree it is about to remove.
+  try {
+    if (samePath(process.cwd(), match.path) || canonicalPath(process.cwd()).startsWith(canonicalPath(match.path) + path.sep)) {
+      process.chdir(root);
+    }
+  } catch {
+    // the cwd is already gone: nothing holds the directory
+  }
+
   const remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
   if (remove.code !== 0) {
     throw new Error(

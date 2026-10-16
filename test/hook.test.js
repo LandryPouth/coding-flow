@@ -66,7 +66,7 @@ function runHook(dir, cli) {
   }
 }
 
-test('install creates an executable pre-push hook carrying the managed block', (t) => {
+test('install creates an executable pre-push hook carrying the managed block', { skip: process.platform === 'win32' && 'the executable bit does not exist on Windows' }, (t) => {
   const dir = gitRepo(t, 'hook-install');
   const { code } = run(dir, ['hook', 'install']);
   assert.equal(code, 0);

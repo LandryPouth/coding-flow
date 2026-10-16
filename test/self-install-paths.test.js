@@ -24,7 +24,7 @@ test('the plugin generated for this checkout resolves the binary relative to its
 
 test('any other project keeps the absolute binary and the pinned fallback', () => {
   const src = pluginSource();
-  assert.match(src, /const BINARY = "\//);
+  assert.match(src, /const BINARY = "(\/|[A-Za-z]:\\\\)/);
   assert.doesNotMatch(src, /fileURLToPath/);
 });
 
@@ -48,7 +48,7 @@ test('the tracked plugin is exactly what this checkout would generate', () => {
   assert.equal(fs.readFileSync(path.join(ROOT, '.opencode/plugins/coding-flow-guard.js'), 'utf8'), pluginSource({ self: true }));
 });
 
-test('the Claude hook for this checkout uses $CLAUDE_PROJECT_DIR', () => {
+test('the Claude hook for this checkout uses $CLAUDE_PROJECT_DIR', { skip: process.platform === 'win32' && 'the wired Claude hook is a POSIX sh command' }, () => {
   const cmd = guardCommandString(ROOT);
   assert.match(cmd, /\$CLAUDE_PROJECT_DIR\/bin\/ai-flow\.js/);
   assert.doesNotMatch(cmd, /\/home\//);

@@ -202,7 +202,7 @@ test('a hung codex is cut off by the timeout and read as inconclusive, not as a 
   assert.deepEqual(leftovers(dir), []);
 });
 
-test('a codex that is found but fails or hangs on --version is inconclusive, not "absent"', (t) => {
+test('a codex that is found but fails or hangs on --version is inconclusive, not "absent"', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const dir = project(t);
   const original = process.env.PATH;
   t.after(() => { process.env.PATH = original; });
@@ -234,7 +234,7 @@ test('a policy with no plain directory entry is not probed (never a guessed targ
 
 // --- through the CLI, with a fake codex -------------------------------------
 
-test('doctor: a denied probe is confirmed-working, exits 0 and records probe.ok:true with the sandbox tier', (t) => {
+test('doctor: a denied probe is confirmed-working, exits 0 and records probe.ok:true with the sandbox tier', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const fake = fakeCodex(t);
   const dir = codexProject(t, { fake, mode: 'deny' });
   const res = cli(dir, ['doctor'], { fake, mode: 'deny' });
@@ -245,7 +245,7 @@ test('doctor: a denied probe is confirmed-working, exits 0 and records probe.ok:
   assert.equal(last.enforcementTier, 'sandbox');
 });
 
-test('init: a denied probe is logged as confirmed working and recorded with the sandbox tier', (t) => {
+test('init: a denied probe is logged as confirmed working and recorded with the sandbox tier', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const fake = fakeCodex(t);
   const dir = project(t);
   const res = cli(dir, ['init', '--target', 'codex'], { fake, mode: 'deny' });
@@ -256,7 +256,7 @@ test('init: a denied probe is logged as confirmed working and recorded with the 
   assert.equal(last.enforcementTier, 'sandbox');
 });
 
-test('init: a write that is NOT denied is flagged and never earns the sandbox tier', (t) => {
+test('init: a write that is NOT denied is flagged and never earns the sandbox tier', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const fake = fakeCodex(t);
   const dir = project(t);
   const res = cli(dir, ['init', '--target', 'codex'], { fake, mode: 'allow' });
@@ -266,7 +266,7 @@ test('init: a write that is NOT denied is flagged and never earns the sandbox ti
   assert.notEqual(last.enforcementTier, 'sandbox');
 });
 
-test('doctor: a write that is NOT denied is an error, exit 1, probe.ok:false and no sandbox tier', (t) => {
+test('doctor: a write that is NOT denied is an error, exit 1, probe.ok:false and no sandbox tier', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const fake = fakeCodex(t);
   const dir = codexProject(t, { fake, mode: 'allow' });
   const res = cli(dir, ['doctor', '--json'], { fake, mode: 'allow' });
@@ -280,7 +280,7 @@ test('doctor: a write that is NOT denied is an error, exit 1, probe.ok:false and
   assert.deepEqual(leftovers(dir), []);
 });
 
-test('doctor: codex failing for its own reasons is a warning with probe.ok:null, never an error', (t) => {
+test('doctor: codex failing for its own reasons is a warning with probe.ok:null, never an error', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const fake = fakeCodex(t);
   const dir = codexProject(t, { fake, mode: 'fail' });
   const res = cli(dir, ['doctor', '--json'], { fake, mode: 'fail' });
@@ -302,7 +302,7 @@ test('doctor: no codex on PATH spawns nothing, exits 0 and records probe.ran:fal
   assert.equal(last.probe.ran, false);
 });
 
-test('doctor: a glob-only policy warns that the profile could not be probed', (t) => {
+test('doctor: a glob-only policy warns that the profile could not be probed', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const fake = fakeCodex(t);
   const dir = codexProject(t, { fake, mode: 'deny' });
   fs.writeFileSync(path.join(dir, '.coding-flow', 'harness.json'), JSON.stringify({ blockedPaths: ['.env', '**/*.pem'] }));
@@ -312,7 +312,7 @@ test('doctor: a glob-only policy warns that the profile could not be probed', (t
   assert.equal(report.errors.some((e) => e.code === 'codex_sandbox_not_enforcing'), false);
 });
 
-test('doctor twice on an unchanged project runs one version check and one sandbox spawn per run and adds no duplicate evidence', (t) => {
+test('doctor twice on an unchanged project runs one version check and one sandbox spawn per run and adds no duplicate evidence', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const fake = fakeCodex(t);
   const dir = codexProject(t, { fake, mode: 'deny' });
   const before = fs.readFileSync(fake.log, 'utf8').trim().split('\n').length;
@@ -334,7 +334,7 @@ test('a claude project never runs the probe', (t) => {
   assert.equal(fs.existsSync(fake.log), false);
 });
 
-test('report shows the probe outcome next to the tier it earned', (t) => {
+test('report shows the probe outcome next to the tier it earned', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const fake = fakeCodex(t);
   const dir = codexProject(t, { fake, mode: 'deny' });
   cli(dir, ['doctor'], { fake, mode: 'deny' });

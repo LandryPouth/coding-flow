@@ -505,7 +505,7 @@ test('worktree land, run from its own worktree with more than one other checkout
     'with more than one candidate the message must not assert a single specific checkout is correct',
   );
   assert.match(output, /candidates/, 'the message must list the other checkouts instead of guessing one');
-  assert.match(output, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the repo root must be one of the listed candidates');
+  assert.match(output, new RegExp(fs.realpathSync.native(repo).replace(/\\/g, '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), 'the repo root must be one of the listed candidates');
 });
 
 test('worktree land refuses when no verify is recorded for the story', (t) => {

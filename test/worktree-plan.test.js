@@ -289,7 +289,9 @@ test('CLI: worktree place --json reports created + parallelTo for a sibling chai
   const result = JSON.parse(output);
   assert.equal(result.created, true);
   assert.equal(result.chainId, 's3');
-  assert.deepEqual(result.parallelTo, { chainId: 's1', location: path.resolve(repo) });
+  // git reports the real path (macOS: /private/var/...), the temp dir does not.
+  assert.equal(result.parallelTo.chainId, 's1');
+  assert.equal(fs.realpathSync.native(result.parallelTo.location), fs.realpathSync.native(repo));
 });
 
 test('CLI: worktree place without --story fails with a clear message', (t) => {
