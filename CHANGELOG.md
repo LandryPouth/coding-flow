@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`npm run release`** (this repository): after the maintainer's own `npm publish`, tags `vx.y.z`,
+  pushes it and creates the GitHub release from the CHANGELOG section. Idempotent, `--dry-run`
+  prints the plan, never publishes. `doctor` warns here when the current version has no tag.
+
 ### Changed
 
 - **CI runs on Windows and macOS.** The test workflow adds `windows-latest` and `macos-latest`
