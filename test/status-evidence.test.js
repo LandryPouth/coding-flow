@@ -76,6 +76,14 @@ test('legacy prose heuristic still applies when no evidence exists', (t) => {
   assert.equal(inferStoryStatus(blockedDir, { verify: null }), 'blocked');
 });
 
+// A story nobody has started reads like a success to the prose heuristic: its
+// checklist says "## Validation Tasks" and "- [ ] npm test passes". That is the
+// plan, not an outcome, so it must stay "planned".
+test('an untouched checklist is not read as a passing validation', (t) => {
+  const dir = storyDirWithNotes(t, '# Tasks\n\n## Implementation Tasks\n\n- [ ] Create it.\n\n## Validation Tasks\n\n- [ ] `npm test` passes.\n');
+  assert.equal(inferStoryStatus(dir, { verify: null }), 'planned');
+});
+
 // --- integration: status reads the run evidence through the CLI --------------
 
 function projectWithStory(t, prefix) {

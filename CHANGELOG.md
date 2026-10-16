@@ -87,6 +87,10 @@ the same repo.
 - **A second `init` for another agent no longer calls our files the user's.** It
   listed every template it had installed itself, byte for byte, as "Kept … (yours,
   not overwritten)"; only files that differ are listed now.
+- **An untouched story is no longer reported `done`.** With no `## Result`, the
+  prose fallback read the whole checklist, so `## Validation Tasks` /
+  `- [ ] npm test passes` counted as "validation … pass". Headings and unchecked
+  items are skipped now.
 - `init` no longer says "Guard: none yet" when the plugin is already wired.
 - The help, `COMMANDS.md` and the "platform not recognized" message name every
   supported agent and `--target`, not only Claude Code.
