@@ -217,7 +217,8 @@ function buildEvidenceBlock(evidence) {
     lines.push("| Command | Result | Duration |", "| --- | --- | --- |");
     for (const item of results) {
       const status = item.ok ? "✅ exit 0" : item.timedOut ? "⏱ timeout" : `❌ exit ${item.exitCode}`;
-      lines.push(`| \`${item.command}\` | ${status} | ${item.durationMs}ms |`);
+      const replay = item.cache === "full" || item.cache === "partial" ? " (replayed from cache)" : "";
+      lines.push(`| \`${item.command}\` | ${status}${replay} | ${item.durationMs}ms |`);
     }
     lines.push("");
   }

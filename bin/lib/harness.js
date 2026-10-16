@@ -232,6 +232,9 @@ function defaultHarnessConfig() {
     // the stronger one cannot be.
     coverageReports: DEFAULT_REPORT_PATHS,
     minPatchCoverage: 80,
+    // Risk levels at which a validation command that only replayed a build-tool
+    // cache (turbo, nx) does not count as executed proof. See verifyStoryOnce.
+    freshTestsFor: [],
     secretPatterns: defaultSecretPatterns(),
     secretScanAllowlist: defaultSecretScanAllowlist(),
     highRiskPaths: defaultHighRiskPaths(),
@@ -319,6 +322,9 @@ function readHarnessConfig(root = cwd) {
       coverageReports: Array.isArray(config.coverageReports)
         ? config.coverageReports
         : defaults.coverageReports,
+      freshTestsFor: Array.isArray(config.freshTestsFor)
+        ? config.freshTestsFor.filter((level) => typeof level === "string")
+        : defaults.freshTestsFor,
       minPatchCoverage: Number.isFinite(config.minPatchCoverage)
         ? config.minPatchCoverage
         : defaults.minPatchCoverage,
@@ -1308,15 +1314,20 @@ function parseTestsCommands(testsMarkdown) {
 
 // Source of the commands, by decreasing priority: explicit config, then the
 // story's plan.md contract, then the usual package.json scripts.
-function resolveValidationCommands({ storyDir = null } = {}) {
+function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
   const config = readConfig(cwd);
 
   if (config.validation) {
     // Correctness (`commands`) and deterministic quality (`quality`) both flow
     // through the same executed-and-captured proof; a red quality command blocks
     // exactly like a red test. Tests run first, then quality.
+    // `fresh`: the story's risk asks for tests that really ran, so the project's
+    // cache-bypassing commands stand in for the usual ones when it declared any.
+    const freshCommands = Array.isArray(config.validation.freshCommands) ? config.validation.freshCommands : [];
     const declared = [
-      ...(Array.isArray(config.validation.commands) ? config.validation.commands : []),
+      ...(fresh && freshCommands.length > 0
+        ? freshCommands
+        : Array.isArray(config.validation.commands) ? config.validation.commands : []),
       ...(Array.isArray(config.validation.quality) ? config.validation.quality : []),
     ];
 
@@ -1373,6 +1384,39 @@ function outputBufferBytes() {
   return Number.isFinite(override) && override > 0 ? override : 256 * 1024 * 1024;
 }
 
+// Did this command run, or did a build tool replay a previous run? Read from the
+// WHOLE output (the stored tail may have lost the summary). turbo and nx only;
+// anything else is "unknown". `cached`/`total` are present when the summary
+// gave counts.
+function detectCacheState(output) {
+  const text = String(output || "").replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
+
+  const turbo = [...text.matchAll(/Cached:\s+(\d+)\s+cached,\s+(\d+)\s+total/g)].pop();
+  if (turbo) {
+    const cached = Number(turbo[1]);
+    const total = Number(turbo[2]);
+    const state = cached === 0 ? "none" : cached >= total ? "full" : "partial";
+    return { cache: state, cached, total };
+  }
+
+  if (/>>>\s*FULL TURBO/.test(text)) {
+    return { cache: "full" };
+  }
+
+  const nx = [...text.matchAll(/read the output from the cache instead of running the command for (\d+) out of (\d+) tasks/g)].pop();
+  if (nx) {
+    const cached = Number(nx[1]);
+    const total = Number(nx[2]);
+    return { cache: cached >= total ? "full" : "partial", cached, total };
+  }
+
+  if (/Nx read the output from the cache|\[existing outputs match the cache|\[local cache\]/.test(text)) {
+    return { cache: "partial" };
+  }
+
+  return { cache: "unknown" };
+}
+
 function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
@@ -1409,6 +1453,7 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
     timedOut,
     toolError,
     durationMs: Date.now() - started,
+    ...detectCacheState(`${result.stdout || ""}\n${result.stderr || ""}`),
     stdoutTail: (result.stdout || "").slice(-cap),
     stderrTail: (result.stderr || "").slice(-cap),
     // Selected from the WHOLE output, which only exists here: by the time anyone
@@ -1544,7 +1589,14 @@ function printVerify(evidence, outputPath) {
   }
 
   for (const item of evidence.results) {
-    log(`- [${resultStatus(item)}] ${item.command} (${item.durationMs}ms)`);
+    const replay = item.cache === "full" || item.cache === "partial"
+      ? `, replayed from cache${item.total ? `: ${item.cached}/${item.total} tasks` : ""}`
+      : "";
+    log(`- [${resultStatus(item)}] ${item.command} (${item.durationMs}ms${replay})`);
+
+    if (item.freshRequired) {
+      log(`    ${item.freshRequired}`);
+    }
 
     if (item.toolError) {
       log(`    ${item.toolError}`);
@@ -2322,16 +2374,48 @@ function evaluateCoverage(options) {
 // combined result on the commands it actually declares, not on a heuristic
 // scoped to the wrong diff, is what "the same source `ai-flow verify` reads"
 // (spec.md) means here — coverage stays a per-story concern.
+// True when harness.json `freshTestsFor` lists this story's risk level. Risk is
+// scored the way the coverage gate scores it: the story text and the diff.
+function freshTestsRequired({ storyDir, config }) {
+  if (!Array.isArray(config.freshTestsFor) || config.freshTestsFor.length === 0) {
+    return false;
+  }
+
+  const storyRisk = storyDir
+    ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
+    : { level: "low", matchedTerms: [], reason: "no story to read." };
+  const risk = combineRisk(storyRisk, scoreDiffRisk(changedFilesForCoverage(), config));
+
+  return config.freshTestsFor.includes(risk.level);
+}
+
 function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
-  const resolution = resolveValidationCommands({ storyDir });
+  const { config } = readHarnessConfig();
+  const freshRequired = freshTestsRequired({ storyDir, config });
+  const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const results = resolution.commands.map((command) => runValidationCommand(command));
+  const results = resolution.commands.map((command) => {
+    const item = runValidationCommand(command);
+
+    // A full replay is not wrong, but at this risk level it is not proof that the
+    // tests ran against this code either.
+    if (freshRequired && item.ok && item.cache === "full") {
+      return {
+        ...item,
+        ok: false,
+        freshRequired:
+          "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
+          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands.",
+      };
+    }
+
+    return item;
+  });
   const commandsOk = results.length > 0 && results.every((item) => item.ok);
-  const { config } = readHarnessConfig();
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.
   const coverage = !commandsOk

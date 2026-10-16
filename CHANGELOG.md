@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Cache replays are recorded.** Each validation command's result carries
+  `cache` (`full` / `partial` / `none` / `unknown`), read from the whole output
+  of turbo (`Cached: N cached, M total`, `>>> FULL TURBO`) and nx (cache-read
+  lines) with ANSI codes stripped. `verify` prints `replayed from cache: 12/12
+  tasks` and the PR evidence table marks the command. Opt in with `freshTestsFor:
+  ["high"]` in `harness.json`: at those risk levels a full replay is not proof
+  and the verify fails with advice; `validation.freshCommands` in `config.json`
+  run instead of `validation.commands` there (e.g. `npm run test -- --force`).
 - **Monorepo coverage: every package's report is read.** `coverageReports` entries
   may be globs (`apps/*/coverage/lcov.info`); in a workspace (`workspaces` in
   `package.json`, or `pnpm-workspace.yaml`) the defaults also include

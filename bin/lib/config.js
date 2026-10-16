@@ -115,6 +115,7 @@ function readConfig(cwd) {
       ? {
           commands: cleanCommandList(existing.validation.commands),
           quality: cleanCommandList(existing.validation.quality),
+          freshCommands: cleanCommandList(existing.validation.freshCommands),
         }
       : defaults.validation;
 

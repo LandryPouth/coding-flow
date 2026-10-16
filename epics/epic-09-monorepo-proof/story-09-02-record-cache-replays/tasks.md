@@ -1,6 +1,6 @@
 # Story 09-02 — Tasks
 
-- [ ] Detection (turbo, nx, ANSI strip) on the full output.
-- [ ] `results[i].cache`; verify output; PR body.
-- [ ] `freshTestsFor` + `validation.freshCommands`.
-- [ ] Tests; `npm test`; verify; CHANGELOG.
+- [x] Detection (turbo, nx, ANSI strip) on the full output.
+- [x] `results[i].cache`; verify output; PR body.
+- [x] `freshTestsFor` + `validation.freshCommands`.
+- [x] Tests; `npm test`; verify; CHANGELOG.
