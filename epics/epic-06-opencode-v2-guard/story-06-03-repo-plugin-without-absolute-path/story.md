@@ -37,4 +37,12 @@ guard change is live as soon as it is saved".
 - Tracked plugin and `.claude/settings.json` regenerated with `ai-flow upgrade`;
   no `/home/` left. Tests: `test/self-install-paths.test.js`.
 
+## Known limits
+
+- A git worktree of this repository has a root different from the package
+  directory, so `isSelfInstall` is false there and the absolute-path form is
+  written (the pre-story behaviour).
+- If `$CLAUDE_PROJECT_DIR` is unset, the Claude hook falls back to the published
+  npx guard rather than failing.
+
 ## Status: done
