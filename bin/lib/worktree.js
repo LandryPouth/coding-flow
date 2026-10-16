@@ -637,7 +637,8 @@ function landCleanup(root, match, branch, found) {
     if (/is not a working tree/.test(remove.stderr)) {
       try {
         fs.rmSync(match.path, { recursive: true, force: true });
-      } catch {
+      } catch (err) {
+        remove = { ...remove, stderr: `${remove.stderr.trim()} (deleting the directory: ${err.code} ${err.path || ""})` };
         continue;
       }
 
