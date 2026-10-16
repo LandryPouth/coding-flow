@@ -170,15 +170,22 @@ function unquote(token) {
 
 function tokenize(segment) {
   const tokens = [];
-  // A double-quoted word may hold escaped quotes (`"echo \"x\" > .env"`).
-  const pattern = /"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|(\S+)/g;
+  // A word is quoted parts and bare characters glued together (`.e""nv`, `'.en'v`); a
+  // double-quoted part may hold escaped quotes (`"echo \"x\" > .env"`).
+  const pattern = /(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\S)+/g;
   let match;
 
   while ((match = pattern.exec(segment)) !== null) {
-    tokens.push(match[1] !== undefined ? match[1].replace(/\\(["\\])/g, "$1") : match[2] !== undefined ? match[2] : match[3]);
+    tokens.push(reduceWord(match[0]));
   }
 
   return tokens;
+}
+
+// Quote and backslash removal the shell does inside one word: `.e""nv`, `.e\nv`
+// and `'.en'v` all name `.env`. A lone quote that pairs with nothing stays as is.
+function reduceWord(token) {
+  return token.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'/g, (_, double, single) => (double !== undefined ? double.replace(/\\([\s\S])/g, "$1") : single)).replace(/\\([^\n])/g, "$1");
 }
 
 const HOME_PREFIX = /^(?:\$HOME|\$\{HOME\})(?=\/|$)/;
@@ -194,7 +201,8 @@ function classify(token) {
     return "skip";
   }
 
-  if (/^~[^/]/.test(token) || token.includes("`") || token.replace(HOME_PREFIX, "").includes("$")) {
+  // An unquoted glob or brace list (`.e*`, `.en{v,}`) names files only the shell can list.
+  if (/^~[^/]/.test(token) || token.includes("`") || /[*?[{]/.test(token.replace(HOME_PREFIX, "")) || token.replace(HOME_PREFIX, "").includes("$")) {
     return "unknown";
   }
 
@@ -392,7 +400,8 @@ function shellWrites(command, startCwd = process.cwd()) {
   const start = physical(path.resolve(startCwd));
   let cwd = start;
 
-  const add = (token, kind) => {
+  const add = (word, kind) => {
+    const token = reduceWord(word);
     const state = classify(token);
     if (state === "skip") {
       return;

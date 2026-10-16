@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Guard: quote-spliced and glob targets** (story 05-03 review). `echo A > .e""nv`, `.e''nv` and `.e\nv` are the file the shell opens and are judged as `.env`; an unquoted glob or brace list in a write target (`cp x .e*`, `> .en{v,}`) is `unchecked` instead of allowed.
 - **Guard: directory destinations and download targets** (story 05-03 review). `mv /tmp/x/.env .`, `cp -t . …` and `install … .` are judged as `DIR/<source name>`; `curl -o` and `wget -O` are write targets; `tee out < .env` no longer counts the input as a write. `tar -x`, `unzip` and `curl -O` stay unread (known limits).
 
 ### Added

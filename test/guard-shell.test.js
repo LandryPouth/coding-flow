@@ -304,3 +304,15 @@ test('a redirected input is not a file tee writes', (t) => {
   assert.equal(run(dir, 'tee out.log < .env'), 'allow');
   assert.equal(run(dir, 'tee .env < in.txt'), 'deny');
 });
+
+test('a target spliced from quotes or escapes is the file the shell opens', (t) => {
+  const dir = project(t);
+  for (const command of ['echo A > .e""nv', "echo A > .e''nv", 'echo A > .e\\nv', "cp x '.en'v", 'tee ".e"nv < in.txt']) {
+    assert.equal(run(dir, command), 'deny', command);
+  }
+  assert.equal(run(dir, 'echo A > ou""t.txt'), 'allow');
+});
+
+test('a glob or brace list in a write target is unchecked', (t) => {
+  expectAll(t, 'unchecked', ['cp x .e*', 'cp x .en?', 'echo A > {.env,b}', 'echo A > .en{v,}']);
+});

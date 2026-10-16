@@ -70,4 +70,6 @@ Review follow-up: directory destinations (`mv X .`, `cp -t DIR`) resolve to `DIR
 
 Also limits: `patch` and other in-place editors (only `sed`, `perl -i`, `awk -i inplace`, `truncate` are read); `cd a || cd b` keeps only the first branch's directory afterwards.
 
+Review follow-up 2: quote/backslash splicing in a word is removed before resolving; unquoted `* ? [ {` in a target is `unchecked`. More limits (for 05-05): `xargs cp {} .env`, `git apply`, `git stash pop` write files and are not read.
+
 Rollback: revert the commit; `shellWriteTargets` kept its signature.
