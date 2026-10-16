@@ -5,7 +5,7 @@
 - [x] Skip list recorded here; README platform line.
 - [x] CHANGELOG.
 
-## Status: in progress (Windows autoland removal still being verified in CI)
+## Status: done
 
 ## Skipped on Windows (each carries its reason in the test file)
 
@@ -19,6 +19,9 @@ POSIX `/bin/sh` fake binaries (`test/codex-probe.test.js`, `test/doctor-opencode
 The wired Claude hook is a POSIX `sh` command (`test/guard.test.js`, `test/self-install-paths.test.js`):
 - the wired hook runs the resolved binary directly; init upgrades an npx-based hook; upgrade re-points the hook
 - the Claude hook for this checkout uses $CLAUDE_PROJECT_DIR
+
+Open product bug (logged in `docs/DOGFOODING.md`): on Windows the landed worktree directory stays `EBUSY` after `autoland` (`test/worktree-autoland.test.js`):
+- auto-land: last story of a chain lands and removes the worktree directory; lands even when .coding-flow/runs is gitignored; a sibling worktree is untouched; the same STRICT-tier chain lands once a review exists
 
 No executable bit on Windows (`test/hook.test.js`): install creates an executable pre-push hook.
 Symlink creation needs Developer Mode (`test/worktree-plan.test.js`): a project root reached through a symlink.
