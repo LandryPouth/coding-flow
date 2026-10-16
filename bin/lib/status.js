@@ -275,11 +275,12 @@ function status({ json = false } = {}) {
         // `next`'s tier-4 check act on, so a human reading this line does not
         // have to separately re-derive the story's own risk tier.
         // A STRICT story passed only by its own author says so: `pass (self)`.
+        const selfMarker = story.reviewRequired && story.review === "pass" && story.reviewer === "self" ? " (self)" : "";
         const reviewSuffix =
           story.reviewRequired && story.review !== "pass"
             ? `  review: ${story.review} (required)`
             : story.review !== "none"
-              ? `  review: ${story.review}${story.reviewRequired && story.review === "pass" && story.reviewer === "self" ? " (self)" : ""}`
+              ? `  review: ${story.review}${selfMarker}`
               : "";
         const scopeSuffix = story.scope ? `  coverage ${story.coverage || "?"} (${story.scope} scope)` : "";
         log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}${reviewSuffix}${scopeSuffix}`);

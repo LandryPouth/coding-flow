@@ -136,6 +136,7 @@ Usage:
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
   ai-flow audit [--export] [--check] [--since iso] [--decisions] [--json] [--dry-run]
   ai-flow review capture --story path --verdict pass|fail [--reviewer self|subagent]
+                [--accept "reason"]
                 [--architecture|--tests|--security|--quality|--e2e quick|deep|skipped]
                 [--p0 n] [--p1 n] [--p2 n] [--p3 n] [--json]
   ai-flow trace [--story path] [--json]
@@ -224,6 +225,7 @@ Flags:
   --decisions  Aggregate every story's ## Decisions section instead of the run-evidence ledger.
   --verdict    Outcome recorded by review capture: pass or fail.
   --reviewer   Who ran the review capture records: self (default) or subagent.
+  --accept     Reason to record a pass despite an open P0/P1 (stored as acceptedRisk; needs the user's agreement).
   --architecture, --tests, --security, --quality, --e2e
                Depth review capture records per dimension: quick, deep, or skipped (default).
   --p0, --p1, --p2, --p3  Finding counts by severity for review capture (default 0).
