@@ -39,6 +39,27 @@ All notable changes to this project are documented here. The format is based on
 - OpenCode guard: the generated plugin now also exports the OpenCode 2.x entry (`default.setup`) and reads V2 argument names (`path`, `shell`, `patch`), so `.env` writes are refused on 2.x as on 1.x. Run `ai-flow upgrade` to regenerate it.
 - `doctor` reads `opencode --version` and fails with "the guard is not loaded on OpenCode 2" when the project or global guard plugin predates the 2.x entry (run `ai-flow upgrade` / `upgrade --global`). On 1.x it stays the stale warning; without `opencode` on PATH it adds one note and never fails (a binary that exits non-zero or prints its version on stderr still counts as found).
 
+- **Coverage, risk and weakening are measured on the story's own diff.** Every
+  diff-based signal compared against `origin/HEAD`/`main`, so a story forked from
+  an epic branch inherited the whole epic's files, tests and migrations (on a real
+  project: 508 changed files for one story, and a `high` risk from other stories'
+  migrations). One `resolveDiffBase` now picks the base, in order: `--base <ref>`,
+  `config.json` `baseBranch`, the fork point `worktree add` records in
+  `branch.<name>.codingFlowBase`, the nearest of the epic branch / `develop` /
+  the default branch, then the default branch. The evidence records
+  `diffBase: { ref, mergeBase, source, scope }`, and a proof made against another
+  base is not reused. `verify` and `harness check` accept `--base`. `next` measures
+  "unshipped work" from the same base, and a configured `baseBranch` that does not
+  resolve is recorded as `configUnresolved` instead of being dropped silently.
+
+- **The tool's own run files and generated code are not "changes".** `.coding-flow/**`
+  is always left out of the changed-file sets that feed coverage, risk, test-weakening
+  and deleted-test detection, and `harness.json` gains `ignoredPaths` (globs, default
+  `[]`) for the project's generated output (`apps/api/generated/**`, `**/openapi.json`).
+  The guard (`blockedPaths`) and secret scanning do not read it. `doctor` suggests
+  `ignoredPaths` when the last verify counted more than 20 files under a `generated/`,
+  `__generated__/` or `gen/` directory.
+
 ## [0.12.1] - 2026-10-16
 
 ### Fixed

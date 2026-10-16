@@ -30,25 +30,25 @@ the story, not about the whole epic plus everything not yet merged to `main`.
 
 ## Acceptance Criteria
 
-- [ ] Given `main` ← `feature/EPIC-07-x` (10 files changed) ← story branch
+- [x] Given `main` ← `feature/EPIC-07-x` (10 files changed) ← story branch
       created by `worktree add --from feature/EPIC-07-x` (2 files changed),
       when verify runs in the story worktree, then `coverage.changedFiles` has
       2 entries and `diffBase` is `{ ref: "feature/EPIC-07-x", source:
       "fork-point", scope: "story" }`.
-- [ ] Same repo, story branch created by plain `git switch -c` from the epic
+- [x] Same repo, story branch created by plain `git switch -c` from the epic
       branch (no recorded fork point): `source: "nearest"`, same 2 files.
-- [ ] Given `config.json` `baseBranch: "develop"`, then `source: "config"` and
+- [x] Given `config.json` `baseBranch: "develop"`, then `source: "config"` and
       the merge-base with `develop` is used.
-- [ ] Given `verify --base main`, then `source: "flag"`.
-- [ ] Given verify on the epic branch itself, then `scope: "epic"` and the
+- [x] Given `verify --base main`, then `source: "flag"`.
+- [x] Given verify on the epic branch itself, then `scope: "epic"` and the
       diff is the epic against its nearest base (not against itself).
-- [ ] Given no remote and no `main` (fresh repo on `trunk`), then
+- [x] Given no remote and no `main` (fresh repo on `trunk`), then
       `source: "none"`, `scope: "working-tree"`, and coverage behaves as today
       outside a base.
-- [ ] Risk: a story touching only `src/geo/*.ts` on an epic whose other
+- [x] Risk: a story touching only `src/geo/*.ts` on an epic whose other
       stories touched `prisma/migrations/*` scores from its own files (not
       `high` because of the migrations).
-- [ ] `scanTestWeakening` and `deletedFilesInDiff` only report files from the
+- [x] `scanTestWeakening` and `deletedFilesInDiff` only report files from the
       story's diff.
 
 ## Edge Cases

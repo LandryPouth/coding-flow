@@ -27,6 +27,7 @@ const { readConfig } = require("./config");
 const { buildStatusModel, computeReviewStatus } = require("./status");
 const { latestVerifyByStoryDir } = require("./audit");
 const { defaultBranch, currentBranch } = require("./policy");
+const { resolveDiffBase } = require("./diff-base");
 
 const TIER_LABELS = {
   1: "blocked",
@@ -72,7 +73,7 @@ function storyLocation(story) {
 
 // Whether `ship` would have anything to do at this location: a dirty tree (it
 // would auto-commit it) or commits above the base it has not pushed yet.
-function hasUnshippedWork(location, base) {
+function hasUnshippedWork(location, base, story) {
   if (!location) {
     return false;
   }
@@ -83,7 +84,11 @@ function hasUnshippedWork(location, base) {
   if (porcelain.length > 0) {
     return true;
   }
-  const ahead = git(location, ["rev-list", "--count", `${base}..HEAD`]);
+  // A story forked from an epic branch ships what it added since that fork, not
+  // everything the epic holds above main.
+  const resolved = resolveDiffBase(location, { story });
+  const since = resolved.mergeBase || base;
+  const ahead = git(location, ["rev-list", "--count", `${since}..HEAD`]);
   return ahead !== null && ahead !== "" && ahead !== "0";
 }
 
@@ -161,7 +166,7 @@ function buildQueue() {
             message: `"${story.name}" is STRICT-tier and ${reviewGap} — run /flow-review before landing/shipping`,
             command: null,
           });
-        } else if (hasUnshippedWork(location, base)) {
+        } else if (hasUnshippedWork(location, base, story.path)) {
           const here = location === cwd;
           items.push({
             tier: 5,

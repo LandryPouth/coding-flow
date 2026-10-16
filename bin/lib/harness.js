@@ -12,7 +12,8 @@ const { spawnSync } = require("child_process");
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
 const { captureIdentity, currentTreeToken } = require("./identity");
-const { defaultBranch, currentBranch } = require("./policy");
+const { currentBranch } = require("./policy");
+const { resolveDiffBase } = require("./diff-base");
 const {
   loadCoverageReports,
   reportCandidates,
@@ -240,6 +241,10 @@ function defaultHarnessConfig() {
     highRiskPaths: defaultHighRiskPaths(),
     testGlobs: defaultTestGlobs(),
     nonBehaviorGlobs: defaultNonBehaviorGlobs(),
+    // Paths that are output, not authorship (a regenerated client, an OpenAPI
+    // dump): left out of coverage, risk, weakening and deleted-test signals.
+    // Never consulted by the guard (`blockedPaths`) or by secret scanning.
+    ignoredPaths: [],
     blockedPaths: [
       ".env",
       ".env.*",
@@ -312,6 +317,7 @@ function readHarnessConfig(root = cwd) {
         : defaults.secretScanAllowlist,
       highRiskPaths: Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaults.highRiskPaths,
       testGlobs: Array.isArray(config.testGlobs) ? config.testGlobs : defaults.testGlobs,
+      ignoredPaths: Array.isArray(config.ignoredPaths) ? config.ignoredPaths : defaults.ignoredPaths,
       nonBehaviorGlobs: Array.isArray(config.nonBehaviorGlobs)
         ? config.nonBehaviorGlobs
         : defaults.nonBehaviorGlobs,
@@ -686,12 +692,7 @@ function addedLinesByFile(root, files) {
   if (files.length === 0) return byFile;
   const wanted = new Set(files);
 
-  const base = defaultBranch(root);
-  let mergeBase = null;
-  for (const ref of [base, `origin/${base}`]) {
-    mergeBase = runGitList(["merge-base", ref, "HEAD"], root)[0];
-    if (mergeBase) break;
-  }
+  const mergeBase = currentDiffBase(root).mergeBase;
 
   try {
     const diffArgs = mergeBase ? ["diff", "-U0", mergeBase] : ["diff", "-U0"];
@@ -981,6 +982,7 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
     mode: config.mode,
     quick,
     strict,
+    diffBase: publicDiffBase(currentDiffBase(cwd)),
     story: story || null,
     config,
     stats: {
@@ -1009,6 +1011,49 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
 
   report.ok = report.errors.length === 0;
   return report;
+}
+
+// The base every diff-derived signal (coverage, risk, weakening, deleted tests)
+// is measured from. Resolved once per run and per HEAD, not once per function:
+// five readers disagreeing about the base would make the evidence incoherent.
+let diffBaseRequest = { flagBase: null, story: null };
+let diffBaseCache = new Map();
+
+function setDiffBaseRequest({ flagBase = null, story = null } = {}) {
+  diffBaseRequest = { flagBase, story };
+  diffBaseCache = new Map();
+}
+
+function publicDiffBase({ ref, mergeBase, source, scope, forkPointMissing, configUnresolved }) {
+  return {
+    ref,
+    mergeBase,
+    source,
+    scope,
+    ...(forkPointMissing ? { forkPointMissing } : {}),
+    ...(configUnresolved ? { configUnresolved } : {}),
+  };
+}
+
+function currentDiffBase(root = cwd) {
+  const head = runGitList(["rev-parse", "HEAD"], root)[0] || "";
+  const branch = currentBranch(root) || "";
+  const configured = readConfig(root).baseBranch || "";
+  const key = [root, head, branch, configured, diffBaseRequest.flagBase, diffBaseRequest.story].join("\0");
+
+  if (!diffBaseCache.has(key)) {
+    let value;
+
+    try {
+      value = resolveDiffBase(root, diffBaseRequest);
+    } catch (error) {
+      fail(error.message);
+    }
+
+    diffBaseCache.set(key, value);
+  }
+
+  return diffBaseCache.get(key);
 }
 
 function runGitList(argsForGit, root = cwd) {
@@ -1094,6 +1139,7 @@ function buildHarnessEvidence({ story = null } = {}) {
     root: cwd,
     provenance: captureIdentity(cwd),
     story: preflight.story,
+    diffBase: publicDiffBase(currentDiffBase(cwd)),
     risk: preflight.risk,
     recommendedMode: preflight.recommendedMode,
     filesChanged: getChangedFiles(),
@@ -1175,7 +1221,8 @@ function printHarnessReport(report) {
   }
 }
 
-function harnessCheck({ json = false, quick = false, strict = false, story = null } = {}) {
+function harnessCheck({ json = false, quick = false, strict = false, story = null, base = null } = {}) {
+  setDiffBaseRequest({ flagBase: base, story });
   const report = collectHarnessReport({ quick, strict, story });
 
   if (json) {
@@ -1713,21 +1760,33 @@ function captureEnvironment() {
 // - a diff of docs/story/lockfile-only changes trips nothing (no behavior moved);
 // - outside git, or with no visible diff, the gate cannot see and stays silent.
 
+// The tool's own run files are never a change a person or agent made; the
+// project's `ignoredPaths` are the generated ones. This is the single choke
+// point for the diff-derived signals (coverage, risk, weakening, deleted tests).
+// Secret scanning and the guard read other lists and keep seeing everything.
+function isScopedOut(file, config) {
+  const portable = normalizePortable(file);
+
+  return (
+    portable.startsWith(".coding-flow/") ||
+    (config.ignoredPaths || []).some((pattern) => typeof pattern === "string" && matchesPattern(portable, pattern))
+  );
+}
+
+function filterScopedFiles(files, config) {
+  return files.filter((file) => !isScopedOut(file, config));
+}
+
 // Everything this branch contributes, not just what is uncommitted: a story whose
 // tests are already committed must not read as "no test changed". Falls back to
 // the working tree when there is no base to compare against.
 function changedFilesForCoverage(root = cwd) {
   const files = new Set();
-  const base = defaultBranch(root);
+  const { mergeBase } = currentDiffBase(root);
 
-  for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"], root)[0];
-
-    if (mergeBase) {
-      for (const file of runGitList(["diff", "--name-only", mergeBase], root)) {
-        files.add(file);
-      }
-      break;
+  if (mergeBase) {
+    for (const file of runGitList(["diff", "--name-only", mergeBase], root)) {
+      files.add(file);
     }
   }
 
@@ -1741,7 +1800,7 @@ function changedFilesForCoverage(root = cwd) {
     files.add(file);
   }
 
-  return [...files].map(normalizePortable).sort();
+  return filterScopedFiles([...files].map(normalizePortable), readHarnessConfig(root).config).sort();
 }
 
 // The lines this change ADDED, per file. Only added lines: a deleted line has no
@@ -1810,15 +1869,10 @@ function changedLinesForCoverage() {
     }
   };
 
-  const base = defaultBranch(cwd);
+  const { mergeBase } = currentDiffBase(cwd);
 
-  for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
-
-    if (mergeBase) {
-      merge(parseAddedLines(runGitText(["diff", "--unified=0", mergeBase])));
-      break;
-    }
+  if (mergeBase) {
+    merge(parseAddedLines(runGitText(["diff", "--unified=0", mergeBase])));
   }
 
   merge(parseAddedLines(runGitText(["diff", "--unified=0"])));
@@ -1835,7 +1889,9 @@ function changedLinesForCoverage() {
     }
   }
 
-  return byFile;
+  const config = readHarnessConfig(cwd).config;
+
+  return Object.fromEntries(Object.entries(byFile).filter(([file]) => !isScopedOut(file, config)));
 }
 
 // An escape hatch that leaves a mark. Some real changes cannot carry a test (a
@@ -2043,16 +2099,11 @@ function parseChangedText(diffText) {
 
 function deletedFilesInDiff() {
   const deleted = new Set();
-  const base = defaultBranch(cwd);
+  const { mergeBase } = currentDiffBase(cwd);
   const sources = [["diff", "--name-status"], ["diff", "--cached", "--name-status"]];
 
-  for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
-
-    if (mergeBase) {
-      sources.push(["diff", "--name-status", mergeBase]);
-      break;
-    }
+  if (mergeBase) {
+    sources.push(["diff", "--name-status", mergeBase]);
   }
 
   for (const argsForGit of sources) {
@@ -2065,28 +2116,25 @@ function deletedFilesInDiff() {
     }
   }
 
-  return [...deleted];
+  const config = readHarnessConfig(cwd).config;
+
+  return filterScopedFiles([...deleted], config);
 }
 
 // Per test file: did this diff make it stronger, weaker, or neither?
 function scanTestWeakening(config) {
   const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
   const byFile = {};
-  const base = defaultBranch(cwd);
+  const { mergeBase } = currentDiffBase(cwd);
   const diffs = [["diff"], ["diff", "--cached"]];
 
-  for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
-
-    if (mergeBase) {
-      diffs.push(["diff", mergeBase]);
-      break;
-    }
+  if (mergeBase) {
+    diffs.push(["diff", mergeBase]);
   }
 
   for (const argsForGit of diffs) {
     for (const [file, change] of Object.entries(parseChangedText(runGitText(argsForGit)))) {
-      if (!isTest(file)) {
+      if (!isTest(file) || isScopedOut(file, config)) {
         continue;
       }
 
@@ -2429,6 +2477,7 @@ function freshTestsRequired({ storyDir, config }) {
 function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
+  setDiffBaseRequest({ flagBase: diffBaseRequest.flagBase, story });
   const { config } = readHarnessConfig();
   const freshRequired = freshTestsRequired({ storyDir, config });
   const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
@@ -2475,6 +2524,9 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
     environment: captureEnvironment(),
     commandsOk,
+    // Which base every diff-derived signal below was measured from: a surprising
+    // coverage or risk verdict is explained by this line before anything else.
+    diffBase: publicDiffBase(currentDiffBase(cwd)),
     coverage,
     // Recorded, never consulted: `ok` below does not read it, and must not.
     acceptanceCriteria: readAcceptanceCriteria(storyDir),
@@ -2520,6 +2572,7 @@ function untrackedDigest() {
 // determined, this returns null and the commands run for real.
 function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
   const token = currentTreeToken(cwd);
+  const mergeBase = currentDiffBase(cwd).mergeBase;
 
   if (!token || commands.length === 0) {
     return null;
@@ -2554,6 +2607,8 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
     if (
       provenanceToken === token &&
       evidence.commandsFingerprint === fingerprint &&
+      // A proof made against another base is a different proof.
+      (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
       evidence.untrackedDigest === untracked
     ) {
       return { evidence, path: fullPath };
@@ -2611,10 +2666,12 @@ function detectStoryScope() {
     : null;
 }
 
-function harnessVerify({ json = false, dryRun = false, story = null, noCache = false, exemption = null } = {}) {
+function harnessVerify({ json = false, dryRun = false, story = null, noCache = false, exemption = null, base = null } = {}) {
   if (story !== null) {
     requireStoryScope(story);
   }
+
+  setDiffBaseRequest({ flagBase: base, story });
 
   // No --story, but a Spec Kit project knows which feature is active. Scoping to
   // it is what lets a Spec Kit user run `ai-flow verify` and get the spec's risk
@@ -2629,6 +2686,8 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
       scopeNote = `Story: ${detected.story} (Spec Kit feature, from ${detected.source})`;
     }
   }
+
+  setDiffBaseRequest({ flagBase: base, story });
 
   const resolvedStory = story ? resolveProjectPath(story) : null;
 
@@ -2707,9 +2766,24 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
   }
 }
 
-function harnessCommand({ commandArgs, getFlagValue, flags }) {
+// The request is per command: ship, doctor and status read the same helpers in
+// the same process and must not inherit a --base given to a verify.
+function harnessCommand(args) {
+  try {
+    return harnessCommandInner(args);
+  } finally {
+    setDiffBaseRequest();
+  }
+}
+
+function harnessCommandInner({ commandArgs, getFlagValue, flags }) {
   const subcommand = commandArgs[0] || "check";
   const story = getFlagValue("--story", null);
+  const base = getFlagValue("--base", null);
+
+  if (flags.has("--base") && base === null) {
+    fail("--base requires a ref, e.g. --base feature/EPIC-07-proof-scope.");
+  }
 
   // A flag with no value is a typo in any subcommand: `verify --story --json`
   // used to swallow the flag and quietly verify the whole project.
@@ -2730,13 +2804,16 @@ function harnessCommand({ commandArgs, getFlagValue, flags }) {
       quick: flags.has("--quick"),
       strict: flags.has("--strict"),
       story,
+      base,
     });
   } else if (subcommand === "preflight") {
+    setDiffBaseRequest({ flagBase: base, story });
     harnessPreflight({
       json: flags.has("--json"),
       story,
     });
   } else if (subcommand === "evidence") {
+    setDiffBaseRequest({ flagBase: base, story });
     harnessEvidence({
       json: flags.has("--json"),
       dryRun: flags.has("--dry-run"),
@@ -2758,6 +2835,7 @@ function harnessCommand({ commandArgs, getFlagValue, flags }) {
       story,
       noCache: flags.has("--no-cache"),
       exemption,
+      base,
     });
   } else {
     fail(`unknown harness command "${subcommand}". Use init, preflight, check, verify, or evidence.`);
@@ -2769,6 +2847,7 @@ module.exports = {
   harnessRunsDir,
   defaultHarnessConfig,
   readHarnessConfig,
+  filterScopedFiles,
   ensureHarnessConfig,
   collectHarnessReport,
   parseTestsCommands,

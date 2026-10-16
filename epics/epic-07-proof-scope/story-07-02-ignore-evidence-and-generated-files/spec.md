@@ -21,14 +21,14 @@ about the tool's own run files or a regenerated Prisma client.
 
 ## Acceptance Criteria
 
-- [ ] Given a story diff of `src/a.js` + 3 `.coding-flow/runs/*.json`, then
+- [x] Given a story diff of `src/a.js` + 3 `.coding-flow/runs/*.json`, then
       `coverage.changedFiles` is `["src/a.js"]`.
-- [ ] Given `ignoredPaths: ["apps/api/generated/**"]` and a diff of only
+- [x] Given `ignoredPaths: ["apps/api/generated/**"]` and a diff of only
       generated files + `schema.prisma`, then behaviour files are
       `schema.prisma` only.
-- [ ] Given a generated file matching a high-risk term in its path, when it is
+- [x] Given a generated file matching a high-risk term in its path, when it is
       ignored, then it does not raise the risk.
-- [ ] Doctor hint appears for a run with 30 files under `generated/`.
+- [x] Doctor hint appears for a run with 30 files under `generated/`.
 
 ## Edge Cases
 
