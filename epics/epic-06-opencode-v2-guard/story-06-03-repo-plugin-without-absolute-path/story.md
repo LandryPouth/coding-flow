@@ -11,16 +11,16 @@ guard change is live as soon as it is saved".
 
 ## Acceptance Criteria
 
-- [ ] Given `ai-flow init`/`upgrade` run inside the coding-flow checkout
+- [x] Given `ai-flow init`/`upgrade` run inside the coding-flow checkout
       itself (package root === project root), when the plugin is generated,
       then `BINARY` is computed at load time relative to the plugin file
       (`fileURLToPath(new URL("../../bin/ai-flow.js", import.meta.url))`), not
       written as a literal path.
-- [ ] Given any other project, generation is unchanged (absolute resolved
+- [x] Given any other project, generation is unchanged (absolute resolved
       binary + pinned fallback).
-- [ ] The tracked plugin in this repository is regenerated and contains no
+- [x] The tracked plugin in this repository is regenerated and contains no
       home-directory path (`grep -n "/home/" .opencode/plugins/*.js` is empty).
-- [ ] Same check for `.claude/settings.json` in this repo: no absolute
+- [x] Same check for `.claude/settings.json` in this repo: no absolute
       home path in the tracked file (fix the same way if present).
 
 ## Notes
@@ -29,4 +29,12 @@ guard change is live as soon as it is saved".
 `guardBinaryPath()`. Detect self-install by comparing
 `path.resolve(__dirname, "../..")` with the project root.
 
-## Status: planned
+## Result
+
+- `isSelfInstall(root)` in `settings.js` (package root === project root).
+  `pluginSource({ self })` writes `fileURLToPath(new URL("../../bin/ai-flow.js",
+  import.meta.url))`; `guardCommandString(root)` uses `$CLAUDE_PROJECT_DIR`.
+- Tracked plugin and `.claude/settings.json` regenerated with `ai-flow upgrade`;
+  no `/home/` left. Tests: `test/self-install-paths.test.js`.
+
+## Status: done

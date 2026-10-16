@@ -234,7 +234,7 @@ function checkGuardWiring(errors, warnings) {
     return;
   }
 
-  if (found.hook.command !== guardCommandString()) {
+  if (found.hook.command !== guardCommandString(cwd)) {
     warnings.push({
       code: "guard_hook_stale",
       file: ".claude/settings.json",
