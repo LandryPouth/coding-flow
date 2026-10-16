@@ -72,6 +72,14 @@ All notable changes to this project are documented here. The format is based on
   exemption, which satisfies any floor). `status --json` exposes `coverageTier`
   and `audit` counts verify runs per rung.
 
+- **A proof knows the policy it was made under.** Every verify / check / evidence JSON
+  carries `policyFingerprint` (sha1 of the canonical effective `harness.json`, the
+  `validation` block, `baseBranch` and the coding-flow major.minor). `verify` no longer
+  answers "already proved" after the policy changed; `status` shows such a story as
+  `stale (policy changed)` (`staleReason` in `--json`), and `audit --check`, `worktree land`
+  and auto-land treat it as stale. Evidence from before the field is never reused for the
+  cache but is not flipped to stale.
+
 - **The command time limit is configurable.** `validation.timeoutMs` in
   `config.json` replaces the fixed 600 s, and an entry of `validation.commands` /
   `quality` may be `{ "command": "...", "timeoutMs": 1200000 }` (strings still

@@ -24,6 +24,7 @@ const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
+const { policyFingerprint } = require("./policy-fingerprint");
 const { verifyStoryOnce, writeVerifyEvidence, printVerify, resolveValidationCommands } = require("./harness");
 // Leaf modules only (neither requires this file) — safe from here without
 // creating a cycle with worktree-plan.js, which itself requires this file
@@ -870,9 +871,9 @@ function worktreeLand(name, { cwd, story }) {
         }
 
         const currentToken = currentTreeToken(match.path);
-        if (isStale(verifyEntry, currentToken)) {
+        if (isStale(verifyEntry, currentToken, policyFingerprint(match.path))) {
           throw new Error(
-            `the verify recorded for story "${found.story.path}" is stale (the tree changed since). ` +
+            `the verify recorded for story "${found.story.path}" is stale (the tree or the policy changed since). ` +
               `Run "ai-flow verify --story ${found.story.path}" again in the worktree.`,
           );
         }

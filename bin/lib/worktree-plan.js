@@ -30,6 +30,7 @@ const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
+const { policyFingerprint } = require("./policy-fingerprint");
 const {
   readHarnessConfig,
   changedFilesForCoverage,
@@ -404,7 +405,7 @@ function autoLandIfChainFinished({ cwd, epicPath, storyPath }) {
     const rootEntry = verifyByDir.get(rootStoryPath);
     const currentToken = currentTreeToken(cwd);
 
-    if (!rootEntry || isStale(rootEntry, currentToken)) {
+    if (!rootEntry || isStale(rootEntry, currentToken, policyFingerprint(cwd))) {
       try {
         execFileSync(process.execPath, [cliPath, "verify", "--story", rootStoryPath], {
           cwd: here,

@@ -11,6 +11,7 @@ const { spawnSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
+const { policyFingerprint } = require("./policy-fingerprint");
 const { captureIdentity, currentTreeToken } = require("./identity");
 const { currentBranch } = require("./policy");
 const { resolveDiffBase, describeScope } = require("./diff-base");
@@ -878,6 +879,7 @@ function buildHarnessPreflight({ story = null } = {}) {
   return {
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     configPath: normalizePortable(path.relative(cwd, harnessConfigPath())),
     configExists: exists,
     story: resolvedStory ? resolvedStory.relativePath : null,
@@ -979,6 +981,7 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
     ok: false,
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     configPath: normalizePortable(path.relative(cwd, harnessConfigPath())),
     configExists: exists,
     mode: config.mode,
@@ -1139,6 +1142,7 @@ function buildHarnessEvidence({ story = null } = {}) {
   return {
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     provenance: captureIdentity(cwd),
     story: preflight.story,
     diffBase: publicDiffBase(currentDiffBase(cwd)),
@@ -2755,6 +2759,8 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     // The floor this verdict was judged against. `.coding-flow/` is outside the
     // tree token, so without it an edit to the floor would leave a stale "ok".
     coverageFloor: resolveCoverageFloor(config),
+    // The rules this verdict was computed under; a different value is a different proof.
+    policyFingerprint: policyFingerprint(cwd),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
     environment: captureEnvironment(),
     commandsOk,
@@ -2819,7 +2825,8 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
   const fingerprint = commandsFingerprint(commands, timeouts);
   const harnessConfig = readHarnessConfig().config;
   const floor = JSON.stringify(resolveCoverageFloor(harnessConfig));
-  const policy = JSON.stringify(contraryPolicy(harnessConfig));
+  const contrary = JSON.stringify(contraryPolicy(harnessConfig));
+  const policy = policyFingerprint(cwd);
   const runsDir = harnessRunsDir();
 
   if (!fs.existsSync(runsDir)) {
@@ -2850,7 +2857,9 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
       // A proof judged under another floor is a different proof; evidence from
       // before the floor existed has none and is re-run once.
       JSON.stringify(evidence.coverageFloor || null) === floor &&
-      JSON.stringify(evidence.contraryPolicy || null) === policy &&
+      JSON.stringify(evidence.contraryPolicy || null) === contrary &&
+      // Evidence without the field predates the policy fingerprint: never reused.
+      evidence.policyFingerprint === policy &&
       // A proof made against another base is a different proof.
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
       evidence.untrackedDigest === untracked

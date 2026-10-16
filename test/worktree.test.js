@@ -349,7 +349,7 @@ function addStoryWorktree(base, repo, name = 'story-01') {
 // Writes a captured verify run file the same shape `harness verify` produces
 // (see audit.js's `entryFromRunFile`), then commits it so the worktree stays
 // clean — `.coding-flow/runs/*.json` is tracked content, not gitignored.
-function writeVerify(storyWt, storyRel, { ok = true, token } = {}) {
+function writeVerify(storyWt, storyRel, { ok = true, token, policyFingerprint } = {}) {
   const runsDir = path.join(storyWt, '.coding-flow', 'runs');
   fs.mkdirSync(runsDir, { recursive: true });
   const treeToken = token !== undefined ? token : currentTreeToken(storyWt);
@@ -364,6 +364,7 @@ function writeVerify(storyWt, storyRel, { ok = true, token } = {}) {
         commandsFound: 1,
         commandSource: 'test-fixture',
         provenance: { git: { treeToken } },
+        ...(policyFingerprint ? { policyFingerprint } : {}),
       },
       null,
       2,
@@ -536,6 +537,20 @@ test('worktree land refuses a stale verify', (t) => {
   const { code, output } = run(repo, ['land', 'story-01']);
   assert.notEqual(code, 0, 'land must refuse a stale verify');
   assert.match(output, /stale/i, 'the message must say the proof is stale');
+  assert.ok(fs.existsSync(storyWt), 'the story worktree must be untouched');
+});
+
+test('worktree land refuses a verify made under another policy', (t) => {
+  const { base, repo } = repoWithStory(t);
+  const storyWt = addStoryWorktree(base, repo);
+
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01', { policyFingerprint: 'f'.repeat(40) });
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.notEqual(code, 0, 'land must refuse a proof from another policy');
+  assert.match(output, /stale/i);
   assert.ok(fs.existsSync(storyWt), 'the story worktree must be untouched');
 });
 
