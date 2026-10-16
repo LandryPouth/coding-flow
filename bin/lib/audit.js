@@ -530,7 +530,9 @@ function audit({
     if (since) {
       entries = entries.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
     }
-    const result = gate(entries, { currentToken: currentTreeToken(root), currentPolicy: policyFingerprint(root) });
+    const currentToken = currentTreeToken(root);
+    const currentPolicy = policyFingerprint(root);
+    const result = gate(entries, { currentToken, currentPolicy });
 
     if (json) {
       log(JSON.stringify(result, null, 2));
@@ -548,7 +550,7 @@ function audit({
       if (result.stale.length > 0) {
         log("Audit check FAILED — latest verify is stale (code or policy changed since the proof); re-run `ai-flow verify --story <dir>` for:");
         for (const entry of result.stale) {
-          log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree`);
+          log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree (${staleReason(entry, currentToken, currentPolicy)})`);
         }
       }
     }

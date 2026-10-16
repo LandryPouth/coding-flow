@@ -175,6 +175,7 @@ function buildStatusModel(config) {
   const diffRiskCache = new Map();
   // One scan of the run files per worktree root, not one per story.
   const scopeByRoot = new Map();
+  const verifyByRoot = new Map();
 
   const epics = storage.listEpics().map((epic) => ({
     ...epic,
@@ -200,10 +201,17 @@ function buildStatusModel(config) {
       // planned/in-progress/blocked story can't be landed regardless, so
       // there is nothing for this field to usefully say yet.
       // Why a green proof went stale: the rules moved ("policy changed") or the code did.
-      const staleWhy =
-        story.status === "stale"
-          ? staleReason(latestVerifyByStoryDir(storyRoot).get(story.path) || {}, currentTreeToken(storyRoot), policyFingerprint(storyRoot))
-          : null;
+      let staleWhy = null;
+      if (story.status === "stale") {
+        if (!verifyByRoot.has(storyRoot)) {
+          verifyByRoot.set(storyRoot, latestVerifyByStoryDir(storyRoot));
+        }
+        staleWhy = staleReason(
+          verifyByRoot.get(storyRoot).get(story.path) || {},
+          currentTreeToken(storyRoot),
+          policyFingerprint(storyRoot),
+        );
+      }
       const claimsDone = story.status === "done" || story.status === "verified";
       const reviewRequired = claimsDone ? computeReviewRequired(storyRoot, story, diffRiskCache) : undefined;
 

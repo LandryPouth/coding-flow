@@ -160,3 +160,11 @@ test('a patch release keeps the fingerprint, a minor one changes it', (t) => {
   assert.equal(policyFingerprint(dir, '0.13.0'), policyFingerprint(dir, '0.13.1'));
   assert.notEqual(policyFingerprint(dir, '0.13.1'), policyFingerprint(dir, '0.14.0'));
 });
+
+test('audit --check names the reason: policy changed, not only the tree', (t) => {
+  const dir = project(t);
+  run(dir, ['verify', '--story', STORY]);
+  editHarness(dir, (h) => ({ ...h, highRiskTerms: ['hologram'] }));
+
+  assert.match(run(dir, ['audit', '--check']).output, /policy changed/);
+});
