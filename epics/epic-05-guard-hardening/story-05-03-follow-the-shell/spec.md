@@ -66,4 +66,6 @@ Deviations: after an unknown `cd`, an **absolute** target is still judged (stric
 
 Known limits (for 05-05): a `cd` is assumed to succeed (`cd nonexistent && …`); a `cd` in a pipeline or backgrounded is ignored; `:/path` pathspec magic; `xargs sh -c "…"` and other wrappers that build a command from input (`bash -c "…"` and `eval` are read as a command of its own), `'.e'+'nv'`; an inline literal that merely *names* a protected file (`node -e "console.log('.env')"`) is refused — it cannot be told from a write (so is a bare word such as `w` or `A` when a blocked path has that name).
 
+Also a limit: `cd a || cd b` keeps only the first branch's directory afterwards.
+
 Rollback: revert the commit; `shellWriteTargets` kept its signature.

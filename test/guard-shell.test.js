@@ -222,3 +222,27 @@ test('a redirection needs no spaces, and clobber / both-streams forms write too'
   expectAll(t, 'deny', ['echo A=1>.env', 'cd sub && echo A=1>../.env', 'echo A=1 >| .env', 'echo A=1 &> .env', 'echo A=1 >& .env', 'echo A=1 >>.env']);
   expectAll(t, 'allow', ['npm test 2>&1', 'echo hi >&2', 'echo hi 1>&2', 'npm test >out.log 2>&1', 'echo a>b.txt']);
 });
+
+test('a wrapper option that takes a value does not hide the verb', (t) => {
+  expectAll(t, 'deny', [
+    'cd sub && sudo -u root tee ../.env',
+    'nice -n 5 tee .env',
+    'timeout 5 tee .env',
+    'timeout -s KILL 5 tee .env',
+    'env -u HOME tee .env',
+  ]);
+  expectAll(t, 'allow', ['sudo -u root tee out.txt', 'timeout 5 npm test']);
+});
+
+test('a mode prefix inside an inline literal does not hide the path', (t) => {
+  expectAll(t, 'deny', ["perl -e 'open(F,\">.env\")'", "perl -e 'open(F, \">> .env\")'"]);
+  expectAll(t, 'allow', ["perl -e 'print 1'"]);
+});
+
+test('an interpreter fed by a heredoc is unchecked, not silently allowed', (t) => {
+  const dir = project(t);
+  assert.equal(run(dir, 'python3 - <<EOF\nopen(".env","w")\nEOF'), 'unchecked');
+  assert.equal(run(dir, 'bash <<EOF\necho A=1 > .env\nEOF'), 'unchecked');
+  assert.equal(run(dir, 'cat <<EOF > notes.md\nhello\nEOF'), 'allow');
+  assert.equal(run(dir, 'python3 script.py <<EOF\ndata\nEOF'), 'allow');
+});

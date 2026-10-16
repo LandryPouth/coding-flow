@@ -428,7 +428,14 @@ function shellWrites(command, startCwd = process.cwd()) {
   };
 
   // Wrappers and compound-command keywords that sit in front of the real verb.
-  const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
+  const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "timeout", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
+  const WRAPPER_VALUE_OPTIONS = {
+    sudo: new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-r", "-t", "-U", "-D"]),
+    doas: new Set(["-u", "-C"]),
+    env: new Set(["-u", "-C", "-S"]),
+    nice: new Set(["-n"]),
+    timeout: new Set(["-s", "-k"]),
+  };
   let beforeCd = null;
 
   for (const segment of splitSegments(command)) {
@@ -451,9 +458,25 @@ function shellWrites(command, startCwd = process.cwd()) {
     const tokens = tokenize(segment.text.trim());
 
     // `sudo cp …`, `env FOO=1 tee …`, `time cd x`: step over the wrapper to the verb.
+    // An option that takes a value (`sudo -u root`, `nice -n 5`) steps over its value too,
+    // and `timeout` over its duration, or the value would be read as the verb.
     let index = 0;
-    while (index < tokens.length && (WRAPPERS.has(tokens[index]) || tokens[index].includes("=") || (index > 0 && tokens[index].startsWith("-")))) {
-      index += 1;
+    let wrapper = null;
+    while (index < tokens.length) {
+      const token = tokens[index];
+      if (WRAPPERS.has(token)) {
+        wrapper = token;
+        index += 1;
+      } else if (token.includes("=")) {
+        index += 1;
+      } else if (index > 0 && token.startsWith("-")) {
+        index += WRAPPER_VALUE_OPTIONS[wrapper]?.has(token) ? 2 : 1;
+      } else if (wrapper === "timeout" && /^\d/.test(token)) {
+        index += 1;
+        wrapper = null;
+      } else {
+        break;
+      }
     }
 
     const name = path.basename(tokens[index] || "");
@@ -524,7 +547,23 @@ function shellWrites(command, startCwd = process.cwd()) {
         followScript(program);
       }
     } else {
-      inlineCode(name, args).forEach((program) => stringLiterals(program).forEach((literal) => add(literal, "inline")));
+      const programs = inlineCode(name, args);
+      programs.forEach((program) =>
+        stringLiterals(program).forEach((literal) => {
+          add(literal, "inline");
+          // A 2-argument `open(F, ">.env")` carries its mode in the literal.
+          const bare = literal.replace(/^\+?[<>]{1,2}\s*/, "");
+          if (bare !== literal) {
+            add(bare, "inline");
+          }
+        }),
+      );
+
+      // A program read from a heredoc / here-string is data to the splitter: it cannot be judged.
+      const reader = INTERPRETERS.some(([pattern]) => pattern.test(name)) || SHELLS.has(name);
+      if (reader && programs.length === 0 && segment.text.includes("<<") && args.every((arg) => arg.startsWith("-") || arg.startsWith("<"))) {
+        found.push({ target: `(${name} program)`, kind: "write", unchecked: "an interpreter reads its program from a heredoc" });
+      }
     }
 
     if (resume !== null) {
