@@ -174,3 +174,10 @@ test('--clean-env keeps PATH, HOME and CI for the command', (t) => {
   assert.equal(code, 0, output);
   assert.match(JSON.parse(output).results[0].stdoutTail, /keep=true,true,true/);
 });
+
+test('run in a terminal names plan.md as the source of the commands it runs', (t) => {
+  const dir = planProject(t);
+  const { output } = run(dir, ['run', '--story', STORY], { AI_FLOW_FORCE_TTY: '1' });
+  assert.match(output, /Running commands from plan\.md \(not from \.coding-flow\/config\.json\):/);
+  assert.equal(marker(dir), true);
+});

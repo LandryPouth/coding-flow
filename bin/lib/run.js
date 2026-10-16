@@ -202,7 +202,7 @@ function run({ story = null, epic = null, driver = "none", json = false, dryRun 
   for (const entry of target.stories) {
     // Driver "none" implements nothing — it verifies work already done. A future
     // driver would implement the story here, before it is verified.
-    const evidence = verifyStoryOnce({ story: entry.path });
+    const evidence = verifyStoryOnce({ story: entry.path, announce: !json });
     const executed = evidence.commandsFound > 0 && !evidence.refused;
     // Only persist an auditable verify when something actually ran: recording a
     // not-yet-ready story as a failed verify would wrongly mark it blocked.

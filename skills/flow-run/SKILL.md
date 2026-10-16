@@ -46,7 +46,7 @@ existing proof instead of re-executing, so calling it again is cheap.
 
 **Commands written in `plan.md` are refused when nobody is watching** (no TTY, `CI=true`,
 an agent-driven run): `verify` reports `REFUSED` and executes nothing. Do not add
-`--allow-plan-commands` on your own — move the commands to `.coding-flow/config.json`
+`--allow-plan-commands` (or `AI_FLOW_FORCE_TTY`/`NODE_ENV=test`) on your own — move the commands to `.coding-flow/config.json`
 with the user's agreement, or ask them to allow it. `--clean-env` runs any command
 without credential-looking environment variables.
 
