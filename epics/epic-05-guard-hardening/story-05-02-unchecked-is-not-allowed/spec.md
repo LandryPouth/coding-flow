@@ -33,6 +33,11 @@ which tool, why — instead of reading silence as protection.
 - [ ] Given `evaluate(null, root)`, then `decision: "unchecked"` and a reason.
 - [ ] Given `decide` throws (inject a policy file that is a directory), then
       `evaluate` returns `unchecked`, not `allow`, and a line is logged.
+- [ ] Given the OpenCode plugin receives a known write tool (`write`, `edit`,
+      `patch`, `shell`) whose arguments resolve no path or command (e.g. V2
+      renames `path` or `patchText`), or an unknown one like `multiedit`, then
+      `unchecked` with a stderr "NOT checked" line, not a silent allow (found
+      by the 06-01 STRICT review).
 - [ ] Given tool `MultiEdit2` with `{ file_path: ".env" }`, then `unchecked`;
       given tool `Read` with `{ file_path: ".env" }`, then `allow`.
 - [ ] Given `ai-flow guard` (Claude hook) receives an unchecked case, then

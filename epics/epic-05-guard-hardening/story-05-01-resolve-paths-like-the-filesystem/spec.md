@@ -48,6 +48,9 @@ checkout, or a session opened in a subdirectory each bypass the policy.
 - [ ] Given a new file `src/new.js` (does not exist yet, parent exists), then
       allow — the nearest-ancestor resolution must not fail on non-existent
       targets.
+- [ ] Given a case-insensitive filesystem (`win32`, default `darwin`), when
+      Write targets `.ENV`, then deny — today it is allowed (found by the
+      06-01 STRICT review).
 - [ ] Given a link whose real path is `/tmp/elsewhere/file.txt`, then allow.
 - [ ] Given `node_modules` itself being a symlink (pnpm, worktree deps link),
       when Write targets `src/a.js`, then allow; when Edit targets a file
