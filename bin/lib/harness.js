@@ -1846,7 +1846,6 @@ function evaluatePatchCoverage({ config, behaviorFiles, testFiles = [], startedA
   const measured = measurePatchCoverage({
     report,
     changedLinesByFile: scoped,
-    packageOf: (file) => packageOfFile(cwd, file),
   });
 
   // A behaviour file outside every report's package falls back to the test-file

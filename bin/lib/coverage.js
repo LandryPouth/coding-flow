@@ -140,6 +140,9 @@ const WORKSPACE_REPORT_PATHS = ["*/*/coverage/lcov.info", "*/*/coverage/coverage
 
 const SKIPPED_DIRS = new Set(["node_modules", ".git"]);
 
+// How many directories a `**` may descend: bounded so a stray pattern cannot walk a huge tree.
+const MAX_GLOBSTAR_DEPTH = 6;
+
 function listDirs(dir) {
   try {
     return fs
@@ -163,7 +166,7 @@ function expandReportPattern(root, pattern) {
   const segments = normalizePortable(pattern).split("/").filter(Boolean);
   const found = [];
 
-  const walk = (dir, index) => {
+  const walk = (dir, index, depth = 0) => {
     if (index === segments.length) {
       return;
     }
@@ -172,9 +175,11 @@ function expandReportPattern(root, pattern) {
     const last = index === segments.length - 1;
 
     if (segment === "**") {
-      walk(dir, index + 1);
-      for (const child of listDirs(dir)) {
-        walk(path.join(dir, child), index);
+      walk(dir, index + 1, depth);
+      if (depth < MAX_GLOBSTAR_DEPTH) {
+        for (const child of listDirs(dir)) {
+          walk(path.join(dir, child), index, depth + 1);
+        }
       }
       return;
     }
@@ -439,7 +444,7 @@ function coveredExtensions(report) {
 // Patch coverage: of the lines this change added, how many does the report show
 // as executed. Files the report cannot speak about are excluded entirely rather
 // than counted as zero.
-function measurePatchCoverage({ report, changedLinesByFile, packageOf = null }) {
+function measurePatchCoverage({ report, changedLinesByFile }) {
   const extensions = coveredExtensions(report);
   const uncovered = [];
   let totalLines = 0;
@@ -460,7 +465,7 @@ function measurePatchCoverage({ report, changedLinesByFile, packageOf = null }) 
       (pkg) => pkg === "" || file === pkg || file.startsWith(`${pkg}/`),
     );
 
-    if (packageRoots && packageOf && !report.files.has(file) && !insideARoot) {
+    if (packageRoots && !report.files.has(file) && !insideARoot) {
       unmeasured.push(file);
       continue;
     }
