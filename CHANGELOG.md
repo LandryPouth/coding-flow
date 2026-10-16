@@ -9,6 +9,7 @@ All notable changes to this project are documented here. The format is based on
 ### Fixed
 
 - OpenCode guard: the generated plugin now also exports the OpenCode 2.x entry (`default.setup`) and reads V2 argument names (`path`, `shell`, `patch`), so `.env` writes are refused on 2.x as on 1.x. Run `ai-flow upgrade` to regenerate it.
+- `doctor` reads `opencode --version` and fails with "the guard is not loaded on OpenCode 2" when the project or global guard plugin predates the 2.x entry (run `ai-flow upgrade` / `upgrade --global`). On 1.x it stays the stale warning; without `opencode` on PATH it adds one note and never fails.
 
 ## [0.12.1] - 2026-10-16
 

@@ -209,9 +209,11 @@ function removeOpenCodePlugin({ file, dryRun = false }) {
 }
 
 // What `doctor` reads back: present + ours + current. "absent" is only a
-// problem when OpenCode is in use.
-function inspectOpenCodePlugin(root = cwd) {
-  const target = pluginPath(root);
+// problem when OpenCode is in use. `v2` says whether the file carries the
+// OpenCode 2.x entry; a plugin written before 0.12.2 does not, and 2.x then
+// loads nothing.
+function inspectOpenCodePlugin(root = cwd, file = null) {
+  const target = file || pluginPath(root);
 
   if (!fs.existsSync(target)) {
     return { state: "absent", path: target };
@@ -223,13 +225,45 @@ function inspectOpenCodePlugin(root = cwd) {
     return { state: "foreign", path: target };
   }
 
-  return { state: current === pluginSource() ? "current" : "stale", path: target };
+  return { state: current === pluginSource() ? "current" : "stale", path: target, v2: pluginHasV2Entry(current) };
+}
+
+// The stable token of the V2 default export, so callers never re-encode it.
+function pluginHasV2Entry(source) {
+  return typeof source === "string" && source.includes('id: "coding-flow.guard"');
+}
+
+// `2.0.30`, `opencode 2.0.30` and `v2.0.30` all parse; anything else is unknown
+// (null), which callers treat as 1.x.
+function parseOpenCodeMajor(output) {
+  const match = String(output || "").match(/(?:^|\s)v?(\d+)\.\d+(?:\.\d+)?/);
+
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+// `--version` is the only invocation: 2.x auto-starts a background service for
+// some subcommands. Never throws; `{ found: false }` when the binary is absent.
+function probeOpenCode() {
+  try {
+    const out = require("child_process").execFileSync("opencode", ["--version"], {
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    return { found: true, major: parseOpenCodeMajor(out) };
+  } catch {
+    return { found: false, major: null };
+  }
 }
 
 module.exports = {
   ensureOpenCodePlugin,
   removeOpenCodePlugin,
   inspectOpenCodePlugin,
+  pluginHasV2Entry,
+  parseOpenCodeMajor,
+  probeOpenCode,
   usesOpenCode,
   pluginSource,
   PLUGIN_RELATIVE,

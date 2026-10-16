@@ -31,10 +31,10 @@ const { findGuardEntry, guardCommandString } = require("./settings");
 const { inspectCodexSandbox } = require("./codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./codex-probe");
 const { recordProbeEvidence } = require("./platforms/evidence");
-const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
+const { inspectOpenCodePlugin, probeOpenCode, usesOpenCode } = require("./opencode");
 const { servedByClaude } = require("./platforms/opencode");
 const { EXPLICIT_TARGETS } = require("./detect");
-const { inspectOpenCodeInstructions, inspectGlobalCommands } = require("./opencode-config");
+const { inspectOpenCodeInstructions, inspectGlobalCommands, globalOpenCodeDir } = require("./opencode-config");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -335,12 +335,19 @@ function checkOpenCodeGlobal(warnings) {
   }
 }
 
-function checkOpenCodeWiring(errors, warnings) {
+function checkOpenCodeWiring(errors, warnings, notes = []) {
   if (!usesOpenCode()) {
     return;
   }
 
   checkOpenCodeGlobal(warnings);
+
+  const host = probeOpenCode();
+  const onV2 = host.found && host.major !== null && host.major >= 2;
+
+  if (!host.found) {
+    notes.push({ code: "opencode_not_on_path", message: "`opencode` is not on PATH, so the OpenCode version the guard must fit was not checked" });
+  }
 
   // OpenCode never expands CLAUDE.md's `@RULES.md`: without `instructions` in
   // opencode.json the rulebook is not in the model's context at all.
@@ -393,12 +400,32 @@ function checkOpenCodeWiring(errors, warnings) {
       file,
       message: "this project uses OpenCode but no guard plugin is installed — writes are not protected there; run `ai-flow upgrade`",
     });
+  } else if (plugin.state === "stale" && onV2 && !plugin.v2) {
+    // Not outdated: absent. 2.x ignores a V1-only plugin without a word.
+    errors.push({
+      code: "opencode_guard_not_loaded",
+      file,
+      message: `the guard is not loaded on OpenCode ${host.major}: this plugin predates the 2.x entry, so writes are not protected — run \`ai-flow upgrade\``,
+    });
   } else if (plugin.state === "stale") {
     warnings.push({
       code: "opencode_guard_stale",
       file,
       message: "the OpenCode guard plugin does not match this install — run `ai-flow upgrade` to re-wire it",
     });
+  }
+
+  // The plugin `init --global` puts in ~/.config/opencode applies to every project.
+  if (onV2) {
+    const global = inspectOpenCodePlugin(cwd, path.join(globalOpenCodeDir(), "plugins", "coding-flow-guard.js"));
+
+    if (global.state === "stale" && !global.v2) {
+      errors.push({
+        code: "opencode_global_guard_not_loaded",
+        file: global.path,
+        message: `the global guard is not loaded on OpenCode ${host.major} (${global.path} predates the 2.x entry) — run \`ai-flow upgrade --global\``,
+      });
+    }
   }
 }
 
@@ -409,6 +436,7 @@ function checkOpenCodeWiring(errors, warnings) {
 function collectMinimalReport({ strict = false } = {}) {
   const errors = [];
   const warnings = [];
+  const notes = [];
 
   if (!fs.existsSync(path.join(cwd, ".coding-flow", "harness.json"))) {
     errors.push({
@@ -432,7 +460,7 @@ function collectMinimalReport({ strict = false } = {}) {
 
   checkGuardWiring(errors, warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
-  checkOpenCodeWiring(errors, warnings);
+  checkOpenCodeWiring(errors, warnings, notes);
 
   return {
     ok: errors.length === 0,
@@ -440,6 +468,7 @@ function collectMinimalReport({ strict = false } = {}) {
     version: packageJson.version,
     strict,
     codexProbe,
+    notes,
     install: "minimal",
     skillsMode: "plugin",
     skills: [],
@@ -643,7 +672,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
-  checkOpenCodeWiring(errors, warnings);
+  checkOpenCodeWiring(errors, warnings, notes);
 
   return {
     ok: errors.length === 0,
