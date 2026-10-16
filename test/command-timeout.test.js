@@ -96,6 +96,19 @@ test('a different limit is a different command contract', (t) => {
   assert.notEqual(first, second);
 });
 
+test('a per-command limit is part of the command contract too', (t) => {
+  const dir = project(t, { commands: [{ command: 'node fast.js', timeoutMs: 5000 }] });
+  const first = verifyJson(dir).evidence.commandsFingerprint;
+
+  const file = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+  config.validation.commands = [{ command: 'node fast.js', timeoutMs: 6000 }];
+  fs.writeFileSync(file, JSON.stringify(config, null, 2));
+  const second = verifyJson(dir).evidence.commandsFingerprint;
+
+  assert.notEqual(first, second);
+});
+
 test('a malformed timeout is ignored and the command keeps the default limit', (t) => {
   const dir = project(t, {
     commands: [{ command: 'node fast.js', timeoutMs: 'soon' }],

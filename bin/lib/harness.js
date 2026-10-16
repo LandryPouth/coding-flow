@@ -1335,6 +1335,7 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
       // Entries are strings or `{ command, timeoutMs }`; everything downstream
       // keeps seeing command strings, and the limits travel beside them.
       const globalTimeout = Number.isFinite(config.validation.timeoutMs) ? config.validation.timeoutMs : null;
+      // Keyed by command string: one limit per distinct command, the last declared wins.
       const timeouts = {};
       const commandOf = (entry) => {
         const command = typeof entry === "string" ? entry : entry.command;
