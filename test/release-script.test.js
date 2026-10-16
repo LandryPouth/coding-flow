@@ -19,7 +19,7 @@ function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 }
 
-function fixture(t, { published = true, changelog = true, npmError = false } = {}) {
+function fixture(t, { published = true, changelog = true, npmError = false, extraEnv = {} } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-release-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const origin = path.join(base, 'origin.git');
@@ -42,13 +42,13 @@ function fixture(t, { published = true, changelog = true, npmError = false } = {
   git(repo, 'add', '.');
   git(repo, 'commit', '-m', 'init');
   git(repo, 'push', 'origin', 'HEAD');
-  fs.writeFileSync(path.join(bin, 'npm'), `#!/bin/sh\n${published ? 'echo 1.2.3' : npmError ? 'echo connect ETIMEDOUT >&2; exit 1' : 'echo npm error code E404 >&2; exit 1'}\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'npm'), `#!/bin/sh\nif [ "$3" = gitHead ]; then echo "$FAKE_GITHEAD"; exit 0; fi\n${published ? 'echo 1.2.3' : npmError ? 'echo connect ETIMEDOUT >&2; exit 1' : 'echo npm error code E404 >&2; exit 1'}\n`, { mode: 0o755 });
   fs.writeFileSync(
     path.join(bin, 'gh'),
     `#!/bin/sh\nif [ "$2" = view ]; then [ -f "${gh}" ]; exit $?; fi\necho "$@" > "${gh}"\n`,
     { mode: 0o755 },
   );
-  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const env = { ...process.env, ...extraEnv, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
   const run = (...args) =>
     spawnSync(process.execPath, [path.join(repo, 'scripts', 'release.mjs'), ...args], { cwd: repo, env, encoding: 'utf8' });
   return { repo, origin, gh, run };
@@ -117,6 +117,39 @@ test('refuses to tag a dirty tree or a HEAD that is not on origin', { skip: skip
   assert.notEqual(unpushed.status, 0);
   assert.match(unpushed.stderr, /not on any remote branch/);
   assert.equal(git(f.repo, 'tag', '-l'), '');
+});
+
+test('adopts the tag origin already has instead of tagging HEAD again', { skip: skipOnWindows }, (t) => {
+  const f = fixture(t);
+  const first = git(f.repo, 'rev-parse', 'HEAD');
+  git(f.repo, 'tag', '-a', 'v1.2.3', '-m', 'x');
+  git(f.repo, 'push', 'origin', 'v1.2.3');
+  fs.writeFileSync(path.join(f.repo, 'later.txt'), 'x');
+  git(f.repo, 'add', '.');
+  git(f.repo, 'commit', '-m', 'later');
+  git(f.repo, 'push', 'origin', 'HEAD');
+  git(f.repo, 'tag', '-d', 'v1.2.3');
+  const r = f.run();
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(git(f.repo, 'rev-parse', 'v1.2.3^{commit}'), first);
+  assert.ok(fs.existsSync(f.gh));
+});
+
+test('refuses to tag a HEAD other than the commit npm published from', { skip: skipOnWindows }, (t) => {
+  const f = fixture(t, { extraEnv: { FAKE_GITHEAD: 'a'.repeat(40) } });
+  const r = f.run();
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /published 1\.2\.3 from aaaaaaa/);
+  assert.equal(git(f.repo, 'tag', '-l'), '');
+});
+
+test('refuses an empty CHANGELOG section', { skip: skipOnWindows }, (t) => {
+  const f = fixture(t);
+  fs.writeFileSync(path.join(f.repo, 'CHANGELOG.md'), '## [1.2.3]\n\n## [1.2.2]\n\n- old\n');
+  git(f.repo, 'commit', '-am', 'empty');
+  const r = f.run();
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /is empty/);
 });
 
 test('refuses a version with no CHANGELOG section', { skip: skipOnWindows }, (t) => {

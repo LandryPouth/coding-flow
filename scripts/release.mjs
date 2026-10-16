@@ -42,22 +42,31 @@ const version = pkg.version;
 const tag = `v${version}`;
 
 const section = changelogSection(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), version);
-if (!section) fail(`CHANGELOG.md has no "## [${version}]" section — write it first`);
+if (section === null) fail(`CHANGELOG.md has no "## [${version}]" section — write it first`);
+if (section === "") fail(`CHANGELOG.md "## [${version}]" section is empty — write the notes first`);
 
-const npmView = spawnSync("npm", ["view", `${pkg.name}@${version}`, "version"], { cwd: root, encoding: "utf8" });
-if (npmView.error || (npmView.status !== 0 && !/E404|code E404|404 Not Found/.test(npmView.stderr || ""))) {
+// npm is npm.cmd on Windows, which only a shell can spawn.
+const npmShell = process.platform === "win32";
+const npmView = spawnSync("npm", ["view", `${pkg.name}@${version}`, "version"], { cwd: root, encoding: "utf8", shell: npmShell });
+if (npmView.error || (npmView.status !== 0 && !/E404/.test(npmView.stderr || ""))) {
   fail(`could not ask npm whether ${pkg.name}@${version} is published: ${(npmView.error?.message || npmView.stderr || "").trim()}`);
 }
 if ((npmView.stdout || "").trim() !== version) {
   fail(`${pkg.name}@${version} is not published on npm — run \`npm publish\` first (this script never does)`);
 }
 
-const tagExists = sh("git", ["tag", "-l", tag]) === tag;
 const remoteTagExists = sh("git", ["ls-remote", "--tags", "origin", `refs/tags/${tag}`]) !== "";
+let tagExists = sh("git", ["tag", "-l", tag]) === tag;
+if (!tagExists && remoteTagExists && !dryRun) {
+  // Never mint a second tag on HEAD when origin already has one: adopt it.
+  sh("git", ["fetch", "origin", `refs/tags/${tag}:refs/tags/${tag}`]);
+  tagExists = true;
+}
 const releaseExists = sh("gh", ["release", "view", tag], { allowFail: true }) !== null;
 
 const plan = [];
-if (!tagExists) plan.push(`create annotated tag ${tag} on ${sh("git", ["rev-parse", "--short", "HEAD"])}`);
+if (!tagExists && remoteTagExists) plan.push(`fetch tag ${tag} from origin`);
+if (!tagExists && !remoteTagExists) plan.push(`create annotated tag ${tag} on ${sh("git", ["rev-parse", "--short", "HEAD"])}`);
 if (!remoteTagExists) plan.push(`push tag ${tag} to origin`);
 if (!releaseExists) plan.push(`gh release create ${tag} with the CHANGELOG ${version} section`);
 
@@ -78,6 +87,11 @@ if (!tagExists) {
   }
   if (sh("git", ["branch", "-r", "--contains", "HEAD"]) === "") {
     fail("HEAD is not on any remote branch — check out the commit you published, pushed to origin");
+  }
+  // npm records the commit it was published from; tag that one, not whatever is checked out.
+  const gitHead = spawnSync("npm", ["view", `${pkg.name}@${version}`, "gitHead"], { cwd: root, encoding: "utf8", shell: npmShell }).stdout?.trim();
+  if (gitHead && gitHead !== sh("git", ["rev-parse", "HEAD"])) {
+    fail(`npm published ${version} from ${gitHead.slice(0, 7)}, but HEAD is ${sh("git", ["rev-parse", "--short", "HEAD"])} — check out ${gitHead.slice(0, 7)} first`);
   }
   sh("git", ["tag", "-a", tag, "-m", `${pkg.name} ${version}`]);
   console.log(`release: tagged ${tag}`);
