@@ -45,6 +45,7 @@ const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 // Tools known to leave the disk alone, in Claude Code and OpenCode spellings. Any
 // OTHER tool that carries a path is a write tool we have not met yet: the guard
 // cannot judge it, and says so (`unchecked`) instead of waving it through.
+// Keep in step with the read-only regex in the OpenCode plugin body (opencode.js).
 const READ_ONLY_TOOLS = new Set(
   [
     "Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite", "TodoRead",
@@ -453,7 +454,7 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
     const input = toolInput && typeof toolInput === "object" ? toolInput : {};
 
     if (!READ_ONLY_TOOLS.has(String(toolName || "").toLowerCase()) && PATH_FIELDS.some((field) => input[field])) {
-      return { decision: "unchecked", reason: `tool ${toolName || "?"} is unknown to the guard and carries a path` };
+      return { decision: "unchecked", reason: `tool ${String(toolName || "?").slice(0, 64)} is unknown to the guard and carries a path` };
     }
 
     return { decision: "allow", reason: `tool ${toolName || "?"} is not a write tool` };
@@ -477,10 +478,6 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
     };
   }
 
-  if (!filePath) {
-    return { decision: "unchecked", reason: `${toolName} carried no target path` };
-  }
-
   // Check 2 — secret in the written content. On an allowlisted path (docs,
   // fixtures, story files) only the exact credential formats apply: a
   // placeholder in an example is not a leak, an AWS key in one still is.
@@ -499,6 +496,11 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
         path: relative,
       };
     }
+  }
+
+  // Nothing refused: what could not be judged (a missing path) is said, not allowed silently.
+  if (!filePath) {
+    return { decision: "unchecked", reason: `${toolName} carried no target path` };
   }
 
   if (ctx.issues.length) {

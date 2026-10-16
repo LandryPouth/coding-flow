@@ -74,6 +74,12 @@ test('an unknown tool carrying a path is unchecked; a read tool is allowed', (t)
   assert.equal(decide({ tool_name: 'SomeMcpTool', tool_input: { query: 'x' }, cwd: dir }, dir).decision, 'allow');
 });
 
+test('a write tool with no path still has its content scanned for secrets', (t) => {
+  const dir = tmp(t);
+  const key = 'AK' + 'IA' + 'IOSFODNN7EXAMPLE';
+  assert.equal(decide({ tool_name: 'Write', tool_input: { content: `K=${key}` }, cwd: dir }, dir).decision, 'deny');
+});
+
 test('a write tool with no path, and a path that cannot be resolved, are unchecked', (t) => {
   const dir = tmp(t);
   assert.equal(decide({ tool_name: 'Write', tool_input: { content: 'x' }, cwd: dir }, dir).decision, 'unchecked');
