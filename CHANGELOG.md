@@ -80,6 +80,13 @@ All notable changes to this project are documented here. The format is based on
   and auto-land treat it as stale. Evidence from before the field is never reused for the
   cache but is not flipped to stale.
 
+- **A review "pass" that holds.** `ai-flow review capture --verdict pass` with an open P0
+  or P1 is refused (exit 1, nothing written) unless `--accept "<reason>"` is given; the
+  reason is stored as `acceptedRisk`. `status` shows `review: pass (self)` on a STRICT
+  story reviewed only by its author (`--json` exposes `reviewer`), and `audit` counts
+  reviews by reviewer and lists passes with accepted P0/P1, and older ones recorded
+  with an open P1 (`pre-0.13`). Existing review files are read as written.
+
 - **The command time limit is configurable.** `validation.timeoutMs` in
   `config.json` replaces the fixed 600 s, and an entry of `validation.commands` /
   `quality` may be `{ "command": "...", "timeoutMs": 1200000 }` (strings still

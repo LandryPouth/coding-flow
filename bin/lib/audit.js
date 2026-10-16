@@ -402,11 +402,54 @@ function latestReviewByStoryDir(root) {
         ok: Boolean(data.ok),
         generatedAt: data.generatedAt || "",
         treeToken: (data.provenance && data.provenance.git && data.provenance.git.treeToken) || null,
+        reviewer: data.reviewer || "self",
       });
     }
   }
 
   return byDir;
+}
+
+// Every captured review, summarised: how many per reviewer kind, and the passes
+// that were recorded next to an open P0/P1. A pass with `acceptedRisk` was
+// accepted on purpose; one without it predates the rule (a file is read as it
+// was written, never rewritten).
+function summarizeReviews(root) {
+  const dir = runsDir(root);
+  const summary = { total: 0, byReviewer: {}, acceptedRisk: [], preRule: [] };
+
+  if (!fs.existsSync(dir)) {
+    return summary;
+  }
+
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!name.endsWith("-review.json")) {
+      continue;
+    }
+
+    const data = readJson(path.join(dir, name), null);
+    if (!data || !data.story) {
+      continue;
+    }
+
+    const reviewer = data.reviewer || "self";
+    const counts = data.findingCounts || {};
+    const open = (Number(counts.p0) || 0) + (Number(counts.p1) || 0);
+    summary.total += 1;
+    summary.byReviewer[reviewer] = (summary.byReviewer[reviewer] || 0) + 1;
+
+    if (data.verdict === "pass" && open > 0) {
+      const item = { story: data.story, generatedAt: data.generatedAt || "", p0: Number(counts.p0) || 0, p1: Number(counts.p1) || 0 };
+
+      if (data.acceptedRisk) {
+        summary.acceptedRisk.push({ ...item, reason: data.acceptedRisk });
+      } else {
+        summary.preRule.push(item);
+      }
+    }
+  }
+
+  return summary;
 }
 
 // Latest VERIFY's coverage tier and diff scope per story directory, read from
@@ -608,8 +651,27 @@ function audit({
     log(`Verify runs per coverage rung: ${Object.entries(perRung).map(([tier, n]) => `${tier} ${n}`).join(", ")}.`);
   }
   log(`${dryRun ? "Would append" : "Appended"} ${sync.added.length} new run(s) to ${normalizePortable(path.relative(root, ledgerPath(root)))}.`);
+  printReviewSummary(summarizeReviews(root));
   if (!exportMd) {
     log("Run `ai-flow audit --export` to write docs/AUDIT.md, or `--check` to gate on the latest verify.");
+  }
+}
+
+function printReviewSummary(reviews) {
+  if (reviews.total === 0) {
+    return;
+  }
+
+  const kinds = Object.entries(reviews.byReviewer).map(([kind, count]) => `${count} ${kind}`).join(", ");
+  log(`Reviews: ${reviews.total} captured (${kinds}).`);
+
+  for (const item of reviews.acceptedRisk) {
+    log(`- pass with accepted P0/P1: ${item.story} (${item.p0} P0, ${item.p1} P1) — ${item.reason}`);
+  }
+
+  for (const item of reviews.preRule) {
+    const open = [item.p0 ? "P0" : "", item.p1 ? "P1" : ""].filter(Boolean).join("/");
+    log(`- pass with open ${open} (pre-0.13): ${item.story}`);
   }
 }
 
@@ -633,6 +695,7 @@ module.exports = {
   staleReason,
   latestVerifyByStoryDir,
   latestReviewByStoryDir,
+  summarizeReviews,
   latestVerifyScopeByStoryDir,
   buildAuditMarkdown,
   entryFromRunFile,

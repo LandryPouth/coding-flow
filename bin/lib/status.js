@@ -189,6 +189,7 @@ function buildStatusModel(config) {
       const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
       const storyRoot = wtEntry ? wtEntry.fullPath : cwd;
       const review = computeReviewStatus(storyRoot, story.path);
+      const reviewEntry = latestReviewByStoryDir(storyRoot).get(story.path);
       if (!scopeByRoot.has(storyRoot)) {
         scopeByRoot.set(storyRoot, latestVerifyScopeByStoryDir(storyRoot));
       }
@@ -223,6 +224,7 @@ function buildStatusModel(config) {
         ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
         ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
         ...(staleWhy ? { staleReason: staleWhy } : {}),
+        ...(review !== "none" && reviewEntry ? { reviewer: reviewEntry.reviewer } : {}),
         ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
       };
@@ -289,11 +291,13 @@ function status({ json = false } = {}) {
         // fresh pass gets "(required)" — the same distinction `chainIsFinished`/
         // `next`'s tier-4 check act on, so a human reading this line does not
         // have to separately re-derive the story's own risk tier.
+        // A STRICT story passed only by its own author says so: `pass (self)`.
+        const selfMarker = story.reviewRequired && story.review === "pass" && story.reviewer === "self" ? " (self)" : "";
         const reviewSuffix =
           story.reviewRequired && story.review !== "pass"
             ? `  review: ${story.review} (required)`
             : story.review !== "none"
-              ? `  review: ${story.review}`
+              ? `  review: ${story.review}${selfMarker}`
               : "";
         const staleSuffix = story.staleReason ? `  (${story.staleReason})` : "";
         const scopeSuffix = story.scope ? `  coverage ${story.coverage || "?"} (${story.scope} scope)` : "";
