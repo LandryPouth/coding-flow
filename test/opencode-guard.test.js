@@ -163,3 +163,25 @@ test('a project that uses OpenCode gets its own skills copy, whatever the Claude
   assert.equal(res.code, 0);
   assert.equal(fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md')), true);
 });
+
+// OpenCode launched from an IDE or a desktop entry often has no `node` on its
+// PATH. A plugin that spawned `node` would then fail open in silence; it loads
+// the guard in-process instead, so the deny holds with an empty PATH.
+test('the plugin still refuses a blocked write when `node` is not on the PATH', (t) => {
+  const dir = tmp(t, 'oc-nonode');
+  assert.equal(run(dir, ['init', '--opencode']).code, 0);
+  const copy = path.join(dir, 'plugin-under-test.mjs');
+  fs.copyFileSync(path.join(dir, PLUGIN), copy);
+  const script = [
+    `const { CodingFlowGuard } = await import(${JSON.stringify(pathToFileURL(copy).href)});`,
+    `const before = (await CodingFlowGuard({ directory: ${JSON.stringify(dir)} }))['tool.execute.before'];`,
+    `try { await before({ tool: 'write' }, { args: { filePath: ${JSON.stringify(path.join(dir, '.env'))}, content: 'A=1' } }); console.log('ALLOWED'); }`,
+    `catch (e) { console.log('BLOCKED ' + e.message); }`,
+  ].join('\n');
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: dir,
+    env: { PATH: '' },
+    encoding: 'utf8',
+  });
+  assert.match(out, /^BLOCKED coding-flow guard: .*blocked harness path/);
+});

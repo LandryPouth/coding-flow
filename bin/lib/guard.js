@@ -422,4 +422,21 @@ function guardCommand({ getFlagValue, flags }) {
   process.exit(0);
 }
 
-module.exports = { guardCommand, decide, shellWriteTargets, loadPolicy };
+// The same decision for a host that loads this module in its own process (the
+// OpenCode plugin) instead of spawning `ai-flow guard`: decide, record a denial,
+// return the result. Never throws — a guard that crashes its host gets removed.
+function evaluate(hook, root) {
+  try {
+    const result = decide(hook, root);
+
+    if (result.decision === "deny") {
+      recordDenial({ root, hook, result });
+    }
+
+    return result;
+  } catch (err) {
+    return { decision: "allow", reason: `guard error, failing open: ${err && err.message}` };
+  }
+}
+
+module.exports = { guardCommand, decide, evaluate, shellWriteTargets, loadPolicy };
