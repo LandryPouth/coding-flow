@@ -1,6 +1,6 @@
 # Story 08-02 — Tasks
 
-- [ ] `policyFingerprint()` (canonical JSON, major.minor).
-- [ ] Store on evidence; require for reuse.
-- [ ] Staleness reason "policy changed" in audit and status.
-- [ ] Tests; `npm test`; verify; CHANGELOG.
+- [x] `policyFingerprint()` (canonical JSON, major.minor).
+- [x] Store on evidence; require for reuse.
+- [x] Staleness reason "policy changed" in audit and status.
+- [x] Tests; `npm test`; verify; CHANGELOG.

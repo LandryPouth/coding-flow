@@ -11,6 +11,7 @@ const { spawnSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
+const { policyFingerprint } = require("./policy-fingerprint");
 const { captureIdentity, currentTreeToken } = require("./identity");
 const { currentBranch } = require("./policy");
 const { resolveDiffBase, describeScope } = require("./diff-base");
@@ -876,6 +877,7 @@ function buildHarnessPreflight({ story = null } = {}) {
   return {
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     configPath: normalizePortable(path.relative(cwd, harnessConfigPath())),
     configExists: exists,
     story: resolvedStory ? resolvedStory.relativePath : null,
@@ -977,6 +979,7 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
     ok: false,
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     configPath: normalizePortable(path.relative(cwd, harnessConfigPath())),
     configExists: exists,
     mode: config.mode,
@@ -1137,6 +1140,7 @@ function buildHarnessEvidence({ story = null } = {}) {
   return {
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     provenance: captureIdentity(cwd),
     story: preflight.story,
     diffBase: publicDiffBase(currentDiffBase(cwd)),
@@ -2533,6 +2537,8 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     commandsFound: resolution.commands.length,
     // Recorded so a later verify can recognise this proof as still applicable.
     commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
+    // The rules this verdict was computed under; a different value is a different proof.
+    policyFingerprint: policyFingerprint(cwd),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
     environment: captureEnvironment(),
     commandsOk,
@@ -2592,6 +2598,7 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
 
   const untracked = untrackedDigest();
   const fingerprint = commandsFingerprint(commands, timeouts);
+  const policy = policyFingerprint(cwd);
   const runsDir = harnessRunsDir();
 
   if (!fs.existsSync(runsDir)) {
@@ -2619,6 +2626,8 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
     if (
       provenanceToken === token &&
       evidence.commandsFingerprint === fingerprint &&
+      // Evidence without the field predates the policy fingerprint: never reused.
+      evidence.policyFingerprint === policy &&
       // A proof made against another base is a different proof.
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
       evidence.untrackedDigest === untracked

@@ -24,14 +24,14 @@ under the old rules.
 
 ## Acceptance Criteria
 
-- [ ] Green verify, then add a term to `highRiskTerms`, then verify again →
+- [x] Green verify, then add a term to `highRiskTerms`, then verify again →
       commands actually run (no "already proved").
-- [ ] Green verify, change `coverageReports` → `status` shows the story as
+- [x] Green verify, change `coverageReports` → `status` shows the story as
       stale with reason "policy changed".
-- [ ] Green verify, no change → reuse works as today.
-- [ ] Whitespace/key-order changes in `harness.json` do not change the
+- [x] Green verify, no change → reuse works as today.
+- [x] Whitespace/key-order changes in `harness.json` do not change the
       fingerprint (canonical JSON).
-- [ ] Upgrading coding-flow 0.13.0 → 0.13.1 does not invalidate; → 0.14.0
+- [x] Upgrading coding-flow 0.13.0 → 0.13.1 does not invalidate; → 0.14.0
       does.
 
 ## Edge Cases

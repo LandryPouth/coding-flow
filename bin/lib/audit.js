@@ -14,6 +14,7 @@ const crypto = require("crypto");
 const { cwd } = require("./context");
 const { log, normalizePortable, readJson } = require("./util");
 const { currentTreeToken } = require("./identity");
+const { policyFingerprint, policyChanged } = require("./policy-fingerprint");
 const { coverageTier } = require("./coverage");
 
 function runsDir(root) {
@@ -200,6 +201,8 @@ function entryFromRunFile(file, root) {
     // proof that still describes the current code from a stale one. Absent on
     // pre-freshness or non-git evidence -> treated leniently (never stale).
     treeToken: git ? git.treeToken || null : null,
+    // The rules the run was computed under; absent on older evidence (lenient).
+    policyFingerprint: data.policyFingerprint || null,
     summary,
   };
 }
@@ -286,11 +289,27 @@ function syncLedger(root, { dryRun = false } = {}) {
 // A green verify is "stale" when its captured working-tree token no longer
 // matches the current one: the code changed after the proof was produced. Only
 // decidable when both tokens exist — otherwise (old/non-git evidence) lenient.
-function isStale(entry, currentToken) {
-  return Boolean(entry.ok && entry.treeToken && currentToken && entry.treeToken !== currentToken);
+// A different policy fingerprint makes it stale too ("policy changed", see
+// `staleReason`); `currentPolicy` is optional, and evidence without a fingerprint
+// is never stale for it, so an upgrade does not flip every historical story.
+function isStale(entry, currentToken, currentPolicy = null) {
+  return Boolean(
+    entry.ok &&
+      ((entry.treeToken && currentToken && entry.treeToken !== currentToken) ||
+        policyChanged(entry.policyFingerprint, currentPolicy)),
+  );
 }
 
-function gate(entries, { currentToken = null } = {}) {
+// Why a green proof is stale: the rules moved, or the code did.
+function staleReason(entry, currentToken, currentPolicy = null) {
+  if (entry.ok && policyChanged(entry.policyFingerprint, currentPolicy)) {
+    return "policy changed";
+  }
+
+  return isStale(entry, currentToken) ? "code changed" : null;
+}
+
+function gate(entries, { currentToken = null, currentPolicy = null } = {}) {
   const verify = entries.filter((entry) => entry.type === "verify");
 
   if (verify.length === 0) {
@@ -310,7 +329,7 @@ function gate(entries, { currentToken = null } = {}) {
   const failing = latest.filter((entry) => !entry.ok);
   // A stale proof is not a passing proof: the latest green run no longer
   // describes the code being pushed, so re-verification is required.
-  const stale = latest.filter((entry) => isStale(entry, currentToken));
+  const stale = latest.filter((entry) => isStale(entry, currentToken, currentPolicy));
 
   return { ok: failing.length === 0 && stale.length === 0, reason: null, failing, stale, latest };
 }
@@ -334,7 +353,12 @@ function latestVerifyByStoryDir(root) {
     const prev = byDir.get(dir);
 
     if (!prev || (entry.generatedAt || "") > (prev.generatedAt || "")) {
-      byDir.set(dir, { ok: entry.ok, generatedAt: entry.generatedAt || "", treeToken: entry.treeToken || null });
+      byDir.set(dir, {
+        ok: entry.ok,
+        generatedAt: entry.generatedAt || "",
+        treeToken: entry.treeToken || null,
+        policyFingerprint: entry.policyFingerprint || null,
+      });
     }
   }
 
@@ -506,7 +530,7 @@ function audit({
     if (since) {
       entries = entries.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
     }
-    const result = gate(entries, { currentToken: currentTreeToken(root) });
+    const result = gate(entries, { currentToken: currentTreeToken(root), currentPolicy: policyFingerprint(root) });
 
     if (json) {
       log(JSON.stringify(result, null, 2));
@@ -522,7 +546,7 @@ function audit({
         }
       }
       if (result.stale.length > 0) {
-        log("Audit check FAILED — latest verify is stale (code changed since the proof); re-run `ai-flow verify --story <dir>` for:");
+        log("Audit check FAILED — latest verify is stale (code or policy changed since the proof); re-run `ai-flow verify --story <dir>` for:");
         for (const entry of result.stale) {
           log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree`);
         }
@@ -580,6 +604,7 @@ module.exports = {
   syncLedger,
   gate,
   isStale,
+  staleReason,
   latestVerifyByStoryDir,
   latestReviewByStoryDir,
   latestVerifyScopeByStoryDir,
