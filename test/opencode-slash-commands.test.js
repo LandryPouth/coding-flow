@@ -84,3 +84,23 @@ test('the global install adds the commands beside the skills, and uninstall --gl
   runGlobal(['uninstall', '--global']);
   assert.deepEqual(commandFiles(path.join(xdg, 'opencode', 'commands')), []);
 });
+
+// 0.12.0 wrote the global skills but no `commands/`, so its users see no /flow-*
+// and nothing told them why. doctor in an OpenCode project now says it, with
+// the one command that fixes it — which /flow-setup runs on a doctor warning.
+test('doctor points an older global OpenCode install at upgrade --global', (t) => {
+  const { dir, project } = setup(t);
+  const xdg = path.join(dir, 'xdg');
+  const env = { ...process.env, CLAUDECODE: '', OPENCODE: '', XDG_CONFIG_HOME: xdg };
+  const cli = (args) => spawnSync(process.execPath, [CLI, ...args], { cwd: project, env, encoding: 'utf8' });
+  cli(['init', '--global', '--target', 'opencode']);
+  cli(['init', '--target', 'opencode']);
+  assert.doesNotMatch(cli(['doctor']).stdout, /opencode_global_stale|behind this version/);
+
+  fs.rmSync(path.join(xdg, 'opencode', 'commands'), { recursive: true });
+  const out = cli(['doctor']).stdout;
+  assert.match(out, /OpenCode install for every project .* is behind this version \(7 file\(s\) missing, e\.g\. commands\/flow-next\.md\) — run `ai-flow upgrade --global`/);
+
+  cli(['upgrade', '--global']);
+  assert.doesNotMatch(cli(['doctor']).stdout, /behind this version/);
+});

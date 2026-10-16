@@ -33,3 +33,9 @@ for (const name of [
 // Code or from a plain terminal / CI. Pinned here, once; the detection tests
 // that need a bare environment delete it from the env they hand the CLI.
 process.env.CLAUDECODE = "1";
+
+// OpenCode's install for every project lives in $XDG_CONFIG_HOME/opencode (or
+// ~/.config/opencode). `doctor` reads it, and the suite must not depend on — or
+// ever write to — the developer's real one. An empty directory nobody creates;
+// tests of the global install pass their own HOME / XDG_CONFIG_HOME.
+process.env.XDG_CONFIG_HOME = require("path").join(require("os").tmpdir(), "coding-flow-test-no-xdg-config");

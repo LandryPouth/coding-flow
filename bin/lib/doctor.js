@@ -16,6 +16,7 @@ const {
   copyTemplates,
   copyCodexSkills,
   copyPlatformCommands,
+  renderPlatformCommands,
   writeManifest,
   readManifest,
   ensureConvenienceFiles,
@@ -33,7 +34,7 @@ const { recordProbeEvidence } = require("./platforms/evidence");
 const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
 const { servedByClaude } = require("./platforms/opencode");
 const { EXPLICIT_TARGETS } = require("./detect");
-const { inspectOpenCodeInstructions } = require("./opencode-config");
+const { inspectOpenCodeInstructions, inspectGlobalCommands } = require("./opencode-config");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -297,10 +298,49 @@ function checkCodexSandbox(errors, warnings) {
 // is missing while the project uses OpenCode (writes unprotected there), or it
 // is ours but written by another version. Not checked at all for a project that
 // does not use OpenCode — Claude-only installs stay exactly as they were.
+function olderVersion(a, b) {
+  const parse = (v) => String(v || "0").split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const [x, y] = [parse(a), parse(b)];
+
+  for (let i = 0; i < 3; i += 1) {
+    if (x[i] !== y[i]) {
+      return x[i] < y[i];
+    }
+  }
+
+  return false;
+}
+
+// The install for every project (`init --global`) lives outside the repo, so
+// nothing else would ever say it is behind. Only an older one is flagged: a
+// newer global install run from an older pinned binary must not be "fixed"
+// into a downgrade.
+function checkOpenCodeGlobal(warnings) {
+  const global = inspectGlobalCommands({ expected: renderPlatformCommands("opencode").map((file) => file.rel) });
+
+  if (!global.installed) {
+    return;
+  }
+
+  const behind = olderVersion(global.version, packageJson.version);
+
+  if (global.missing.length > 0 || behind) {
+    const what = global.missing.length > 0 ? `${global.missing.length} file(s) missing, e.g. ${global.missing[0]}` : `from ${global.version || "an earlier version"}`;
+
+    warnings.push({
+      code: "opencode_global_stale",
+      file: global.dir,
+      message: `the OpenCode install for every project (${global.dir}) is behind this version (${what}) — run \`ai-flow upgrade --global\`, then restart OpenCode`,
+    });
+  }
+}
+
 function checkOpenCodeWiring(errors, warnings) {
   if (!usesOpenCode()) {
     return;
   }
+
+  checkOpenCodeGlobal(warnings);
 
   // OpenCode never expands CLAUDE.md's `@RULES.md`: without `instructions` in
   // opencode.json the rulebook is not in the model's context at all.

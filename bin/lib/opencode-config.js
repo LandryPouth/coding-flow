@@ -218,10 +218,19 @@ function uninstallGlobalCommands({ dir = globalOpenCodeDir(), dryRun = false } =
   return { dir, removed, modified };
 }
 
-function inspectGlobalCommands({ dir = globalOpenCodeDir() } = {}) {
+// `expected`: the rels this version would write (renderPlatformCommands). A
+// file listed there but absent is what an older global install lacks — 0.12.0
+// wrote no `commands/`, so OpenCode's `/` menu showed no /flow-* at all.
+function inspectGlobalCommands({ dir = globalOpenCodeDir(), expected = [] } = {}) {
   const manifest = readGlobalManifest(dir);
+  const installed = Object.keys(manifest.files || {}).length > 0;
 
-  return { installed: Object.keys(manifest.files || {}).length > 0, version: manifest.version || null };
+  return {
+    dir,
+    installed,
+    version: manifest.version || null,
+    missing: installed ? expected.filter((rel) => !fs.existsSync(path.join(dir, rel))) : [],
+  };
 }
 
 module.exports = {

@@ -20,6 +20,14 @@ All notable changes to this project are documented here. The format is based on
   command, `@path` attaches a file). `doctor` reports a missing one, `upgrade`
   restores it, `uninstall` removes it. Checked in the OpenCode 1.19 TUI: `/flow`
   lists the seven, and `/flow-setup` loads its skill and installs the project.
+- **`doctor` says when the install for every project is behind.** An OpenCode
+  install made with `init --global` lives outside the repo, so nothing reported a
+  stale one: a 0.12.0 global install has no `commands/` and shows no `/flow-*`.
+  `doctor` in an OpenCode project now warns and names the fix
+  (`ai-flow upgrade --global`, then restart OpenCode); `/flow-setup` treats that
+  warning as not done. Only an older global install is flagged, never a newer one.
+- A worktree lock test measured its wait on the wall clock, which steps backwards
+  on WSL2; it now checks that `land` returned after the holder let go.
 
 ## [0.12.0] - 2026-10-16
 
