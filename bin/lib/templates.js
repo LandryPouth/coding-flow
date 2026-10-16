@@ -5,6 +5,7 @@
 
 const crypto = require("crypto");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const { templatesRoot, cwd, packageJson, npxCommand, flowScripts } = require("./context");
@@ -61,6 +62,32 @@ const CLAUDE_ONLY_TEMPLATES = ["CLAUDE.md"];
 
 // `target` is "claude" by default so every existing caller keeps its behavior.
 // Anything else (codex, unrecognized) gets the shared files only.
+// The Claude skills are copied file for file, so pinning them (see pinNpx) means
+// handing the copy a pinned source. It lives in a per-version temp directory, so
+// every hash comparison (upgrade, manifest, uninstall) sees the pinned bytes as
+// "what we install" with no other change. OpenCode reads .claude/skills too: an
+// unpinned copy there sent `npx` to whatever npm called latest.
+function pinnedSkillSource(source, relativePath) {
+  const original = fs.readFileSync(source, "utf8");
+  const pinned = pinNpx(original);
+
+  if (pinned === original) {
+    return source;
+  }
+
+  const target = path.join(os.tmpdir(), `coding-flow-pinned-${packageJson.version}`, relativePath);
+
+  if (!fs.existsSync(target) || fs.readFileSync(target, "utf8") !== pinned) {
+    // Written aside then renamed: parallel runs never read a half-written file.
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const partial = `${target}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(partial, pinned);
+    fs.renameSync(partial, target);
+  }
+
+  return target;
+}
+
 function getTemplateSpecs({ includeSkills = true, target = "claude" } = {}) {
   ensureTemplatesExist();
 
@@ -78,7 +105,7 @@ function getTemplateSpecs({ includeSkills = true, target = "claude" } = {}) {
     }
 
     specs.push({
-      source,
+      source: isSkillTarget(relativePath) ? pinnedSkillSource(source, relativePath) : source,
       sourceRel: relativePath,
       targetRel: relativePath,
       kind: "template",

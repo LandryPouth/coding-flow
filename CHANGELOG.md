@@ -58,6 +58,10 @@ the same repo.
   `ai-flow` on `PATH`, runs a pinned `npx` otherwise, re-runs with `--target` on
   "Platform not recognized", and counts a platform or guard warning from `doctor`
   as not done.
+- **The project copy of the Claude skills pins `npx` too** (`.claude/skills/`, which
+  OpenCode also reads). In a real `/flow-run` in OpenCode the agent ran the bare
+  `npx` from it and got an older `verify` than the project's. An unpinned copy from
+  an earlier release is refreshed by `upgrade`.
 - **`uninstall` takes everything back**: the Codex and OpenCode skills and
   commands, `config.json`, `denials.jsonl`, the Claude hook entry, the Codex
   sandbox profile, the OpenCode plugin and the `RULES.md` entry in `opencode.json`
