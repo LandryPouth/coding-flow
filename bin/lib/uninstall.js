@@ -24,6 +24,7 @@ const {
   removePackageScripts,
 } = require("./templates");
 const { harnessRunsDir } = require("./harness");
+const { unwireGuards } = require("./unwire");
 
 function collectUninstallPlan({ force = false } = {}) {
   const manifest = readJson(manifestPath(), null);
@@ -42,6 +43,17 @@ function collectUninstallPlan({ force = false } = {}) {
           kind: spec.kind,
         },
       ]);
+
+  // The per-platform renders (Codex skills, OpenCode skills, Gemini and
+  // Antigravity commands) are recorded under their own keys, as rel -> hash. Same
+  // rule as the templates: removed when untouched, kept (and blocking) if edited.
+  for (const key of ["codexSkills", "platformCommands"]) {
+    const rendered = manifest && manifest[key] && typeof manifest[key] === "object" ? manifest[key] : {};
+
+    for (const [rel, hash] of Object.entries(rendered)) {
+      manifestFiles.push([rel, { hash }]);
+    }
+  }
 
   for (const [targetRel, entry] of manifestFiles) {
     const normalizedTarget = normalizePortable(targetRel);
@@ -72,7 +84,14 @@ function collectUninstallPlan({ force = false } = {}) {
     }
   }
 
-  for (const generated of [".coding-flow/COMMANDS.md", ".coding-flow/harness.json"]) {
+  // Written by init or the guard rather than copied from a template, so absent
+  // from the manifest's file list — still Coding Flow's, still removed.
+  for (const generated of [
+    ".coding-flow/COMMANDS.md",
+    ".coding-flow/harness.json",
+    ".coding-flow/config.json",
+    ".coding-flow/denials.jsonl",
+  ]) {
     const target = path.join(cwd, generated);
 
     if (fs.existsSync(target) && !files.includes(generated)) {
@@ -132,6 +151,10 @@ function uninstall({ dryRun = false, force = false, json = false } = {}) {
     removedDirs.push(...removeEmptyDirsUpward(path.join(cwd, ".coding-flow"), cwd, { dryRun }));
   }
 
+  // The guards outlive the files otherwise: a hook or plugin left behind keeps
+  // refusing writes in a project that no longer has Coding Flow.
+  const unwired = blocked ? [] : unwireGuards({ dryRun });
+
   const scripts = blocked
     ? {
         packageJsonExists: detectProjectPackageJson().exists,
@@ -154,6 +177,7 @@ function uninstall({ dryRun = false, force = false, json = false } = {}) {
     skippedScripts: scripts.skipped,
     scriptConflicts: scripts.conflicts,
     preserved: plan.preserves,
+    unwired,
   };
 
   if (json) {
@@ -172,6 +196,10 @@ function uninstall({ dryRun = false, force = false, json = false } = {}) {
     // check a dry run against.
     for (const file of result.removedFiles) {
       log(`- ${file}`);
+    }
+
+    for (const line of result.unwired) {
+      log(`${dryRun ? "Would unwire" : "Unwired"}: ${line}`);
     }
 
     log(`${dryRun ? "Would remove" : "Removed"} package scripts: ${result.removedScripts.length}`);
