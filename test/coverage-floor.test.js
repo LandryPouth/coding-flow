@@ -176,6 +176,27 @@ test('an explicit floor applies in standard mode too', (t) => {
   assert.equal(JSON.parse(res.output).coverage.floor.required, 'verified');
 });
 
+test('an explicit medium floor blocks a medium-risk story that only moved a test file', (t) => {
+  const dir = repo(t, 'floor-medium', { writeReport: false });
+  const storyRel = 'epics/epic-01/story-01-01-widget';
+  const storyDir = path.join(dir, storyRel);
+  fs.mkdirSync(storyDir, { recursive: true });
+  fs.writeFileSync(path.join(storyDir, 'spec.md'), '# Widget\n\nExpose the widget through the api.\n');
+  fs.writeFileSync(path.join(storyDir, 'plan.md'), '# Plan\n');
+  setHarness(dir, { coverageFloor: { medium: 'verified' } });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src', 'widget.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(dir, 'src', 'widget.test.js'), "require('node:test');\n");
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'widget']);
+
+  const res = run(dir, ['verify', '--story', storyRel, '--json']);
+  const out = JSON.parse(res.output);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(out.coverage.floor, { required: 'verified', reached: 'evidence' });
+});
+
 test('a written exemption satisfies a strict floor and is shown as exempted', (t) => {
   const dir = repo(t, 'floor-exempt', { writeReport: false });
   setHarness(dir, { mode: 'strict' });

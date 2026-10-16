@@ -25,5 +25,4 @@ ignored by older readers.
 
 ### Known gaps
 
-- No end-to-end test for the `medium` floor (covered by the unit assertion on
-  `resolveCoverageFloor` and the explicit `high` floor test).
+None. The `medium` floor and the ship PR-body floor branch are covered by tests added after review.
