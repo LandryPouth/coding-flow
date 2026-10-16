@@ -57,4 +57,29 @@ removes it without a word and the next `.env` write goes through.
 - **UX**: the thrown message is unchanged (`coding-flow guard: <reason>`), so
   the model-facing advice stays the same on both majors.
 
-## Status: in-progress
+## Result
+
+- `PLUGIN_BODY` carries both entries. The named `CodingFlowGuard` export was
+  dropped after 1.19.0 was seen loading `default.server`. V2 argument names
+  are mapped, and `patchPayloads` now also splits on CRLF (found by the STRICT
+  review: a CRLF patch used to be allowed).
+- Real-host check passed on 2.0.30 and 1.19.0, with both write and shell
+  refused: see `tasks.md`.
+- Verify: green; `Coverage: evidence` (a test file moved, no line
+  measurement).
+- Review (independent subagent, STRICT): nothing blocking. The follow-ups were
+  routed rather than fixed here:
+  - V2 arguments that resolve to nothing are a silent allow → added to 05-02;
+  - `.ENV` on case-insensitive filesystems → added to 05-01;
+  - doctor must say "guard not loaded" for a pre-06 plugin on 2.x → already
+    covered by 06-02;
+  - the `process.cwd()` fallback when 2.x omits `location` → untested, low
+    risk (2.0.30 always sends it).
+
+### Rollback Notes
+
+`git revert` of the commit. Plugins already regenerated keep working on 1.x
+(`default.server`). A revert followed by `ai-flow upgrade` brings back the
+V1-only file, and with it the unguarded V2.
+
+## Status: done

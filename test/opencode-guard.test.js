@@ -233,6 +233,11 @@ test('the generated plugin refuses on the OpenCode 2.x entry with V2 argument na
     before({ tool: 'patch', input: { patchText: '*** Begin Patch\n*** Add File: .env\n+A=1\n*** End Patch' } }),
     /blocked harness path/,
   );
+  await assert.rejects(
+    before({ tool: 'patch', input: { patchText: '*** Begin Patch\r\n*** Add File: .env\r\n+A=1\r\n*** End Patch' } }),
+    /blocked harness path/,
+    'a CRLF patch is still parsed',
+  );
   await assert.rejects(before({ tool: 'write', input: { path: 'src/a.js', content: `k = "${SECRET}"` } }), /secret/i);
 
   // Harmless calls and unknown tools stay open.

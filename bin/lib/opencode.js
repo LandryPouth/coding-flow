@@ -45,7 +45,8 @@ const FALLBACK = __FALLBACK__;
 function patchPayloads(patchText) {
   const out = [];
   let current = null;
-  for (const line of String(patchText || "").split("\\n")) {
+  // CRLF too: \`.\` stops at \\r, so a CRLF header would match nothing and allow.
+  for (const line of String(patchText || "").split(/\\r?\\n/)) {
     const file = line.match(/^\\*\\*\\* (?:Add|Update) File: (.+)$/);
     const move = line.match(/^\\*\\*\\* Move to: (.+)$/);
     if (file) {
