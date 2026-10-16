@@ -5,6 +5,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const { cwd, packageJson } = require("./context");
 const { log, toPortable, parseFrontmatter, readJson, hashFile, isCommandAvailable, binaryPathNote } = require("./util");
@@ -21,8 +22,6 @@ const {
   readManifest,
   ensureConvenienceFiles,
 } = require("./templates");
-const { execFileSync } = require("child_process");
-
 const { collectHarnessReport } = require("./harness");
 const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
@@ -178,7 +177,8 @@ function gitQuiet(args) {
 
 // Without refs/remotes/origin/HEAD the default base silently becomes the literal
 // "main", which is wrong on a repository whose trunk is called anything else (or
-// whose clone predates the ref). Only a remote makes the ref expected at all.
+// whose clone predates the ref). Only a remote named `origin` makes the ref
+// expected at all: `set-head origin` is what creates it.
 function checkOriginHead(warnings) {
   const remotes = gitQuiet(["remote"]);
 

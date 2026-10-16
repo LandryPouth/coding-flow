@@ -172,6 +172,8 @@ function buildStatusModel(config) {
   const mappedBranches = new Set();
   // Shared across every story in this one model build — see `diffRiskForRoot`.
   const diffRiskCache = new Map();
+  // One scan of the run files per worktree root, not one per story.
+  const scopeByRoot = new Map();
 
   const epics = storage.listEpics().map((epic) => ({
     ...epic,
@@ -185,7 +187,10 @@ function buildStatusModel(config) {
       const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
       const storyRoot = wtEntry ? wtEntry.fullPath : cwd;
       const review = computeReviewStatus(storyRoot, story.path);
-      const proof = latestVerifyScopeByStoryDir(storyRoot).get(story.path);
+      if (!scopeByRoot.has(storyRoot)) {
+        scopeByRoot.set(storyRoot, latestVerifyScopeByStoryDir(storyRoot));
+      }
+      const proof = scopeByRoot.get(storyRoot).get(story.path);
       // Only a scope other than "story" is worth a word: it is the one that
       // makes a coverage verdict mean something different.
       const scope = proof && proof.scope && proof.scope !== "story" ? proof.scope : null;
