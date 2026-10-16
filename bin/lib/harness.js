@@ -14,7 +14,9 @@ const { readConfig } = require("./config");
 const { captureIdentity, currentTreeToken } = require("./identity");
 const { defaultBranch, currentBranch } = require("./policy");
 const {
-  loadCoverageReport,
+  loadCoverageReports,
+  reportCandidates,
+  packageOfFile,
   measurePatchCoverage,
   coverageTier,
   DEFAULT_REPORT_PATHS,
@@ -1478,7 +1480,10 @@ function printVerify(evidence, outputPath) {
     // Line-level: name the lines. "80% of the diff is uncovered" sends someone
     // reading the whole change; "src/auth.js:41-46" sends them to the code.
     if (coverage.patch) {
-      log(`  Measured from ${coverage.patch.report.path} (${coverage.patch.report.format}).`);
+      const reports = coverage.patch.report.reports || [];
+      log(reports.length > 1
+        ? `  Measured from ${reports.length} reports: ${reports.map((r) => r.path).join(", ")}.`
+        : `  Measured from ${coverage.patch.report.path} (${coverage.patch.report.format}).`);
 
       for (const entry of coverage.patch.uncovered.slice(0, 5)) {
         const detail = entry.absentFromReport
@@ -1505,11 +1510,16 @@ function printVerify(evidence, outputPath) {
     if (coverage.exemption) {
       log(`  Coverage: exempted — "${coverage.exemption.split(/\r?\n/)[0]}"`);
     } else if (coverage.required) {
-      log(`  Coverage: ${tier} — ${coverage.reason}`);
+      const reportCount = coverage.patch ? (coverage.patch.report.reports || []).length : 0;
+      log(`  Coverage: ${tier} — ${coverage.reason}` +
+        (tier === "verified" && reportCount > 1 ? ` (${reportCount} reports)` : ""));
 
       // The one rung worth explaining: it passed on a proxy, and the way to earn
       // the stronger word is a coverage report this run actually produced.
-      if (tier === "evidence") {
+      if (tier === "evidence" && coverage.patch) {
+        log("  Some changed files lie outside every coverage report's package, so they are");
+        log("  unmeasured; emit a report in their package to get 'verified'.");
+      } else if (tier === "evidence") {
         log("  A test file moved; no fresh coverage report was found, so nothing measured");
         log("  this change. Emit lcov.info or coverage-final.json to get 'verified'.");
       }
@@ -1805,21 +1815,16 @@ function readAcceptanceCriteria(storyDir) {
 // the caller keeps the test-file heuristic. Never guesses: a missing report, an
 // unparseable one, or one written before this run all mean "no line-level
 // answer", not "uncovered".
-function evaluatePatchCoverage({ config, behaviorFiles, startedAt }) {
-  const report = loadCoverageReport(cwd, {
-    candidates: Array.isArray(config.coverageReports) && config.coverageReports.length > 0
-      ? config.coverageReports
-      : DEFAULT_REPORT_PATHS,
+function evaluatePatchCoverage({ config, behaviorFiles, testFiles = [], startedAt }) {
+  // Freshness is per report: a package whose report predates the run is ignored
+  // on its own, and the others still count. A months-old lcov quietly waving a
+  // change through is the failure this guards against.
+  const report = loadCoverageReports(cwd, {
+    candidates: reportCandidates(cwd, config.coverageReports),
+    since: startedAt,
   });
 
   if (!report) {
-    return null;
-  }
-
-  // A report older than the run proves something about code from before it. The
-  // most dangerous failure mode here is a months-old lcov quietly waving every
-  // change through, so an out-of-date report is treated as no report at all.
-  if (startedAt && report.generatedAt && report.generatedAt < startedAt) {
     return null;
   }
 
@@ -1838,9 +1843,17 @@ function evaluatePatchCoverage({ config, behaviorFiles, startedAt }) {
 
   const measured = measurePatchCoverage({ report, changedLinesByFile: scoped });
 
-  // Nothing executable changed (comments, formatting) — no line-level claim to
-  // make, so defer to the heuristic rather than report a vacuous 100%.
-  if (measured.totalLines === 0) {
+  // A behaviour file outside every report's package falls back to the test-file
+  // rule for ITS package; the run's rung is the weakest of the two parts.
+  const unprovenUnmeasured = measured.unmeasured.filter((file) => {
+    const pkg = packageOfFile(cwd, file);
+    return !testFiles.some((test) => pkg === "" || test === pkg || test.startsWith(`${pkg}/`));
+  });
+
+  // Nothing executable changed and nothing unmeasured (comments, formatting) —
+  // no line-level claim to make, so defer to the heuristic rather than report a
+  // vacuous 100%.
+  if (measured.totalLines === 0 && measured.unmeasured.length === 0) {
     return null;
   }
 
@@ -1849,8 +1862,13 @@ function evaluatePatchCoverage({ config, behaviorFiles, startedAt }) {
   return {
     ...measured,
     min,
-    ok: measured.percent >= min,
-    report: { path: report.path, format: report.format },
+    ok: measured.totalLines === 0 ? true : measured.percent >= min,
+    unprovenUnmeasured,
+    report: {
+      path: report.path,
+      format: report.format,
+      reports: report.reports,
+    },
   };
 }
 
@@ -2088,10 +2106,34 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   // heuristic otherwise. The stronger measure always supersedes the weaker one:
   // "a test file moved" is a proxy for "the change is covered", and a proxy is
   // only worth using while the real thing is unavailable.
-  const patch = evaluatePatchCoverage({ config, behaviorFiles, startedAt });
+  const patch = evaluatePatchCoverage({ config, behaviorFiles, testFiles, startedAt });
 
   if (patch) {
-    if (patch.ok) {
+    const unmeasuredNote = patch.unmeasured.length
+      ? `${patch.unmeasured.length} file(s) outside every coverage report are unmeasured: ` +
+        patch.unmeasured.slice(0, 3).join(", ") +
+        (patch.unmeasured.length > 3 ? ` (+${patch.unmeasured.length - 3} more)` : "")
+      : "";
+
+    if (patch.ok && patch.unprovenUnmeasured.length === 0) {
+      // The weakest part decides the rung: with unmeasured files in the diff the
+      // run is `evidence` (a test file moved in their package), never `verified`.
+      if (patch.unmeasured.length > 0) {
+        return {
+          required: true,
+          ok: true,
+          mode: "test-file",
+          reason:
+            (patch.totalLines > 0
+              ? `${patch.percent}% of the ${patch.totalLines} measured added line(s) are executed; `
+              : "") + `${unmeasuredNote}, with a test file changed in their package`,
+          riskSource: risk.source,
+          changedFiles,
+          testFiles,
+          patch,
+        };
+      }
+
       return {
         required: true,
         ok: true,
@@ -2124,9 +2166,11 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
       required: true,
       ok: false,
       mode: "diff-lines",
-      reason:
-        `only ${patch.percent}% of the ${patch.totalLines} added line(s) are executed by the suite ` +
-        `(min ${patch.min}%). The suite ran; it did not reach this change.`,
+      reason: patch.ok
+        ? `${unmeasuredNote}, and no test file changed in their package. ` +
+          "No report reaches them; a green suite elsewhere proves nothing about them."
+        : `only ${patch.percent}% of the ${patch.totalLines} added line(s) are executed by the suite ` +
+          `(min ${patch.min}%). The suite ran; it did not reach this change.`,
       riskSource: risk.source,
       riskPaths: risk.matchedPaths,
       changedFiles,

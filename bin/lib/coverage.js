@@ -121,8 +121,8 @@ function parseIstanbulJson(data) {
 // compared with what git reports. A path we cannot bring inside the repo is
 // dropped: matching it by basename would silently credit one file's coverage to
 // another with the same name.
-function toRepoRelative(filePath, root) {
-  const absolute = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath);
+function toRepoRelative(filePath, root, base = root) {
+  const absolute = path.isAbsolute(filePath) ? filePath : path.resolve(base, filePath);
   const relative = path.relative(root, absolute);
 
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
@@ -132,21 +132,178 @@ function toRepoRelative(filePath, root) {
   return normalizePortable(relative);
 }
 
-// Reads the first report that exists and parses. Returns null when there is
-// nothing usable — the caller then keeps the weaker, always-available check
-// instead of inventing a verdict.
-function loadCoverageReport(root, { candidates = DEFAULT_REPORT_PATHS } = {}) {
-  for (const candidate of candidates) {
-    const fullPath = path.join(root, candidate);
+// --- locating reports ---------------------------------------------------------
 
-    if (!fs.existsSync(fullPath)) {
-      continue;
+// What a monorepo's packages usually write, tried in addition to the root-level
+// defaults when the project is a workspace and `coverageReports` is not set.
+const WORKSPACE_REPORT_PATHS = ["*/*/coverage/lcov.info", "*/*/coverage/coverage-final.json"];
+
+const SKIPPED_DIRS = new Set(["node_modules", ".git"]);
+
+function listDirs(dir) {
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !SKIPPED_DIRS.has(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+function segmentRegExp(segment) {
+  const source = segment.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*").replace(/\?/g, "[^/]");
+  return new RegExp(`^${source}$`);
+}
+
+// Expands one configured entry to the report files it names. `*` and `?` match
+// within a segment, `**` any number of directories; a plain path is itself.
+// Hand-rolled over readdir because the tool takes no dependency.
+function expandReportPattern(root, pattern) {
+  const segments = normalizePortable(pattern).split("/").filter(Boolean);
+  const found = [];
+
+  const walk = (dir, index) => {
+    if (index === segments.length) {
+      return;
     }
 
+    const segment = segments[index];
+    const last = index === segments.length - 1;
+
+    if (segment === "**") {
+      walk(dir, index + 1);
+      for (const child of listDirs(dir)) {
+        walk(path.join(dir, child), index);
+      }
+      return;
+    }
+
+    if (last) {
+      if (!/[*?]/.test(segment)) {
+        const full = path.join(dir, segment);
+        if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+          found.push(full);
+        }
+        return;
+      }
+
+      const matcher = segmentRegExp(segment);
+      try {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isFile() && matcher.test(entry.name)) {
+            found.push(path.join(dir, entry.name));
+          }
+        }
+      } catch {
+        // unreadable directory: no reports there
+      }
+      return;
+    }
+
+    if (!/[*?]/.test(segment)) {
+      walk(path.join(dir, segment), index + 1);
+      return;
+    }
+
+    const matcher = segmentRegExp(segment);
+    for (const child of listDirs(dir)) {
+      if (matcher.test(child)) {
+        walk(path.join(dir, child), index + 1);
+      }
+    }
+  };
+
+  walk(root, 0);
+  return found;
+}
+
+// A workspace root: `workspaces` in package.json, or a pnpm-workspace.yaml.
+function isWorkspaceRoot(root) {
+  if (fs.existsSync(path.join(root, "pnpm-workspace.yaml"))) {
+    return true;
+  }
+
+  const manifest = readJson(path.join(root, "package.json"), null);
+  return Boolean(manifest && manifest.workspaces);
+}
+
+// The directory a report's relative `SF:` paths are relative to: the nearest
+// ancestor of the report holding a package.json (jest and vitest write paths
+// relative to the package they ran in), else the parent of its `coverage/`.
+function packageRootOf(root, reportPath) {
+  let dir = path.dirname(reportPath);
+
+  for (;;) {
+    if (fs.existsSync(path.join(dir, "package.json"))) {
+      return dir;
+    }
+
+    const parent = path.dirname(dir);
+    if (dir === root || parent === dir || !parent.startsWith(root)) {
+      break;
+    }
+    dir = parent;
+  }
+
+  const dirs = path.relative(root, path.dirname(reportPath)).split(path.sep);
+  const at = dirs.lastIndexOf("coverage");
+  return at > 0 ? path.join(root, ...dirs.slice(0, at)) : root;
+}
+
+// Nearest package.json directory above a changed file, repo-relative ("" = root).
+function packageOfFile(root, file) {
+  let dir = path.dirname(path.join(root, file));
+
+  while (dir.startsWith(root) && dir !== root) {
+    if (fs.existsSync(path.join(dir, "package.json"))) {
+      return normalizePortable(path.relative(root, dir));
+    }
+    dir = path.dirname(dir);
+  }
+
+  return "";
+}
+
+function insidePackage(file, packageRoot) {
+  return packageRoot === "" || file === packageRoot || file.startsWith(`${packageRoot}/`);
+}
+
+// Reads every fresh, parseable report the candidates name — not just the first:
+// a monorepo writes one per package, and each has to be read against its own
+// package root. Files reported twice merge by max hits. Returns null when there
+// is nothing usable; the caller then keeps the weaker, always-available check
+// instead of inventing a verdict. A report written before `since` is ignored on
+// its own, so one stale package does not discard the others.
+function loadCoverageReports(root, { candidates, since = null } = {}) {
+  const patterns = candidates || DEFAULT_REPORT_PATHS;
+  const paths = [];
+
+  for (const pattern of patterns) {
+    for (const full of expandReportPattern(root, pattern)) {
+      if (!paths.includes(full)) {
+        paths.push(full);
+      }
+    }
+  }
+
+  const reports = [];
+  const merged = new Map();
+  const packageRoots = [];
+  let generatedAt = null;
+
+  for (const fullPath of paths) {
     let parsed = null;
     let format = null;
+    let mtime = null;
 
     try {
+      mtime = fs.statSync(fullPath).mtimeMs;
+
+      if (since && mtime < since) {
+        continue;
+      }
+
       if (fullPath.endsWith(".json")) {
         parsed = parseIstanbulJson(readJson(fullPath, null));
         format = "istanbul-json";
@@ -162,10 +319,11 @@ function loadCoverageReport(root, { candidates = DEFAULT_REPORT_PATHS } = {}) {
       continue;
     }
 
+    const base = packageRootOf(root, fullPath);
     const files = new Map();
 
     for (const [filePath, lines] of parsed) {
-      const relative = toRepoRelative(filePath, root);
+      const relative = toRepoRelative(filePath, root, base);
 
       if (relative) {
         files.set(relative, lines);
@@ -176,17 +334,61 @@ function loadCoverageReport(root, { candidates = DEFAULT_REPORT_PATHS } = {}) {
       continue;
     }
 
-    let generatedAt = null;
-    try {
-      generatedAt = fs.statSync(fullPath).mtimeMs;
-    } catch {
-      generatedAt = null;
+    for (const [file, lines] of files) {
+      const into = merged.get(file) || new Map();
+      for (const [line, hits] of lines) {
+        into.set(line, Math.max(into.get(line) || 0, hits));
+      }
+      merged.set(file, into);
     }
 
-    return { path: normalizePortable(candidate), format, files, generatedAt };
+    const packageRoot = normalizePortable(path.relative(root, base));
+    if (!packageRoots.includes(packageRoot)) {
+      packageRoots.push(packageRoot);
+    }
+
+    generatedAt = generatedAt === null ? mtime : Math.min(generatedAt, mtime);
+    reports.push({
+      path: normalizePortable(path.relative(root, fullPath)),
+      format,
+      package: packageRoot,
+      files: files.size,
+    });
   }
 
-  return null;
+  if (reports.length === 0) {
+    return null;
+  }
+
+  return {
+    path: reports[0].path,
+    format: reports[0].format,
+    files: merged,
+    generatedAt,
+    reports,
+    packageRoots,
+  };
+}
+
+// The configured entries, plus the workspace defaults when the key was never
+// set. `init` writes the default list into harness.json, so "never customised"
+// means absent OR identical to the defaults.
+function reportCandidates(root, configured) {
+  const customised =
+    Array.isArray(configured) &&
+    configured.length > 0 &&
+    JSON.stringify(configured) !== JSON.stringify(DEFAULT_REPORT_PATHS);
+
+  if (customised) {
+    return configured;
+  }
+
+  return isWorkspaceRoot(root) ? [...DEFAULT_REPORT_PATHS, ...WORKSPACE_REPORT_PATHS] : DEFAULT_REPORT_PATHS;
+}
+
+// Kept for callers that want one answer: the merged view of every report.
+function loadCoverageReport(root, { candidates = DEFAULT_REPORT_PATHS, since = null } = {}) {
+  return loadCoverageReports(root, { candidates, since });
 }
 
 // The extensions this report actually knows about. Used to decide whether a
@@ -217,9 +419,18 @@ function measurePatchCoverage({ report, changedLinesByFile }) {
   let totalLines = 0;
   let coveredLines = 0;
   const skippedFiles = [];
+  const unmeasured = [];
+  const packageRoots = report.packageRoots;
 
   for (const [file, lines] of Object.entries(changedLinesByFile)) {
     if (lines.length === 0) {
+      continue;
+    }
+
+    // Outside every loaded report's package: nobody measured it, so it is
+    // neither covered nor uncovered. Never extrapolate one package to another.
+    if (packageRoots && !packageRoots.some((pkg) => insidePackage(file, pkg))) {
+      unmeasured.push(file);
       continue;
     }
 
@@ -268,6 +479,7 @@ function measurePatchCoverage({ report, changedLinesByFile }) {
     percent: totalLines === 0 ? null : Math.round((coveredLines / totalLines) * 1000) / 10,
     uncovered,
     skippedFiles,
+    unmeasured,
   };
 }
 
@@ -318,6 +530,9 @@ module.exports = {
   parseLcov,
   parseIstanbulJson,
   loadCoverageReport,
+  loadCoverageReports,
+  reportCandidates,
+  packageOfFile,
   measurePatchCoverage,
   COVERAGE_TIERS,
   coverageTier,

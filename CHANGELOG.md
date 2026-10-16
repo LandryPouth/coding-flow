@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Monorepo coverage: every package's report is read.** `coverageReports` entries
+  may be globs (`apps/*/coverage/lcov.info`); in a workspace (`workspaces` in
+  `package.json`, or `pnpm-workspace.yaml`) the defaults also include
+  `*/*/coverage/lcov.info` and `*/*/coverage/coverage-final.json`. All fresh
+  reports are loaded and merged (max hits), each resolved against its own package
+  root, so Jest's package-relative `SF:` paths map to the right repo file. A stale
+  report in one package no longer discards the others. A changed file outside every
+  report's package is *unmeasured*, not uncovered: it falls back to "a test file
+  changed in its package", the run's rung is the weakest part (`evidence`), and
+  the evidence lists `coverage.unmeasured` and `coverage.patch.report.reports`.
+
 ### Fixed
 
 - OpenCode guard: the generated plugin now also exports the OpenCode 2.x entry (`default.setup`) and reads V2 argument names (`path`, `shell`, `patch`), so `.env` writes are refused on 2.x as on 1.x. Run `ai-flow upgrade` to regenerate it.
