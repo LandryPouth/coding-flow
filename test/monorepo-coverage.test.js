@@ -193,12 +193,12 @@ test('two reports for one file merge by max hits and both are recorded', (t) => 
   const dir = tmp(t, 'merge');
   write(dir, 'package.json', '{}');
   write(dir, 'coverage/lcov.info', lcov('src/s.js', [1], [2]));
-  write(dir, 'coverage/coverage-final.json', JSON.stringify({
+  write(dir, 'coverage/lcov/coverage-final.json', JSON.stringify({
     [path.join(dir, 'src/s.js')]: { statementMap: { 0: { start: { line: 2 } } }, s: { 0: 3 } },
   }));
 
   const report = loadCoverageReports(dir, {
-    candidates: ['coverage/lcov.info', 'coverage/coverage-final.json'],
+    candidates: ['coverage/lcov.info', 'coverage/lcov/coverage-final.json'],
   });
 
   assert.equal(report.reports.length, 2);
@@ -216,4 +216,48 @@ test('a single root-level report behaves as before', (t) => {
   assert.equal(report.path, 'coverage/lcov.info');
   assert.deepEqual(report.packageRoots, ['']);
   assert.ok(report.files.has('src/s.js'));
+});
+
+test('a report in a directory without a manifest is not credited to the root', (t) => {
+  const dir = tmp(t, 'nopkg');
+  write(dir, 'package.json', JSON.stringify({ workspaces: ['*'] }));
+  write(dir, 'nopkg/coverage/lcov.info', lcov('src/z.js', [1]));
+
+  const report = loadCoverageReports(dir, { candidates: ['*/coverage/lcov.info'] });
+
+  assert.deepEqual(report.packageRoots, ['nopkg']);
+  assert.ok(report.files.has('nopkg/src/z.js'));
+  assert.ok(!report.files.has('src/z.js'));
+});
+
+test('jest-style lcov.info plus coverage-final.json in one directory is one report', (t) => {
+  const dir = tmp(t, 'jest');
+  write(dir, 'package.json', '{}');
+  write(dir, 'coverage/lcov.info', lcov('src/s.js', [1]));
+  write(dir, 'coverage/coverage-final.json', '{}');
+
+  const report = loadCoverageReports(dir, { candidates: ['coverage/lcov.info', 'coverage/coverage-final.json'] });
+  assert.equal(report.reports.length, 1);
+});
+
+test('patterns that leave the repository are ignored', (t) => {
+  const outer = tmp(t, 'outer');
+  const dir = path.join(outer, 'repo');
+  write(dir, 'package.json', '{}');
+  write(outer, 'lcov.info', lcov('src/s.js', [1]));
+
+  assert.equal(loadCoverageReports(dir, { candidates: ['../lcov.info'] }), null);
+});
+
+test('a root-package file is not proven by another package\'s test', (t) => {
+  const dir = monorepo(t, {
+    reports: [{ file: 'apps/api/coverage/lcov.info', content: lcov('src/auth.js', [1, 2, 3, 4, 5, 6]) }],
+    sources: ['apps/api/src/auth.js', 'scripts/auth.js'],
+    tests: ['apps/api/src/auth.test.js'],
+  });
+
+  const res = verify(dir);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(res.coverage.patch.unprovenUnmeasured, ['scripts/auth.js']);
 });

@@ -232,30 +232,33 @@ function isWorkspaceRoot(root) {
 // ancestor of the report holding a package.json (jest and vitest write paths
 // relative to the package they ran in), else the parent of its `coverage/`.
 function packageRootOf(root, reportPath) {
-  let dir = path.dirname(reportPath);
+  const reportDir = path.dirname(reportPath);
+  const segments = path.relative(root, reportDir).split(path.sep).filter(Boolean);
+  const at = Math.max(segments.lastIndexOf("coverage"), segments.lastIndexOf(".coverage"));
 
-  for (;;) {
-    if (fs.existsSync(path.join(dir, "package.json"))) {
+  // The package is the directory that holds `coverage/`. A manifest-less
+  // directory must not be credited to the repo root just because the root has a
+  // package.json: that maps its SF paths onto the wrong files.
+  const holder = at >= 0 ? path.join(root, ...segments.slice(0, at)) : reportDir;
+
+  for (let dir = holder; dir.startsWith(root + path.sep) || dir === root; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, "package.json")) && (dir === holder || dir !== root)) {
       return dir;
     }
 
-    const parent = path.dirname(dir);
-    if (dir === root || parent === dir || !parent.startsWith(root)) {
+    if (dir === root) {
       break;
     }
-    dir = parent;
   }
 
-  const dirs = path.relative(root, path.dirname(reportPath)).split(path.sep);
-  const at = dirs.lastIndexOf("coverage");
-  return at > 0 ? path.join(root, ...dirs.slice(0, at)) : root;
+  return holder;
 }
 
 // Nearest package.json directory above a changed file, repo-relative ("" = root).
 function packageOfFile(root, file) {
   let dir = path.dirname(path.join(root, file));
 
-  while (dir.startsWith(root) && dir !== root) {
+  while (dir.startsWith(root + path.sep)) {
     if (fs.existsSync(path.join(dir, "package.json"))) {
       return normalizePortable(path.relative(root, dir));
     }
@@ -263,10 +266,6 @@ function packageOfFile(root, file) {
   }
 
   return "";
-}
-
-function insidePackage(file, packageRoot) {
-  return packageRoot === "" || file === packageRoot || file.startsWith(`${packageRoot}/`);
 }
 
 // Reads every fresh, parseable report the candidates name — not just the first:
@@ -278,16 +277,36 @@ function insidePackage(file, packageRoot) {
 function loadCoverageReports(root, { candidates, since = null } = {}) {
   const patterns = candidates || DEFAULT_REPORT_PATHS;
   const paths = [];
+  let realRoot = root;
+  try {
+    realRoot = fs.realpathSync(root);
+  } catch {
+    // keep root as given
+  }
+
+  const confined = (full) => {
+    try {
+      const real = fs.realpathSync(full);
+      return real === realRoot || real.startsWith(realRoot + path.sep);
+    } catch {
+      return false;
+    }
+  };
 
   for (const pattern of patterns) {
+    if (normalizePortable(pattern).split("/").includes("..")) {
+      continue;
+    }
+
     for (const full of expandReportPattern(root, pattern)) {
-      if (!paths.includes(full)) {
+      if (!paths.includes(full) && confined(full)) {
         paths.push(full);
       }
     }
   }
 
   const reports = [];
+  const readDirs = new Set();
   const merged = new Map();
   const packageRoots = [];
   let generatedAt = null;
@@ -296,6 +315,12 @@ function loadCoverageReports(root, { candidates, since = null } = {}) {
     let parsed = null;
     let format = null;
     let mtime = null;
+
+    // Jest writes lcov.info AND coverage-final.json side by side: one report per
+    // directory, the first format in candidate order, as before.
+    if (readDirs.has(path.dirname(fullPath))) {
+      continue;
+    }
 
     try {
       mtime = fs.statSync(fullPath).mtimeMs;
@@ -319,6 +344,7 @@ function loadCoverageReports(root, { candidates, since = null } = {}) {
       continue;
     }
 
+    readDirs.add(path.dirname(fullPath));
     const base = packageRootOf(root, fullPath);
     const files = new Map();
 
@@ -413,7 +439,7 @@ function coveredExtensions(report) {
 // Patch coverage: of the lines this change added, how many does the report show
 // as executed. Files the report cannot speak about are excluded entirely rather
 // than counted as zero.
-function measurePatchCoverage({ report, changedLinesByFile }) {
+function measurePatchCoverage({ report, changedLinesByFile, packageOf = null }) {
   const extensions = coveredExtensions(report);
   const uncovered = [];
   let totalLines = 0;
@@ -429,7 +455,7 @@ function measurePatchCoverage({ report, changedLinesByFile }) {
 
     // Outside every loaded report's package: nobody measured it, so it is
     // neither covered nor uncovered. Never extrapolate one package to another.
-    if (packageRoots && !packageRoots.some((pkg) => insidePackage(file, pkg))) {
+    if (packageRoots && packageOf && !report.files.has(file) && !packageRoots.includes(packageOf(file))) {
       unmeasured.push(file);
       continue;
     }

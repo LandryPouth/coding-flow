@@ -28,17 +28,17 @@ A monorepo that already produces coverage gets `verified` instead of the
 
 ## Acceptance Criteria
 
-- [ ] Two packages, each with a fresh lcov using package-relative `SF:`, a
+- [x] Two packages, each with a fresh lcov using package-relative `SF:`, a
       diff touching both, all added lines executed → `verified`, two reports
       listed.
-- [ ] Same, but one package's added line not executed → coverage below the
+- [x] Same, but one package's added line not executed → coverage below the
       threshold names that file with its repo-relative path.
-- [ ] Reports for `apps/api` only, diff touches `apps/web/x.tsx` and a web
+- [x] Reports for `apps/api` only, diff touches `apps/web/x.tsx` and a web
       test file → rung `evidence`, `unmeasured` lists `apps/web/x.tsx`; the
       file is **not** reported as uncovered.
-- [ ] A stale report (mtime before the run) in one package is ignored, the
+- [x] A stale report (mtime before the run) in one package is ignored, the
       other is used.
-- [ ] Root-level single report (today's case) behaves exactly as before.
+- [x] Root-level single report (today's case) behaves exactly as before.
 
 ## Edge Cases
 

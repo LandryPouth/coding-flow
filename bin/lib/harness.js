@@ -1816,6 +1816,8 @@ function readAcceptanceCriteria(storyDir) {
 // unparseable one, or one written before this run all mean "no line-level
 // answer", not "uncovered".
 function evaluatePatchCoverage({ config, behaviorFiles, testFiles = [], startedAt }) {
+  // `testFiles` here are the ones that count as proof: strengthened or neutral,
+  // never weakened-only (see scanTestWeakening).
   // Freshness is per report: a package whose report predates the run is ignored
   // on its own, and the others still count. A months-old lcov quietly waving a
   // change through is the failure this guards against.
@@ -1841,13 +1843,17 @@ function evaluatePatchCoverage({ config, behaviorFiles, testFiles = [], startedA
     return null;
   }
 
-  const measured = measurePatchCoverage({ report, changedLinesByFile: scoped });
+  const measured = measurePatchCoverage({
+    report,
+    changedLinesByFile: scoped,
+    packageOf: (file) => packageOfFile(cwd, file),
+  });
 
   // A behaviour file outside every report's package falls back to the test-file
   // rule for ITS package; the run's rung is the weakest of the two parts.
   const unprovenUnmeasured = measured.unmeasured.filter((file) => {
     const pkg = packageOfFile(cwd, file);
-    return !testFiles.some((test) => pkg === "" || test === pkg || test.startsWith(`${pkg}/`));
+    return !testFiles.some((test) => packageOfFile(cwd, test) === pkg);
   });
 
   // Nothing executable changed and nothing unmeasured (comments, formatting) —
@@ -2106,7 +2112,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   // heuristic otherwise. The stronger measure always supersedes the weaker one:
   // "a test file moved" is a proxy for "the change is covered", and a proxy is
   // only worth using while the real thing is unavailable.
-  const patch = evaluatePatchCoverage({ config, behaviorFiles, testFiles, startedAt });
+  const patch = evaluatePatchCoverage({ config, behaviorFiles, testFiles: weakening.strengthened, startedAt });
 
   if (patch) {
     const unmeasuredNote = patch.unmeasured.length
