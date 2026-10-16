@@ -773,6 +773,7 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true, ta
   const copied = [];
   const updated = [];
   const skipped = [];
+  const unchanged = [];
 
   for (const spec of getTemplateSpecs({ includeSkills, target })) {
     const result = copyFileToTarget(spec.source, spec.targetRel, { force, dryRun });
@@ -781,6 +782,10 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true, ta
       copied.push(spec.targetRel);
     } else if (result === "updated") {
       updated.push(spec.targetRel);
+    } else if (hashFile(path.join(cwd, spec.targetRel)) === hashFile(spec.source)) {
+      // Still exactly what we installed (a second `init` for another agent):
+      // not the user's file, so not reported as one kept from them.
+      unchanged.push(spec.targetRel);
     } else {
       skipped.push(spec.targetRel);
     }
@@ -799,7 +804,7 @@ function copyTemplates({ force = false, dryRun = false, includeSkills = true, ta
 
   const harnessCreated = ensureHarnessConfig({ dryRun });
 
-  return { copied, updated, skipped, harnessCreated, prunedSkills };
+  return { copied, updated, skipped, unchanged, harnessCreated, prunedSkills };
 }
 
 function upgrade({

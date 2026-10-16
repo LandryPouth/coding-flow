@@ -84,7 +84,7 @@ npx @landry_pouth/coding-flow init --target antigravity
 
 **OpenCode gets skills, like Claude Code.** OpenCode loads `SKILL.md` files and also makes each one a slash command, so `/flow-run` works and the model can pick a skill up on its own from its description. The guard is a plugin on `tool.execute.before` that runs inside OpenCode's own process (no `node` needed on `PATH`) and covers `write`, `edit`, `apply_patch` and `bash`, subagents included.
 
-**Claude Code and OpenCode in the same repo.** OpenCode also reads `.claude/skills/`, so when the Claude skills are in the project it uses them and Coding Flow writes no second copy into `.opencode/skills/` (two copies of one skill make OpenCode warn and keep one). Each agent keeps its own guard: the hook for Claude Code, the plugin for OpenCode. Run `init --target …` once per agent; `init` and `upgrade` keep every recorded agent in step.
+**Claude Code and OpenCode in the same repo.** OpenCode also reads `.claude/skills/`, so when the Claude skills are in the project it uses them and Coding Flow writes no second copy into `.opencode/skills/` (two copies of one skill make OpenCode warn and keep one). Each agent keeps its own guard: the hook for Claude Code, the plugin for OpenCode. Run `init --target …` once per agent; `init` and `upgrade` keep every recorded agent in step. With a global OpenCode install as well, OpenCode prefers the global copy of a skill over the project's `.claude/skills/` one, so keep it current with `ai-flow upgrade --global`.
 
 **OpenCode, once for every project.** OpenCode loads user-level skills, so you can install them one time instead of per repo:
 

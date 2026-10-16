@@ -139,3 +139,14 @@ test('opencode: doctor flags a duplicated skill set', (t) => {
   fs.copyFileSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md'), path.join(dir, '.opencode', 'skills', 'flow-run', 'SKILL.md'));
   assert.ok(JSON.parse(run(['doctor', '--json'])).warnings.some((w) => w.code === 'opencode_skills_duplicated'));
 });
+
+// A second `init` for another agent finds the templates the first one laid down,
+// byte for byte. It used to list all of them as "Kept … (yours, not
+// overwritten)", telling the user 22 of our files were theirs.
+test('a second init for another agent does not call our own files the user\'s', (t) => {
+  const { dir } = initOpenCode(t, []);
+  fs.appendFileSync(path.join(dir, 'RULES.md'), '\nmine\n');
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(dir, '.no-claude-config'), CLAUDE_PLUGIN_ROOT: '' };
+  const out = execFileSync(process.execPath, [CLI, 'init', '--target', 'claude', '--with-skills'], { cwd: dir, env, encoding: 'utf8' });
+  assert.match(out, /Kept 1 existing file \(yours, not overwritten\):\n- RULES\.md\n/);
+});

@@ -84,6 +84,9 @@ the same repo.
   export. Every install was affected.
 - **Adding a platform to a `--minimal` install no longer promotes it to full** (no
   `RULES.md`, `docs/`, `examples/`, `package.json` appear, `doctor` stays satisfied).
+- **A second `init` for another agent no longer calls our files the user's.** It
+  listed every template it had installed itself, byte for byte, as "Kept … (yours,
+  not overwritten)"; only files that differ are listed now.
 - `init` no longer says "Guard: none yet" when the plugin is already wired.
 - The help, `COMMANDS.md` and the "platform not recognized" message name every
   supported agent and `--target`, not only Claude Code.
