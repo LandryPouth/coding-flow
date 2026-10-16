@@ -29,14 +29,14 @@ every verify and force it only where it matters.
 
 ## Acceptance Criteria
 
-- [ ] Fake command printing a turbo summary `Cached: 5 cached, 5 total` →
+- [x] Fake command printing a turbo summary `Cached: 5 cached, 5 total` →
       `cache: "full"`; `2 cached, 5 total` → `partial`; no summary →
       `unknown`.
-- [ ] `freshTestsFor: ["high"]`, high-risk story, full replay → `ok: false`
+- [x] `freshTestsFor: ["high"]`, high-risk story, full replay → `ok: false`
       with advice; with `freshCommands` configured, those run instead and
       `ok: true`.
-- [ ] Low-risk story with full replay → `ok: true`, output says replayed.
-- [ ] The cache state is part of the evidence JSON and of `ship`'s PR body
+- [x] Low-risk story with full replay → `ok: true`, output says replayed.
+- [x] The cache state is part of the evidence JSON and of `ship`'s PR body
       evidence section.
 
 ## Edge Cases
