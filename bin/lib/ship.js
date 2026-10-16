@@ -390,6 +390,12 @@ function planStaging(root, config, branch, { all }) {
   return { include, exclude, entries: keptEntries, scoped: true, reason: null };
 }
 
+// git refuses `commit --only` while a merge or cherry-pick is unfinished.
+function operationInProgress(root) {
+  const dir = git(root, ["rev-parse", "--path-format=absolute", "--git-dir"], { allowFail: true }).stdout.trim();
+  return Boolean(dir) && ["MERGE_HEAD", "CHERRY_PICK_HEAD"].some((name) => fs.existsSync(path.join(dir, name)));
+}
+
 // Literal pathspecs: a file named `*.ts` must not capture its siblings. Only
 // entries with a working-tree change need an add — a deletion or rename already
 // in the index has nothing to match (and would make `git add` fail).
@@ -443,6 +449,13 @@ function autoCommitDirtyTree(root, config, branch, { dryRun, all = false }) {
     fail(
       "dirty working tree, but the secret/sensitive-file check found issues — not committing.\n" +
         "  Run `ai-flow harness check` for details, fix them, then ship again (or commit by hand and re-run).",
+    );
+  }
+
+  if (plan.scoped && operationInProgress(root)) {
+    fail(
+      "a merge or cherry-pick is in progress, so ship cannot commit only the story's files (git refuses a partial commit).\n" +
+        "Finish it first, or re-run with --all to commit the whole tree.",
     );
   }
 

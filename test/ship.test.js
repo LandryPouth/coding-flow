@@ -280,3 +280,37 @@ test('a touched root-level file does not sweep unrelated root files into the com
   assert.ok(!lastCommitFiles(repo).includes('scratch.txt'));
   assert.match(output, /scratch\.txt/);
 });
+
+test('ship takes the run files produced for this story and leaves another story\'s out', (t) => {
+  const { repo, storyName } = storyRepo(t);
+  const runs = path.join(repo, '.coding-flow', 'runs');
+  fs.mkdirSync(runs, { recursive: true });
+  const storyPath = `epics/epic-01-geo/${storyName}`;
+  fs.writeFileSync(path.join(runs, 'mine-verify.json'), JSON.stringify({ story: storyPath }));
+  fs.writeFileSync(path.join(runs, 'other-verify.json'), JSON.stringify({ story: 'epics/epic-02-x/story-02-01-x' }));
+  const { code, output } = run(repo, []);
+  assert.equal(code, 0, output);
+  const files = lastCommitFiles(repo);
+  assert.ok(files.includes('.coding-flow/runs/mine-verify.json'));
+  assert.ok(!files.includes('.coding-flow/runs/other-verify.json'));
+  assert.match(output, /other-verify\.json/);
+});
+
+test('ship on a branch with no linked story warns and commits the whole tree', (t) => {
+  const { repo } = storyRepo(t);
+  sh(repo, 'git', ['branch', '-m', 'feat/unlinked']);
+  const { code, output } = run(repo, []);
+  assert.equal(code, 0, output);
+  assert.match(output, /no story is linked/i);
+  assert.equal(lastCommitFiles(repo).length, 4);
+});
+
+test('ship refuses a scoped commit while a merge is unfinished, and says why', (t) => {
+  const { repo } = storyRepo(t);
+  const gitDir = sh(repo, 'git', ['rev-parse', '--absolute-git-dir']).trim();
+  fs.writeFileSync(path.join(gitDir, 'MERGE_HEAD'), `${sh(repo, 'git', ['rev-parse', 'HEAD']).trim()}\n`);
+  const { code, output } = run(repo, []);
+  assert.notEqual(code, 0);
+  assert.match(output, /merge or cherry-pick is in progress/);
+  assert.match(output, /--all/);
+});
