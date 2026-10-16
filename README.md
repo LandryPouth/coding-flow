@@ -78,17 +78,21 @@ npx @landry_pouth/coding-flow init --target antigravity
 | --- | --- | --- | --- | --- |
 | **Claude Code** | plugin (global) + `/flow-setup` per repo | the plugin, or `.claude/skills/` without it | `/flow-run` | yes — hook |
 | **Codex** | `init --target codex` | `.codex/skills/` | `$flow-run` | yes — sandbox profile |
-| **OpenCode** | `init --target opencode` | `.opencode/command/` | `/flow-run` | yes — plugin |
+| **OpenCode** | `init --target opencode` | `.opencode/skills/` (or `.claude/skills/`, see below) | `/flow-run` | yes — plugin |
 | **Gemini CLI** | `init --target gemini` | `.gemini/commands/coding-flow/` | `/coding-flow:flow-run` | no |
 | **Antigravity** | `init --target antigravity` | `.agent/skills/` | by name, e.g. `flow-run` | no |
 
-**OpenCode, once for every project.** OpenCode loads user-level commands, so you can install them one time instead of per repo:
+**OpenCode gets skills, like Claude Code.** OpenCode loads `SKILL.md` files and also makes each one a slash command, so `/flow-run` works and the model can pick a skill up on its own from its description. The guard is a plugin on `tool.execute.before` that runs inside OpenCode's own process (no `node` needed on `PATH`) and covers `write`, `edit`, `apply_patch` and `bash`, subagents included.
+
+**Claude Code and OpenCode in the same repo.** OpenCode also reads `.claude/skills/`, so when the Claude skills are in the project it uses them and Coding Flow writes no second copy into `.opencode/skills/` (two copies of one skill make OpenCode warn and keep one). Each agent keeps its own guard: the hook for Claude Code, the plugin for OpenCode. Run `init --target …` once per agent; `init` and `upgrade` keep every recorded agent in step.
+
+**OpenCode, once for every project.** OpenCode loads user-level skills, so you can install them one time instead of per repo:
 
 ```bash
-npx @landry_pouth/coding-flow init --global --target opencode            # the 7 /flow-* commands + the write guard, everywhere
+npx @landry_pouth/coding-flow init --global --target opencode            # the 7 flow-* skills + the write guard, everywhere
 ```
 
-Then open any repo in OpenCode and type `/flow-setup`: it scaffolds Coding Flow there (OpenCode is detected from `OPENCODE=1`, so no `--target`). Update with `ai-flow upgrade --global`, remove with `ai-flow uninstall --global`. The files live in `~/.config/opencode/` (or `$XDG_CONFIG_HOME/opencode`). A command you edited is never overwritten.
+Then open any repo in OpenCode and type `/flow-setup`: it scaffolds Coding Flow there (OpenCode is detected from `OPENCODE=1`, so no `--target`). Update with `ai-flow upgrade --global`, remove with `ai-flow uninstall --global`. The files live in `~/.config/opencode/skills/` and `~/.config/opencode/plugins/` (or under `$XDG_CONFIG_HOME/opencode`). A skill you edited is never overwritten.
 
 OpenCode reads `CLAUDE.md` as a fallback but does not follow its `@RULES.md` import, so a per-project install also adds `"instructions": ["RULES.md"]` to `opencode.json` — that is what puts your rulebook in the model's context.
 
@@ -97,8 +101,10 @@ OpenCode reads `CLAUDE.md` as a fallback but does not follow its `@RULES.md` imp
 Other things that look like a bug and are not:
 
 - **Commands missing after a successful `init`** — restart the agent; it reads commands at startup.
-- **Using several agents in one repo** — run `init --target …` once per agent; each keeps its own files.
-- **OpenCode, upgrading from before 0.11** — commands used to live in `.opencode/command/coding-flow/` and were typed `/coding-flow/flow-run`. Re-run `init --target opencode`, then delete that old folder.
+- **Using several agents in one repo** — run `init --target …` once per agent; each keeps its own guard, and Claude Code and OpenCode share one skill set.
+- **OpenCode, upgrading from 0.11** — the commands in `.opencode/command/` become skills in `.opencode/skills/`. `ai-flow upgrade` (or `ai-flow upgrade --global`) moves them and removes the old files it wrote; one you edited is kept and named. Older installs in `.opencode/command/coding-flow/` (typed `/coding-flow/flow-run`): delete that folder by hand.
+- **Codex says the guard is not active** — Codex ignores a project's `.codex/config.toml` until the project is trusted. Open it once with `codex` and accept, then run `ai-flow doctor`.
+- **A guard refusal** — the agent is told what was refused and asked not to retry under another name, path or tool; every refusal is logged in `.coding-flow/denials.jsonl`.
 - **`ai-flow: command not found`** — use `npx @landry_pouth/coding-flow <command>`, or `npm install -g @landry_pouth/coding-flow` once.
 
 ## Getting Started
@@ -299,8 +305,8 @@ current machine.
 
 | Command | Use |
 | --- | --- |
-| `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the guard, `--opencode` also wires the OpenCode guard plugin in a project whose target is another platform. `--target claude\|codex\|gemini\|opencode\|antigravity` picks the platform: Codex gets `.codex/skills/` plus a sandbox profile that `doctor`/`init` test by running `codex sandbox`; OpenCode gets commands plus the guard plugin; Gemini and Antigravity get commands only. With no flag, no `CLAUDECODE=1` and no `.claude/`/`.codex/`, the platform is recorded as `unrecognized` and **no platform commands are installed** — re-run with `--target`. |
-| `ai-flow upgrade` | Update installed files without overwriting local changes. |
+| `ai-flow init` | Install the templates, config (`.coding-flow/config.json`), and harness policy. `--force` reinstalls, `--dry-run` previews, `--no-guard` skips the guard, `--opencode` also wires the OpenCode guard plugin in a project whose target is another platform. `--target claude\|codex\|gemini\|opencode\|antigravity` picks the platform: Codex gets `.codex/skills/` plus a sandbox profile that `doctor`/`init` test by running `codex sandbox`; OpenCode gets skills plus the guard plugin; Gemini and Antigravity get commands only. With no flag, no `CLAUDECODE=1` and no `.claude/`/`.codex/`, the platform is recorded as `unrecognized` and **no platform commands are installed** — re-run with `--target`. |
+| `ai-flow upgrade` | Update installed files without overwriting local changes, for every recorded agent, and re-wire the guards to the current version. A `--minimal` install stays minimal. |
 | `ai-flow doctor` | Check files, skills, frontmatter, manifest. `--fix` restores missing files, `--strict` adds checks. |
 | `ai-flow status` | List epics/stories, inferred status, and the linked worktree. |
 | `ai-flow next` | Rank that state and print the one command worth running now (`--all` for the whole queue). |
@@ -325,7 +331,7 @@ After `init`, shorter local scripts are available: `npm run flow:doctor`, `flow:
 npx @landry_pouth/coding-flow uninstall            # --dry-run to preview, --force to remove local-edited files
 ```
 
-It removes the files Coding Flow installed (rules, `docs/`, `.claude/skills/`, `.coding-flow/`, matching `flow:*` scripts) but **always keeps** `epics/` and everything generated inside them. Locally modified files are kept by default.
+It removes the files Coding Flow installed (rules, `docs/`, `.claude/skills/`, `.codex/skills/`, `.opencode/skills/` and the other agents' commands, `.coding-flow/`, matching `flow:*` scripts) and unwires every guard: the hook entry in `.claude/settings.json`, the Codex sandbox profile, the OpenCode plugin and the `RULES.md` entry in `opencode.json`. Your own settings in those files stay. It **always keeps** `epics/` and everything generated inside them. A locally modified file stops the uninstall (it lists them) unless you pass `--force`.
 
 ## Documentation
 
