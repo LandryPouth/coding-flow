@@ -185,3 +185,22 @@ test('the plugin still refuses a blocked write when `node` is not on the PATH', 
   });
   assert.match(out, /^BLOCKED coding-flow guard: .*blocked harness path/);
 });
+
+test('a refusal tells the agent not to route around it; the denial log keeps only the reason', async (t) => {
+  const dir = tmp(t, 'oc-advice');
+  assert.equal(run(dir, ['init', '--opencode']).code, 0);
+  const before = await loadHook(dir);
+  await assert.rejects(
+    before({ tool: 'write' }, { args: { filePath: path.join(dir, '.env'), content: 'A=1' } }),
+    /blocked harness path.*Do not retry this under another name/,
+  );
+  // The Claude hook says the same through its own channel.
+  const hook = require('node:child_process').spawnSync(process.execPath, [CLI, 'guard'], {
+    cwd: dir,
+    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: path.join(dir, '.env'), content: 'A=1' }, cwd: dir }),
+    encoding: 'utf8',
+  });
+  assert.equal(hook.status, 2);
+  assert.match(JSON.parse(hook.stdout).hookSpecificOutput.permissionDecisionReason, /Do not retry this/);
+  assert.doesNotMatch(fs.readFileSync(path.join(dir, '.coding-flow', 'denials.jsonl'), 'utf8'), /Do not retry/);
+});
