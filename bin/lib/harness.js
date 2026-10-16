@@ -1661,9 +1661,6 @@ function captureEnvironment() {
 // - a diff of docs/story/lockfile-only changes trips nothing (no behavior moved);
 // - outside git, or with no visible diff, the gate cannot see and stays silent.
 
-// Everything this branch contributes, not just what is uncommitted: a story whose
-// tests are already committed must not read as "no test changed". Falls back to
-// the working tree when there is no base to compare against.
 // The tool's own run files are never a change a person or agent made; the
 // project's `ignoredPaths` are the generated ones. This is the single choke
 // point for the diff-derived signals (coverage, risk, weakening, deleted tests).
@@ -1681,6 +1678,9 @@ function filterScopedFiles(files, config) {
   return files.filter((file) => !isScopedOut(file, config));
 }
 
+// Everything this branch contributes, not just what is uncommitted: a story whose
+// tests are already committed must not read as "no test changed". Falls back to
+// the working tree when there is no base to compare against.
 function changedFilesForCoverage(root = cwd) {
   const files = new Set();
   const { mergeBase } = currentDiffBase(root);

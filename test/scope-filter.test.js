@@ -128,8 +128,10 @@ test('an ignored generated file with a risky path does not raise the risk', (t) 
   assert.deepEqual(riskOf({ ignoredPaths: ['gen/**'] }), []);
 });
 
-test('a test deleted under an ignored path is not reported as weakened', (t) => {
-  const dir = repo(t, { ignoredPaths: ['generated/**'] });
+function weakenedAfterDeletingGeneratedTest(t, harnessPatch) {
+  const dir = repo(t, harnessPatch);
+  // The test must already exist on main: added and deleted on the branch it is no diff at all.
+  git(dir, ['switch', '-q', 'main']);
   write(dir, { 'generated/old.test.js': 'assert(1)\n' });
   commitAll(dir, 'add generated test');
   git(dir, ['switch', '-qc', 'story-07-02-y']);
@@ -138,9 +140,14 @@ test('a test deleted under an ignored path is not reported as weakened', (t) => 
   write(dir, { 'src/a.js': 'exports.a = 1;\n', 'test/a.test.js': 'x\n' });
   commitAll(dir, 'work');
 
-  const weakened = verify(dir, rel).coverage.weakenedTests || [];
+  return (verify(dir, rel).coverage.weakenedTests || []).map((w) => w.file);
+}
 
-  assert.ok(!weakened.some((w) => w.file === 'generated/old.test.js'));
+test('a test deleted under an ignored path is not reported as weakened', (t) => {
+  // Control first: without ignoredPaths the deletion is flagged, so the second
+  // assertion can only pass because the filter removed it.
+  assert.ok(weakenedAfterDeletingGeneratedTest(t, {}).includes('generated/old.test.js'));
+  assert.ok(!weakenedAfterDeletingGeneratedTest(t, { ignoredPaths: ['generated/**'] }).includes('generated/old.test.js'));
 });
 
 test('ignoredPaths does not hide a secret in a generated file', (t) => {
