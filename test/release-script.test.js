@@ -13,13 +13,13 @@ const path = require('node:path');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'release.mjs');
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
-const posix = process.platform !== 'win32' ? false : 'fake npm/gh are shell scripts';
+const skipOnWindows = process.platform !== 'win32' ? false : 'fake npm/gh are shell scripts';
 
 function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 }
 
-function fixture(t, { published = true, changelog = true } = {}) {
+function fixture(t, { published = true, changelog = true, npmError = false } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-release-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const origin = path.join(base, 'origin.git');
@@ -41,7 +41,8 @@ function fixture(t, { published = true, changelog = true } = {}) {
   );
   git(repo, 'add', '.');
   git(repo, 'commit', '-m', 'init');
-  fs.writeFileSync(path.join(bin, 'npm'), `#!/bin/sh\n${published ? 'echo 1.2.3' : 'exit 1'}\n`, { mode: 0o755 });
+  git(repo, 'push', 'origin', 'HEAD');
+  fs.writeFileSync(path.join(bin, 'npm'), `#!/bin/sh\n${published ? 'echo 1.2.3' : npmError ? 'echo connect ETIMEDOUT >&2; exit 1' : 'echo npm error code E404 >&2; exit 1'}\n`, { mode: 0o755 });
   fs.writeFileSync(
     path.join(bin, 'gh'),
     `#!/bin/sh\nif [ "$2" = view ]; then [ -f "${gh}" ]; exit $?; fi\necho "$@" > "${gh}"\n`,
@@ -53,7 +54,7 @@ function fixture(t, { published = true, changelog = true } = {}) {
   return { repo, origin, gh, run };
 }
 
-test('dry run prints the plan and changes nothing', { skip: posix }, (t) => {
+test('dry run prints the plan and changes nothing', { skip: skipOnWindows }, (t) => {
   const f = fixture(t);
   const r = f.run('--dry-run');
   assert.equal(r.status, 0, r.stderr);
@@ -63,7 +64,7 @@ test('dry run prints the plan and changes nothing', { skip: posix }, (t) => {
   assert.equal(fs.existsSync(f.gh), false);
 });
 
-test('tags, pushes and releases with the CHANGELOG section; a second run does nothing', { skip: posix }, (t) => {
+test('tags, pushes and releases with the CHANGELOG section; a second run does nothing', { skip: skipOnWindows }, (t) => {
   const f = fixture(t);
   const first = f.run();
   assert.equal(first.status, 0, first.stderr);
@@ -79,7 +80,7 @@ test('tags, pushes and releases with the CHANGELOG section; a second run does no
   assert.match(second.stdout, /nothing to do/);
 });
 
-test('refuses a version that is not on npm yet', { skip: posix }, (t) => {
+test('refuses a version that is not on npm yet', { skip: skipOnWindows }, (t) => {
   const f = fixture(t, { published: false });
   const r = f.run();
   assert.notEqual(r.status, 0);
@@ -87,7 +88,38 @@ test('refuses a version that is not on npm yet', { skip: posix }, (t) => {
   assert.equal(git(f.repo, 'tag', '-l'), '');
 });
 
-test('refuses a version with no CHANGELOG section', { skip: posix }, (t) => {
+test('an npm failure that is not a 404 is not reported as unpublished', { skip: skipOnWindows }, (t) => {
+  const f = fixture(t, { published: false, npmError: true });
+  const r = f.run();
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /could not ask npm/);
+  assert.doesNotMatch(r.stderr, /not published on npm/);
+});
+
+test('a rerun pushes a tag that exists locally but never reached origin', { skip: skipOnWindows }, (t) => {
+  const f = fixture(t);
+  git(f.repo, 'tag', '-a', 'v1.2.3', '-m', 'local only');
+  assert.equal(git(f.origin, 'tag', '-l'), '');
+  const r = f.run();
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(git(f.origin, 'tag', '-l'), 'v1.2.3');
+  assert.ok(fs.existsSync(f.gh));
+});
+
+test('refuses to tag a dirty tree or a HEAD that is not on origin', { skip: skipOnWindows }, (t) => {
+  const f = fixture(t);
+  fs.appendFileSync(path.join(f.repo, 'CHANGELOG.md'), '\nedit\n');
+  const dirty = f.run();
+  assert.notEqual(dirty.status, 0);
+  assert.match(dirty.stderr, /uncommitted/);
+  git(f.repo, 'commit', '-am', 'local only');
+  const unpushed = f.run();
+  assert.notEqual(unpushed.status, 0);
+  assert.match(unpushed.stderr, /not on any remote branch/);
+  assert.equal(git(f.repo, 'tag', '-l'), '');
+});
+
+test('refuses a version with no CHANGELOG section', { skip: skipOnWindows }, (t) => {
   const f = fixture(t, { changelog: false });
   const r = f.run();
   assert.notEqual(r.status, 0);
@@ -100,6 +132,8 @@ test('doctor warns in this repository when the version has no tag', (t) => {
   git(dir, 'init');
   git(dir, 'config', 'user.email', 't@t');
   git(dir, 'config', 'user.name', 't');
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'config.json'), JSON.stringify({ install: 'minimal' }));
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: '@landry_pouth/coding-flow', version: '9.9.9' }));
   git(dir, 'add', '.');
   git(dir, 'commit', '-m', 'init');

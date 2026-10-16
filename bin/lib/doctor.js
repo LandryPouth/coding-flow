@@ -601,6 +601,7 @@ function collectMinimalReport({ strict = false } = {}) {
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings, notes);
+  checkReleaseTag(warnings);
 
   return {
     ok: errors.length === 0,

@@ -5,7 +5,7 @@
 //   npm run release              # tag + push + gh release
 //   npm run release -- --dry-run # print the plan, change nothing
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,15 +44,21 @@ const tag = `v${version}`;
 const section = changelogSection(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), version);
 if (!section) fail(`CHANGELOG.md has no "## [${version}]" section — write it first`);
 
-if (sh("npm", ["view", `${pkg.name}@${version}`, "version"], { allowFail: true }) !== version) {
+const npmView = spawnSync("npm", ["view", `${pkg.name}@${version}`, "version"], { cwd: root, encoding: "utf8" });
+if (npmView.error || (npmView.status !== 0 && !/E404|code E404|404 Not Found/.test(npmView.stderr || ""))) {
+  fail(`could not ask npm whether ${pkg.name}@${version} is published: ${(npmView.error?.message || npmView.stderr || "").trim()}`);
+}
+if ((npmView.stdout || "").trim() !== version) {
   fail(`${pkg.name}@${version} is not published on npm — run \`npm publish\` first (this script never does)`);
 }
 
 const tagExists = sh("git", ["tag", "-l", tag]) === tag;
+const remoteTagExists = sh("git", ["ls-remote", "--tags", "origin", `refs/tags/${tag}`]) !== "";
 const releaseExists = sh("gh", ["release", "view", tag], { allowFail: true }) !== null;
 
 const plan = [];
-if (!tagExists) plan.push(`create annotated tag ${tag}`, `push tag ${tag} to origin`);
+if (!tagExists) plan.push(`create annotated tag ${tag} on ${sh("git", ["rev-parse", "--short", "HEAD"])}`);
+if (!remoteTagExists) plan.push(`push tag ${tag} to origin`);
 if (!releaseExists) plan.push(`gh release create ${tag} with the CHANGELOG ${version} section`);
 
 if (plan.length === 0) {
@@ -66,9 +72,19 @@ if (dryRun) {
 }
 
 if (!tagExists) {
+  // The tag lands on HEAD: refuse a checkout that is not what was published.
+  if (sh("git", ["status", "--porcelain", "-uno"]) !== "") {
+    fail("the working tree has uncommitted changes — tag from a clean checkout of the published commit");
+  }
+  if (sh("git", ["branch", "-r", "--contains", "HEAD"]) === "") {
+    fail("HEAD is not on any remote branch — check out the commit you published, pushed to origin");
+  }
   sh("git", ["tag", "-a", tag, "-m", `${pkg.name} ${version}`]);
+  console.log(`release: tagged ${tag}`);
+}
+if (!remoteTagExists) {
   sh("git", ["push", "origin", tag]);
-  console.log(`release: tagged and pushed ${tag}`);
+  console.log(`release: pushed ${tag}`);
 }
 if (!releaseExists) {
   sh("gh", ["release", "create", tag, "--title", tag, "--notes", section]);
