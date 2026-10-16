@@ -680,14 +680,27 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   }
   const upgradeTarget = hasClaude ? "claude" : upgradeConfig.target;
 
-  upgrade({
-    force: flags.has("--force"),
-    dryRun: flags.has("--dry-run"),
-    json: flags.has("--json"),
-    includeSkills: upgradeTarget === "claude" && skills === "project",
-    skillsMode: skills,
-    platform: upgradeTarget,
-  });
+  // A minimal install never had the templates: copying them here would turn it
+  // into a full one (RULES.md, docs/, examples/, npm scripts) behind the user's
+  // back. Upgrading it means refreshing its guards and platform files only; a
+  // plain `init` is still how it grows.
+  if (upgradeConfig.install === "minimal") {
+    if (flags.has("--json")) {
+      log(JSON.stringify({ install: "minimal", copied: [], updated: [] }, null, 2));
+    } else {
+      log(flags.has("--dry-run") ? "Upgrade dry run complete." : "Coding Flow upgraded.");
+      log("Templates: none (minimal install) — `ai-flow init` lays down the full workflow when you want it.");
+    }
+  } else {
+    upgrade({
+      force: flags.has("--force"),
+      dryRun: flags.has("--dry-run"),
+      json: flags.has("--json"),
+      includeSkills: upgradeTarget === "claude" && skills === "project",
+      skillsMode: skills,
+      platform: upgradeTarget,
+    });
+  }
 
   for (const platform of platforms.filter((p) => COMMAND_PLATFORMS[p])) {
     const commands = copyPlatformCommands(platform, {
