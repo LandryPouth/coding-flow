@@ -55,6 +55,8 @@ You never chain ten commands by hand: the `/flow-run` skill calls the harness au
 
 ## Installation
 
+**Platforms.** The test suite runs in CI on Linux (Node 18, 20, 22), macOS and Windows (Node 22). The CLI needs Node 18+ and git. On Windows the Claude Code guard hook is a POSIX `sh` command and is not covered by CI there; the tests that depend on a POSIX shell are skipped on Windows, each with its reason (see `epics/epic-10-execution-and-ship-safety/story-10-03-ci-on-windows-and-macos/tasks.md`).
+
 **Claude Code** installs through its plugin, once for every project. In the Claude Code prompt:
 
 ```text
