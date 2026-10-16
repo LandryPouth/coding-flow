@@ -135,6 +135,10 @@ function spawnGuard(payload) {
     noteUnchecked(payload, \`could not run (\${res.error.code || res.error.message})\`);
   }
 
+  if (res.status === 0 && /this write was NOT checked/.test(res.stderr || "")) {
+    process.stderr.write(res.stderr);
+  }
+
   return res.status === 2 ? { decision: "deny", reason: (res.stderr || "").replace(/^coding-flow guard: /, "").trim() } : null;
 }
 

@@ -53,8 +53,12 @@ const READ_ONLY_TOOLS = new Set(
     "KillShell", "KillBash", "EnterWorktree", "ExitWorktree", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch", "Monitor",
     "read", "glob", "grep", "list", "ls", "webfetch", "websearch", "todowrite", "todoread", "skill",
     "task", "question", "lsp", "codesearch",
+    "Artifact", "ArtifactData", "ArtifactComments", "ArtifactCheck",
   ].map((name) => name.toLowerCase()),
 );
+// MCP tools (`mcp__server__tool`) are the server's own, not a write tool the guard
+// could learn: counting them would bury the real unknowns in noise.
+const isMcpTool = (name) => /^mcp__/i.test(String(name || ""));
 const PATH_FIELDS = ["file_path", "path", "filePath", "notebook_path"];
 
 function readHookInput({ inputFile = null } = {}) {
@@ -453,7 +457,7 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   if (!WRITE_TOOLS.has(toolName)) {
     const input = toolInput && typeof toolInput === "object" ? toolInput : {};
 
-    if (!READ_ONLY_TOOLS.has(String(toolName || "").toLowerCase()) && PATH_FIELDS.some((field) => input[field])) {
+    if (!isMcpTool(toolName) && !READ_ONLY_TOOLS.has(String(toolName || "").toLowerCase()) && PATH_FIELDS.some((field) => input[field])) {
       return { decision: "unchecked", reason: `tool ${String(toolName || "?").slice(0, 64)} is unknown to the guard and carries a path` };
     }
 
@@ -578,6 +582,13 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
 // pattern's name, never the matched text.
 const DENIAL_LOG_MAX_BYTES = 256 * 1024;
 
+// Inside the project: relative. Outside it: a marker, not a `../..` chain that
+// spells out where the project sits.
+function loggedPath(root, target) {
+  const relative = path.isAbsolute(target) ? path.relative(root, target) : path.normalize(target);
+  return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) ? "(outside project)" : normalizePortable(relative);
+}
+
 function recordEvent(file, { root, hook, result }) {
   try {
     const dir = path.join(root, ".coding-flow");
@@ -612,7 +623,7 @@ function recordEvent(file, { root, hook, result }) {
         tool: field(() => hook.tool_name),
         // Relative when it is inside the project, so the log carries no home
         // directory and no username. `report` redacts anything left over.
-        path: target ? normalizePortable(path.isAbsolute(target) ? path.relative(root, target) : target) : null,
+        path: target ? loggedPath(root, target) : null,
         reason: result.reason,
       })}\n`,
     );
@@ -658,6 +669,8 @@ function guardCommand({ getFlagValue, flags }) {
 
   if (result.decision === "unchecked") {
     recordUnchecked({ root, hook, result });
+    // Hosts that spawn the guard (OpenCode fallback) forward this line.
+    process.stderr.write(`coding-flow guard: ${result.reason}; this write was NOT checked\n`);
   }
 
   if (result.decision === "deny") {

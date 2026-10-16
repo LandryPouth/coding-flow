@@ -13,7 +13,9 @@ All notable changes to this project are documented here. The format is based on
   no readable target, a path that cannot be resolved, an unreadable `harness.json`, and in OpenCode an unreadable
   write/patch or a guard that could not run — is `unchecked`: still let through, but
   logged to `.coding-flow/guard-unchecked.jsonl`, counted by `ai-flow report`, and
-  warned about by `ai-flow doctor` for 7 days.
+  warned about by `ai-flow doctor` for 7 days. MCP tools and the `Artifact*` tools are
+  not counted as unknown write tools; a path outside the project is logged as
+  `(outside project)`; a spawned guard prints its "NOT checked" line on stderr.
 - **The guard judges the file a write reaches, not the string it was given.** The
   project root is the outermost `.coding-flow/` within the git toplevel (else the toplevel), not the
   hook cwd; each target is checked by its lexical and its real path (symlinks,

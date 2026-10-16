@@ -389,3 +389,16 @@ a freeze exception requires the premise to have changed, stated out loud —
 this is the second time that has happened, five days apart, on two
 unrelated proposals judged by the same test, not a pattern of exceptions
 accumulating.
+
+## 11. MCP tools are not "unchecked writes"
+
+The guard reports `unchecked` for an unknown tool carrying a path field
+(story 05-02). `mcp__*` tools and the `Artifact*` tools are deliberately
+exempt: they are a server's own tools, not a write tool the guard could learn,
+and counting every one would bury the real unknowns in noise. Claude Code never
+sends them to the guard (the hook matcher is `Write|Edit|MultiEdit|NotebookEdit|Bash`).
+
+**Known gap, accepted**: in OpenCode, an MCP filesystem write tool
+(`mcp__fs__write_file` with a `path`) is neither checked nor logged. Closing it
+means a per-server allowlist, which is policy the guard does not own. Revisit
+if a real MCP write bypass is observed.

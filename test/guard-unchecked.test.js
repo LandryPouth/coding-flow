@@ -110,11 +110,46 @@ test('a normal session logs nothing', (t) => {
     ['WebFetch', { url: 'https://x.test' }], ['Task', { prompt: 'x' }], ['TodoWrite', { todos: [] }],
     ['read', { filePath: 'a.js' }], ['list', { path: dir }], ['skill', { name: 'x' }],
     ['Write', { file_path: 'src/new.js', content: 'x' }], ['Bash', { command: 'npm test' }],
+    ['Artifact', { file_path: 'page.html' }], ['ArtifactData', { file_path: 'd.json' }], ['mcp__fs__read_file', { path: 'a.js' }],
   ];
   for (const [tool_name, tool_input] of calls) {
     assert.notEqual(evaluate({ tool_name, tool_input, cwd: dir }, dir).decision, 'unchecked', tool_name);
   }
   assert.equal(logLines(dir).length, 0);
+});
+
+test('an unchecked call outside the project logs a marker, not a ../ chain', (t) => {
+  const dir = tmp(t);
+  evaluate({ tool_name: 'MultiEdit2', tool_input: { file_path: '/etc/hosts' }, cwd: dir }, dir);
+  assert.equal(logLines(dir)[0].path, '(outside project)');
+});
+
+test('a relative path escaping the project logs the marker too', (t) => {
+  const dir = tmp(t);
+  evaluate({ tool_name: 'MultiEdit2', tool_input: { file_path: '../../x.js' }, cwd: dir }, dir);
+  assert.equal(logLines(dir)[0].path, '(outside project)');
+});
+
+test('an MCP write-named tool is exempt on purpose (design decision 11)', (t) => {
+  const dir = tmp(t);
+  assert.equal(evaluate({ tool_name: 'mcp__fs__write_file', tool_input: { path: '.env' }, cwd: dir }, dir).decision, 'allow');
+  assert.equal(logLines(dir).length, 0);
+});
+
+test('a file whose name starts with two dots inside the project keeps its relative path', (t) => {
+  const dir = tmp(t);
+  evaluate({ tool_name: 'MultiEdit2', tool_input: { file_path: path.join(dir, '..hidden', 'x.js') }, cwd: dir }, dir);
+  assert.equal(logLines(dir)[0].path, '..hidden/x.js');
+});
+
+test('the spawned guard says NOT checked on stderr for an unchecked call', (t) => {
+  const dir = tmp(t);
+  const res = require('node:child_process').spawnSync(process.execPath, [CLI, 'guard'], {
+    cwd: dir, encoding: 'utf8',
+    input: JSON.stringify({ cwd: dir, tool_name: 'MultiEdit2', tool_input: { file_path: 'src/a.js' } }),
+  });
+  assert.equal(res.status, 0);
+  assert.match(res.stderr, /NOT checked/);
 });
 
 test('report counts unchecked writes with their reasons, and doctor warns', (t) => {
@@ -242,4 +277,14 @@ test('the plugin reports a shell call with no command as unchecked', async (t) =
   plugin.restore();
   assert.equal(logLines(dir).length, 1);
   assert.ok(plugin.lines.some((line) => /NOT checked/.test(line)));
+});
+
+test('the plugin forwards the spawned guard\'s NOT checked line when it falls back to the spawn', async (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init', '--opencode']).code, 0);
+  const plugin = await loadPlugin(t, dir, (src) => src.replace('local = createRequire(BINARY)("./lib/guard.js");', 'local = null;'));
+  await plugin.before({ tool: 'multiedit2' }, { args: { filePath: 'src/a.js' } });
+  plugin.restore();
+  assert.ok(plugin.lines.some((line) => /NOT checked/.test(line)));
+  assert.equal(logLines(dir).length, 1);
 });
