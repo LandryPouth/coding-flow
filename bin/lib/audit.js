@@ -200,6 +200,9 @@ function entryFromRunFile(file, root) {
     // proof that still describes the current code from a stale one. Absent on
     // pre-freshness or non-git evidence -> treated leniently (never stale).
     treeToken: git ? git.treeToken || null : null,
+    // The rung this run reached (verify only), so the ledger can count runs per
+    // rung without reopening every run file. Null on evidence written before it.
+    coverageTier: type === "verify" && data.coverage ? data.coverage.tier || coverageTier(data.coverage) : null,
     summary,
   };
 }
@@ -411,11 +414,23 @@ function latestVerifyScopeByStoryDir(root) {
         generatedAt: data.generatedAt || "",
         tier: data.coverage ? data.coverage.tier || coverageTier(data.coverage) : null,
         scope: data.diffBase ? data.diffBase.scope || null : null,
+        warnings: contraryWarningCounts(data.contrary),
+        treeToken: data.provenance && data.provenance.git ? data.provenance.git.treeToken || null : null,
       });
     }
   }
 
   return byDir;
+}
+
+// How many deleted tests and open criteria a passing run still carries; null
+// when there are none, or when the evidence predates the signals.
+function contraryWarningCounts(contrary) {
+  const w = contrary && contrary.warnings;
+  const deletedTests = w && Array.isArray(w.deletedTests) ? w.deletedTests.length : 0;
+  const openCriteria = w && Array.isArray(w.openCriteria) ? w.openCriteria.length : 0;
+
+  return deletedTests + openCriteria > 0 ? { deletedTests, openCriteria } : null;
 }
 
 function buildAuditMarkdown(entries) {
@@ -557,6 +572,15 @@ function audit({
 
   const passed = entries.filter((entry) => entry.ok).length;
   log(`Audit ledger: ${entries.length} entr(ies), ${passed} passed, ${entries.length - passed} failed.`);
+  const perRung = {};
+  for (const entry of entries) {
+    if (entry.type === "verify" && entry.coverageTier) {
+      perRung[entry.coverageTier] = (perRung[entry.coverageTier] || 0) + 1;
+    }
+  }
+  if (Object.keys(perRung).length > 0) {
+    log(`Verify runs per coverage rung: ${Object.entries(perRung).map(([tier, n]) => `${tier} ${n}`).join(", ")}.`);
+  }
   log(`${dryRun ? "Would append" : "Appended"} ${sync.added.length} new run(s) to ${normalizePortable(path.relative(root, ledgerPath(root)))}.`);
   if (!exportMd) {
     log("Run `ai-flow audit --export` to write docs/AUDIT.md, or `--check` to gate on the latest verify.");

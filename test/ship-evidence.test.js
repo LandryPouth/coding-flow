@@ -48,6 +48,22 @@ test('buildEvidenceBlock marks a failure', () => {
   assert.match(block, /exit 1/);
 });
 
+test('buildEvidenceBlock says a run below its coverage floor is not proven, with both rungs', () => {
+  const evidence = {
+    ...sampleEvidence(false),
+    coverage: {
+      required: true,
+      ok: false,
+      tier: 'evidence',
+      floor: { required: 'verified', reached: 'evidence' },
+      reason: "coverage reached 'evidence' but high risk requires 'verified'.",
+    },
+  };
+  const block = buildEvidenceBlock(evidence);
+  assert.match(block, /not proven/);
+  assert.match(block, /reached evidence, verified required/);
+});
+
 test('upsertEvidenceBlock appends the block to a human body without overwriting it', () => {
   const body = 'Resolves #42.\n\nPR details written by a human.';
   const block = buildEvidenceBlock(sampleEvidence(true));

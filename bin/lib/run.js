@@ -136,15 +136,24 @@ function printReport(report, reportPath) {
     // A story blocked by the coverage gate passed every command it declared:
     // calling that "FAIL" would send someone looking for a broken test.
     const coverageBlocked = entry.commandsOk && entry.coverage && !entry.coverage.ok;
-    const label = entry.ok ? "pass" : coverageBlocked ? "no proof" : "FAIL";
+    const contraryBlocked = entry.commandsOk && !coverageBlocked && entry.contrary && !entry.contrary.ok;
+    const label = entry.ok ? "pass" : coverageBlocked || contraryBlocked ? "no proof" : "FAIL";
     // Ten stories that all say "pass" hide which of them were measured and which
     // merely moved a test file. Over a batch that difference is the whole report.
-    const tier = entry.coverage ? coverageTier(entry.coverage) : "not-required";
+    const tier = entry.coverage ? entry.coverage.tier || coverageTier(entry.coverage) : "not-required";
     const proof = entry.ok && tier !== "not-required" ? ` — coverage: ${tier}` : "";
     log(`- [${label}] ${entry.story} (${entry.commandsFound} cmd(s), ${duration}ms)${proof}`);
 
     if (coverageBlocked) {
       log(`    ${entry.coverage.reason}`);
+      continue;
+    }
+
+    if (contraryBlocked) {
+      for (const failure of entry.contrary.failures) {
+        log(`    ${failure.detail}`);
+      }
+
       continue;
     }
 
@@ -217,6 +226,7 @@ function run({ story = null, epic = null, driver = "none", json = false, dryRun 
       executed,
       commandsOk: evidence.commandsOk,
       coverage: evidence.coverage,
+      contrary: evidence.contrary,
       ok: evidence.ok,
       results: evidence.results,
       evidencePath: evidencePath ? normalizePortable(path.relative(cwd, evidencePath)) : null,

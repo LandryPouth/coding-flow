@@ -20,6 +20,8 @@ const {
   packageOfFile,
   measurePatchCoverage,
   coverageTier,
+  tierRank,
+  resolveCoverageFloor,
   DEFAULT_REPORT_PATHS,
 } = require("./coverage");
 const { PART_FILES, readStoryPart, storyPartPath } = require("./story");
@@ -1584,6 +1586,8 @@ function formatLineRanges(lines) {
 function printVerify(evidence, outputPath) {
   const coverage = evidence.coverage || { required: false, ok: true };
   const coverageBlocked = evidence.commandsOk && !coverage.ok;
+  const contrary = evidence.contrary || NO_CONTRARY;
+  const contraryBlocked = evidence.commandsOk && coverage.ok && !contrary.ok;
 
   if (evidence.commandsFound === 0) {
     log("Harness verify: no validation commands found.");
@@ -1621,10 +1625,18 @@ function printVerify(evidence, outputPath) {
     }
 
     printWeakenedTests(coverage);
-    log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
-    log('  or re-run with --test-exemption "<reason>" if there is no story.');
+    if (coverage.floor) {
+      log("  Emit a coverage report (lcov.info / coverage-final.json) so the added lines are measured,");
+      log("  or declare a '## Test Exemption' section (or --test-exemption) to ship on a written reason.");
+    } else {
+      log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
+      log('  or re-run with --test-exemption "<reason>" if there is no story.');
+    }
   } else if (evidence.ok) {
-    log(`Harness verify passed (${evidence.results.length} command(s)).`);
+    const warnings = describeContraryWarnings(contrary);
+    log(warnings
+      ? `Harness verify passed, with warnings (${warnings}): ${evidence.results.length} command(s).`
+      : `Harness verify passed (${evidence.results.length} command(s)).`);
 
     // Name the rung before the sentence. "Coverage: evidence — 1 test file(s)
     // changed" and "Coverage: verified — 92% of the added lines ran" now read as
@@ -1652,6 +1664,14 @@ function printVerify(evidence, outputPath) {
     // Printed at every rung, including `verified`. A measured 92% next to three
     // deleted tests is still three deleted tests, and the reader decides what that
     // means — this only refuses to let a good number hide it.
+    printWeakenedTests(coverage);
+    printOpenCriteria(evidence);
+    printContraryFailures(contrary);
+  } else if (contraryBlocked) {
+    // The commands passed and the coverage gate held. What stops this is the
+    // project's own strictness reading the story and the diff against the verdict.
+    log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the run contradicts itself.`);
+    printContraryFailures(contrary);
     printWeakenedTests(coverage);
     printOpenCriteria(evidence);
   } else {
@@ -1949,10 +1969,10 @@ function readAcceptanceCriteria(storyDir) {
   const items = [];
 
   for (const line of section.split(/\r?\n/)) {
-    const match = line.match(/^\s*[-*]\s*\[([ xX])\]\s*(.+?)\s*$/);
+    const match = line.match(/^\s*[-*]\s*\[([ xX~])\]\s*(.+?)\s*$/);
 
     if (match) {
-      items.push({ done: match[1].toLowerCase() === "x", text: match[2] });
+      items.push({ state: match[1] === "~" ? "deferred" : match[1] === " " ? "open" : "done", text: match[2] });
     }
   }
 
@@ -1962,10 +1982,40 @@ function readAcceptanceCriteria(storyDir) {
     return null;
   }
 
+  // A criterion is deferred on purpose when its line says `[~]` (the convention
+  // `tasks.md` already uses) or when a `## Deferred Criteria` section names it.
+  const named = deferredCriteriaNames(storyDir);
+  const isDeferred = (item) =>
+    item.state === "deferred" ||
+    (item.state === "open" && named.some((name) => matchesDeferredName(name, normalizeCriterion(item.text))));
+
   return {
     total: items.length,
-    unchecked: items.filter((item) => !item.done).map((item) => item.text),
+    unchecked: items.filter((item) => item.state !== "done" && !isDeferred(item)).map((item) => item.text),
+    deferred: items.filter((item) => item.state !== "done" && isDeferred(item)).map((item) => item.text),
   };
+}
+
+// The criterion must appear in the deferred line (or equal it), never the other
+// way round: a generic line such as "performance" must not defer every criterion
+// that mentions it, and a one-word criterion must not hide inside any line.
+function matchesDeferredName(name, criterion) {
+  return name === criterion || (criterion.length >= 8 && name.includes(criterion));
+}
+
+function normalizeCriterion(text) {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// The lines of a `## Deferred Criteria` section, normalised for matching. Too
+// short a line is skipped: "a" would otherwise "name" every criterion.
+function deferredCriteriaNames(storyDir) {
+  const text = extractSection(Object.values(readStoryBundle(storyDir)).join("\n\n"), "Deferred Criteria");
+
+  return text
+    .split(/\r?\n/)
+    .map((line) => normalizeCriterion(line.replace(/^\s*[-*]\s*(\[[ xX~]\]\s*)?/, "")))
+    .filter((line) => line.length >= 8);
 }
 
 // The line-level verdict, or null when it cannot be established — in which case
@@ -2112,10 +2162,12 @@ function parseChangedText(diffText) {
 function deletedFilesInDiff() {
   const deleted = new Set();
   const { mergeBase } = currentDiffBase(cwd);
-  const sources = [["diff", "--name-status"], ["diff", "--cached", "--name-status"]];
+  // `--find-renames` is explicit: a moved test file is not a deleted one, and a
+  // user's `diff.renames=false` must not turn every move into a deletion.
+  const sources = [["diff", "--find-renames", "--name-status"], ["diff", "--find-renames", "--cached", "--name-status"]];
 
   if (mergeBase) {
-    sources.push(["diff", "--name-status", mergeBase]);
+    sources.push(["diff", "--find-renames", "--name-status", mergeBase]);
   }
 
   for (const argsForGit of sources) {
@@ -2138,10 +2190,10 @@ function scanTestWeakening(config) {
   const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
   const byFile = {};
   const { mergeBase } = currentDiffBase(cwd);
-  const diffs = [["diff"], ["diff", "--cached"]];
+  const diffs = [["diff", "--find-renames"], ["diff", "--find-renames", "--cached"]];
 
   if (mergeBase) {
-    diffs.push(["diff", mergeBase]);
+    diffs.push(["diff", "--find-renames", mergeBase]);
   }
 
   for (const argsForGit of diffs) {
@@ -2201,7 +2253,9 @@ function scanTestWeakening(config) {
   return { findings, strengthened, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
 }
 
-function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }) {
+// `ctx.riskLevel` is null until the risk is scored: a result returned before that
+// point (coverage off, no diff) has no level, so no floor applies to it.
+function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }, ctx = { riskLevel: null }) {
   const skip = (reason) => ({ required: false, ok: true, reason, changedFiles: [], testFiles: [] });
 
   if (!config.requireTestChange) {
@@ -2224,6 +2278,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
     ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
     : { level: "low", matchedTerms: [], reason: "no story to read." };
   const risk = combineRisk(storyRisk, scoreDiffRisk(changedFiles, config));
+  ctx.riskLevel = risk.level;
 
   if (risk.level === "low") {
     return skip(`risk is low (${risk.reason})`);
@@ -2431,9 +2486,11 @@ function printOpenCriteria(evidence) {
     return;
   }
 
-  const ticked = criteria.total - criteria.unchecked.length;
+  const deferred = criteria.deferred || [];
+  const ticked = criteria.total - criteria.unchecked.length - deferred.length;
 
-  log(`  Acceptance criteria: ${ticked}/${criteria.total} ticked in the story. Still open:`);
+  log(`  Acceptance criteria: ${ticked}/${criteria.total} ticked in the story` +
+    (deferred.length > 0 ? ` (${deferred.length} deferred)` : "") + ". Still open:");
 
   for (const text of criteria.unchecked.slice(0, 5)) {
     log(`    - [ ] ${text}`);
@@ -2443,17 +2500,62 @@ function printOpenCriteria(evidence) {
     log(`    - … and ${criteria.unchecked.length - 5} more`);
   }
 
+  if (evidence.contrary && evidence.contrary.enforced) {
+    log("  The commands passed, but this project is strict: open criteria block the verdict.");
+    return;
+  }
+
   log("  The commands passed. These are the story's own claims, unproven either way —");
   log("  this changes no verdict and blocks nothing.");
+}
+
+function printContraryFailures(contrary) {
+  for (const failure of contrary.failures) {
+    log(`  ${failure.detail}`);
+  }
+
+  if (contrary.failures.some((failure) => failure.signal === "deleted-tests")) {
+    log("  Restore the test, or name the deleted file in a '## Test Exemption' section with the reason.");
+  }
 }
 
 // The verdict, plus the name of the rung it landed on. Stamped in one place so
 // no return path can forget it, and so `mode` stays what it has always been —
 // how the answer was obtained — while `tier` says how strong the answer is.
 function evaluateCoverage(options) {
-  const result = evaluateCoverageResult(options);
+  const ctx = { riskLevel: null };
+  const result = evaluateCoverageResult(options, ctx);
+  const floored = applyCoverageFloor(result, ctx.riskLevel, options.config);
 
-  return { ...result, tier: coverageTier(result) };
+  // A run held back by its floor keeps the rung it reached; `ok: false` and
+  // `floor` say it is not enough.
+  return { ...floored, tier: floored.floor ? floored.floor.reached : coverageTier(floored) };
+}
+
+// A run can pass its checks and still sit below the rung this project asks of
+// its risk level. Only a measured-or-proxy pass is judged: an exemption is a
+// written reason and satisfies any floor, and "not-required" never reached the
+// bar to begin with. The reached rung is kept; only `ok` and the reason change.
+function applyCoverageFloor(result, riskLevel, config) {
+  if (!result.required || !result.ok || result.exemption || !riskLevel) {
+    return result;
+  }
+
+  const reached = coverageTier(result);
+  const required = resolveCoverageFloor(config)[riskLevel];
+
+  if (reached === "not-required" || tierRank(reached) >= tierRank(required)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    ok: false,
+    floor: { required, reached },
+    reason:
+      `coverage reached '${reached}' but ${riskLevel} risk requires '${required}' ` +
+      `(coverageFloor.${riskLevel}). ${result.reason}`,
+  };
 }
 
 // Executes the declared validation commands for one story and returns the
@@ -2478,12 +2580,123 @@ function freshTestsRequired({ storyDir, config }) {
     return false;
   }
 
+  return config.freshTestsFor.includes(scoreCombinedRisk({ storyDir, config }).level);
+}
+
+// The story text and the diff, scored the way the coverage gate scores them.
+function scoreCombinedRisk({ storyDir, config }) {
   const storyRisk = storyDir
     ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
     : { level: "low", matchedTerms: [], reason: "no story to read." };
-  const risk = combineRisk(storyRisk, scoreDiffRisk(changedFilesForCoverage(), config));
 
-  return config.freshTestsFor.includes(risk.level);
+  return combineRisk(storyRisk, scoreDiffRisk(changedFilesForCoverage(), config));
+}
+
+// Signals that contradict a green verdict: tests deleted from the diff, and
+// acceptance criteria the story itself still lists as open. Always collected;
+// they only change `ok` where the project asked for strictness — `mode: strict`,
+// or a high-risk story with `failOnContrarySignals: true`. Elsewhere they are
+// warnings, so a project that never opted in sees a different summary line and
+// the same verdict.
+//
+// `assertions-removed` is a warning even when enforced: refactors move
+// assertions, and the detector is a regex over a diff.
+//
+// A written reason lowers the claim and is accepted: a deleted test file is
+// excused by a Test Exemption that names it, an open criterion by `[~]` or a
+// `## Deferred Criteria` section. Nothing here raises what the tool asserts.
+const NO_CONTRARY = Object.freeze({
+  enforced: false,
+  ok: true,
+  failures: Object.freeze([]),
+  warnings: Object.freeze({ deletedTests: Object.freeze([]), openCriteria: Object.freeze([]), assertionsRemoved: Object.freeze([]) }),
+});
+
+// What the verdict depends on besides the tree: the mode, the flag, and the risk
+// inputs that decide whether "high" applies. `.coding-flow/` is outside the tree
+// token, so an edit to any of them must change this key to re-run a proof.
+function contraryPolicy(config) {
+  return {
+    strict: config.mode === "strict",
+    failOnContrarySignals: config.failOnContrarySignals === true,
+    riskTerms: config.highRiskTerms || null,
+    riskPaths: config.highRiskPaths || null,
+  };
+}
+
+// `text` names `target` when it appears as a whole path token: `index.test.ts`
+// is not named by `reindex.test.ts`, and `a.test.ts` is not inside `data.test.ts`.
+function mentionsPath(text, target) {
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  return new RegExp(`(^|[^\\w./-])${escaped}($|[^\\w-]|\\.(?!\\w))`).test(text);
+}
+
+function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null }) {
+  const policy = contraryPolicy(config);
+  const weakening = currentTreeToken(cwd) ? scanTestWeakening(config) : { findings: [] };
+  const declared = [readTestExemption(storyDir), exemption && exemption.trim()].filter(Boolean).join("\n");
+  const deletedFiles = weakening.findings.filter((finding) => finding.signal === "deleted").map((finding) => finding.file);
+  const excused = (file) => {
+    const base = path.posix.basename(file);
+    // The full path always counts. A bare file name counts only when no other
+    // deleted file shares it, so "index.test.ts" cannot excuse three of them.
+    const uniqueBase = deletedFiles.filter((other) => path.posix.basename(other) === base).length === 1;
+
+    return mentionsPath(declared, file) || (uniqueBase && mentionsPath(declared, base));
+  };
+  const deletedTests = deletedFiles.filter((file) => !excused(file));
+  const assertionsRemoved = weakening.findings
+    .filter((finding) => finding.signal === "assertions-removed")
+    .map((finding) => finding.file);
+  const openCriteria = criteria ? criteria.unchecked : [];
+
+  if (deletedTests.length === 0 && openCriteria.length === 0 && assertionsRemoved.length === 0) {
+    return NO_CONTRARY;
+  }
+
+  const enforced = policy.strict || (policy.failOnContrarySignals && scoreCombinedRisk({ storyDir, config }).level === "high");
+  const failures = [];
+
+  if (enforced && deletedTests.length > 0) {
+    failures.push({
+      signal: "deleted-tests",
+      detail: `${deletedTests.length} test file(s) deleted, and no Test Exemption names them: ${deletedTests.slice(0, 5).join(", ")}`,
+      items: deletedTests,
+    });
+  }
+
+  if (enforced && openCriteria.length > 0) {
+    failures.push({
+      signal: "open-criteria",
+      detail:
+        `${openCriteria.length} acceptance criterion(a) still open: ${openCriteria.slice(0, 5).join("; ")}` +
+        `${openCriteria.length > 5 ? "; …" : ""}. Mark each [x], defer it with [~] or a '## Deferred Criteria' section`,
+      items: openCriteria,
+    });
+  }
+
+  return { enforced, ok: failures.length === 0, failures, warnings: { deletedTests, openCriteria, assertionsRemoved } };
+}
+
+// "3 deleted test files, 5 open criteria" — what a passing run still carries.
+function describeContraryWarnings(contrary) {
+  const w = contrary && contrary.warnings;
+  const parts = [];
+
+  if (w && w.deletedTests.length > 0) {
+    parts.push(`${w.deletedTests.length} deleted test file${w.deletedTests.length === 1 ? "" : "s"}`);
+  }
+
+  if (w && w.openCriteria.length > 0) {
+    parts.push(`${w.openCriteria.length} open criteri${w.openCriteria.length === 1 ? "on" : "a"}`);
+  }
+
+  if (w && w.assertionsRemoved && w.assertionsRemoved.length > 0) {
+    parts.push(`assertions removed in ${w.assertionsRemoved.length} test file${w.assertionsRemoved.length === 1 ? "" : "s"}`);
+  }
+
+  return parts.join(", ");
 }
 
 function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false } = {}) {
@@ -2524,6 +2737,12 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
       ? { required: false, ok: true, reason: "not evaluated (no single story to attribute this run to)", changedFiles: [], testFiles: [] }
       : evaluateCoverage({ storyDir, config, exemption, startedAt });
 
+  const acceptanceCriteria = readAcceptanceCriteria(storyDir);
+  // Like coverage, only judged on a green suite for a single story.
+  const contrary = commandsOk && !skipCoverage
+    ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria })
+    : NO_CONTRARY;
+
   return {
     generatedAt: new Date().toISOString(),
     root: cwd,
@@ -2533,6 +2752,9 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     commandsFound: resolution.commands.length,
     // Recorded so a later verify can recognise this proof as still applicable.
     commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
+    // The floor this verdict was judged against. `.coding-flow/` is outside the
+    // tree token, so without it an edit to the floor would leave a stale "ok".
+    coverageFloor: resolveCoverageFloor(config),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
     environment: captureEnvironment(),
     commandsOk,
@@ -2540,9 +2762,12 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     // coverage or risk verdict is explained by this line before anything else.
     diffBase: publicDiffBase(currentDiffBase(cwd)),
     coverage,
-    // Recorded, never consulted: `ok` below does not read it, and must not.
-    acceptanceCriteria: readAcceptanceCriteria(storyDir),
-    ok: commandsOk && coverage.ok,
+    acceptanceCriteria,
+    // The policy the contrary-signals verdict was judged under, for the same
+    // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
+    contraryPolicy: contraryPolicy(config),
+    contrary,
+    ok: commandsOk && coverage.ok && contrary.ok,
     results,
   };
 }
@@ -2592,6 +2817,9 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
 
   const untracked = untrackedDigest();
   const fingerprint = commandsFingerprint(commands, timeouts);
+  const harnessConfig = readHarnessConfig().config;
+  const floor = JSON.stringify(resolveCoverageFloor(harnessConfig));
+  const policy = JSON.stringify(contraryPolicy(harnessConfig));
   const runsDir = harnessRunsDir();
 
   if (!fs.existsSync(runsDir)) {
@@ -2619,6 +2847,10 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
     if (
       provenanceToken === token &&
       evidence.commandsFingerprint === fingerprint &&
+      // A proof judged under another floor is a different proof; evidence from
+      // before the floor existed has none and is re-run once.
+      JSON.stringify(evidence.coverageFloor || null) === floor &&
+      JSON.stringify(evidence.contraryPolicy || null) === policy &&
       // A proof made against another base is a different proof.
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
       evidence.untrackedDigest === untracked
