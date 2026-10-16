@@ -197,6 +197,7 @@ function classify(token) {
   return "path";
 }
 
+const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 const EXPANSION = "write target depends on shell expansion";
 const UNKNOWN_CWD = "the working directory depends on shell expansion";
 
@@ -417,7 +418,11 @@ function shellWrites(command, startCwd = process.cwd()) {
 
   for (const segment of splitSegments(command)) {
     // `cd a || X`: X only runs when the cd failed, so it sees the old directory.
+    // What follows X (`cd a || exit; …`) only runs when the cd worked, so it goes on
+    // from the directory the cd reached.
+    let resume = null;
     if (segment.before === "or" && beforeCd !== null) {
+      resume = { cwd };
       cwd = beforeCd.cwd;
     }
     beforeCd = null;
@@ -495,8 +500,27 @@ function shellWrites(command, startCwd = process.cwd()) {
         found.push({ target: "(pathspec file)", kind: "write", unchecked: "git reads its paths from a file" });
       }
       cwd = saved;
+    } else if (SHELLS.has(name) && args.some((arg) => /^-[A-Za-z]*c$/.test(arg))) {
+      // `bash -c "<script>"`: the script is a command of its own, read from this directory.
+      const program = args[args.findIndex((arg) => /^-[A-Za-z]*c$/.test(arg)) + 1];
+      if (program !== undefined) {
+        for (const entry of cwd === null ? [] : shellWrites(unquote(program), cwd)) {
+          if (entry.unchecked) {
+            found.push(entry);
+          } else {
+            add(entry.target, entry.kind);
+          }
+        }
+        if (cwd === null) {
+          found.push({ target: program, kind: "write", unchecked: UNKNOWN_CWD });
+        }
+      }
     } else {
       inlineCode(name, args).forEach((program) => stringLiterals(program).forEach((literal) => add(literal, "inline")));
+    }
+
+    if (resume !== null) {
+      cwd = resume.cwd;
     }
 
     if (segment.after === "open") {

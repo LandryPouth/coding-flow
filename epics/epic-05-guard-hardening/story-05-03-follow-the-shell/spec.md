@@ -64,6 +64,6 @@ keeping a **current directory** that starts at the hook cwd:
 
 Deviations: after an unknown `cd`, an **absolute** target is still judged (stricter than "every later target unchecked"), and a known absolute `cd` makes the directory known again.
 
-Known limits (for 05-05): a `cd` is assumed to succeed (`cd nonexistent && …`); a `cd` in a pipeline or backgrounded is ignored; `:/path` pathspec magic; `bash -c`, scripts, `'.e'+'nv'`; an inline literal that merely *names* a protected file (`node -e "console.log('.env')"`) is refused — it cannot be told from a write (so is a bare word such as `w` or `A` when a blocked path has that name).
+Known limits (for 05-05): a `cd` is assumed to succeed (`cd nonexistent && …`); a `cd` in a pipeline or backgrounded is ignored; `:/path` pathspec magic; scripts (`bash -c "…"` is read as a command of its own), `'.e'+'nv'`; an inline literal that merely *names* a protected file (`node -e "console.log('.env')"`) is refused — it cannot be told from a write (so is a bare word such as `w` or `A` when a blocked path has that name).
 
 Rollback: revert the commit; `shellWriteTargets` kept its signature.

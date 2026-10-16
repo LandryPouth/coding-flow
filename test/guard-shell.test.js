@@ -129,6 +129,17 @@ test('a cd in a pipeline or after a failed cd does not move the shell', (t) => {
   expectAll(t, 'deny', ['echo hi | cd sub; echo A=1 > .env', 'cd sub || echo A=1 > .env', 'cd sub & echo A=1 > .env']);
 });
 
+test('what follows `cd x || …` runs from x: the cd worked', (t) => {
+  expectAll(t, 'deny', ['cd sub || exit; echo A=1 > ../.env', 'cd sub || true; echo A=1 > ../.env', 'cd sub || exit 1\necho A=1 > ../.env', 'cd nope || cd sub; echo A=1 > ../.env']);
+  expectAll(t, 'allow', ['cd sub || exit; echo A=1 > notes.txt']);
+});
+
+test('bash -c reads its script from the current directory', (t) => {
+  expectAll(t, 'deny', ['bash -c "echo A=1 > .env"', "sh -c 'cd sub && echo A=1 > ../.env'", 'cd sub && bash -c "echo A=1 > ../.env"']);
+  expectAll(t, 'allow', ['bash -c "echo hi"', 'bash -c "cd sub && echo A=1 > notes.txt"']);
+  expectAll(t, 'unchecked', ['bash -c "echo A=1 > $F"']);
+});
+
 test('a heredoc body is data: its quotes and punctuation neither hide nor invent a command', (t) => {
   const dir = project(t);
   assert.equal(run(dir, "cd sub\ncat <<EOF\ndon't (x) | y\nEOF\ncd ..\necho A=1 > .env"), 'deny');
