@@ -10,7 +10,7 @@ All notable changes to this project are documented here. The format is based on
 
 - **"The guard did not look" is no longer "allowed".** A call the guard cannot judge —
   unparseable input, an internal error, an unknown tool carrying a path, a write with
-  no readable target, a path that cannot be resolved, and in OpenCode an unreadable
+  no readable target, a path that cannot be resolved, an unreadable `harness.json`, and in OpenCode an unreadable
   write/patch or a guard that could not run — is `unchecked`: still let through, but
   logged to `.coding-flow/guard-unchecked.jsonl`, counted by `ai-flow report`, and
   warned about by `ai-flow doctor` for 7 days.

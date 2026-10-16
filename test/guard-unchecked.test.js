@@ -57,12 +57,14 @@ test('an exception inside the decision is unchecked and logged', (t) => {
   const hook = {
     cwd: dir,
     get tool_name() {
-      throw new Error('boom');
+      throw new Error("stat '/home/someone/secret-project/x'");
     },
   };
   const result = evaluate(hook, dir);
   assert.equal(result.decision, 'unchecked');
-  assert.match(logLines(dir)[0].reason, /boom/);
+  const logged = logLines(dir)[0].reason;
+  assert.match(logged, /guard error/);
+  assert.doesNotMatch(logged, /someone|\/home/);
 });
 
 test('an unknown tool carrying a path is unchecked; a read tool is allowed', (t) => {
@@ -147,4 +149,91 @@ test('the OpenCode plugin reports a write it could not read as unchecked, not as
 
   assert.equal(logLines(dir).length, 3);
   assert.equal(stderr.filter((line) => /NOT checked/.test(line)).length, 3);
+});
+
+test('an unreadable harness.json is unchecked, not a silent fallback to the defaults', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, '.coding-flow', 'harness.json'));
+  const hook = { tool_name: 'Write', tool_input: { file_path: 'src/a.js', content: 'x' }, cwd: dir };
+  assert.equal(evaluate(hook, dir).decision, 'unchecked');
+  assert.match(logLines(dir)[0].reason, /harness\.json/);
+  // The default policy still refuses what it refuses.
+  assert.equal(evaluate({ ...hook, tool_input: { file_path: '.env', content: 'A=1' } }, dir).decision, 'deny');
+  const bash = evaluate({ tool_name: 'Bash', tool_input: { command: 'npm test' }, cwd: dir }, dir);
+  assert.equal(bash.decision, 'unchecked');
+});
+
+test('a Bash call with a null command reaches the spawned guard as unchecked', (t) => {
+  const dir = tmp(t);
+  const res = cli(dir, ['guard'], { tool_name: 'Bash', tool_input: { command: null } });
+  assert.equal(res.code, 0);
+  assert.equal(logLines(dir).length, 1);
+});
+
+test('doctor ignores unchecked entries older than 7 days', (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init']).code, 0);
+  const old = new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString();
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'guard-unchecked.jsonl'), `${JSON.stringify({ at: old, tool: 'x', path: null, reason: 'r' })}\n`);
+  const doctor = JSON.parse(cli(dir, ['doctor', '--json']).stdout);
+  assert.ok(!doctor.warnings.some((w) => w.code === 'guard_unchecked'));
+});
+
+test('the plugin read-only list stays inside the guard read-only set', (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init', '--opencode']).code, 0);
+  const source = fs.readFileSync(path.join(dir, '.opencode', 'plugins', 'coding-flow-guard.js'), 'utf8');
+  const names = source.match(/\/\^\(([a-z|]+)\)\$\/i/)[1].split('|');
+  for (const name of names) {
+    assert.equal(decide({ tool_name: name, tool_input: { path: 'x' }, cwd: dir }, dir).decision, 'allow', name);
+  }
+});
+
+async function loadPlugin(t, dir, edit) {
+  const copy = path.join(dir, `plugin-${Math.random().toString(36).slice(2)}.mjs`);
+  fs.writeFileSync(copy, edit(fs.readFileSync(path.join(dir, '.opencode', 'plugins', 'coding-flow-guard.js'), 'utf8')));
+  const mod = await import(pathToFileURL(copy).href);
+  const before = (await mod.default.server({ directory: dir }))['tool.execute.before'];
+  const original = process.stderr.write;
+  const lines = [];
+  process.stderr.write = (chunk) => {
+    lines.push(String(chunk));
+    return true;
+  };
+  t.after(() => {
+    process.stderr.write = original;
+  });
+  return { before, lines, restore: () => (process.stderr.write = original) };
+}
+
+test('the plugin logs unchecked when the guard cannot run, or there is no guard module', async (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init', '--opencode']).code, 0);
+
+  const spawnFails = await loadPlugin(t, dir, (src) =>
+    src
+      .replace(/const BINARY = .*;/, 'const BINARY = "/nonexistent/ai-flow.js";')
+      .replace('["npx", ["--yes", FALLBACK, "guard"]]', '["coding-flow-no-such-command", []]'));
+  await spawnFails.before({ tool: 'shell' }, { args: { command: 'echo hi' } });
+  spawnFails.restore();
+  assert.equal(logLines(dir).length, 1);
+  assert.match(logLines(dir)[0].reason, /could not run/);
+  assert.ok(spawnFails.lines.some((line) => /NOT checked/.test(line)));
+
+  const noModule = await loadPlugin(t, dir, (src) =>
+    src.replace(/const BINARY = .*;/, 'const BINARY = "/nonexistent/ai-flow.js";').replace(/const FALLBACK = .*;/, 'const FALLBACK = "";'));
+  await noModule.before({ tool: 'shell' }, { args: { command: 'echo hi' } });
+  noModule.restore();
+  assert.equal(logLines(dir).length, 2);
+  assert.match(logLines(dir)[1].reason, /no guard module/);
+});
+
+test('the plugin reports a shell call with no command as unchecked', async (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init', '--opencode']).code, 0);
+  const plugin = await loadPlugin(t, dir, (src) => src);
+  await plugin.before({ tool: 'shell' }, { args: {} });
+  plugin.restore();
+  assert.equal(logLines(dir).length, 1);
+  assert.ok(plugin.lines.some((line) => /NOT checked/.test(line)));
 });

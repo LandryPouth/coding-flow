@@ -49,7 +49,7 @@ const READ_ONLY_TOOLS = new Set(
   [
     "Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite", "TodoRead",
     "Skill", "SlashCommand", "AskUserQuestion", "ExitPlanMode", "EnterPlanMode", "BashOutput",
-    "KillShell", "KillBash", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch", "Monitor",
+    "KillShell", "KillBash", "EnterWorktree", "ExitWorktree", "ListMcpResourcesTool", "ReadMcpResourceTool", "ToolSearch", "Monitor",
     "read", "glob", "grep", "list", "ls", "webfetch", "websearch", "todowrite", "todoread", "skill",
     "task", "question", "lsp", "codesearch",
   ].map((name) => name.toLowerCase()),
@@ -111,19 +111,23 @@ function writtenContent(toolName, toolInput) {
 }
 
 // Loads the harness policy from the resolved root, without depending on the
-// module's cwd (the hook provides its own cwd). Missing/corrupt config ⇒ defaults.
-// A project that never ran `harness init` is still guarded.
+// module's cwd (the hook provides its own cwd). Missing config ⇒ defaults, so a
+// project that never ran `harness init` is still guarded. A config that exists but
+// cannot be read or parsed also falls back to defaults, flagged `unreadable` so the
+// decision says it was not judged against the user's policy.
 function loadPolicy(root) {
   const defaults = defaultHarnessConfig();
   const configFile = path.join(root, ".coding-flow", "harness.json");
 
   let config = null;
+  let unreadable = false;
   try {
     if (fs.existsSync(configFile)) {
       config = JSON.parse(fs.readFileSync(configFile, "utf8").replace(/^﻿/, ""));
     }
   } catch {
     config = null;
+    unreadable = true;
   }
 
   const pick = (key) =>
@@ -133,6 +137,7 @@ function loadPolicy(root) {
     blockedPaths: pick("blockedPaths"),
     secretPatterns: pick("secretPatterns"),
     secretScanAllowlist: pick("secretScanAllowlist"),
+    unreadable,
   };
 }
 
@@ -456,6 +461,9 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
 
   const ctx = context(hook, root);
   const policy = loadPolicy(ctx.root);
+  if (policy.unreadable) {
+    ctx.issues.push("harness.json could not be read (default policy applied)");
+  }
   const filePath = targetPath(toolInput);
   const found = filePath ? firstHit(ctx, filePath, policy, caseInsensitive) : null;
   const relative = filePath ? normalizePortable(path.relative(ctx.root, path.resolve(ctx.cwd, filePath))) : null;
@@ -517,6 +525,9 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
 
   const ctx = context(hook, root);
   const policy = loadPolicy(ctx.root);
+  if (policy.unreadable) {
+    ctx.issues.push("harness.json could not be read (default policy applied)");
+  }
 
   for (const target of shellWriteTargets(command)) {
     const found = firstHit(ctx, target, policy, caseInsensitive);
@@ -640,7 +651,7 @@ function guardCommand({ getFlagValue, flags }) {
   try {
     result = decide(hook, root);
   } catch (err) {
-    result = { decision: "unchecked", reason: `guard error: ${err && err.message}` };
+    result = { decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` };
   }
 
   if (result.decision === "unchecked") {
@@ -695,7 +706,7 @@ function evaluate(hook, root) {
 
     return result;
   } catch (err) {
-    const result = { decision: "unchecked", reason: `guard error: ${err && err.message}` };
+    const result = { decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` };
     recordUnchecked({ root, hook, result });
     return result;
   }

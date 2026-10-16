@@ -74,7 +74,7 @@ function toPayloads(tool, args) {
     return [{ tool_name: "Edit", tool_input: { file_path: a.filePath || a.path, new_string: a.newString } }];
   }
   if (tool === "bash" || tool === "shell") {
-    return [{ tool_name: "Bash", tool_input: { command: a.command } }];
+    return [{ tool_name: "Bash", tool_input: { command: typeof a.command === "string" ? a.command : null } }];
   }
   if (tool === "apply_patch" || tool === "patch") {
     const payloads = patchPayloads(a.patchText);
