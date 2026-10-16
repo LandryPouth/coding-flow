@@ -103,6 +103,7 @@ Other things that look like a bug and are not:
 - **Commands missing after a successful `init`** — restart the agent; it reads commands at startup.
 - **Using several agents in one repo** — run `init --target …` once per agent; each keeps its own guard, and Claude Code and OpenCode share one skill set.
 - **OpenCode, upgrading from 0.11** — the commands in `.opencode/command/` become skills in `.opencode/skills/`. `ai-flow upgrade` (or `ai-flow upgrade --global`) moves them and removes the old files it wrote; one you edited is kept and named. Older installs in `.opencode/command/coding-flow/` (typed `/coding-flow/flow-run`): delete that folder by hand.
+- **OpenCode shows no `/flow-*` after an earlier global install** — 0.12.0 wrote skills only, which OpenCode's `/` menu does not list. Run `ai-flow upgrade --global` and restart OpenCode; `doctor` says so in an OpenCode project.
 - **Codex says the guard is not active** — Codex ignores a project's `.codex/config.toml` until the project is trusted. Open it once with `codex` and accept, then run `ai-flow doctor`.
 - **A guard refusal** — the agent is told what was refused and asked not to retry under another name, path or tool; every refusal is logged in `.coding-flow/denials.jsonl`.
 - **`ai-flow: command not found`** — use `npx @landry_pouth/coding-flow <command>`, or `npm install -g @landry_pouth/coding-flow` once.
