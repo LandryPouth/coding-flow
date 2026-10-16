@@ -142,6 +142,9 @@ function loadPolicy(root) {
     blockedPaths: pick("blockedPaths"),
     secretPatterns: pick("secretPatterns"),
     secretScanAllowlist: pick("secretScanAllowlist"),
+    // Only an explicit "strict" tightens the guard; anything else (absent, unreadable,
+    // a typo) is the standard posture, so a broken file never locks anyone out.
+    mode: config && config.mode === "strict" ? "strict" : "standard",
     unreadable,
   };
 }
@@ -992,6 +995,32 @@ function forAgent(reason) {
   return `${reason} ${AGENT_ADVICE}`;
 }
 
+// In `strict`, "the guard could not check this" is a refusal: a hard boundary has
+// no third outcome. The one exemption is the policy file itself through a write tool,
+// so strictness alone can never lock the user out of switching back.
+const STRICT_PREFIX = "not checked, refused in strict mode:";
+
+function strictOutcome(result, hook, root) {
+  if (!result || result.decision !== "unchecked") {
+    return result;
+  }
+
+  let strict = false;
+  try {
+    strict = loadPolicy(root).mode === "strict";
+  } catch {
+    strict = false;
+  }
+
+  const input = hook && hook.tool_input;
+  const file = input && typeof (input.file_path || input.path) === "string" ? String(input.file_path || input.path) : "";
+  if (!strict || (WRITE_TOOLS.has(hook && hook.tool_name) && /(^|[\\/])\.coding-flow[\\/]harness\.json$/.test(file))) {
+    return result;
+  }
+
+  return { decision: "deny", reason: `${STRICT_PREFIX} ${result.reason}`, path: null };
+}
+
 function guardCommand({ getFlagValue, flags }) {
   const inputFile = getFlagValue("--input", null);
   const raw = readHookInput({ inputFile });
@@ -1005,6 +1034,8 @@ function guardCommand({ getFlagValue, flags }) {
   } catch (err) {
     result = { decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` };
   }
+
+  result = strictOutcome(result, hook, root);
 
   if (result.decision === "unchecked") {
     recordUnchecked({ root, hook, result });
@@ -1047,7 +1078,7 @@ function guardCommand({ getFlagValue, flags }) {
 // return the result. Never throws — a guard that crashes its host gets removed.
 function evaluate(hook, root) {
   try {
-    const result = decide(hook, root);
+    const result = strictOutcome(decide(hook, root), hook, projectRoot(hookCwd(hook, root)));
 
     if (result.decision === "deny") {
       recordDenial({ root: projectRoot(hookCwd(hook, root)), hook, result });
@@ -1060,7 +1091,11 @@ function evaluate(hook, root) {
 
     return result;
   } catch (err) {
-    const result = { decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` };
+    const result = strictOutcome({ decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` }, hook, root);
+    if (result.decision === "deny") {
+      recordDenial({ root, hook, result });
+      return { ...result, reason: forAgent(result.reason) };
+    }
     recordUnchecked({ root, hook, result });
     return result;
   }

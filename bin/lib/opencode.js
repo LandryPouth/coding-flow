@@ -33,7 +33,7 @@ const MARKER = "// coding-flow:guard-plugin";
 // `bash` is checked on the command text and its write targets, like Claude's.
 const PLUGIN_BODY = `
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const BINARY = __BINARY__;
@@ -125,6 +125,20 @@ function noteUnchecked(hook, reason) {
   } catch {}
 }
 
+// \`mode: strict\` in harness.json makes "not checked" a refusal. Read here, not asked
+// of the guard: the case that matters is the guard failing to load or run. An
+// unreadable file is the standard posture, and says so.
+function isStrict(directory) {
+  try {
+    return JSON.parse(readFileSync(directory + "/.coding-flow/harness.json", "utf8").replace(/^\\uFEFF/, "")).mode === "strict";
+  } catch (err) {
+    if (err && err.code !== "ENOENT") {
+      process.stderr.write("coding-flow guard: harness.json could not be read; standard mode applies\\n");
+    }
+    return false;
+  }
+}
+
 function spawnGuard(payload) {
   const [cmd, args] =
     BINARY && existsSync(BINARY) ? ["node", [BINARY, "guard"]] : ["npx", ["--yes", FALLBACK, "guard"]];
@@ -133,13 +147,19 @@ function spawnGuard(payload) {
   if (res.error) {
     // Cannot enforce: say so where it can be seen instead of allowing silently.
     noteUnchecked(payload, \`could not run (\${res.error.code || res.error.message})\`);
+    return { decision: "unchecked", reason: \`could not run (\${res.error.code || res.error.message})\` };
   }
 
   if (res.status === 0 && /this write was NOT checked/.test(res.stderr || "")) {
     process.stderr.write(res.stderr);
   }
 
-  return res.status === 2 ? { decision: "deny", reason: (res.stderr || "").replace(/^coding-flow guard: /, "").trim() } : null;
+  if (res.status === 2) {
+    return { decision: "deny", reason: (res.stderr || "").replace(/^coding-flow guard: /, "").trim() };
+  }
+
+  // Neither a clean allow nor a refusal (a timeout, a signal): no decision.
+  return res.status === 0 ? null : { decision: "unchecked", reason: "the guard gave no decision" };
 }
 
 // Not a named export: 1.x loads \`default.server\` (checked on 1.19.0), and a
@@ -151,6 +171,9 @@ const CodingFlowGuard = async ({ directory }) => ({
       // Defensive: a generated plugin always carries FALLBACK; a hand-edited one may not.
       if (!local && !(BINARY && existsSync(BINARY)) && !FALLBACK) {
         noteUnchecked(hook, "no guard module to run");
+        if (isStrict(directory)) {
+          throw new Error("coding-flow guard: not checked, refused in strict mode: no guard module to run");
+        }
         continue;
       }
       const result = local && typeof local.evaluate === "function" ? local.evaluate(hook, directory) : spawnGuard(hook);
@@ -163,6 +186,11 @@ const CodingFlowGuard = async ({ directory }) => ({
       }
       if (result && result.decision === "deny") {
         throw new Error(\`coding-flow guard: \${result.reason}\`);
+      }
+      // Strict: no decision is a refusal. (The in-process guard has already turned
+      // its own unchecked into a deny; this covers the spawn that could not run.)
+      if (result && result.decision === "unchecked" && isStrict(directory)) {
+        throw new Error(\`coding-flow guard: not checked, refused in strict mode: \${result.reason}\`);
       }
     }
   },

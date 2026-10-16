@@ -25,15 +25,15 @@ check is refused, on every host.
 
 ## Acceptance Criteria
 
-- [ ] Given `mode: strict` and `F=.env; echo > $F`, when the Claude hook runs,
+- [x] Given `mode: strict` and `F=.env; echo > $F`, when the Claude hook runs,
       then exit 2 and a deny payload.
-- [ ] Given `mode: strict` and an OpenCode plugin whose `BINARY` does not
+- [x] Given `mode: strict` and an OpenCode plugin whose `BINARY` does not
       exist and whose fallback cannot run (fake `npx` failing on PATH), when a
       `write` to `src/a.js` arrives, then the plugin throws.
-- [ ] Given `mode: standard`, the same two cases allow (and log).
-- [ ] Given `mode: strict` and an ordinary session (Read/Grep/Write
+- [x] Given `mode: standard`, the same two cases allow (and log).
+- [x] Given `mode: strict` and an ordinary session (Read/Grep/Write
       `src/a.js`), then nothing is refused.
-- [ ] `doctor` shows the posture line for both modes.
+- [x] `doctor` shows the posture line for both modes.
 
 ## Edge Cases
 
@@ -41,3 +41,11 @@ check is refused, on every host.
   through the normal Write tool *because of strictness alone* (the user must
   be able to switch back). Blocked-path rules still apply as configured.
 - **Unreadable harness.json** in the plugin: default to `standard`, log it.
+
+## Status: done
+
+## Result
+
+`loadPolicy` returns `mode` (only an explicit `strict` counts). `strictOutcome` turns `unchecked` into a deny in `guardCommand` and `evaluate`, except a write-tool call on `.coding-flow/harness.json`. The plugin reads `mode` itself on each call (a switch back needs no restart), treats a spawn that could not run or gave no decision as `unchecked`, and throws on it in strict. `doctor` adds `guardMode`/`guardPosture` to its report.
+
+Deviation: the plugin reads `harness.json` per call, not once at load. Not done: the manual check on a real OpenCode 2.x with a missing BINARY (the test loads the plugin the way OpenCode does, with a missing binary and a failing fallback).

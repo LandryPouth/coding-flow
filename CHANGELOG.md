@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`mode: strict` fails closed** (story 05-04). With `"mode": "strict"` in `harness.json`, a call the guard could not check is refused with "not checked, refused in strict mode: …" — by the Claude hook (exit 2) and by the OpenCode plugin (throw), including when the plugin can neither load the guard nor spawn it. `standard` is unchanged; an unreadable `harness.json` is `standard`; a write to `harness.json` itself is never refused for strictness alone. `ai-flow doctor` prints `guard: strict (unchecked writes are refused)` or `guard: standard (unchecked writes are allowed and logged)`.
+
 ### Fixed
 
 - **Guard: three silent allows closed** (story 05-03 review). `sudo -u root tee .env`, `nice -n 5 …` and `timeout 5 …` no longer read the option's value as the verb; a mode inside an inline literal (`perl -e 'open(F,">.env")'`) is stripped before matching; an interpreter or shell fed by a heredoc (`python3 - <<EOF`) is `unchecked` instead of allowed.

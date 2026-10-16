@@ -29,6 +29,7 @@ const { COMMAND_PLATFORMS } = require("./platforms/registry");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
+const { loadPolicy } = require("./guard");
 const { inspectCodexSandbox } = require("./codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./codex-probe");
 const { recordProbeEvidence } = require("./platforms/evidence");
@@ -579,6 +580,7 @@ function collectMinimalReport({ strict = false } = {}) {
     root: cwd,
     version: packageJson.version,
     strict,
+    ...guardPosture(),
     codexProbe,
     notes,
     install: "minimal",
@@ -587,6 +589,16 @@ function collectMinimalReport({ strict = false } = {}) {
     binaryOnPath: isCommandAvailable("ai-flow"),
     errors,
     warnings,
+  };
+}
+
+// One line on what the guard does with a write it could not check, so the posture
+// is read, not assumed.
+function guardPosture() {
+  const mode = loadPolicy(cwd).mode;
+  return {
+    guardMode: mode,
+    guardPosture: mode === "strict" ? "guard: strict (unchecked writes are refused)" : "guard: standard (unchecked writes are allowed and logged)",
   };
 }
 
@@ -794,6 +806,7 @@ function collectDoctorReport({ strict = false } = {}) {
     root: cwd,
     version: packageJson.version,
     strict,
+    ...guardPosture(),
     codexProbe,
     install: "full",
     skillsMode,
@@ -888,6 +901,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     }
 
     log("");
+    log(report.guardPosture);
     log(binaryPathNote(report.binaryOnPath));
   } else {
     log("Coding Flow has installation issues:");
@@ -913,6 +927,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     log("");
     log("Run `ai-flow doctor --fix` to restore missing files.");
     log("");
+    log(report.guardPosture);
     log(binaryPathNote(report.binaryOnPath));
   }
 
