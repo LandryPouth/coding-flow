@@ -380,7 +380,17 @@ function shellWrites(command, startCwd = process.cwd()) {
   const found = [];
   const seen = new Set();
   const stack = [];
-  let cwd = path.resolve(startCwd);
+  // The shell resolves `..` physically once a `cd` went through a symlink, so every
+  // directory it tracks is the real one when it exists (a missing one stays lexical).
+  const physical = (dir) => {
+    try {
+      return fs.realpathSync(dir);
+    } catch {
+      return dir;
+    }
+  };
+  const start = physical(path.resolve(startCwd));
+  let cwd = start;
 
   const add = (token, kind) => {
     const state = classify(token);
@@ -393,10 +403,10 @@ function shellWrites(command, startCwd = process.cwd()) {
       entry = { target: token, kind, unchecked: EXPANSION };
     } else if (cwd === null && !path.isAbsolute(expandHome(token))) {
       entry = { target: token, kind, unchecked: UNKNOWN_CWD };
-    } else if (cwd === null || cwd === path.resolve(startCwd) || path.isAbsolute(expandHome(token))) {
+    } else if (cwd === null || cwd === start || path.isAbsolute(expandHome(token))) {
       entry = { target: token, kind };
     } else {
-      entry = { target: path.relative(path.resolve(startCwd), path.resolve(cwd, token)), kind };
+      entry = { target: path.relative(start, path.resolve(cwd, token)), kind };
     }
 
     const key = `${entry.kind}\0${entry.target}\0${entry.unchecked || ""}`;
@@ -495,13 +505,13 @@ function shellWrites(command, startCwd = process.cwd()) {
 
       if (!inPipeline) {
         beforeCd = { cwd };
-        cwd = target === null || (cwd === null && !path.isAbsolute(target)) ? null : path.resolve(cwd || "/", target);
+        cwd = target === null || (cwd === null && !path.isAbsolute(target)) ? null : physical(path.resolve(cwd || "/", target));
       }
     } else if (name === "popd") {
       cwd = null;
     } else if (name === "tee") {
       files.forEach((file) => add(file, "write"));
-    } else if (name === "sed" && args.some((arg) => arg === "-i" || arg.startsWith("-i"))) {
+    } else if (name === "sed" && args.some((arg) => arg === "--in-place" || arg.startsWith("--in-place=") || /^-[A-Za-z]*i/.test(arg))) {
       // sed -i '<script>' <files…>: the script is the first non-flag argument.
       files.slice(1).forEach((file) => add(file, "write"));
     } else if (DESTINATION_LAST.has(name) && files.length >= 1) {
@@ -523,6 +533,17 @@ function shellWrites(command, startCwd = process.cwd()) {
           }
         }
       }
+    } else if (name === "perl" && args.some((arg) => /^-[A-Za-z]*i/.test(arg))) {
+      // perl -pi -e '<script>' <files…> edits in place; the script is the word after -e.
+      const e = args.findIndex((arg) => /^-[A-Za-z]*e$/.test(arg));
+      args.slice(e === -1 ? 0 : e + 2).forEach((file) => add(file, "write"));
+    } else if (name === "awk" && args.includes("-i") && args.includes("inplace")) {
+      // awk -i inplace '<program>' <files…>
+      files.filter((arg) => arg !== "inplace").slice(1).forEach((file) => add(file, "write"));
+    } else if (name === "truncate") {
+      // truncate -s N <files…>: the size (or reference file) is an option value, not a target.
+      const skip = args.findIndex((arg) => arg === "-s" || arg === "-r" || arg === "--size" || arg === "--reference");
+      files.filter((arg) => skip === -1 || arg !== args[skip + 1]).forEach((file) => add(file, "write"));
     } else if (name === "dd") {
       for (const arg of args) {
         if (arg.startsWith("of=")) {
@@ -534,7 +555,7 @@ function shellWrites(command, startCwd = process.cwd()) {
       const saved = cwd;
 
       if (git.dir !== null) {
-        cwd = classify(git.dir) === "unknown" || (cwd === null && !path.isAbsolute(git.dir)) ? null : path.resolve(cwd || "/", expandHome(git.dir));
+        cwd = classify(git.dir) === "unknown" || (cwd === null && !path.isAbsolute(git.dir)) ? null : physical(path.resolve(cwd || "/", expandHome(git.dir)));
       }
       git.paths.forEach((file) => add(file, "write"));
       if (git.fromFile) {
@@ -553,7 +574,10 @@ function shellWrites(command, startCwd = process.cwd()) {
       const programs = inlineCode(name, args);
       programs.forEach((program) =>
         stringLiterals(program).forEach((literal) => {
-          add(literal, "inline");
+          // A bare open() mode (`'w'`, `'rb'`) is not a path.
+          if (!/^[rwabx+]{1,3}$/.test(literal)) {
+            add(literal, "inline");
+          }
           // A 2-argument `open(F, ">.env")` carries its mode in the literal.
           const bare = literal.replace(/^\+?[<>]{1,2}\s*/, "");
           if (bare !== literal) {

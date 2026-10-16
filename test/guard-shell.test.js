@@ -246,3 +246,37 @@ test('an interpreter fed by a heredoc is unchecked, not silently allowed', (t) =
   assert.equal(run(dir, 'cat <<EOF > notes.md\nhello\nEOF'), 'allow');
   assert.equal(run(dir, 'python3 script.py <<EOF\ndata\nEOF'), 'allow');
 });
+
+test('a cd through a symlink is followed physically, like the kernel does', (t) => {
+  const dir = project(t);
+  fs.mkdirSync(path.join(dir, 'sub', 'deeper'));
+  fs.symlinkSync('sub/deeper', path.join(dir, 'lnk'));
+  assert.equal(run(dir, 'cd sub/deeper && echo A=1 > ../../.env'), 'deny');
+  for (const command of [
+    'cd lnk && echo A=1 > ../../.env',
+    'cd lnk && cp x ../../.env',
+    'cd lnk && git checkout -- ../../.env',
+    'git -C lnk checkout -- ../../.env',
+  ]) {
+    assert.equal(run(dir, command), 'deny', command);
+  }
+  assert.equal(run(dir, 'cd lnk && echo A=1 > notes.txt'), 'allow');
+});
+
+test('in-place editors other than sed -i are write targets', (t) => {
+  expectAll(t, 'deny', [
+    'sed --in-place s/a/b/ .env',
+    "perl -pi -e 's/a/b/' .env",
+    "perl -i.bak -pe 's/a/b/' .env",
+    "awk -i inplace '{print}' .env",
+    'truncate -s0 .env',
+    'truncate --size 0 .env',
+  ]);
+  expectAll(t, 'allow', ["perl -pi -e 's/a/b/' README.md", 'truncate -s 0 notes.txt', 'awk \'{print}\' README.md']);
+});
+
+test('a bare open() mode in inline code is not a path', (t) => {
+  const dir = project(t);
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'harness.json'), JSON.stringify({ blockedPaths: ['w'] }));
+  assert.equal(run(dir, `python3 -c "open('notes.txt','w')"`), 'allow');
+});
