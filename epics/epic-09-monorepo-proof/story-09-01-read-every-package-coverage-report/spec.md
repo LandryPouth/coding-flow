@@ -45,3 +45,13 @@ A monorepo that already produces coverage gets `verified` instead of the
 - Istanbul JSON keys are absolute paths: resolve as today.
 - Two reports claiming the same file with different line maps (Jest + Vitest
   on a shared package): merge by max hits, and record both report paths.
+
+## Status: done
+
+## Result
+
+bethl read-only check: not run (project unavailable in this session).
+
+### Rollback Notes
+
+Revert the two commits; no schema or config migration.
