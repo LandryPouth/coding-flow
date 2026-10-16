@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
-- **Guard: `cd x || exit; echo > ../.env`** was judged against the old directory (the `||` branch's directory leaked to the commands after it), and `bash -c "…"` / `sh -c '…'` scripts were not read. Both are now followed.
+- **Guard: `cd x || exit; echo > ../.env`** was judged against the old directory (the `||` branch's directory leaked to the commands after it), and `bash -c "…"` / `sh -c '…'` scripts were not read. Both are now followed, as is `eval "…"`, and an escaped quote inside a `-c` script (`bash -c "echo \"x\" > .env"`) no longer hides the write.
 - **The guard follows the shell.** A Bash command is walked segment by segment with
   the working directory it will really run in: `cd`/`pushd` (and `( … )`, which
   restores it) move where a later `> ../.env` lands; a `cd` it cannot follow

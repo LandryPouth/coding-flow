@@ -167,11 +167,12 @@ function unquote(token) {
 
 function tokenize(segment) {
   const tokens = [];
-  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  // A double-quoted word may hold escaped quotes (`"echo \"x\" > .env"`).
+  const pattern = /"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|(\S+)/g;
   let match;
 
   while ((match = pattern.exec(segment)) !== null) {
-    tokens.push(match[1] !== undefined ? match[1] : match[2] !== undefined ? match[2] : match[3]);
+    tokens.push(match[1] !== undefined ? match[1].replace(/\\(["\\])/g, "$1") : match[2] !== undefined ? match[2] : match[3]);
   }
 
   return tokens;
@@ -412,6 +413,20 @@ function shellWrites(command, startCwd = process.cwd()) {
     new RegExp(`(?<![<>&\\d])\\d?>&\\s*(?![\\d-])${TARGET}`, "g"),
   ];
 
+  // A script handed to `bash -c` / `eval` runs from the current directory. With the
+  // directory unknown, only its absolute targets can still be judged; a relative one is unchecked.
+  const followScript = (program) => {
+    for (const entry of shellWrites(unquote(program), cwd === null ? startCwd : cwd)) {
+      if (entry.unchecked) {
+        found.push(entry);
+      } else if (cwd === null && !path.isAbsolute(expandHome(entry.target))) {
+        found.push({ target: entry.target, kind: entry.kind, unchecked: UNKNOWN_CWD });
+      } else {
+        add(entry.target, entry.kind);
+      }
+    }
+  };
+
   // Wrappers and compound-command keywords that sit in front of the real verb.
   const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
   let beforeCd = null;
@@ -500,20 +515,13 @@ function shellWrites(command, startCwd = process.cwd()) {
         found.push({ target: "(pathspec file)", kind: "write", unchecked: "git reads its paths from a file" });
       }
       cwd = saved;
+    } else if (name === "eval") {
+      followScript(args.join(" "));
     } else if (SHELLS.has(name) && args.some((arg) => /^-[A-Za-z]*c$/.test(arg))) {
       // `bash -c "<script>"`: the script is a command of its own, read from this directory.
       const program = args[args.findIndex((arg) => /^-[A-Za-z]*c$/.test(arg)) + 1];
       if (program !== undefined) {
-        for (const entry of cwd === null ? [] : shellWrites(unquote(program), cwd)) {
-          if (entry.unchecked) {
-            found.push(entry);
-          } else {
-            add(entry.target, entry.kind);
-          }
-        }
-        if (cwd === null) {
-          found.push({ target: program, kind: "write", unchecked: UNKNOWN_CWD });
-        }
+        followScript(program);
       }
     } else {
       inlineCode(name, args).forEach((program) => stringLiterals(program).forEach((literal) => add(literal, "inline")));
