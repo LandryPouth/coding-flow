@@ -87,14 +87,14 @@ test('opencode beside claude: the .claude/skills copy serves both, no .opencode/
   assert.equal(doctor.warnings.some((w) => /opencode/.test(w.code)), false);
 });
 
-test('opencode first, claude added later: upgrade retires the .opencode/skills copy', (t) => {
+test('opencode first, claude added later: init retires the .opencode/skills copy at once', (t) => {
   const { dir, run } = sharedProject(t);
   run(['init', '--target', 'opencode']);
   assert.ok(fs.existsSync(path.join(dir, '.opencode', 'skills', 'flow-run', 'SKILL.md')));
-  run(['init', '--target', 'claude', '--with-skills']);
-  assert.ok(JSON.parse(run(['doctor', '--json'])).warnings.some((w) => w.code === 'opencode_skills_duplicated'));
-  run(['upgrade']);
+  // Adding Claude retires the OpenCode copy right away, not on the next upgrade.
+  assert.match(run(['init', '--target', 'claude', '--with-skills']), /Skills \(opencode\): served from \.claude\/skills/);
   assert.equal(fs.existsSync(path.join(dir, '.opencode', 'skills', 'flow-run')), false);
+  assert.equal(JSON.parse(run(['doctor', '--json'])).warnings.some((w) => /opencode/.test(w.code)), false);
   assert.ok(fs.existsSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md')));
 });
 
@@ -128,4 +128,14 @@ test('opencode: rendered skills pin npx to the version that wrote them', (t) => 
   const setup = fs.readFileSync(path.join(dir, '.opencode', 'skills', 'flow-setup', 'SKILL.md'), 'utf8');
   assert.ok(setup.includes(`npx @landry_pouth/coding-flow@${version} init`), 'flow-setup runs the pinned init');
   assert.doesNotMatch(setup, /npx @landry_pouth\/coding-flow(?![@\w-])/);
+});
+
+test('opencode: doctor flags a duplicated skill set', (t) => {
+  const { dir, run } = sharedProject(t);
+  run(['init', '--target', 'claude', '--with-skills']);
+  run(['init', '--target', 'opencode']);
+  // A second copy left by hand (or by an older version).
+  fs.mkdirSync(path.join(dir, '.opencode', 'skills', 'flow-run'), { recursive: true });
+  fs.copyFileSync(path.join(dir, '.claude', 'skills', 'flow-run', 'SKILL.md'), path.join(dir, '.opencode', 'skills', 'flow-run', 'SKILL.md'));
+  assert.ok(JSON.parse(run(['doctor', '--json'])).warnings.some((w) => w.code === 'opencode_skills_duplicated'));
 });

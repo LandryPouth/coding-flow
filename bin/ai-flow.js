@@ -537,7 +537,20 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     }
   }
 
-  const installTargets = [...new Set([target, requestedTarget, ...readConfig(cwd).alsoTargets].filter(Boolean))];
+  const installTargets = [
+    ...new Set([target, requestedTarget, readConfig(cwd).target, ...readConfig(cwd).alsoTargets].filter((p) => p && p !== "unrecognized")),
+  ];
+
+  // The platforms already recorded beside this one are kept in step too, as
+  // upgrade does: adding Claude's skills to an OpenCode project must retire the
+  // .opencode/skills copy now, not on the next upgrade.
+  for (const platform of installTargets.filter((p) => p !== target && COMMAND_PLATFORMS[p])) {
+    const other = copyPlatformCommands(platform, { force: flags.has("--force"), dryRun: flags.has("--dry-run") });
+
+    if (other.servedBy || other.retired.removed.length > 0 || other.written.length > 0) {
+      describePlatformFiles(platform, other).forEach((line) => log(line));
+    }
+  }
   wireOpenCode({ dryRun: flags.has("--dry-run"), targets: installTargets });
   wireOpenCodeInstructions({ dryRun: flags.has("--dry-run"), targets: installTargets });
 
@@ -611,7 +624,11 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   // Brownfield detection, last so it reads as the next step. The scan is a
   // function call, not an artifact: nothing is written, and the deliverable is
   // the pointer to /flow-plan — the expensive half of onboarding it cannot do.
-  printProjectScanSummary(scanProject(), { dryRun: flags.has("--dry-run") });
+  // Adding a platform to a minimal install lays down no docs, so pointing at
+  // empty project docs would be noise there.
+  if (!platformOnly) {
+    printProjectScanSummary(scanProject(), { dryRun: flags.has("--dry-run") });
+  }
 
   // Right after install is exactly when "will the commands I'm about to be
   // told to type actually work" matters most — answer it here instead of
