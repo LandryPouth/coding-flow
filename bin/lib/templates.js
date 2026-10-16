@@ -279,15 +279,46 @@ function ensureCommandsFile({ dryRun = false, force = false, hasPackageJson = fa
   return exists ? "updated" : "created";
 }
 
+// The manifests of other ecosystems. A project that has one and no package.json
+// is not a Node project: a package.json there exists only to hold `flow:*`
+// shortcuts, and it confuses that project's own tooling and reviewers. The CLI
+// works the same without it (`ai-flow …` or `npx @landry_pouth/coding-flow …`).
+const OTHER_ECOSYSTEM_MANIFESTS = [
+  "pyproject.toml",
+  "setup.py",
+  "requirements.txt",
+  "Pipfile",
+  "go.mod",
+  "Cargo.toml",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "Gemfile",
+  "composer.json",
+  "mix.exs",
+  "pubspec.yaml",
+  "Package.swift",
+];
+
+function otherEcosystemManifest() {
+  return OTHER_ECOSYSTEM_MANIFESTS.find((name) => fs.existsSync(path.join(cwd, name))) || null;
+}
+
 function ensurePackageScripts({ dryRun = false } = {}) {
   const detected = detectProjectPackageJson();
+  const foreign = detected.exists ? null : otherEcosystemManifest();
   const result = {
     packageJsonExists: detected.exists,
-    packageJsonCreated: !detected.exists,
+    packageJsonCreated: !detected.exists && !foreign,
+    notNode: foreign,
     added: [],
     existing: [],
     conflicts: [],
   };
+
+  if (foreign) {
+    return result;
+  }
 
   if (detected.exists && (!detected.packageJson || typeof detected.packageJson !== "object")) {
     result.conflicts.push({
@@ -417,6 +448,10 @@ function ensureConvenienceFiles({ dryRun = false, force = false } = {}) {
 }
 
 function printConvenienceSummary(convenience, { dryRun = false } = {}) {
+  if (convenience.scripts.notNode) {
+    log(`Package.json: not created (${convenience.scripts.notNode} found — not a Node project); use \`ai-flow <command>\` or \`${npxCommand} <command>\``);
+  }
+
   if (convenience.scripts.packageJsonCreated) {
     log(`Package.json: ${dryRun ? "would create" : "created"} at project root`);
   }
