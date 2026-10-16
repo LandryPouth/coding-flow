@@ -167,9 +167,44 @@ function writeJson(filePath, value) {
 // ...): a millisecond timestamp is a unique-enough filename in practice, and the
 // counter only matters inside a tight batch loop where two writes land in the
 // same millisecond.
+//
+// The clock is not monotonic: WSL2 steps it backwards every few dozen seconds
+// (journald logs "Time jumped backwards"), NTP corrections do the same. Every
+// reader picks the latest record by `generatedAt`, so a red verify written right
+// after a green one could carry an EARLIER time and be ignored — "verified" for
+// a change whose last run failed. The time used is therefore at least 1ms after
+// the newest record already in `dir`, and it is written into `generatedAt` too.
+function nextEvidenceTime(dir) {
+  let latest = 0;
+
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      const match = name.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z/);
+
+      if (match) {
+        const ms = Date.parse(`${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`);
+
+        if (ms > latest) {
+          latest = ms;
+        }
+      }
+    }
+  } catch {
+    // No directory yet: nothing to be after.
+  }
+
+  return new Date(Math.max(Date.now(), latest + 1));
+}
+
 function writeTimestampedEvidence(dir, suffix, evidence) {
   fs.mkdirSync(dir, { recursive: true });
-  const base = new Date().toISOString().replace(/[:.]/g, "-");
+  const at = nextEvidenceTime(dir);
+  const base = at.toISOString().replace(/[:.]/g, "-");
+
+  if (evidence && typeof evidence === "object" && "generatedAt" in evidence) {
+    evidence = { ...evidence, generatedAt: at.toISOString() };
+  }
+
   let outputPath = path.join(dir, `${base}-${suffix}.json`);
   let counter = 1;
 
