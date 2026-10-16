@@ -261,6 +261,16 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   git(root, addArgs);
+  if (!branchExists) {
+    // The fork point travels with the branch in the repository's own config, so
+    // verify can measure the story from where it forked, not from main. The ref
+    // is a branch name, re-resolved on every run: a rebase keeps it valid.
+    const forkRef =
+      from || git(root, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }).stdout.trim();
+    if (forkRef && forkRef !== "HEAD" && !forkRef.startsWith("-")) {
+      git(root, ["config", `branch.${name}.codingFlowBase`, forkRef], { allowFail: true });
+    }
+  }
   if (!quiet) {
     log(`Worktree created: ${dest}`);
     log(`Branch: ${name}${branchExists ? " (existing)" : ""}`);

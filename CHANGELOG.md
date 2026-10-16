@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Coverage, risk and weakening are measured on the story's own diff.** Every
+  diff-based signal compared against `origin/HEAD`/`main`, so a story forked from
+  an epic branch inherited the whole epic's files, tests and migrations (on a real
+  project: 508 changed files for one story, and a `high` risk from other stories'
+  migrations). One `resolveDiffBase` now picks the base, in order: `--base <ref>`,
+  `config.json` `baseBranch`, the fork point `worktree add` records in
+  `branch.<name>.codingFlowBase`, the nearest of the epic branch / `develop` /
+  the default branch, then the default branch. The evidence records
+  `diffBase: { ref, mergeBase, source, scope }`, and a proof made against another
+  base is not reused. `verify` and `harness check` accept `--base`. `next` measures
+  "unshipped work" from the same base, and a configured `baseBranch` that does not
+  resolve is recorded as `configUnresolved` instead of being dropped silently.
+
 ## [0.12.1] - 2026-10-16
 
 ### Fixed
