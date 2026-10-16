@@ -112,3 +112,44 @@ test('--clean-env hides credential-looking variables from the command, and recor
   assert.ok(evidence.environment.dropped.includes('MY_API_KEY'));
   assert.ok(!cleaned.output.includes('sekret-value'), 'values are never recorded');
 });
+
+test('a refusal does not overwrite an earlier green proof', (t) => {
+  const dir = planProject(t);
+  const attended = run(dir, ['verify', '--story', STORY, '--json'], { AI_FLOW_FORCE_TTY: '1' });
+  assert.equal(attended.code, 0, attended.output);
+  const status = () => run(dir, ['status'], { AI_FLOW_FORCE_TTY: '' }).output;
+  assert.match(status(), /story-01-01-demo\s+verified/);
+
+  const refused = verify(dir, ['--no-cache']);
+  assert.notEqual(refused.code, 0);
+  assert.match(JSON.parse(refused.output).refused, /not run unattended/);
+  assert.match(status(), /story-01-01-demo\s+verified/, 'a refusal is not a failed verify');
+});
+
+test('run reports a refused story as skipped, not failed', (t) => {
+  const dir = planProject(t);
+  const { output } = run(dir, ['run', '--story', STORY]);
+  assert.match(output, /\[skip\].*refused: commands from plan\.md/);
+  assert.doesNotMatch(output, /\[FAIL\]/);
+  assert.equal(marker(dir), false);
+});
+
+test('--clean-env is not answered from a cached proof made with the full environment', (t) => {
+  const dir = planProject(t);
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = { commands: [`node -e "console.log('key=' + (process.env.MY_API_KEY || 'none'))"`] };
+  fs.writeFileSync(configPath, JSON.stringify(config));
+  const env = { MY_API_KEY: 'sekret-value' };
+
+  assert.match(JSON.parse(run(dir, ['verify', '--json'], env).output).results[0].stdoutTail, /key=sekret-value/);
+  const cleaned = JSON.parse(run(dir, ['verify', '--json', '--clean-env'], env).output);
+  assert.notEqual(cleaned.reused, true);
+  assert.match(cleaned.results[0].stdoutTail, /key=none/);
+});
+
+test('CI=1 counts as unattended too', (t) => {
+  const dir = planProject(t);
+  assert.notEqual(verify(dir, [], { CI: '1', AI_FLOW_FORCE_TTY: '1' }).code, 0);
+  assert.equal(marker(dir), false);
+});

@@ -1513,11 +1513,17 @@ function cleanEnvironment(source = process.env) {
 // Nobody is watching: no terminal on both ends, or a CI runner. Agents run with
 // no TTY, which is the point. AI_FLOW_FORCE_TTY=1 exists for tests only.
 function isUnattended() {
+  const ci = (process.env.CI || "").toLowerCase();
+
+  if (!["", "0", "false"].includes(ci)) {
+    return true;
+  }
+
   if (process.env.AI_FLOW_FORCE_TTY === "1") {
     return false;
   }
 
-  return !(process.stdin.isTTY && process.stdout.isTTY) || process.env.CI === "true";
+  return !(process.stdin.isTTY && process.stdout.isTTY);
 }
 
 function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env } = {}) {
@@ -1751,7 +1757,9 @@ function printVerify(evidence, outputPath) {
     }
   }
 
-  log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+  if (outputPath) {
+    log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+  }
 }
 
 // Reproducibility fingerprint: a green verify is only auditable if we know the
@@ -2816,7 +2824,9 @@ function harnessVerify({
   // The hit does NOT write a fresh evidence: claiming a run that did not happen is
   // the one thing this tool must never do. The earlier evidence still carries the
   // current tree token, so `status` and `audit` already read it as verified.
-  if (!noCache) {
+  // A clean-env run is asked for a proof made without the secrets; replaying one
+  // made with them would answer a different question.
+  if (!noCache && !cleanEnv) {
     const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
     const reusable = findReusableVerify({
       storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
@@ -2839,6 +2849,21 @@ function harnessVerify({
   }
 
   const evidence = verifyStoryOnce({ story, exemption, allowPlanCommands, cleanEnv, announce: !json });
+
+  // A refusal executed nothing: it says who may run these commands, not whether the
+  // code passes. Recording it would overwrite an earlier green proof and turn a
+  // verified story into a blocked one.
+  if (evidence.refused) {
+    if (json) {
+      log(JSON.stringify(evidence, null, 2));
+    } else {
+      printVerify(evidence, null);
+    }
+
+    process.exitCode = 1;
+    return;
+  }
+
   const outputPath = writeVerifyEvidence(evidence);
 
   if (json) {
