@@ -19,4 +19,4 @@ with exit 124 and were recorded as failures of the code, not of the limit.
 - [ ] Tests with a `node -e "setTimeout(()=>{}, 2000)"` command and a 500 ms
       limit; `npm test` green; CHANGELOG.
 
-## Status: planned
+## Status: done

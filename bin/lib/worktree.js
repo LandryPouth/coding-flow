@@ -703,8 +703,10 @@ const LAND_LOCK_STALE_MARGIN_MS = 5 * 60 * 1000;
 // (impure, config-reading) command count lookup below so the scaling itself
 // is unit-testable with a plain number, without needing a real project
 // checkout.
-function landLockTimeouts(commandCount) {
-  const worstCaseMs = commandCount * PER_COMMAND_TIMEOUT_MS;
+// `worstCaseMs` overrides the default-limit estimate when the project raised a
+// command's limit (`validation.timeoutMs`): a lock sized for 10 min per command
+// would be stolen from a re-verify legitimately running for 20.
+function landLockTimeouts(commandCount, worstCaseMs = commandCount * PER_COMMAND_TIMEOUT_MS) {
   return {
     waitTimeoutMs: Math.max(LAND_LOCK_WAIT_TIMEOUT_MS, worstCaseMs + LAND_LOCK_WAIT_MARGIN_MS),
     staleMs: Math.max(LAND_LOCK_STALE_MS, worstCaseMs + LAND_LOCK_STALE_MARGIN_MS),
@@ -812,12 +814,18 @@ function worktreeLand(name, { cwd, story }) {
   // unreadable config must not block land over sizing a lock, so this falls
   // back to the fixed floors in `landLockTimeouts` rather than throwing.
   let landCommandCount = 0;
+  let landWorstCaseMs = 0;
   try {
-    landCommandCount = resolveValidationCommands({ storyDir: null }).commands.length;
+    const landResolution = resolveValidationCommands({ storyDir: null });
+    landCommandCount = landResolution.commands.length;
+    landWorstCaseMs = landResolution.commands.reduce(
+      (total, command) => total + ((landResolution.timeouts && landResolution.timeouts[command]) || PER_COMMAND_TIMEOUT_MS),
+      0,
+    );
   } catch {
     // Falls back to the fixed floors below.
   }
-  const { waitTimeoutMs, staleMs } = landLockTimeouts(landCommandCount);
+  const { waitTimeoutMs, staleMs } = landLockTimeouts(landCommandCount, landWorstCaseMs);
 
   try {
     withFileLock(

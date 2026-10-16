@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **The command time limit is configurable.** `validation.timeoutMs` in
+  `config.json` replaces the fixed 600 s, and an entry of `validation.commands` /
+  `quality` may be `{ "command": "...", "timeoutMs": 1200000 }` (strings still
+  work). A timed-out command prints `timeout after 600 s (validation.timeoutMs)`,
+  the limit is part of the commands fingerprint (a different limit is a different
+  proof), and `land` sizes its lock for the raised limits.
 - **Cache replays are recorded.** Each validation command's result carries
   `cache` (`full` / `partial` / `none` / `unknown`), read from the whole output
   of turbo (`Cached: N cached, M total`, `>>> FULL TURBO`) and nx (cache-read

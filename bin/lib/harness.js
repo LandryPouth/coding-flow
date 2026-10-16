@@ -1324,17 +1324,36 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
     // `fresh`: the story's risk asks for tests that really ran, so the project's
     // cache-bypassing commands stand in for the usual ones when it declared any.
     const freshCommands = Array.isArray(config.validation.freshCommands) ? config.validation.freshCommands : [];
-    const quality = Array.isArray(config.validation.quality) ? config.validation.quality : [];
+    const entries = (value) => (Array.isArray(value) ? value : []);
+    const quality = entries(config.validation.quality);
     const declared = [
-      ...(fresh && freshCommands.length > 0
-        ? freshCommands
-        : Array.isArray(config.validation.commands) ? config.validation.commands : []),
+      ...(fresh && freshCommands.length > 0 ? freshCommands : entries(config.validation.commands)),
       ...quality,
     ];
 
     if (declared.length > 0) {
+      // Entries are strings or `{ command, timeoutMs }`; everything downstream
+      // keeps seeing command strings, and the limits travel beside them.
+      const globalTimeout = Number.isFinite(config.validation.timeoutMs) ? config.validation.timeoutMs : null;
+      const timeouts = {};
+      const commandOf = (entry) => {
+        const command = typeof entry === "string" ? entry : entry.command;
+        const timeoutMs = typeof entry === "string" ? globalTimeout : entry.timeoutMs || globalTimeout;
+
+        if (timeoutMs) {
+          timeouts[command] = timeoutMs;
+        }
+
+        return command;
+      };
+
       // `quality` is returned so a cached lint is not refused as stale tests.
-      return { source: "config", commands: declared, quality };
+      return {
+        source: "config",
+        commands: declared.map(commandOf),
+        quality: quality.map(commandOf),
+        timeouts,
+      };
     }
   }
 
@@ -1419,7 +1438,9 @@ function detectCacheState(output) {
   return { cache: "unknown" };
 }
 
-function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
+const DEFAULT_COMMAND_TIMEOUT_MS = 600000;
+
+function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = {}) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
   const result = spawnSync(command, [], {
@@ -1453,6 +1474,7 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
     exitCode: toolError ? null : exitCode,
     ok,
     timedOut,
+    ...(timedOut ? { timeoutMs } : {}),
     toolError,
     durationMs: Date.now() - started,
     ...detectCacheState(`${result.stdout || ""}\n${result.stderr || ""}`),
@@ -1465,6 +1487,13 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
     // ledger is append-only.
     ...(ok ? {} : { failureLines: selectFailureLines(`${result.stdout || ""}\n${result.stderr || ""}`) }),
   };
+}
+
+// The limit one command runs under, when the project declared one.
+function commandTimeout(resolution, command) {
+  const timeoutMs = resolution.timeouts && resolution.timeouts[command];
+
+  return timeoutMs ? { timeoutMs } : {};
 }
 
 function resultStatus(item) {
@@ -1598,6 +1627,11 @@ function printVerify(evidence, outputPath) {
 
     if (item.freshRequired) {
       log(`    ${item.freshRequired}`);
+    }
+
+    // Name the knob: a timeout is a limit the project can raise, not a failure of the code.
+    if (item.timedOut) {
+      log(`    timeout after ${Number((item.timeoutMs / 1000).toFixed(1))} s (validation.timeoutMs)`);
     }
 
     if (item.toolError) {
@@ -2401,7 +2435,7 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
   const results = resolution.commands.map((command) => {
-    const item = runValidationCommand(command);
+    const item = runValidationCommand(command, commandTimeout(resolution, command));
 
     // A full replay is not wrong, but at this risk level it is not proof that the
     // tests ran against this code either.
@@ -2413,7 +2447,7 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
         freshRequired:
           "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
           "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands " +
-          "(there is no `verify --no-cache`).",
+          "(`verify --no-cache` only skips the reuse of an earlier proof, not the build tool's cache).",
       };
     }
 
@@ -2436,7 +2470,7 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     commandSource: resolution.source,
     commandsFound: resolution.commands.length,
     // Recorded so a later verify can recognise this proof as still applicable.
-    commandsFingerprint: commandsFingerprint(resolution.commands),
+    commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
     environment: captureEnvironment(),
     commandsOk,
@@ -2450,8 +2484,13 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
 
 // Identifies WHAT was proved, so a recorded proof is only reusable for the same
 // set of commands. Changing config.validation must invalidate every prior green.
-function commandsFingerprint(commands) {
-  return crypto.createHash("sha256").update(commands.join("\n")).digest("hex").slice(0, 40);
+// A different limit is a different command contract: a run that passed under a
+// 20 min limit proves nothing about the same command under 1 s. Commands with no
+// declared limit hash exactly as before, so existing proofs stay valid.
+function commandsFingerprint(commands, timeouts = {}) {
+  const lines = commands.map((command) => (timeouts && timeouts[command] ? `${command}\u0000${timeouts[command]}` : command));
+
+  return crypto.createHash("sha256").update(lines.join("\n")).digest("hex").slice(0, 40);
 }
 
 // The tree token deliberately ignores untracked files (see identity.js), which is
@@ -2478,7 +2517,7 @@ function untrackedDigest() {
 //
 // Conservative by construction: outside git, or when anything cannot be
 // determined, this returns null and the commands run for real.
-function findReusableVerify({ storyRelativePath, commands }) {
+function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
   const token = currentTreeToken(cwd);
 
   if (!token || commands.length === 0) {
@@ -2486,7 +2525,7 @@ function findReusableVerify({ storyRelativePath, commands }) {
   }
 
   const untracked = untrackedDigest();
-  const fingerprint = commandsFingerprint(commands);
+  const fingerprint = commandsFingerprint(commands, timeouts);
   const runsDir = harnessRunsDir();
 
   if (!fs.existsSync(runsDir)) {
@@ -2635,6 +2674,7 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
     const reusable = findReusableVerify({
       storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
       commands: resolution.commands,
+      timeouts: resolution.timeouts,
     });
 
     if (reusable) {
