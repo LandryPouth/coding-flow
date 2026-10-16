@@ -197,6 +197,16 @@ test('standard: the same inputs pass with warnings, and status exposes them', (t
   assert.deepEqual(story.warnings, { deletedTests: 1, openCriteria: 2 });
 });
 
+test('standard: warnings of a stale proof are not shown by status', (t) => {
+  const dir = repo(t, 'cs-stale', { criteria: ['- [ ] one'] });
+  assert.equal(verify(dir).code, 0);
+  fs.writeFileSync(path.join(dir, 'src', 'later.js'), 'module.exports = 1;\n');
+  commitAll(dir);
+
+  const status = JSON.parse(run(dir, ['status', '--json']).output);
+  assert.equal(status.epics[0].stories[0].warnings, undefined);
+});
+
 test('a clean pass keeps the plain summary line', (t) => {
   const dir = repo(t, 'cs-clean');
   commitAll(dir);

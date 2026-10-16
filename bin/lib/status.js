@@ -207,7 +207,7 @@ function buildStatusModel(config) {
         ...(wtEntry ? { landReady } : {}),
         review,
         ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
-        ...(proof && proof.warnings ? { warnings: proof.warnings } : {}),
+        ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
         ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
       };

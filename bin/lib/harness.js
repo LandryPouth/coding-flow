@@ -2190,10 +2190,10 @@ function scanTestWeakening(config) {
   const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
   const byFile = {};
   const { mergeBase } = currentDiffBase(cwd);
-  const diffs = [["diff"], ["diff", "--cached"]];
+  const diffs = [["diff", "--find-renames"], ["diff", "--find-renames", "--cached"]];
 
   if (mergeBase) {
-    diffs.push(["diff", mergeBase]);
+    diffs.push(["diff", "--find-renames", mergeBase]);
   }
 
   for (const argsForGit of diffs) {
@@ -2690,6 +2690,10 @@ function describeContraryWarnings(contrary) {
 
   if (w && w.openCriteria.length > 0) {
     parts.push(`${w.openCriteria.length} open criteri${w.openCriteria.length === 1 ? "on" : "a"}`);
+  }
+
+  if (w && w.assertionsRemoved && w.assertionsRemoved.length > 0) {
+    parts.push(`assertions removed in ${w.assertionsRemoved.length} test file${w.assertionsRemoved.length === 1 ? "" : "s"}`);
   }
 
   return parts.join(", ");

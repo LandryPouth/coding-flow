@@ -415,6 +415,7 @@ function latestVerifyScopeByStoryDir(root) {
         tier: data.coverage ? data.coverage.tier || coverageTier(data.coverage) : null,
         scope: data.diffBase ? data.diffBase.scope || null : null,
         warnings: contraryWarningCounts(data.contrary),
+        treeToken: data.provenance && data.provenance.git ? data.provenance.git.treeToken || null : null,
       });
     }
   }
