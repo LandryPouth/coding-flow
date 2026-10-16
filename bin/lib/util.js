@@ -454,7 +454,25 @@ function selectFailureLines(text, { limit = MAX_FAILURE_LINES } = {}) {
   return kept;
 }
 
+// The real path of `p`: git reports the real one, while a project can be reached
+// through a symlink (macOS: /var -> /private/var) or a Windows 8.3 short name
+// (RUNNER~1). Comparing two spellings of one directory must not fail.
+function canonicalPath(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+function samePath(a, b) {
+  const [x, y] = [canonicalPath(a), canonicalPath(b)];
+  return process.platform === "win32" ? x.toLowerCase() === y.toLowerCase() : x === y;
+}
+
 module.exports = {
+  canonicalPath,
+  samePath,
   log,
   fail,
   toPortable,

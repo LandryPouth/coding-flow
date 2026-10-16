@@ -20,6 +20,7 @@ const { execFileSync } = require("child_process");
 
 const { parseBackbone, labelForDir, dirForLabel } = require("./backbone");
 const { worktreeAdd, requireRepo } = require("./worktree");
+const { samePath } = require("./util");
 const {
   gitCommonDir,
   placementStatePath,
@@ -77,7 +78,7 @@ function resolveStoryChain(cwd, epicPath, storyPath) {
 // same principle as backbone.js's malformed-tree guard.
 function requireProjectRootIsGitRoot(cwd, storyPath) {
   const root = requireRepo(cwd);
-  if (path.resolve(root) !== path.resolve(cwd)) {
+  if (!samePath(root, cwd)) {
     throw new Error(
       "worktree placement requires the coding-flow project root to be the git repository root " +
         `(project root "${cwd}" is inside git repo "${root}"). Multi-install monorepos are not supported ` +

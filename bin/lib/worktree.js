@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { hasStoryContent } = require("./story");
-const { readJson, writeJson } = require("./util");
+const { readJson, writeJson, canonicalPath, samePath } = require("./util");
 const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
@@ -94,7 +94,7 @@ function worktreeDest(root, name) {
 // worktree<->story mapping deterministic and stateless (see status).
 function resolveStory(root, cwd, story) {
   const full = path.resolve(cwd, story);
-  const rel = path.relative(root, full);
+  const rel = path.relative(canonicalPath(root), canonicalPath(full));
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
     fail(`the story must be inside the repository: ${story}`);
   }
@@ -404,7 +404,7 @@ function worktreeRemove(name, { force, dryRun, cwd }) {
 
   const entries = parseWorktrees(root);
   const match =
-    entries.find((e) => e.path === dest) ||
+    entries.find((e) => samePath(e.path, dest)) ||
     entries.find((e) => path.basename(e.path) === name) ||
     entries.find((e) => e.branch === name);
 
@@ -747,7 +747,7 @@ function worktreeLand(name, { cwd, story }) {
   const entries = parseWorktrees(root);
   const dest = worktreeDest(root, lookupName);
   const match =
-    entries.find((e) => e.path === dest) ||
+    entries.find((e) => samePath(e.path, dest)) ||
     entries.find((e) => path.basename(e.path) === lookupName) ||
     entries.find((e) => e.branch === lookupName);
 
@@ -755,14 +755,14 @@ function worktreeLand(name, { cwd, story }) {
     fail(`worktree not found for "${lookupName}". See: ai-flow worktree list`);
   }
 
-  if (path.resolve(match.path) === path.resolve(root)) {
+  if (samePath(match.path, root)) {
     // entries[0] (git's primary worktree) is not reliably "the target" once
     // worktrees nest more than one level (e.g. a story worktree inside an
     // epic worktree inside the main checkout) — naming it here would point
     // at the wrong branch. Name it only when there is exactly one other
     // worktree to choose from; otherwise list every candidate instead of
     // guessing.
-    const others = entries.filter((e) => path.resolve(e.path) !== path.resolve(match.path));
+    const others = entries.filter((e) => !samePath(e.path, match.path));
     const hint =
       others.length === 1
         ? `Run it from the target checkout instead (${others[0].path}).`
