@@ -179,78 +179,330 @@ function tokenize(segment) {
 
 const HOME_PREFIX = /^(?:\$HOME|\$\{HOME\})(?=\/|$)/;
 
-// Not a file: flags, fd duplications, and the null sink.
-function isCandidatePath(token) {
+// "skip": not a file (flags, fd duplications, the null sink). "unknown": a variable
+// or a substitution decides the path, which no static read can resolve. Else "path".
+function classify(token) {
   if (!token || token.startsWith("-") || token.startsWith("&")) {
-    return false;
+    return "skip";
   }
 
-  // `$HOME/…` is a path; any other variable is not something we can resolve.
-  if (token.startsWith("$") && !HOME_PREFIX.test(token)) {
-    return false;
+  if (token === "/dev/null" || token.startsWith("/dev/")) {
+    return "skip";
   }
 
-  return token !== "/dev/null" && !token.startsWith("/dev/");
+  if (/^~[^/]/.test(token) || token.includes("`") || token.replace(HOME_PREFIX, "").includes("$")) {
+    return "unknown";
+  }
+
+  return "path";
 }
 
-function shellWriteTargets(command) {
+const EXPANSION = "write target depends on shell expansion";
+const UNKNOWN_CWD = "the working directory depends on shell expansion";
+
+// Splits a command into segments at `&&`, `||`, `;`, `|`, `&`, newline and
+// parentheses, never inside quotes and never inside a heredoc body. Each segment
+// says which separator came `before` and `after` it, and whether it closes or
+// opens a group: `after: "open"` / `"close"` apply once the segment's own text has
+// run (the text before a `(` is outside the group, the text before a `)` inside it).
+function splitSegments(command) {
+  const out = [];
+  const heredocs = [];
+  let text = "";
+  let quote = null;
+  let before = null;
+
+  const flush = (after) => {
+    out.push({ text, before, after });
+    before = after;
+    text = "";
+  };
+
+  for (let i = 0; i < command.length; i += 1) {
+    const ch = command[i];
+
+    if (quote) {
+      text += ch;
+      if (ch === quote) {
+        quote = null;
+      } else if (ch === "\\" && quote === '"' && i + 1 < command.length) {
+        text += command[(i += 1)];
+      }
+      continue;
+    }
+
+    if (ch === "\\" && i + 1 < command.length) {
+      text += ch + command[(i += 1)];
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      text += ch;
+    } else if (ch === "<" && command[i + 1] === "<" && command[i + 2] !== "<") {
+      const word = /^<<(-?)\s*(?:"([^"]*)"|'([^']*)'|\\?([^\s;&|<>()]+))/.exec(command.slice(i));
+      if (word) {
+        heredocs.push({ dash: word[1] === "-", word: word[2] ?? word[3] ?? word[4] });
+      }
+      text += "<<";
+      i += 1;
+    } else if (ch === "\n") {
+      flush("seq");
+      // Heredoc bodies are data: up to the delimiter line, none of it is a command.
+      while (heredocs.length) {
+        const { dash, word } = heredocs.shift();
+        let end = command.indexOf("\n", i + 1);
+        while (i + 1 < command.length) {
+          const stop = end === -1 ? command.length : end;
+          const line = command.slice(i + 1, stop);
+          i = stop;
+          end = command.indexOf("\n", i + 1);
+          if ((dash ? line.replace(/^\t+/, "") : line) === word) {
+            break;
+          }
+        }
+      }
+    } else if (ch === "(") {
+      flush("open");
+    } else if (ch === ")") {
+      flush("close");
+    } else if (ch === ";") {
+      flush("seq");
+    } else if ((ch === "&" || ch === "|") && command[i + 1] === ch) {
+      i += 1;
+      flush(ch === "&" ? "and" : "or");
+    } else if (ch === "|") {
+      flush("pipe");
+    } else if (ch === "&" && command[i - 1] !== ">" && command[i - 1] !== "<" && command[i + 1] !== ">") {
+      flush("bg");
+    } else {
+      text += ch;
+    }
+  }
+
+  out.push({ text, before, after: null });
+  return out;
+}
+
+// The inline program an interpreter was handed, in its flag spellings: `-c code`,
+// `-Bc code`, `--eval code`, `--eval=code`, `deno eval code`.
+const INTERPRETERS = [
+  [/^python[\d.]*$/, /^-[A-Za-z]*c$/],
+  [/^(node|nodejs|bun)$/, /^(-e|-p|--eval|--print)$/],
+  [/^(perl|ruby)$/, /^-[A-Za-z]*e$/],
+  [/^deno$/, /^eval$/],
+];
+
+function inlineCode(name, args) {
+  const programs = [];
+  for (const [pattern, flag] of INTERPRETERS) {
+    if (!pattern.test(name)) {
+      continue;
+    }
+    args.forEach((arg, at) => {
+      if (flag.test(arg) && args[at + 1] !== undefined) {
+        programs.push(args[at + 1]);
+      } else if (/^--(eval|print)=/.test(arg)) {
+        programs.push(unquote(arg.slice(arg.indexOf("=") + 1)));
+      }
+    });
+  }
+  return programs;
+}
+
+// String literals of an inline program. Not a parser: a literal that spells a
+// blocked path is the whole signal, and a built-up one (`'.e'+'nv'`) is a documented limit.
+function stringLiterals(code) {
+  const found = [];
+  for (const match of code.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)) {
+    const value = match[2];
+    if (value && value.length <= 200 && !/[\n\0]/.test(value)) {
+      found.push(value);
+    }
+  }
+  return found;
+}
+
+// `git checkout <tree> [--] <paths>` and `git restore <paths>` overwrite working
+// files. `dir` is `git -C <dir>`; `fromFile` is a pathspec the guard cannot read.
+// A lone `git checkout <x>` is read as a path too: a branch literally named like a
+// blocked file is not worth a hole.
+function gitPaths(args) {
+  let index = 0;
+  let dir = null;
+  while (index < args.length && args[index].startsWith("-")) {
+    if (args[index] === "-C") {
+      dir = args[index + 1];
+    }
+    index += args[index] === "-C" || args[index] === "-c" ? 2 : 1;
+  }
+
+  const sub = args[index];
+  const rest = args.slice(index + 1);
+  const result = { dir, paths: [], fromFile: rest.some((arg) => arg.startsWith("--pathspec-from-file")) };
+
+  if (sub === "checkout") {
+    const dashes = rest.indexOf("--");
+    result.paths = dashes === -1 ? rest.filter((arg) => !arg.startsWith("-")) : rest.slice(dashes + 1);
+  } else if (sub === "restore") {
+    if (rest.some((arg) => arg === "--staged" || arg === "-S") && !rest.some((arg) => arg === "--worktree" || arg === "-W")) {
+      return result;
+    }
+    for (let i = 0; i < rest.length; i += 1) {
+      if (rest[i] === "--source" || rest[i] === "-s") {
+        i += 1;
+      } else if (rest[i] === "--") {
+        result.paths.push(...rest.slice(i + 1));
+        break;
+      } else if (!rest[i].startsWith("-")) {
+        result.paths.push(rest[i]);
+      }
+    }
+  }
+
+  return result;
+}
+
+// What a command would write, in order: `[{ target, kind, unchecked? }]`. `target`
+// is relative to `startCwd` (or `~`/absolute), already resolved against any `cd`
+// earlier in the command. `kind`: "write" | "alias" (a link whose source is the
+// target) | "inline" (a literal in inline code). `unchecked` carries the reason a
+// target cannot be resolved. Conservative: a shape we do not recognise is not guessed at.
+function shellWrites(command, startCwd = process.cwd()) {
   if (typeof command !== "string" || !command.trim()) {
     return [];
   }
 
-  const targets = new Set();
+  const found = [];
+  const seen = new Set();
+  const stack = [];
+  let cwd = path.resolve(startCwd);
+
+  const add = (token, kind) => {
+    const state = classify(token);
+    if (state === "skip") {
+      return;
+    }
+
+    let entry;
+    if (state === "unknown") {
+      entry = { target: token, kind, unchecked: EXPANSION };
+    } else if (cwd === null && !path.isAbsolute(expandHome(token))) {
+      entry = { target: token, kind, unchecked: UNKNOWN_CWD };
+    } else if (cwd === null || cwd === path.resolve(startCwd) || path.isAbsolute(expandHome(token))) {
+      entry = { target: token, kind };
+    } else {
+      entry = { target: path.relative(path.resolve(startCwd), path.resolve(cwd, token)), kind };
+    }
+
+    const key = `${entry.kind}\0${entry.target}\0${entry.unchecked || ""}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      found.push(entry);
+    }
+  };
 
   // Redirections: `> file`, `>> file`, `2> file`. `2>&1` and `>&2` duplicate a
   // descriptor and write to no path — the (?!&) drops them.
   const redirection = /(?:^|[\s;&|(])\d?>{1,2}\s*(?!&)("[^"]+"|'[^']+'|[^\s;&|<>()]+)/g;
-  let match;
 
-  while ((match = redirection.exec(command)) !== null) {
-    const value = unquote(match[1]);
-    if (isCandidatePath(value)) {
-      targets.add(value);
+  const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice"]);
+  let beforeCd = null;
+
+  for (const segment of splitSegments(command)) {
+    // `cd a || X`: X only runs when the cd failed, so it sees the old directory.
+    if (segment.before === "or" && beforeCd !== null) {
+      cwd = beforeCd.cwd;
     }
-  }
+    beforeCd = null;
 
-  // Command-specific destinations, per pipeline segment.
-  for (const segment of command.split(/\|\||&&|[;|\n]/)) {
-    const tokens = tokenize(segment.trim());
-
-    if (tokens.length === 0) {
-      continue;
+    let match;
+    redirection.lastIndex = 0;
+    while ((match = redirection.exec(segment.text)) !== null) {
+      add(unquote(match[1]), "write");
     }
 
-    // `sudo cp …`, `env FOO=1 tee …`: step over the wrapper to reach the verb.
+    const tokens = tokenize(segment.text.trim());
+
+    // `sudo cp …`, `env FOO=1 tee …`, `time cd x`: step over the wrapper to the verb.
     let index = 0;
-    while (index < tokens.length && (tokens[index] === "sudo" || tokens[index].includes("="))) {
+    while (index < tokens.length && (WRAPPERS.has(tokens[index]) || tokens[index].includes("=") || (index > 0 && tokens[index].startsWith("-")))) {
       index += 1;
     }
 
     const name = path.basename(tokens[index] || "");
     const args = tokens.slice(index + 1);
-    const files = args.filter(isCandidatePath);
+    const files = args.filter((arg) => classify(arg) !== "skip");
 
-    if (name === "tee") {
-      for (const file of files) {
-        targets.add(file);
+    if (tokens.length === 0) {
+      // nothing to read
+    } else if (name === "cd" || name === "pushd") {
+      const inPipeline = segment.before === "pipe" || segment.after === "pipe" || segment.after === "bg";
+      const dir = args.find((arg) => !arg.startsWith("-") || arg === "-");
+      const target = dir === undefined || dir === "~" ? os.homedir() : dir === "-" || classify(dir) === "unknown" ? null : expandHome(dir);
+
+      if (!inPipeline) {
+        beforeCd = { cwd };
+        cwd = target === null || (cwd === null && !path.isAbsolute(target)) ? null : path.resolve(cwd || "/", target);
       }
+    } else if (name === "popd") {
+      cwd = null;
+    } else if (name === "tee") {
+      files.forEach((file) => add(file, "write"));
     } else if (name === "sed" && args.some((arg) => arg === "-i" || arg.startsWith("-i"))) {
       // sed -i '<script>' <files…>: the script is the first non-flag argument.
-      for (const file of files.slice(1)) {
-        targets.add(file);
+      files.slice(1).forEach((file) => add(file, "write"));
+    } else if (DESTINATION_LAST.has(name) && files.length >= 1) {
+      const symbolic = args.some((arg) => /^-[A-Za-z]*[sl]/.test(arg) || arg === "--symbolic" || arg === "--link" || arg === "--symbolic-link");
+      const aliasing = name === "ln" || (name === "cp" && symbolic);
+
+      if (files.length >= 2) {
+        add(files[files.length - 1], "write");
       }
-    } else if (DESTINATION_LAST.has(name) && files.length >= 2) {
-      targets.add(files[files.length - 1]);
+
+      if (aliasing) {
+        const sources = files.length >= 2 ? files.slice(0, -1) : files;
+        const where = files.length >= 2 ? path.dirname(files[files.length - 1]) : ".";
+        for (const source of sources) {
+          add(source, "alias");
+          // A relative symlink source is read from the link's own directory.
+          if (where !== "." && classify(source) === "path" && !path.isAbsolute(expandHome(source))) {
+            add(path.join(where, source), "alias");
+          }
+        }
+      }
     } else if (name === "dd") {
       for (const arg of args) {
         if (arg.startsWith("of=")) {
-          targets.add(arg.slice(3));
+          add(arg.slice(3), "write");
         }
       }
+    } else if (name === "git") {
+      const git = gitPaths(args);
+      const saved = cwd;
+
+      if (git.dir !== null) {
+        cwd = classify(git.dir) === "unknown" || (cwd === null && !path.isAbsolute(git.dir)) ? null : path.resolve(cwd || "/", expandHome(git.dir));
+      }
+      git.paths.forEach((file) => add(file, "write"));
+      if (git.fromFile) {
+        found.push({ target: "(pathspec file)", kind: "write", unchecked: "git reads its paths from a file" });
+      }
+      cwd = saved;
+    } else {
+      inlineCode(name, args).forEach((program) => stringLiterals(program).forEach((literal) => add(literal, "inline")));
+    }
+
+    if (segment.after === "open") {
+      stack.push(cwd);
+    } else if (segment.after === "close") {
+      cwd = stack.length ? stack.pop() : cwd;
     }
   }
 
-  return [...targets];
+  return found;
+}
+
+// Compatibility: the plain list of paths a command writes.
+function shellWriteTargets(command) {
+  return [...new Set(shellWrites(command).filter((e) => e.kind === "write" && !e.unchecked).map((e) => e.target))];
 }
 
 // --- path resolution --------------------------------------------------------
@@ -535,17 +787,24 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     ctx.issues.push("harness.json could not be read (default policy applied)");
   }
 
-  for (const target of shellWriteTargets(command)) {
+  for (const entry of shellWrites(command, ctx.cwd)) {
+    if (entry.unchecked) {
+      ctx.issues.push(entry.unchecked);
+      continue;
+    }
+
+    const target = entry.target;
     const found = firstHit(ctx, target, policy, caseInsensitive);
 
     if (found) {
-      return {
-        decision: "deny",
-        reason:
-          `this command writes to ${found.relative}${viaNote(found, target)}, which matches a blocked harness path (${found.hit}). ` +
-          "Shell redirection is not a way around the policy.",
-        path: found.relative,
-      };
+      const what =
+        entry.kind === "alias"
+          ? `this command aliases ${found.relative}${viaNote(found, target)} (a link to it would be a way around the policy), which matches a blocked harness path (${found.hit}).`
+          : entry.kind === "inline"
+            ? `this inline code names ${found.relative}${viaNote(found, target)}, which matches a blocked harness path (${found.hit}). An interpreter is not a way around the policy.`
+            : `this command writes to ${found.relative}${viaNote(found, target)}, which matches a blocked harness path (${found.hit}). Shell redirection is not a way around the policy.`;
+
+      return { decision: "deny", reason: what, path: found.relative };
     }
   }
 
@@ -727,4 +986,4 @@ function evaluate(hook, root) {
   }
 }
 
-module.exports = { guardCommand, decide, evaluate, recordUnchecked, shellWriteTargets, loadPolicy };
+module.exports = { guardCommand, decide, evaluate, recordUnchecked, shellWriteTargets, shellWrites, loadPolicy };

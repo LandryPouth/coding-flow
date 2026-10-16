@@ -36,16 +36,16 @@ keeping a **current directory** that starts at the hook cwd:
 
 ## Acceptance Criteria
 
-- [ ] `cd sub && echo A=1 > ../.env` → deny.
-- [ ] `cd /tmp && echo A=1 > .env` → allow (outside every base).
-- [ ] `(cd sub && touch x) && echo A=1 > .env` → deny (root `.env`).
-- [ ] `cd "$DIR" && echo A=1 > .env` → unchecked.
-- [ ] `ln -s .env x` → deny; `ln -s README.md x` → allow.
-- [ ] `git checkout stash@{0} -- .env` → deny; `git restore --source HEAD~1 src/a.js` → allow.
-- [ ] `python3 -c "open('.env','w').write('A')"` → deny;
+- [x] `cd sub && echo A=1 > ../.env` → deny.
+- [x] `cd /tmp && echo A=1 > .env` → allow (outside every base).
+- [x] `(cd sub && touch x) && echo A=1 > .env` → deny (root `.env`).
+- [x] `cd "$DIR" && echo A=1 > .env` → unchecked.
+- [x] `ln -s .env x` → deny; `ln -s README.md x` → allow.
+- [x] `git checkout stash@{0} -- .env` → deny; `git restore --source HEAD~1 src/a.js` → allow.
+- [x] `python3 -c "open('.env','w').write('A')"` → deny;
       `node -e "console.log(1)"` → allow.
-- [ ] `F=.env; echo A=1 > $F` → unchecked.
-- [ ] All cases already denied before this story stay denied (tee, cp, mv,
+- [x] `F=.env; echo A=1 > $F` → unchecked.
+- [x] All cases already denied before this story stay denied (tee, cp, mv,
       `sed -i`, `dd of=`, `>`/`>>`, `2>`).
 
 ## Edge Cases
@@ -55,3 +55,15 @@ keeping a **current directory** that starts at the hook cwd:
   the redirection target; `2>&1` stays ignored.
 - **Concatenated literals** (`'.e'+'nv'`) are not detected — documented
   limit, not a bug.
+
+## Status: done
+
+## Result
+
+`shellWrites` walks a command segment by segment (quote-, group- and heredoc-aware) with the directory it runs in: `cd`/`pushd`/`popd`, `( … )` restoring it, `time|command|builtin|env|sudo` wrappers. Added: `ln`/`cp -s|-l` aliasing of a protected source (also read from the link's directory), `git checkout|restore` paths (with or without `--`, `git -C`, `--pathspec-from-file` = unchecked), inline `python|node|bun|perl|ruby|deno` string literals, and `unchecked` for `$VAR`/`$(…)`/backtick/`~user` targets or an unknown directory. `shellWriteTargets` stays as a plain-list wrapper.
+
+Deviations: after an unknown `cd`, an **absolute** target is still judged (stricter than "every later target unchecked"), and a known absolute `cd` makes the directory known again.
+
+Known limits (for 05-05): a `cd` is assumed to succeed (`cd nonexistent && …`); a `cd` in a pipeline or backgrounded is ignored; `:/path` pathspec magic; `bash -c`, scripts, `'.e'+'nv'`; an inline literal that merely *names* a protected file (`node -e "console.log('.env')"`) is refused — it cannot be told from a write.
+
+Rollback: revert the commit; `shellWriteTargets` kept its signature.

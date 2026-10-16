@@ -1,0 +1,187 @@
+'use strict';
+
+// The shell shapes an agent uses to write a file are resolved the way the shell
+// would (cd, subshells, links, git, inline code); what cannot be resolved is
+// `unchecked`, never silently allowed.
+
+const { test } = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const { decide, shellWriteTargets } = require('../bin/lib/guard');
+
+function project(t) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-shell-')));
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  fs.mkdirSync(path.join(dir, 'sub'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+const run = (dir, command) => decide({ tool_name: 'Bash', tool_input: { command }, cwd: dir }, dir).decision;
+
+function expectAll(t, expected, commands) {
+  const dir = project(t);
+  for (const command of commands) {
+    assert.equal(run(dir, command), expected, `${expected}: ${command}`);
+  }
+}
+
+test('cd moves where a later relative write lands', (t) => {
+  expectAll(t, 'deny', [
+    'cd sub && echo A=1 > ../.env',
+    'pushd sub; echo A=1 > ../.env',
+    '(cd sub && touch x) && echo A=1 > .env',
+    'cd sub\ncd .. && echo A=1 > .env',
+  ]);
+});
+
+test('a cd that leaves the project makes the same name a different file', (t) => {
+  expectAll(t, 'allow', ['cd /tmp && echo A=1 > .env', '(cd sub && touch x) && echo A=1 > notes.txt']);
+});
+
+test('a cd the guard cannot follow makes later relative writes unchecked', (t) => {
+  expectAll(t, 'unchecked', ['cd "$DIR" && echo A=1 > .env', 'cd - && echo A=1 > .env', 'cd sub; popd; echo A=1 > .env']);
+});
+
+test('an absolute target is still judged after an unknown cd', (t) => {
+  const dir = project(t);
+  assert.equal(run(dir, `cd "$DIR" && echo A=1 > ${path.join(dir, '.env')}`), 'deny');
+});
+
+test('a write target decided by a variable or substitution is unchecked', (t) => {
+  expectAll(t, 'unchecked', ['F=.env; echo A=1 > $F', 'echo A=1 > "$(mktemp)"', 'cp a.txt $DEST', 'echo hi | tee `pwd`/x']);
+});
+
+test('a link whose source is protected is refused; any other link is fine', (t) => {
+  const dir = project(t);
+  assert.equal(run(dir, 'ln -s .env x'), 'deny');
+  assert.match(decide({ tool_name: 'Bash', tool_input: { command: 'ln -s .env x' }, cwd: dir }, dir).reason, /alias/);
+  assert.equal(run(dir, 'ln -s README.md x'), 'allow');
+  assert.equal(run(dir, 'ln -s README.md .env'), 'deny', 'the destination is still checked');
+});
+
+test('git checkout -- and git restore name the files they overwrite', (t) => {
+  const dir = project(t);
+  assert.equal(run(dir, 'git checkout stash@{0} -- .env'), 'deny');
+  assert.equal(run(dir, 'git restore --source HEAD~1 .env'), 'deny');
+  assert.equal(run(dir, 'git restore --source HEAD~1 src/a.js'), 'allow');
+  assert.equal(run(dir, 'git restore --staged .env'), 'allow', 'unstaging touches the index, not the file');
+  assert.equal(run(dir, 'git checkout main'), 'allow');
+});
+
+test('inline interpreter code that names a protected path is refused', (t) => {
+  const dir = project(t);
+  for (const command of [
+    `python3 -c "open('.env','w').write('A')"`,
+    `node -e 'require("fs").writeFileSync(".env","x")'`,
+    `perl -e 'open(F, ">", ".env")'`,
+    `ruby -e "File.write('.env', 'x')"`,
+    `cd sub && python -c "open('../.env','w')"`,
+  ]) {
+    assert.equal(run(dir, command), 'deny', command);
+  }
+  assert.equal(run(dir, 'node -e "console.log(1)"'), 'allow');
+  assert.equal(run(dir, `python3 -c "print('hello')"`), 'allow');
+});
+
+test('what was refused before is still refused', (t) => {
+  expectAll(t, 'deny', [
+    'echo x > .env',
+    'echo x >> .env',
+    'echo x 2> .env',
+    'echo x | tee .env',
+    'cp /tmp/a .env.production',
+    'mv /tmp/a .env',
+    "sed -i 's/a/b/' .env",
+    'dd if=/dev/zero of=id_rsa',
+    "cat > .env <<'EOF'\nA=1\nEOF",
+  ]);
+});
+
+test('quoted text, descriptor duplication and a heredoc are not mistaken for writes', (t) => {
+  expectAll(t, 'allow', [
+    'echo "> .env"',
+    'npm test > /tmp/out.log 2>&1',
+    'echo "a; cd /tmp" && echo hi > notes.txt',
+    'cat <<EOF > notes.txt\nhello\nEOF',
+    'git commit -m "wip"',
+  ]);
+});
+
+test('a group closes after its own last command, not before it', (t) => {
+  expectAll(t, 'deny', [
+    'cd sub; (cd ..; echo A=1 > .env)',
+    '(cd sub); echo A=1 > .env',
+    '( cd sub ) && echo A=1 > .env',
+    'echo a | (cd sub && tee ../.env)',
+    'echo $(cd sub && echo A=1 > ../.env)',
+  ]);
+});
+
+test('a substitution in a cd target makes the directory unknown', (t) => {
+  expectAll(t, 'unchecked', ['cd $(echo sub) && echo a > ../.env', 'cd sub; cd $(echo ..); echo a > .env', 'cd ~someone && echo a > .env']);
+});
+
+test('a cd in a pipeline or after a failed cd does not move the shell', (t) => {
+  expectAll(t, 'deny', ['echo hi | cd sub; echo A=1 > .env', 'cd sub || echo A=1 > .env', 'cd sub & echo A=1 > .env']);
+});
+
+test('a heredoc body is data: its quotes and punctuation neither hide nor invent a command', (t) => {
+  const dir = project(t);
+  assert.equal(run(dir, "cd sub\ncat <<EOF\ndon't (x) | y\nEOF\ncd ..\necho A=1 > .env"), 'deny');
+  assert.equal(run(dir, 'cat <<EOF > notes.txt\necho A=1 > .env\nEOF'), 'allow', 'a redirection inside the body writes nothing');
+});
+
+test('git checkout without --, git -C, and a pathspec file', (t) => {
+  const dir = project(t);
+  assert.equal(run(dir, 'git checkout stash@{0} .env'), 'deny');
+  assert.equal(run(dir, 'git checkout HEAD -- .env'), 'deny');
+  assert.equal(run(dir, 'git -C sub restore ../.env'), 'deny');
+  assert.equal(run(dir, 'git -C sub restore .env'), 'allow', 'sub/.env is not the root .env');
+  assert.equal(run(dir, 'git restore --pathspec-from-file=list'), 'unchecked');
+  assert.equal(run(dir, 'git checkout -b feature'), 'allow');
+});
+
+test('links: a relative source is read from the link\'s directory, cp -s aliases too', (t) => {
+  const dir = project(t);
+  assert.equal(run(dir, 'ln -s ../.env sub/x'), 'deny');
+  assert.equal(run(dir, 'cp -s .env x'), 'deny');
+  assert.equal(run(dir, 'cp -l .env x'), 'deny');
+  assert.equal(run(dir, 'ln -s .env'), 'deny');
+  assert.equal(run(dir, 'cp README.md notes.md'), 'allow');
+});
+
+test('wrappers and flag spellings do not hide the verb', (t) => {
+  const dir = project(t);
+  for (const command of [
+    'time cd sub && echo A=1 > ../.env',
+    'command cd sub && echo A=1 > ../.env',
+    `env python3 -c "open('.env','w')"`,
+    `python3 -Bc "open('.env','w')"`,
+    `node --eval="require('fs').writeFileSync('.env','x')"`,
+  ]) {
+    assert.equal(run(dir, command), 'deny', command);
+  }
+});
+
+test('the hook can start in a subdirectory: targets are judged from there', (t) => {
+  const dir = project(t);
+  const from = (command) => decide({ tool_name: 'Bash', tool_input: { command }, cwd: path.join(dir, 'sub') }, dir);
+  assert.equal(from('echo A=1 > ../.env').decision, 'deny');
+  assert.equal(from('cd .. && echo A=1 > .env').decision, 'deny');
+  assert.equal(from('cd .. && cd sub && echo A=1 > ../.env').decision, 'deny');
+  assert.equal(from('cd "$D" && echo A=1 > .env').reason, 'the working directory depends on shell expansion');
+  assert.equal(from('echo A=1 > $F').reason, 'write target depends on shell expansion');
+  assert.equal(from('cd "$D" && cd /tmp && echo A=1 > x.txt').decision, 'allow', 'an absolute cd makes the directory known again');
+});
+
+test('everyday commands do not cry wolf', (t) => {
+  expectAll(t, 'allow', ['git restore .', 'git checkout -- .', 'git checkout main', 'cp $SRC dest.txt', 'node -e "console.log(1)"', 'cd sub && npm test']);
+});
+
+test('shellWriteTargets keeps its plain-list shape', () => {
+  assert.deepEqual(shellWriteTargets('echo x > a.txt && tee b.txt'), ['a.txt', 'b.txt']);
+});

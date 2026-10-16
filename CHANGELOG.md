@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **The guard follows the shell.** A Bash command is walked segment by segment with
+  the working directory it will really run in: `cd`/`pushd` (and `( … )`, which
+  restores it) move where a later `> ../.env` lands; a `cd` it cannot follow
+  (`cd "$DIR"`, `cd -`, `popd`) makes later relative targets `unchecked`. Also refused:
+  `ln` with a protected source, `git checkout <ref> -- <path>` and `git restore <path>`
+  onto a protected file, and `python -c` / `node -e` / `perl -e` / `ruby -e` / `deno eval`
+  whose inline code names a protected path. A write target built from `$VAR`, `$(…)` or
+  backticks is `unchecked`. Literals only: `'.e'+'nv'` and scripts are still out of reach.
 - **"The guard did not look" is no longer "allowed".** A call the guard cannot judge —
   unparseable input, an internal error, an unknown tool carrying a path, a write with
   no readable target, a path that cannot be resolved, an unreadable `harness.json`, and in OpenCode an unreadable
