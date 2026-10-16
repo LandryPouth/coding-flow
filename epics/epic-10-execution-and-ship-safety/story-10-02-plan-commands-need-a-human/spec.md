@@ -22,13 +22,13 @@ the developer's (or the CI runner's) secrets.
 
 ## Acceptance Criteria
 
-- [ ] Story with `plan.md` commands, no config, `CI=true` → refused, nothing
+- [x] Story with `plan.md` commands, no config, `CI=true` → refused, nothing
       executed (assert a marker file is not created).
-- [ ] Same with `--allow-plan-commands` → runs.
-- [ ] Same in a TTY (simulate via the existing test helper or a flag) → runs
+- [x] Same with `--allow-plan-commands` → runs.
+- [x] Same in a TTY (simulate via the existing test helper or a flag) → runs
       with the notice.
-- [ ] Config commands under `CI=true` → run as today.
-- [ ] `--clean-env` with `MY_API_KEY=x` in the parent → the child does not see
+- [x] Config commands under `CI=true` → run as today.
+- [x] `--clean-env` with `MY_API_KEY=x` in the parent → the child does not see
       it (command prints `$MY_API_KEY`), `PATH` still works.
 
 ## Edge Cases

@@ -131,6 +131,7 @@ Usage:
   ai-flow next [--all] [--json]
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
   ai-flow verify --story path [--json] [--dry-run] [--test-exemption "reason"]
+               [--allow-plan-commands] [--clean-env]
   ai-flow bootstrap --scan [--force] [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
@@ -212,6 +213,8 @@ Flags:
   --title    Title for the pull request ship opens (default: derived from commits).
   --draft    Open ship's pull request as a draft.
   --web      Open the pull request in the browser after ship.
+  --allow-plan-commands  With verify: run commands written in plan.md even when nobody is watching (no TTY, CI, autoland).
+  --clean-env  With verify: run the commands without credential-looking environment variables (SECRET, TOKEN, API_KEY…).
   --no-evidence  Do not attach the latest verify evidence to ship's PR body.
   --no-commit  Do not auto-commit a dirty tree before ship pushes (push existing commits only).
   --all  With ship: commit the whole dirty tree, not only the story's files (the default in a story worktree).

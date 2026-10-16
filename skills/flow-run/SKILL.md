@@ -44,6 +44,12 @@ a phase, not an extra — the story is not finished until it has run. Fix real
 failures; never weaken tests to pass. Re-running an unchanged story replays the
 existing proof instead of re-executing, so calling it again is cheap.
 
+**Commands written in `plan.md` are refused when nobody is watching** (no TTY, `CI=true`,
+an agent-driven run): `verify` reports `REFUSED` and executes nothing. Do not add
+`--allow-plan-commands` on your own — move the commands to `.coding-flow/config.json`
+with the user's agreement, or ask them to allow it. `--clean-env` runs any command
+without credential-looking environment variables.
+
 **A green suite is not the same claim as "this change is covered."** When the work
 is risky, `verify` also checks that the diff contains a test. If behavior changed
 and no test file moved, it reports `NOT PROVEN` — every command passed, and the

@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Commands from `plan.md` need a human.** `verify` refuses to run commands an agent
+  wrote into a story's `plan.md` when nobody is watching (no TTY, `CI=true`,
+  `run`, `worktree land`): the evidence says `refused`, nothing executes, and
+  `--allow-plan-commands` is the explicit way through. In a terminal they run after
+  a notice naming their source; config commands are unchanged. `--clean-env` drops
+  credential-looking variables (`SECRET`, `TOKEN`, `API_KEY`…) from the commands'
+  environment and records their names, never their values. Evidence now carries
+  `unattended`.
 - **`ship` commits the story, not the whole tree.** In a shared checkout the
   automatic commit takes the story's directory, dirty files the branch already
   touched since its base, new files beside those, and the story's run files; the

@@ -1489,7 +1489,38 @@ function detectCacheState(output) {
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 600000;
 
-function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = {}) {
+// Variables a clean-env run drops, by NAME only: the values are never read or recorded.
+const SECRET_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|ACCESS_?KEY)/i;
+
+// The child environment with credential-looking variables removed. PATH, HOME and
+// CI always stay; anything else (NODE_*, npm_*, the rest) stays unless its name
+// looks like a credential — NODE_AUTH_TOKEN is a secret whatever its prefix.
+function cleanEnvironment(source = process.env) {
+  const env = {};
+  const dropped = [];
+
+  for (const [name, value] of Object.entries(source)) {
+    if (["PATH", "HOME", "CI"].includes(name) || !SECRET_ENV_NAME.test(name)) {
+      env[name] = value;
+    } else {
+      dropped.push(name);
+    }
+  }
+
+  return { env, dropped: dropped.sort() };
+}
+
+// Nobody is watching: no terminal on both ends, or a CI runner. Agents run with
+// no TTY, which is the point. AI_FLOW_FORCE_TTY=1 exists for tests only.
+function isUnattended() {
+  if (process.env.AI_FLOW_FORCE_TTY === "1") {
+    return false;
+  }
+
+  return !(process.stdin.isTTY && process.stdout.isTTY) || process.env.CI === "true";
+}
+
+function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env } = {}) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
   const result = spawnSync(command, [], {
@@ -1498,6 +1529,7 @@ function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS 
     encoding: "utf8",
     timeout: timeoutMs,
     maxBuffer: maxOutputBytes,
+    ...(env ? { env } : {}),
   });
 
   const cap = 4000;
@@ -1586,7 +1618,10 @@ function printVerify(evidence, outputPath) {
   const coverage = evidence.coverage || { required: false, ok: true };
   const coverageBlocked = evidence.commandsOk && !coverage.ok;
 
-  if (evidence.commandsFound === 0) {
+  if (evidence.refused) {
+    log(`Harness verify REFUSED — ${evidence.refused}.`);
+    log(`Nothing was executed (${evidence.commandsFound} command(s) found in plan.md).`);
+  } else if (evidence.commandsFound === 0) {
     log("Harness verify: no validation commands found.");
     log("Declare them in plan.md under '## Commands' as a fenced code block, one command per line,");
     log("or in config.validation.commands.");
@@ -2487,18 +2522,46 @@ function freshTestsRequired({ storyDir, config }) {
   return config.freshTestsFor.includes(risk.level);
 }
 
-function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false } = {}) {
+// A command an agent wrote into plan.md runs with the developer's (or the CI
+// runner's) secrets, so it needs a human watching — or an explicit say-so.
+const PLAN_COMMANDS_REFUSAL =
+  "commands from plan.md are not run unattended; declare them in .coding-flow/config.json " +
+  "(with the user's agreement) or pass --allow-plan-commands";
+
+function verifyStoryOnce({
+  story = null,
+  exemption = null,
+  skipCoverage = false,
+  unattended = isUnattended(),
+  allowPlanCommands = false,
+  cleanEnv = false,
+  announce = false,
+} = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
   setDiffBaseRequest({ flagBase: diffBaseRequest.flagBase, story });
   const { config } = readHarnessConfig();
   const freshRequired = freshTestsRequired({ storyDir, config });
   const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
+  const refused = resolution.source === "plan.md" && unattended && !allowPlanCommands ? PLAN_COMMANDS_REFUSAL : null;
+  const cleaned = cleanEnv ? cleanEnvironment() : null;
+
+  if (announce && !refused && resolution.source === "plan.md") {
+    log("Running commands from plan.md (not from .coding-flow/config.json):");
+
+    for (const command of resolution.commands) {
+      log(`  ${command}`);
+    }
+  }
+
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const results = resolution.commands.map((command) => {
-    const item = runValidationCommand(command, commandTimeout(resolution, command));
+  const results = (refused ? [] : resolution.commands).map((command) => {
+    const item = runValidationCommand(command, {
+      ...commandTimeout(resolution, command),
+      ...(cleaned ? { env: cleaned.env } : {}),
+    });
 
     // A full replay is not wrong, but at this risk level it is not proof that the
     // tests ran against this code either.
@@ -2535,7 +2598,9 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     // Recorded so a later verify can recognise this proof as still applicable.
     commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
-    environment: captureEnvironment(),
+    environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
+    unattended,
+    ...(refused ? { refused } : {}),
     commandsOk,
     // Which base every diff-derived signal below was measured from: a surprising
     // coverage or risk verdict is explained by this line before anything else.
@@ -2679,7 +2744,16 @@ function detectStoryScope() {
     : null;
 }
 
-function harnessVerify({ json = false, dryRun = false, story = null, noCache = false, exemption = null, base = null } = {}) {
+function harnessVerify({
+  json = false,
+  dryRun = false,
+  story = null,
+  noCache = false,
+  exemption = null,
+  base = null,
+  allowPlanCommands = false,
+  cleanEnv = false,
+} = {}) {
   if (story !== null) {
     requireStoryScope(story);
   }
@@ -2764,7 +2838,7 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
     }
   }
 
-  const evidence = verifyStoryOnce({ story, exemption });
+  const evidence = verifyStoryOnce({ story, exemption, allowPlanCommands, cleanEnv, announce: !json });
   const outputPath = writeVerifyEvidence(evidence);
 
   if (json) {
@@ -2849,6 +2923,8 @@ function harnessCommandInner({ commandArgs, getFlagValue, flags }) {
       noCache: flags.has("--no-cache"),
       exemption,
       base,
+      allowPlanCommands: flags.has("--allow-plan-commands"),
+      cleanEnv: flags.has("--clean-env"),
     });
   } else {
     fail(`unknown harness command "${subcommand}". Use init, preflight, check, verify, or evidence.`);

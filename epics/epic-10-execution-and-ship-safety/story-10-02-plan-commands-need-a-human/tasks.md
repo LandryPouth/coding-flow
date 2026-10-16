@@ -1,6 +1,17 @@
 # Story 10-02 — Tasks
 
-- [ ] Unattended detection; refusal; `--allow-plan-commands`.
-- [ ] `--clean-env`.
-- [ ] Evidence fields; skill line + `plugin sync` + eval case if routing text changes.
-- [ ] Tests; `npm test`; verify; CHANGELOG.
+- [x] Unattended detection; refusal; `--allow-plan-commands`.
+- [x] `--clean-env`.
+- [x] Evidence fields; skill line + `plugin sync` + eval case if routing text changes.
+- [x] Tests; `npm test`; verify; CHANGELOG.
+
+## Status: done
+
+## Result
+
+- `verify` refuses plan.md commands when unattended (no TTY, `CI=true`, `worktree land`) unless `--allow-plan-commands`; in a terminal it announces them and runs. Evidence records `unattended`, and `refused` when nothing ran.
+- `--clean-env` drops credential-named variables (names recorded, never values).
+- Verify green (`Coverage: evidence`). Red→green shown by disabling the refusal: the two refusal tests fail.
+- Deviation from the spec: `NODE_*`/`npm_*` are kept only if their names do not look like credentials (`NODE_AUTH_TOKEN` is dropped); only `PATH`, `HOME`, `CI` are kept unconditionally.
+- `ai-flow run` uses the default detection (a human in a terminal may run it). Existing tests that exercise plan.md commands now force a TTY through `AI_FLOW_FORCE_TTY=1` (test-only).
+- Unrelated flaky tests seen in the full suite (patch-coverage, command-timeout, upgrade --no-skills): they fail differently on each run.
