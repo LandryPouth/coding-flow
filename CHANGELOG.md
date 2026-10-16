@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode guard: the generated plugin now also exports the OpenCode 2.x entry (`default.setup`) and reads V2 argument names (`path`, `shell`, `patch`), so `.env` writes are refused on 2.x as on 1.x. Run `ai-flow upgrade` to regenerate it.
+
 ## [0.12.1] - 2026-10-16
 
 ### Fixed

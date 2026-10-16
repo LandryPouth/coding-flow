@@ -46,7 +46,7 @@ async function loadHook(dir) {
   const copy = path.join(dir, 'plugin-under-test.mjs');
   fs.copyFileSync(path.join(dir, PLUGIN), copy);
   const mod = await import(pathToFileURL(copy).href);
-  const plugin = await mod.CodingFlowGuard({ directory: dir });
+  const plugin = await mod.default.server({ directory: dir });
   return plugin['tool.execute.before'];
 }
 
@@ -173,8 +173,8 @@ test('the plugin still refuses a blocked write when `node` is not on the PATH', 
   const copy = path.join(dir, 'plugin-under-test.mjs');
   fs.copyFileSync(path.join(dir, PLUGIN), copy);
   const script = [
-    `const { CodingFlowGuard } = await import(${JSON.stringify(pathToFileURL(copy).href)});`,
-    `const before = (await CodingFlowGuard({ directory: ${JSON.stringify(dir)} }))['tool.execute.before'];`,
+    `const { default: plugin } = await import(${JSON.stringify(pathToFileURL(copy).href)});`,
+    `const before = (await plugin.server({ directory: ${JSON.stringify(dir)} }))['tool.execute.before'];`,
     `try { await before({ tool: 'write' }, { args: { filePath: ${JSON.stringify(path.join(dir, '.env'))}, content: 'A=1' } }); console.log('ALLOWED'); }`,
     `catch (e) { console.log('BLOCKED ' + e.message); }`,
   ].join('\n');
@@ -203,4 +203,56 @@ test('a refusal tells the agent not to route around it; the denial log keeps onl
   assert.equal(hook.status, 2);
   assert.match(JSON.parse(hook.stdout).hookSpecificOutput.permissionDecisionReason, /Do not retry this/);
   assert.doesNotMatch(fs.readFileSync(path.join(dir, '.coding-flow', 'denials.jsonl'), 'utf8'), /Do not retry/);
+});
+
+// OpenCode 2.x loads the default export and calls `setup(ctx)`, which registers
+// the hook on `ctx.tool` with V2's argument names (`path`, `shell`, `patch`).
+async function loadV2(dir) {
+  const copy = path.join(dir, 'plugin-v2-under-test.mjs');
+  fs.copyFileSync(path.join(dir, PLUGIN), copy);
+  const mod = await import(pathToFileURL(copy).href);
+  const hooks = [];
+  await mod.default.setup({ location: { directory: dir }, tool: { hook: async (name, fn) => hooks.push({ name, fn }) } });
+  return { mod, hooks };
+}
+
+test('the generated plugin refuses on the OpenCode 2.x entry with V2 argument names', async (t) => {
+  const dir = tmp(t, 'oc-v2');
+  assert.equal(run(dir, ['init', '--opencode']).code, 0);
+  const { mod, hooks } = await loadV2(dir);
+
+  assert.equal(mod.default.id, 'coding-flow.guard');
+  assert.equal(typeof mod.default.server, 'function');
+  assert.deepEqual(hooks.map((h) => h.name), ['execute.before']);
+  const before = hooks[0].fn;
+
+  await assert.rejects(before({ tool: 'write', input: { path: '.env', content: 'A=1' } }), /coding-flow guard: .*blocked harness path/);
+  await assert.rejects(before({ tool: 'edit', input: { path: '.env', oldString: 'a', newString: 'x' } }), /blocked harness path/);
+  await assert.rejects(before({ tool: 'shell', input: { command: 'echo A=1 > .env' } }), /blocked harness path/);
+  await assert.rejects(
+    before({ tool: 'patch', input: { patchText: '*** Begin Patch\n*** Add File: .env\n+A=1\n*** End Patch' } }),
+    /blocked harness path/,
+  );
+  await assert.rejects(before({ tool: 'write', input: { path: 'src/a.js', content: `k = "${SECRET}"` } }), /secret/i);
+
+  // Harmless calls and unknown tools stay open.
+  await before({ tool: 'write', input: { path: 'src/a.js', content: 'const a = 1;\n' } });
+  await before({ tool: 'shell', input: { command: 'npm test' } });
+  await before({ tool: 'mystery', input: { path: '.env' } });
+});
+
+test('setup returns quietly when OpenCode 1.x hands it a context without `tool`', async (t) => {
+  const dir = tmp(t, 'oc-v2-partial');
+  assert.equal(run(dir, ['init', '--opencode']).code, 0);
+  const copy = path.join(dir, 'plugin-partial.mjs');
+  fs.copyFileSync(path.join(dir, PLUGIN), copy);
+  const mod = await import(pathToFileURL(copy).href);
+
+  await mod.default.setup({ options: {} });
+  await mod.default.setup(undefined);
+
+  // The V1 entry keeps working from the same file.
+  assert.equal(mod.CodingFlowGuard, undefined, 'one V1 entry only, or 1.x registers the guard twice');
+  const before = (await mod.default.server({ directory: dir }))['tool.execute.before'];
+  await assert.rejects(before({ tool: 'write' }, { args: { filePath: path.join(dir, '.env'), content: 'A=1' } }), /blocked harness path/);
 });

@@ -30,21 +30,21 @@ removes it without a word and the next `.env` write goes through.
 
 ## Acceptance Criteria
 
-- [ ] Given the generated plugin loaded by a V1-style harness (named/`server`
+- [x] Given the generated plugin loaded by a V1-style harness (named/`server`
       hook called with `{ directory }`), when `write` targets `.env`, then the
       hook throws with the guard's reason.
-- [ ] Given the generated plugin loaded by a V2-style harness (`default.setup`
+- [x] Given the generated plugin loaded by a V2-style harness (`default.setup`
       called with a fake `ctx.tool.hook` recorder), when the recorded hook is
       called with `{ tool: "write", input: { path: ".env", content: "A=1" } }`,
       then it throws.
-- [ ] Given V2 `shell` with `echo A=1 > .env`, then it throws; given
+- [x] Given V2 `shell` with `echo A=1 > .env`, then it throws; given
       `edit` with `{ path: ".env", newString: "x" }`, then it throws; given
       `patch` with an `*** Add File: .env` section, then it throws.
-- [ ] Given `setup` called with `{ options: {} }` (no `tool`), then it returns
+- [x] Given `setup` called with `{ options: {} }` (no `tool`), then it returns
       without throwing and registers nothing.
-- [ ] Given a write to `src/a.js` with harmless content on either shape, then
+- [x] Given a write to `src/a.js` with harmless content on either shape, then
       nothing throws.
-- [ ] Manual, recorded in `tasks.md`: on a real OpenCode 2.x (isolated
+- [x] Manual, recorded in `tasks.md`: on a real OpenCode 2.x (isolated
       `HOME`/`XDG_CONFIG_HOME`), a model asked to write `.env` is refused by
       the write tool and by shell redirection; on OpenCode 1.19 the same.
 
@@ -56,3 +56,5 @@ removes it without a word and the next `.env` write goes through.
   (MARKER), so `upgrade` overwrites them without `--force`.
 - **UX**: the thrown message is unchanged (`coding-flow guard: <reason>`), so
   the model-facing advice stays the same on both majors.
+
+## Status: in-progress

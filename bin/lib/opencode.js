@@ -66,15 +66,15 @@ function patchPayloads(patchText) {
 function toPayloads(tool, args) {
   const a = args || {};
   if (tool === "write") {
-    return [{ tool_name: "Write", tool_input: { file_path: a.filePath, content: a.content } }];
+    return [{ tool_name: "Write", tool_input: { file_path: a.filePath || a.path, content: a.content } }];
   }
   if (tool === "edit") {
-    return [{ tool_name: "Edit", tool_input: { file_path: a.filePath, new_string: a.newString } }];
+    return [{ tool_name: "Edit", tool_input: { file_path: a.filePath || a.path, new_string: a.newString } }];
   }
-  if (tool === "bash") {
+  if (tool === "bash" || tool === "shell") {
     return [{ tool_name: "Bash", tool_input: { command: a.command } }];
   }
-  if (tool === "apply_patch") {
+  if (tool === "apply_patch" || tool === "patch") {
     return patchPayloads(a.patchText);
   }
   return [];
@@ -107,7 +107,9 @@ function spawnGuard(payload) {
   return res.status === 2 ? { decision: "deny", reason: (res.stderr || "").replace(/^coding-flow guard: /, "").trim() } : null;
 }
 
-export const CodingFlowGuard = async ({ directory }) => ({
+// Not a named export: 1.x loads \`default.server\` (checked on 1.19.0), and a
+// module exporting the same plugin twice would be registered twice.
+const CodingFlowGuard = async ({ directory }) => ({
   "tool.execute.before": async (input, output) => {
     for (const payload of toPayloads(input.tool, output.args)) {
       const hook = { ...payload, cwd: directory };
@@ -121,6 +123,19 @@ export const CodingFlowGuard = async ({ directory }) => ({
     }
   },
 });
+
+// OpenCode 2.x loads a default export \`{ id, server, setup }\`; \`setup\` registers
+// the same check on its own hook. 1.x also calls \`setup\`, with a partial
+// context and no \`ctx.tool\`: return early, or 1.x fails the whole plugin.
+async function setup(ctx) {
+  if (!ctx || !ctx.tool || typeof ctx.tool.hook !== "function") return;
+  const directory = (ctx.location && ctx.location.directory) || process.cwd();
+  const hooks = await CodingFlowGuard({ directory });
+  await ctx.tool.hook("execute.before", (event) =>
+    hooks["tool.execute.before"]({ tool: event.tool }, { args: event.input }));
+}
+
+export default { id: "coding-flow.guard", server: CodingFlowGuard, setup };
 `;
 
 function pluginPath(root = cwd) {
