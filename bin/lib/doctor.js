@@ -21,6 +21,8 @@ const {
   readManifest,
   ensureConvenienceFiles,
 } = require("./templates");
+const { execFileSync } = require("child_process");
+
 const { collectHarnessReport } = require("./harness");
 const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
@@ -164,6 +166,36 @@ function checkGeneratedDirectories(warnings) {
       });
     }
   }
+}
+
+function gitQuiet(args) {
+  try {
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+// Without refs/remotes/origin/HEAD the default base silently becomes the literal
+// "main", which is wrong on a repository whose trunk is called anything else (or
+// whose clone predates the ref). Only a remote makes the ref expected at all.
+function checkOriginHead(warnings) {
+  const remotes = gitQuiet(["remote"]);
+
+  if (!remotes || !remotes.split(/\r?\n/).includes("origin")) {
+    return;
+  }
+
+  if (gitQuiet(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"])) {
+    return;
+  }
+
+  warnings.push({
+    code: "origin_head_missing",
+    message:
+      "refs/remotes/origin/HEAD is not set, so verify measures against a guessed \"main\" — " +
+      "run `git remote set-head origin -a`",
+  });
 }
 
 // The epic/story number is picked from a local, unsynced scan of `epics/` at
@@ -718,6 +750,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkBrownfieldOnboarding(warnings);
   checkOversizedEpics(warnings);
   checkGeneratedDirectories(warnings);
+  checkOriginHead(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);

@@ -13,7 +13,7 @@ const { cwd } = require("./context");
 const { readConfig } = require("./config");
 const { captureIdentity, currentTreeToken } = require("./identity");
 const { currentBranch } = require("./policy");
-const { resolveDiffBase } = require("./diff-base");
+const { resolveDiffBase, describeScope } = require("./diff-base");
 const {
   loadCoverageReports,
   reportCandidates,
@@ -1665,6 +1665,18 @@ function printVerify(evidence, outputPath) {
   // on the line above the results instead of only inside the JSON.
   if (evidence.commandsFound > 0) {
     log(`Commands from: ${evidence.commandSource}`);
+  }
+
+  // Which diff the coverage and risk verdicts above were measured on. "82 test
+  // files" means one thing against the epic branch and another against main.
+  const scopeLine = describeScope(
+    evidence.diffBase,
+    // A skipped coverage gate (low risk) never listed the files; "0 files" would lie.
+    coverage.required !== false && Array.isArray(coverage.changedFiles) ? coverage.changedFiles.length : null,
+  );
+
+  if (scopeLine) {
+    log(scopeLine);
   }
 
   for (const item of evidence.results) {

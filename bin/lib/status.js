@@ -10,7 +10,7 @@ const path = require("path");
 const { cwd } = require("./context");
 const { log, toPortable } = require("./util");
 const { collectWorktrees, realDirtyLines } = require("./worktree");
-const { latestVerifyByStoryDir, latestReviewByStoryDir, isStale } = require("./audit");
+const { latestVerifyByStoryDir, latestReviewByStoryDir, latestVerifyScopeByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
 const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
@@ -185,6 +185,10 @@ function buildStatusModel(config) {
       const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
       const storyRoot = wtEntry ? wtEntry.fullPath : cwd;
       const review = computeReviewStatus(storyRoot, story.path);
+      const proof = latestVerifyScopeByStoryDir(storyRoot).get(story.path);
+      // Only a scope other than "story" is worth a word: it is the one that
+      // makes a coverage verdict mean something different.
+      const scope = proof && proof.scope && proof.scope !== "story" ? proof.scope : null;
       // Only computed for a story claiming to be finished — the same subset
       // `chainIsFinished`/`next`'s tier-4 check actually gate on; a
       // planned/in-progress/blocked story can't be landed regardless, so
@@ -197,6 +201,7 @@ function buildStatusModel(config) {
         worktree: wtEntry ? wtEntry.path : null,
         ...(wtEntry ? { landReady } : {}),
         review,
+        ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
       };
     }),
@@ -268,7 +273,8 @@ function status({ json = false } = {}) {
             : story.review !== "none"
               ? `  review: ${story.review}`
               : "";
-        log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}${reviewSuffix}`);
+        const scopeSuffix = story.scope ? `  coverage ${story.coverage || "?"} (${story.scope} scope)` : "";
+        log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}${reviewSuffix}${scopeSuffix}`);
       }
       log("");
     }

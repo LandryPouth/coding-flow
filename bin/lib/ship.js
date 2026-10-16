@@ -21,6 +21,7 @@ const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { collectHarnessReport } = require("./harness");
 const { coverageTier } = require("./coverage");
+const { describeScope } = require("./diff-base");
 const { latestVerifyByStoryDir } = require("./audit");
 
 // Idempotent markers: the evidence section is replaced between them, never the
@@ -208,6 +209,14 @@ function buildEvidenceBlock(evidence) {
     } else if (tier === "missing") {
       lines.push(`**Coverage:** ❌ not proven — ${reason}`);
     }
+  }
+
+  const scopeLine = describeScope(
+    evidence.diffBase,
+    coverage && coverage.required !== false && Array.isArray(coverage.changedFiles) ? coverage.changedFiles.length : null,
+  );
+  if (scopeLine) {
+    lines.push(`**${scopeLine.replace(/^Scope: /, "Scope:** ")}`);
   }
 
   lines.push("");

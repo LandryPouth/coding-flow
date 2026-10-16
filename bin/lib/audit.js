@@ -14,6 +14,7 @@ const crypto = require("crypto");
 const { cwd } = require("./context");
 const { log, normalizePortable, readJson } = require("./util");
 const { currentTreeToken } = require("./identity");
+const { coverageTier } = require("./coverage");
 
 function runsDir(root) {
   return path.join(root, ".coding-flow", "runs");
@@ -381,6 +382,42 @@ function latestReviewByStoryDir(root) {
   return byDir;
 }
 
+// Latest VERIFY's coverage tier and diff scope per story directory, read from
+// the run files (the ledger keeps a summary without them). `status` shows the
+// scope only when it is not "story", so a verdict measured on an epic branch
+// never reads like a per-story one.
+function latestVerifyScopeByStoryDir(root) {
+  const byDir = new Map();
+  const dir = runsDir(root);
+
+  if (!fs.existsSync(dir)) {
+    return byDir;
+  }
+
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!name.endsWith("-verify.json")) {
+      continue;
+    }
+
+    const data = readJson(path.join(dir, name), null);
+    if (!data || !data.story) {
+      continue;
+    }
+
+    const key = data.story.endsWith(".md") ? data.story.split("/").slice(0, -1).join("/") : data.story;
+    const prev = byDir.get(key);
+    if (!prev || (data.generatedAt || "") > prev.generatedAt) {
+      byDir.set(key, {
+        generatedAt: data.generatedAt || "",
+        tier: data.coverage ? data.coverage.tier || coverageTier(data.coverage) : null,
+        scope: data.diffBase ? data.diffBase.scope || null : null,
+      });
+    }
+  }
+
+  return byDir;
+}
+
 function buildAuditMarkdown(entries) {
   const lines = [
     "# Audit ledger",
@@ -545,6 +582,7 @@ module.exports = {
   isStale,
   latestVerifyByStoryDir,
   latestReviewByStoryDir,
+  latestVerifyScopeByStoryDir,
   buildAuditMarkdown,
   entryFromRunFile,
   collectDecisions,

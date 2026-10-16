@@ -60,6 +60,13 @@ All notable changes to this project are documented here. The format is based on
   `ignoredPaths` when the last verify counted more than 20 files under a `generated/`,
   `__generated__/` or `gen/` directory.
 
+- **The scope of a verdict is shown.** `verify` prints `Scope: story — diff against
+  feature/EPIC-32-geo (fork point), 12 files`, the PR evidence block carries the same
+  line, and `status` adds `coverage verified (epic scope)` next to a story whose last
+  proof was not measured on its own diff. `doctor` warns when a remote exists but
+  `refs/remotes/origin/HEAD` does not (the default base was then a guessed `main`):
+  run `git remote set-head origin -a`.
+
 ## [0.12.1] - 2026-10-16
 
 ### Fixed

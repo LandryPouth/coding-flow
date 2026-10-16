@@ -163,4 +163,26 @@ function resolveDiffBase(cwd, { story = null, flagBase = null } = {}) {
   return found("none", { ref: null, mergeBase: null }, extra);
 }
 
-module.exports = { resolveDiffBase };
+const SOURCE_LABEL = {
+  flag: "--base",
+  config: "baseBranch",
+  "fork-point": "fork point",
+  nearest: "nearest branch",
+  default: "default branch",
+};
+
+// One sentence for verify, ship and status, so the three never word a scope
+// differently: "Scope: story — diff against feature/EPIC-32-geo (fork point), 12 files".
+function describeScope(diffBase, fileCount = null) {
+  if (!diffBase) return null;
+
+  const files = Number.isInteger(fileCount) ? `, ${fileCount} file${fileCount === 1 ? "" : "s"}` : "";
+
+  if (!diffBase.ref) {
+    return `Scope: ${diffBase.scope || "working-tree"} — no base to compare against, working tree only${files}`;
+  }
+
+  return `Scope: ${diffBase.scope} — diff against ${diffBase.ref} (${SOURCE_LABEL[diffBase.source] || diffBase.source})${files}`;
+}
+
+module.exports = { resolveDiffBase, describeScope };

@@ -9,14 +9,18 @@ feature/EPIC-32-geo".
 
 ## Acceptance Criteria
 
-- [ ] `ai-flow verify` text output prints
+- [x] `ai-flow verify` text output prints
       `Scope: story — diff against feature/EPIC-32-geo (fork point), 12 files`.
-- [ ] `ai-flow status` shows the scope next to the coverage state when it is
+- [x] `ai-flow status` shows the scope next to the coverage state when it is
       not `story` (`coverage ok (epic scope)`).
-- [ ] `ai-flow ship` PR body's evidence section includes the scope line.
-- [ ] `ai-flow doctor` warns when `refs/remotes/origin/HEAD` is missing and a
+- [x] `ai-flow ship` PR body's evidence section includes the scope line.
+- [x] `ai-flow doctor` warns when `refs/remotes/origin/HEAD` is missing and a
       remote exists: `run \`git remote set-head origin -a\``. (bethl has no
       `origin/HEAD`; the default base silently became the literal `"main"`.)
-- [ ] `npm test` green.
+- [x] `npm test` green.
 
-## Status: planned
+## Result
+
+`describeScope` (diff-base.js) words the line once for `verify`, `ship` and `status`; `doctor` gains `origin_head_missing`. Rollback: `git revert`.
+
+## Status: done
