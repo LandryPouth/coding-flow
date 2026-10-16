@@ -185,3 +185,16 @@ test('everyday commands do not cry wolf', (t) => {
 test('shellWriteTargets keeps its plain-list shape', () => {
   assert.deepEqual(shellWriteTargets('echo x > a.txt && tee b.txt'), ['a.txt', 'b.txt']);
 });
+
+test('a cd behind a keyword or a brace group still moves the directory', (t) => {
+  expectAll(t, 'deny', [
+    '{ cd sub; echo A=1 > ../.env; }',
+    'for d in x; do cd sub; echo A=1 > ../.env; done',
+    'if true; then cd sub; fi; echo A=1 > ../.env',
+  ]);
+});
+
+test('a redirection needs no spaces, and clobber / both-streams forms write too', (t) => {
+  expectAll(t, 'deny', ['echo A=1>.env', 'cd sub && echo A=1>../.env', 'echo A=1 >| .env', 'echo A=1 &> .env', 'echo A=1 >& .env', 'echo A=1 >>.env']);
+  expectAll(t, 'allow', ['npm test 2>&1', 'echo hi >&2', 'echo hi 1>&2', 'npm test >out.log 2>&1', 'echo a>b.txt']);
+});

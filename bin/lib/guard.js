@@ -265,6 +265,8 @@ function splitSegments(command) {
       flush("close");
     } else if (ch === ";") {
       flush("seq");
+    } else if (ch === "|" && command[i - 1] === ">") {
+      text += ch; // `>|` clobber is a redirection, not a pipe
     } else if ((ch === "&" || ch === "|") && command[i + 1] === ch) {
       i += 1;
       flush(ch === "&" ? "and" : "or");
@@ -401,9 +403,16 @@ function shellWrites(command, startCwd = process.cwd()) {
 
   // Redirections: `> file`, `>> file`, `2> file`. `2>&1` and `>&2` duplicate a
   // descriptor and write to no path — the (?!&) drops them.
-  const redirection = /(?:^|[\s;&|(])\d?>{1,2}\s*(?!&)("[^"]+"|'[^']+'|[^\s;&|<>()]+)/g;
+  // Spaces around the operator are optional (`echo a>.env`), and `>|` (clobber) and
+  // `&>` (both streams) write too; `>&file` is a write, `>&2` and `2>&1` are not.
+  const TARGET = `("[^"]+"|'[^']+'|[^\\s;&|<>()]+)`;
+  const redirections = [
+    new RegExp(`(?<![<>&\\d])\\d?(?:&>>?|>>|>\\|?)(?!&)\\s*${TARGET}`, "g"),
+    new RegExp(`(?<![<>&\\d])\\d?>&\\s*(?![\\d-])${TARGET}`, "g"),
+  ];
 
-  const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice"]);
+  // Wrappers and compound-command keywords that sit in front of the real verb.
+  const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
   let beforeCd = null;
 
   for (const segment of splitSegments(command)) {
@@ -413,10 +422,10 @@ function shellWrites(command, startCwd = process.cwd()) {
     }
     beforeCd = null;
 
-    let match;
-    redirection.lastIndex = 0;
-    while ((match = redirection.exec(segment.text)) !== null) {
-      add(unquote(match[1]), "write");
+    for (const redirection of redirections) {
+      for (const match of segment.text.matchAll(redirection)) {
+        add(unquote(match[1]), "write");
+      }
     }
 
     const tokens = tokenize(segment.text.trim());
