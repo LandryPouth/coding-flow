@@ -839,6 +839,11 @@ test('worktree land does not steal a lock aged past the fixed stale floor when t
   const holdMs = 800;
   const backdateMs = 16 * 60 * 1000;
   const holderPath = path.join(base, 'lock-holder.js');
+  // Written by the holder just before it lets go. Whether it exists when `land`
+  // returns says whether land waited — measured on Date.now() deltas this was
+  // flaky: the WSL wall clock steps backwards, and a busy machine can delay the
+  // test between the holder taking the lock and the stopwatch starting.
+  const releasedPath = path.join(base, 'lock-released');
   fs.writeFileSync(
     holderPath,
     [
@@ -853,6 +858,7 @@ test('worktree land does not steal a lock aged past the fixed stale floor when t
       'fs.utimesSync(lockPath, old, old);',
       'const buf = new Int32Array(new SharedArrayBuffer(4));',
       'Atomics.wait(buf, 0, 0, holdMs);',
+      `fs.writeFileSync(${JSON.stringify(releasedPath)}, 'released');`,
       'fs.closeSync(fd);',
       'fs.rmSync(lockPath, { force: true });',
     ].join('\n'),
@@ -876,14 +882,12 @@ test('worktree land does not steal a lock aged past the fixed stale floor when t
     Atomics.wait(pollBuf, 0, 0, 10);
   }
 
-  const before = Date.now();
   const { code, output } = run(repo, ['land', 'story-01']);
-  const elapsed = Date.now() - before;
 
   assert.equal(code, 0, `land must still succeed once the held lock is released: ${output}`);
   assert.ok(
-    elapsed >= holdMs - 50,
+    fs.existsSync(releasedPath),
     'land must have waited for the actual release rather than stealing the lock the instant it saw an mtime ' +
-      `older than the fixed 15-minute floor (waited only ${elapsed}ms, held ${holdMs}ms)`,
+      'older than the fixed 15-minute floor (it returned while the holder still held it)',
   );
 });
