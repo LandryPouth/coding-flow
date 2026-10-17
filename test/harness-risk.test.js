@@ -16,7 +16,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { scoreDiffRisk, readHarnessConfig, changedFilesForCoverage } = require('../bin/lib/harness');
+const { scoreDiffRisk } = require('../bin/lib/risk');
+const { readHarnessConfig } = require('../bin/lib/harness-config');
+const { changedFilesForCoverage } = require('../bin/lib/diff-scope');
 
 function sh(cwd, cmd, args) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
