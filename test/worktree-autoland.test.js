@@ -270,8 +270,8 @@ test('auto-land: last story of a worktree\'d chain lands and removes the worktre
   writeVerify(worktreeB, `${epicPath}/story-x-03-c`);
   markStoryDone(worktreeB, epicPath, 'story-x-03-c');
 
-  const { code, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
-  assert.equal(code, 0, 'a successful land must exit 0');
+  const { code, result, output } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
+  assert.equal(code, 0, `a successful land must exit 0:\n${output}`);
   assert.equal(result.landed, true);
   assert.equal(result.chainId, 's2');
 
