@@ -11,8 +11,10 @@ serve is not.
 
 - [x] The protocol is run as written (or its deviations are listed first),
       on at least the task count it specifies, for both arms.
-- [x] Recorded per task: first-try success, files forgotten, time, tokens,
-      escaped defects found afterwards.
+- [ ] Recorded per task: first-try success, files forgotten, time, tokens,
+      escaped defects found afterwards. *(Partial: first-try, time, tokens and
+      cost recorded; files forgotten and escaped defects were not, and the raw
+      runs are not committed — listed as deviations in the experiment document.)*
 - [x] Results written into the experiment document, including the arm that
       lost and anything that contradicts the hypothesis.
 - [x] One row in `docs/DOGFOODING.md` if the result changes what to build
@@ -29,4 +31,4 @@ hypothesis is not supported; deviations and the losing arm are listed in
 
 Documentation and measurement only; no product code or test file changes.
 
-## Status: done
+## Status: in-review

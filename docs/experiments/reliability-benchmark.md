@@ -84,8 +84,9 @@ property of the tool.
 Run 2026-10-17. Model `claude-sonnet-5-5` in both arms, coding-flow 0.12.1 (plugin)
 with `ai-flow init` from this checkout, `claude` 2.1.302, headless
 (`-p --output-format json --permission-mode acceptEdits`). **N = 1 per cell.**
-Raw per-run JSON and acceptance output were not committed; the figures below are
-read off them. Arm B = `/flow-plan` then `/flow-run` (two sessions, summed).
+Raw per-run JSON and acceptance output were not committed, so these figures cannot be
+re-derived from this repository; they are read off the runs as recorded. Totals are
+summed from unrounded values, so they can differ by a second or a cent from the rows. Arm B = `/flow-plan` then `/flow-run` (two sessions, summed).
 
 | Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cost | Time |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -100,7 +101,7 @@ read off them. Arm B = `/flow-plan` then `/flow-run` (two sessions, summed).
 | 5 Cross-module | vanilla | yes | 0 | 12/1630 | 183,478 | $0.17 | 40s |
 | 5 Cross-module | coding-flow | no | 1 | 46/10645 | 1,032,980 | $0.78 | 134s |
 | **Total** | vanilla | 4/5 | 1 | 56/11,986 | 792,884 | $0.97 | 217s |
-| **Total** | coding-flow | 3/5 | 3 | 150/47,454 | 3,258,989 | $3.36 | 547s |
+| **Total** | coding-flow | 3/5 | 2 | 150/47,454 | 3,258,989 | $3.36 | 547s |
 
 All ten runs ended green on acceptance and regression after at most one re-prompt.
 
@@ -127,10 +128,13 @@ the time. The arm that lost is coding-flow, on tasks 2 and 5.
   role check is not added, so behaviour is unchanged) and removed the router's copy;
   it ended at 1 duplicated occurrence against a target of 2. Neither arm asked about
   the `rejectExpense` inconsistency.
-- Nothing here shows coding-flow catching a defect vanilla shipped.
+- Nothing here shows coding-flow catching a defect vanilla shipped. Escaped defects
+  found after the runs were not tracked separately: this is a gap against the protocol.
 
 ### Deviations from the protocol and limits
 
+- **Not recorded: files forgotten and escaped defects.** The protocol asks for both;
+  neither was graded beyond the acceptance command, and the raw runs are not committed.
 - **N = 1 per cell, non-deterministic model.** A single re-prompt on one task is the
   whole difference in first-pass counts; do not read 3/5 against 4/5 as a rate.
 - **The grader was not blind.** The same person set up, ran and graded both arms.

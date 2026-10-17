@@ -242,7 +242,7 @@ The harness turns *advisory* guardrails into *executed* ones, attached to an ide
 
 **Where this actually pays off** (see *Who this is for* above): a batch `ai-flow run` that verifies several stories and hands you one proof report, a CI gate that decides without you watching, a teammate reviewing a PR who wasn't there when it ran. An executed, provenance-stamped result is the only thing that survives the handover.
 
-We are validating this claim honestly with a small vanilla-vs-coding-flow benchmark on five escalating tasks — methodology and (pending) numbers in [`docs/experiments/reliability-benchmark.md`](docs/experiments/reliability-benchmark.md).
+We are validating this claim honestly with a small vanilla-vs-coding-flow benchmark on five escalating tasks — methodology and first results (one run per cell: indicative, not a rate) in [`docs/experiments/reliability-benchmark.md`](docs/experiments/reliability-benchmark.md).
 
 ### What the guard does not see
 

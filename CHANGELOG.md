@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Reliability benchmark, first run** (story 11-03). Ten headless sessions (five tasks, both arms, `claude-sonnet-5-5`, N=1): Coding Flow 3/5 first-pass against 4/5 for the agent alone, at ~3.5× the cost. The hypothesis is not supported by this run; the losing arm, the deviations and the gaps (files forgotten, escaped defects, raw runs not committed) are in `docs/experiments/reliability-benchmark.md`.
 - **README: what the guard does not see** (story 05-05). One short section lists what stays out of reach (scripts and compiled programs, computed paths, downloads, TOCTOU, writes by validation tools, nested-project policy quirks) and the answer when the boundary must hold: `mode: strict` plus OS-level isolation. Every case from the guard measurement is now one row of `test/guard-adversarial.test.js`, and each documented limit fails the suite if the README stops describing it.
 - **`npm run release`** (this repository): after the maintainer's own `npm publish`, tags `vx.y.z`,
   pushes it and creates the GitHub release from the CHANGELOG section. Idempotent, `--dry-run`
