@@ -579,9 +579,14 @@ function shellWrites(command, startCwd = process.cwd()) {
         const where = files.length >= 2 ? path.dirname(files[files.length - 1]) : ".";
         for (const source of sources) {
           add(source, "alias");
-          // A relative symlink source is read from the link's own directory.
+          // A relative symlink source is read from the link's own directory — its
+          // real one: under `a -> sub/deep`, `ln -s ../../.env a/x` aliases <root>/.env.
           if (where !== "." && classify(source) === "path" && !path.isAbsolute(expandHome(source))) {
             add(path.join(where, source), "alias");
+            if (cwd !== null && classify(reduceWord(where)) === "path") {
+              const linkDir = realPathOf(path.resolve(cwd, expandHome(reduceWord(where))));
+              add(path.resolve(linkDir, reduceWord(source)), "alias");
+            }
           }
         }
       }
@@ -687,8 +692,12 @@ const gitMemo = new Map();
 
 // A timed-out or killed git is not an answer: it is not memoised, so one slow
 // call under load does not make a long-lived process (the OpenCode plugin) treat
-// the repository as "no repo" for the rest of the session.
-function git(cwd, args) {
+// the repository as "no repo" for the rest of the session. Nor is it a silent
+// "no repo" for the call that timed out: it is recorded in `issues`, so a
+// decision made without the repository bound is `unchecked`, not `allow`.
+const GIT_TIMEOUT = "git did not answer in time (the project root was not checked)";
+
+function git(cwd, args, issues = null) {
   const key = `${cwd}\0${args.join(" ")}`;
   if (gitMemo.has(key)) {
     return gitMemo.get(key);
@@ -703,6 +712,9 @@ function git(cwd, args) {
     }).trim();
   } catch (err) {
     if (err && (err.signal || err.code === "ETIMEDOUT")) {
+      if (issues && !issues.includes(GIT_TIMEOUT)) {
+        issues.push(GIT_TIMEOUT);
+      }
       return null;
     }
   }
@@ -716,9 +728,9 @@ function git(cwd, args) {
 // The bound is checked on real paths: git prints the toplevel resolved (and with
 // `/` on Windows), so comparing it to a cwd reached through a symlink, or to a
 // `C:\…` path, never matches and the walk would climb past the repository.
-function projectRoot(cwd) {
+function projectRoot(cwd, issues = null) {
   const start = path.resolve(cwd);
-  const gitTop = git(start, ["rev-parse", "--show-toplevel"]);
+  const gitTop = git(start, ["rev-parse", "--show-toplevel"], issues);
   const top = gitTop ? path.resolve(gitTop) : null;
   const realTop = top ? realPathOf(top) : null;
   let found = null;
@@ -746,7 +758,7 @@ function projectRoot(cwd) {
 }
 
 // When `root` is a linked worktree (its `.git` is a file), the primary checkout.
-function primaryCheckout(root) {
+function primaryCheckout(root, issues = null) {
   try {
     if (!fs.statSync(path.join(root, ".git")).isFile()) {
       return null;
@@ -755,7 +767,7 @@ function primaryCheckout(root) {
     return null;
   }
 
-  const common = git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  const common = git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"], issues);
 
   return common && path.basename(common) === ".git" ? path.dirname(path.resolve(common)) : null;
 }
@@ -763,6 +775,8 @@ function primaryCheckout(root) {
 // realpath of the target, or of its nearest existing ancestor plus the segments
 // that do not exist yet (a file about to be created). A dangling link is followed
 // to where it WOULD create the file — `alias -> .env` with no `.env` yet is `.env`.
+// The link's text is read from the link's REAL directory, as the kernel does: under
+// `a -> sub/deep`, `a/x -> ../../.env` is `<root>/.env`, not `<root>/../.env`.
 // A loop falls back to the lexical path: never throws.
 function realPathOf(file, depth = 0, issues = null) {
   const rest = [];
@@ -787,7 +801,7 @@ function realPathOf(file, depth = 0, issues = null) {
             }
             return file;
           }
-          const target = path.resolve(path.dirname(dir), fs.readlinkSync(dir));
+          const target = path.resolve(realPathOf(path.dirname(dir), depth + 1, issues), fs.readlinkSync(dir));
           return path.join(realPathOf(target, depth + 1, issues), ...rest);
         }
       } catch {
@@ -848,8 +862,9 @@ function hookCwd(hook, fallback) {
 
 function context(hook, root) {
   const cwd = hookCwd(hook, root);
-  const top = projectRoot(cwd);
-  return { cwd: path.resolve(cwd), root: top, realRoot: realPathOf(top), primary: primaryCheckout(top), issues: [] };
+  const issues = [];
+  const top = projectRoot(cwd, issues);
+  return { cwd: path.resolve(cwd), root: top, realRoot: realPathOf(top), primary: primaryCheckout(top, issues), issues };
 }
 
 // Whether writing to this path is refused by policy. Returns the matched pattern,

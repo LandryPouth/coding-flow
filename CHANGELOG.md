@@ -31,6 +31,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Guard: a link under a linked directory is read from its real directory** (story 05-01 review). Under `a -> sub/deep`, `ln -s ../../.env a/x` and a write to a dangling `a/x -> ../../.env` reach `<root>/.env` and are refused; `..` used to be collapsed lexically and judged them outside the project. A git lookup that times out now makes the decision `unchecked` instead of an `allow` judged without the repository bound.
 - **Guard: the project root stays inside the repository** (story 05-01 review). From a cwd reached through a symlink, or on Windows (git prints `C:/…`), the search for `.coding-flow/` climbed past the git toplevel and an outer `.coding-flow/` became the root, so `.env` was judged as `proj/.env` and allowed. The bound is now checked on real paths. Also: the secret-scan allowlist applies only when every name a target resolves to is allowlisted (`docs/notes.md -> ../src/app.js` is scanned like `src/`), and a timed-out git lookup is retried instead of memoised as "no repository" for the life of the OpenCode plugin.
 - **Guard: `ed`, `ex`, `patch` FILE are writes** (story 05-03 review). `patch` without a FILE (paths read from the diff) and `find -exec` stay unread (known limits).
 - **Guard: quote-spliced and glob targets** (story 05-03 review). `echo A > .e""nv`, `.e''nv` and `.e\nv` are the file the shell opens and are judged as `.env`; an unquoted glob or brace list in a write target (`cp x .e*`, `> .en{v,}`) is `unchecked` instead of allowed.

@@ -65,6 +65,21 @@ test('a nested .coding-flow cannot swap in a weaker policy', (t) => {
   assert.equal(guard(sub, write('../.env')).code, 2);
 });
 
+test('a link under a linked directory is read from its real directory', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+
+  // Creating the link through `a/` aliases <root>/.env, not <root>/../.env.
+  assert.equal(guard(dir, bash('ln -s ../../.env a/x')).code, 2);
+
+  // The link already there and dangling (no .env yet): the write reaches <root>/.env.
+  fs.symlinkSync(path.join('..', '..', '.env'), path.join(dir, 'sub', 'deep', 'x'));
+  assert.equal(guard(dir, write('a/x')).code, 2);
+  assert.equal(guard(dir, bash('echo A=1 > a/x')).code, 2);
+  assert.equal(fs.existsSync(path.join(dir, '.env')), false);
+});
+
 test('a first path segment that merely starts with .. is not outside the root', (t) => {
   const dir = tmp(t);
   assert.equal(guard(dir, write('..foo/server.pem')).code, 2);
@@ -206,7 +221,10 @@ test('a timed-out git lookup is retried, not remembered as "no repository"', { s
   t.after(() => { process.env.PATH = savedPath; });
 
   const hook = { cwd: worktree, ...write(path.join(primary, '.env')) };
-  decide(hook, worktree);
+  // The call that timed out could not map the primary checkout: it says so.
+  const first = decide(hook, worktree);
   assert.ok(fs.existsSync(marker), 'the first lookup went through the hanging git');
+  assert.equal(first.decision, 'unchecked');
+  assert.match(first.reason, /git did not answer in time/);
   assert.equal(decide(hook, worktree).decision, 'deny');
 });

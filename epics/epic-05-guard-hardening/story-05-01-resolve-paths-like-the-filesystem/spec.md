@@ -82,6 +82,12 @@ path with a lexical cwd (symlinked cwd, Windows `C:/…`), letting an outer
 `.coding-flow/` become the root; the heuristic secret allowlist judged only the
 name given; a git timeout was memoised as "no repo". All three fixed and tested.
 
+A third review (2026-10-17) found a link's `..` collapsed lexically under a
+symlinked directory (`a -> sub/deep`, `a/x -> ../../.env` judged outside the
+root, in `realPathOf` and in the `ln` alias check), and a git timeout silently
+dropping the repository bound for that call. Both fixed and tested; the timeout
+now makes the decision `unchecked`.
+
 ### Rollback Notes
 
 `git revert` the commit; no data or config migration.
