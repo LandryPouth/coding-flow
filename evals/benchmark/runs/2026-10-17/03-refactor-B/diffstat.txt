@@ -1,0 +1,22 @@
+ package.json           |  2 +-
+ spec/approvals.spec.js | 30 ++++++++++++++++++++++++++++++
+ spec/expenses.spec.js  | 17 +++++++++++++++++
+ src/approvals.js       | 18 +++---------------
+ src/expenses.js        | 12 ++----------
+ src/routes.js          | 11 -----------
+ src/users.js           | 22 +++++++++++++++++++++-
+ 7 files changed, 74 insertions(+), 38 deletions(-)
+ M package.json
+ M spec/approvals.spec.js
+ M spec/expenses.spec.js
+ M src/approvals.js
+ M src/expenses.js
+ M src/routes.js
+ M src/users.js
+?? .coding-flow/guard-unchecked.jsonl
+?? .coding-flow/runs/2026-10-17T22-47-51-160Z-verify.json
+?? .gitignore
+?? epics/epic-01-actor-check/
+?? spec/accept.spec.js
+?? spec/routes.spec.js
+?? spec/users.spec.js

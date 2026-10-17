@@ -1,0 +1,126 @@
+diff --git a/spec/report.spec.js b/spec/report.spec.js
+index 1097d87..248ec9e 100644
+--- a/spec/report.spec.js
++++ b/spec/report.spec.js
+@@ -12,6 +12,9 @@ function app() {
+   return { store, reporter, router: createRouter(store, reporter) };
+ }
+ 
++const approve = (router, id) => router['POST /approvals']({ actorId: 'clara', expenseId: id });
++const reject = (router, id) => router['POST /rejections']({ actorId: 'clara', expenseId: id, reason: 'no receipt' });
++
+ const file = (router, over = {}) =>
+   router['POST /expenses']({
+     actorId: 'alice',
+@@ -24,9 +27,13 @@ const file = (router, over = {}) =>
+ 
+ test('totals are grouped by category', () => {
+   const { router } = app();
+-  file(router, { amount: '10.00', category: 'travel' });
+-  file(router, { amount: '25.50', category: 'travel' });
+-  file(router, { amount: '9.99', category: 'software' });
++  for (const over of [
++    { amount: '10.00', category: 'travel' },
++    { amount: '25.50', category: 'travel' },
++    { amount: '9.99', category: 'software' },
++  ]) {
++    approve(router, file(router, over).body.id);
++  }
+ 
+   assert.deepEqual(router['GET /report']({}).body, { travel: 3550, software: 999 });
+ });
+@@ -36,14 +43,46 @@ test('editing an amount is reflected in the totals', () => {
+   const created = file(router, { amount: '10.00', category: 'travel' }).body;
+ 
+   router['PATCH /expenses']({ id: created.id, amount: '40.00' });
++  approve(router, created.id);
+ 
+   assert.deepEqual(router['GET /report']({}).body, { travel: 4000 });
+ });
+ 
+ test('the summary renders each category once, sorted', () => {
+   const { reporter, router } = app();
+-  file(router, { amount: '10.00', category: 'travel' });
+-  file(router, { amount: '5.00', category: 'meals' });
++  approve(router, file(router, { amount: '10.00', category: 'travel' }).body.id);
++  approve(router, file(router, { amount: '5.00', category: 'meals' }).body.id);
+ 
+   assert.equal(reporter.summary(), 'meals: $5.00\ntravel: $10.00');
+ });
++
++test('rejected expenses are not counted; submitted and approved are', () => {
++  const { router } = app();
++  approve(router, file(router, { amount: '10.00' }).body.id);
++  reject(router, file(router, { amount: '7.00' }).body.id);
++  file(router, { amount: '3.00' });
++
++  assert.deepEqual(router['GET /report']({}).body, { travel: 1300 });
++});
++
++test('the report stays correct after reject once the cache is warm', () => {
++  const { router } = app();
++  const a = file(router, { amount: '10.00' }).body;
++  const b = file(router, { amount: '4.00' }).body;
++  assert.deepEqual(router['GET /report']({}).body, { travel: 1400 });
++
++  reject(router, b.id);
++  assert.deepEqual(router['GET /report']({}).body, { travel: 1000 });
++
++  approve(router, a.id);
++  assert.deepEqual(router['GET /report']({}).body, { travel: 1000 });
++});
++
++test('a category with only rejected expenses is absent from totals and summary', () => {
++  const { reporter, router } = app();
++  reject(router, file(router, { amount: '7.00', category: 'meals' }).body.id);
++  file(router, { amount: '10.00', category: 'travel' });
++
++  assert.deepEqual(router['GET /report']({}).body, { travel: 1000 });
++  assert.equal(reporter.summary(), 'travel: $10.00');
++});
+diff --git a/src/approvals.js b/src/approvals.js
+index 77fdadc..bd85ffe 100644
+--- a/src/approvals.js
++++ b/src/approvals.js
+@@ -2,6 +2,12 @@
+ 
+ const { getUser } = require('./users');
+ 
++// Single definition of "counts toward totals": everything except rejected
++// expenses (submitted ones are pending payout, approved ones are paid).
++function countsTowardTotals(expense) {
++  return expense.status !== 'rejected';
++}
++
+ function approveExpense(store, { actorId, expenseId }) {
+   const actor = getUser(actorId);
+ 
+@@ -46,4 +52,4 @@ function rejectExpense(store, { actorId, expenseId, reason }) {
+   return store.update(expenseId, { status: 'rejected', decidedBy: actor.id, reason });
+ }
+ 
+-module.exports = { approveExpense, rejectExpense };
++module.exports = { approveExpense, rejectExpense, countsTowardTotals };
+diff --git a/src/report.js b/src/report.js
+index 3f9e18e..2409b21 100644
+--- a/src/report.js
++++ b/src/report.js
+@@ -1,6 +1,7 @@
+ 'use strict';
+ 
+ const { sumCents, formatAmount } = require('./money');
++const { countsTowardTotals } = require('./approvals');
+ 
+ // Totals are read far more often than expenses change, so the per-category
+ // grouping is built once and reused.
+@@ -11,6 +12,10 @@ function createReporter(store) {
+     const grouped = new Map();
+ 
+     for (const expense of store.all()) {
++      if (!countsTowardTotals(expense)) {
++        continue;
++      }
++
+       const bucket = grouped.get(expense.category) || [];
+       bucket.push(expense.amountCents);
+       grouped.set(expense.category, bucket);

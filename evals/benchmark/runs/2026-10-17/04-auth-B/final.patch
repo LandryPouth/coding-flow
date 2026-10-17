@@ -1,0 +1,134 @@
+diff --git a/spec/approvals.spec.js b/spec/approvals.spec.js
+index b4acf33..c3e91d2 100644
+--- a/spec/approvals.spec.js
++++ b/spec/approvals.spec.js
+@@ -5,6 +5,7 @@ const assert = require('node:assert');
+ const { createStore } = require('../src/store');
+ const { createExpense } = require('../src/expenses');
+ const { approveExpense, rejectExpense } = require('../src/approvals');
++const { createRouter } = require('../src/routes');
+ 
+ const VALID = {
+   actorId: 'alice',
+@@ -14,9 +15,9 @@ const VALID = {
+   spentOn: '2026-03-04',
+ };
+ 
+-function filed() {
++function filed(overrides = {}) {
+   const store = createStore();
+-  return { store, expense: createExpense(store, VALID) };
++  return { store, expense: createExpense(store, { ...VALID, ...overrides }) };
+ }
+ 
+ test('a manager approves a submitted expense', () => {
+@@ -47,3 +48,76 @@ test('an unknown actor decides nothing', () => {
+   const { store, expense } = filed();
+   assert.throws(() => approveExpense(store, { actorId: 'nobody', expenseId: expense.id }), /unknown actor/);
+ });
++
++test('an owner cannot approve their own expense', () => {
++  const { store, expense } = filed();
++
++  assert.throws(() => approveExpense(store, { actorId: 'alice', expenseId: expense.id }), /own expense/);
++  assert.equal(store.get(expense.id).status, 'submitted');
++});
++
++test('a manager cannot approve their own expense', () => {
++  const { store, expense } = filed({ actorId: 'clara', amount: '900.00' });
++
++  assert.throws(() => approveExpense(store, { actorId: 'clara', expenseId: expense.id }), /own expense/);
++  assert.equal(store.get(expense.id).status, 'submitted');
++});
++
++test('an employee cannot approve 50000 cents', () => {
++  const { store, expense } = filed({ amount: '500.00' });
++
++  assert.throws(() => approveExpense(store, { actorId: 'bruno', expenseId: expense.id }), /manager/);
++  assert.equal(store.get(expense.id).status, 'submitted');
++  assert.equal(store.get(expense.id).decidedBy, undefined);
++});
++
++test('a manager approves 50000 cents', () => {
++  const { store, expense } = filed({ amount: '500.00' });
++  const decided = approveExpense(store, { actorId: 'clara', expenseId: expense.id });
++
++  assert.equal(decided.status, 'approved');
++  assert.equal(decided.decidedBy, 'clara');
++});
++
++test('an employee approves 49999 cents', () => {
++  const { store, expense } = filed({ amount: '499.99' });
++
++  assert.equal(approveExpense(store, { actorId: 'bruno', expenseId: expense.id }).status, 'approved');
++});
++
++test('a manager approves a large expense', () => {
++  const { store, expense } = filed({ amount: '5000.00' });
++
++  assert.equal(approveExpense(store, { actorId: 'dinah', expenseId: expense.id }).decidedBy, 'dinah');
++});
++
++test('a refused expense can still be approved by a permitted actor', () => {
++  const { store, expense } = filed({ amount: '900.00' });
++
++  assert.throws(() => approveExpense(store, { actorId: 'bruno', expenseId: expense.id }), /manager/);
++  assert.equal(approveExpense(store, { actorId: 'clara', expenseId: expense.id }).status, 'approved');
++});
++
++test('unknown and missing inputs are not masked by the new rules', () => {
++  const { store, expense } = filed({ amount: '900.00' });
++
++  assert.throws(() => approveExpense(store, { actorId: 'nobody', expenseId: expense.id }), /unknown actor/);
++  assert.throws(() => approveExpense(store, { actorId: 'clara', expenseId: 'missing' }), /no such expense/);
++});
++
++test('the router refuses an unauthorized approval', () => {
++  const { store, expense } = filed({ amount: '900.00' });
++  const router = createRouter(store, { invalidate() {} });
++  const res = router['POST /approvals']({ actorId: 'bruno', expenseId: expense.id });
++
++  assert.equal(res.status, 400);
++  assert.match(res.body.error, /manager/);
++  assert.equal(store.get(expense.id).status, 'submitted');
++});
++
++test('a decided large expense still reports its status to an under-privileged actor', () => {
++  const { store, expense } = filed({ amount: '900.00' });
++  approveExpense(store, { actorId: 'clara', expenseId: expense.id });
++
++  assert.throws(() => approveExpense(store, { actorId: 'bruno', expenseId: expense.id }), /cannot approve a approved/);
++});
+diff --git a/src/approvals.js b/src/approvals.js
+index 77fdadc..46156bb 100644
+--- a/src/approvals.js
++++ b/src/approvals.js
+@@ -2,6 +2,19 @@
+ 
+ const { getUser } = require('./users');
+ 
++const MANAGER_APPROVAL_THRESHOLD_CENTS = 50000;
++
++// Fails closed: a non-numeric amount is treated as needing a manager.
++function assertMayApprove(actor, expense) {
++  if (actor.id === expense.ownerId) {
++    throw new Error('you cannot approve your own expense');
++  }
++
++  if (!(expense.amountCents < MANAGER_APPROVAL_THRESHOLD_CENTS) && actor.role !== 'manager') {
++    throw new Error('expenses of $500.00 or more can only be approved by a manager');
++  }
++}
++
+ function approveExpense(store, { actorId, expenseId }) {
+   const actor = getUser(actorId);
+ 
+@@ -23,6 +36,8 @@ function approveExpense(store, { actorId, expenseId }) {
+     throw new Error(`cannot approve a ${expense.status} expense`);
+   }
+ 
++  assertMayApprove(actor, expense);
++
+   return store.update(expenseId, { status: 'approved', decidedBy: actor.id });
+ }
+ 

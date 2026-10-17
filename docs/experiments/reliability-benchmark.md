@@ -84,21 +84,28 @@ property of the tool.
 Run 2026-10-17. Model `claude-sonnet-5-5` in both arms, coding-flow 0.12.1 (plugin)
 with `ai-flow init` from this checkout, `claude` 2.1.302, headless
 (`-p --output-format json --permission-mode acceptEdits`). **N = 1 per cell.**
-Raw per-run JSON and acceptance output were not committed, so these figures cannot be
-re-derived from this repository; they are read off the runs as recorded. Totals are
-summed from unrounded values, so they can differ by a second or a cent from the rows. Arm B = `/flow-plan` then `/flow-run` (two sessions, summed).
+The raw per-run JSON and acceptance output are committed in
+[`evals/benchmark/runs/2026-10-17/`](../../evals/benchmark/runs/2026-10-17/README.md)
+and every figure below is re-derivable from them. Totals are summed from unrounded
+values, so they can differ by a cent from the rows. Arm B = `/flow-plan` then
+`/flow-run` (two sessions, summed).
+
+**Deviations first** (detail under *Deviations from the protocol and limits*): N = 1
+per cell; the grader was not blind; ten sessions ran in parallel, so timings are
+indicative; arm B was driven by the harness, not a person; "files forgotten" and
+"escaped defects" were graded by hand after the fact, from the committed diffs.
 
 | Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cost | Time |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 Fix | vanilla | yes | 0 | 8/1036 | 109,514 | $0.14 | 21s |
+| 1 Fix | vanilla | yes | 0 | 8/1036 | 109,514 | $0.14 | 22s |
 | 1 Fix | coding-flow | yes | 0 | 24/5606 | 503,036 | $0.46 | 75s |
 | 2 CRUD | vanilla | no | 1 | 16/4687 | 215,940 | $0.31 | 58s |
 | 2 CRUD | coding-flow | no | 1 | 34/12066 | 704,599 | $0.76 | 139s |
-| 3 Refactor | vanilla | yes | 0 | 10/2646 | 141,031 | $0.17 | 35s |
-| 3 Refactor | coding-flow | yes | 0 | 26/9543 | 578,240 | $0.56 | 102s |
+| 3 Refactor | vanilla | yes | 0 | 10/2646 | 141,031 | $0.17 | 36s |
+| 3 Refactor | coding-flow | yes | 0 | 26/9543 | 578,240 | $0.56 | 103s |
 | 4 Auth | vanilla | yes | 0 | 10/1987 | 142,921 | $0.17 | 60s |
-| 4 Auth | coding-flow | yes | 0 | 20/9594 | 440,134 | $0.81 | 95s |
-| 5 Cross-module | vanilla | yes | 0 | 12/1630 | 183,478 | $0.17 | 40s |
+| 4 Auth | coding-flow | yes | 0 | 20/9594 | 440,134 | $0.81 | 96s |
+| 5 Cross-module | vanilla | yes | 0 | 12/1630 | 183,478 | $0.17 | 41s |
 | 5 Cross-module | coding-flow | no | 1 | 46/10645 | 1,032,980 | $0.78 | 134s |
 | **Total** | vanilla | 4/5 | 1 | 56/11,986 | 792,884 | $0.97 | 217s |
 | **Total** | coding-flow | 3/5 | 2 | 150/47,454 | 3,258,989 | $3.36 | 547s |
@@ -119,27 +126,37 @@ the time. The arm that lost is coding-flow, on tasks 2 and 5.
   passed after one re-prompt. No difference.
 - **Where coding-flow did differ is the tests it left behind.** Hand-graded against
   each `REFERENCE.md`: vanilla added no test of its own on task 3 (the refactor);
-  coding-flow added 5 (`spec/approvals.spec.js`, `spec/expenses.spec.js`) and
-  pinned the behaviour first. On tasks 1 and 5 coding-flow wrote 15 and 39 lines of
-  specs against vanilla's 2 and 10; on task 4, 78 against 28. That is the only
+  coding-flow added 5 tests (`spec/{approvals,expenses,routes,users}.spec.js`, 124
+  lines). On tasks 1 and 5 coding-flow added 15 and 39 net lines of specs against
+  vanilla's 2 and 10; on task 4, 76 against 28; on task 2, 158 against 84. That is the only
   measured advantage, and acceptance does not score it.
 - **Scope (tasks 3 and 4).** Vanilla left `rejectExpense` alone in both. On task 3
   coding-flow routed `rejectExpense` through a new shared `requireActor` helper (the
   role check is not added, so behaviour is unchanged) and removed the router's copy;
   it ended at 1 duplicated occurrence against a target of 2. Neither arm asked about
   the `rejectExpense` inconsistency.
-- Nothing here shows coding-flow catching a defect vanilla shipped. Escaped defects
-  found after the runs were not tracked separately: this is a gap against the protocol.
+- **Files forgotten: none, in either arm.** Graded by hand from `final.patch` against
+  each `REFERENCE.md`: every file the reference says should change changed, every
+  required test was written (tasks 2 and 4), and `store.js`, `expenses.js` and
+  `report.js` were left alone where the reference says so. The only out-of-scope
+  edit is coding-flow's `approvals.js` on task 5.
+- **Escaped defects: none found, in either arm.** Hand-graded from the same diffs:
+  neither arm changed `rejectExpense`'s behaviour, moved the comparison in task 4, or
+  leaked vendors into the report, and the regression suite is green in all ten final
+  trees. This is a read of ten small diffs by the person who ran them, not a hunt, and
+  "none found" is not "none". Nothing here shows coding-flow catching a defect
+  vanilla shipped.
 
 ### Deviations from the protocol and limits
 
-- **Not recorded: files forgotten and escaped defects.** The protocol asks for both;
-  neither was graded beyond the acceptance command, and the raw runs are not committed.
+- **Files forgotten and escaped defects were graded after the runs**, by hand, from
+  the diffs. The final `src/`+`spec/` diffs were exported from the surviving
+  workspaces after the fact (`final.patch`); everything else in `runs/` is as the
+  runs wrote it.
 - **N = 1 per cell, non-deterministic model.** A single re-prompt on one task is the
   whole difference in first-pass counts; do not read 3/5 against 4/5 as a rate.
 - **The grader was not blind.** The same person set up, ran and graded both arms.
-  "Files missed" was not graded by hand beyond the acceptance command and the notes
-  above; the column is dropped from the table rather than filled with a guess.
+  The hand grading of files and defects above has the same limit.
 - **Time** is `duration_ms` summed over the planning session, the run and any
   re-prompt, so arm B pays for `/flow-plan` in every task.
 - **Arm B's operator was the harness**: the task prompt was passed to `/flow-plan`

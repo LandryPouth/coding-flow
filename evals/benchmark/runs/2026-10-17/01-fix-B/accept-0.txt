@@ -1,0 +1,2 @@
+PASS  regression   19 passed, 0 failed
+PASS  acceptance   3 passed, 0 failed

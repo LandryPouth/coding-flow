@@ -1,0 +1,6 @@
+ spec/report.spec.js | 10 ++++++++++
+ src/report.js       |  3 +++
+ 2 files changed, 13 insertions(+)
+ M spec/report.spec.js
+ M src/report.js
+?? spec/accept.spec.js

@@ -1,0 +1,71 @@
+diff --git a/spec/approvals.spec.js b/spec/approvals.spec.js
+index b4acf33..06e1b0d 100644
+--- a/spec/approvals.spec.js
++++ b/spec/approvals.spec.js
+@@ -47,3 +47,31 @@ test('an unknown actor decides nothing', () => {
+   const { store, expense } = filed();
+   assert.throws(() => approveExpense(store, { actorId: 'nobody', expenseId: expense.id }), /unknown actor/);
+ });
++
++function filedBy(actorId, amount) {
++  const store = createStore();
++  return { store, expense: createExpense(store, { ...VALID, actorId, amount }) };
++}
++
++test('nobody approves their own expense, even a manager', () => {
++  const { store, expense } = filedBy('clara', '10.00');
++  assert.throws(() => approveExpense(store, { actorId: 'clara', expenseId: expense.id }), /your own/);
++  assert.equal(store.get(expense.id).status, 'submitted');
++});
++
++test('an employee approves a colleague expense below $500.00', () => {
++  const { store, expense } = filedBy('alice', '499.99');
++  assert.equal(approveExpense(store, { actorId: 'bruno', expenseId: expense.id }).status, 'approved');
++});
++
++test('$500.00 or more needs a manager', () => {
++  const { store, expense } = filedBy('alice', '500.00');
++  assert.throws(() => approveExpense(store, { actorId: 'bruno', expenseId: expense.id }), /manager/);
++  assert.equal(approveExpense(store, { actorId: 'clara', expenseId: expense.id }).decidedBy, 'clara');
++});
++
++test('a raised amount is checked at approval time', () => {
++  const { store, expense } = filedBy('alice', '100.00');
++  store.update(expense.id, { amountCents: 90000 });
++  assert.throws(() => approveExpense(store, { actorId: 'bruno', expenseId: expense.id }), /manager/);
++});
+diff --git a/src/approvals.js b/src/approvals.js
+index 77fdadc..6c4e737 100644
+--- a/src/approvals.js
++++ b/src/approvals.js
+@@ -2,6 +2,9 @@
+ 
+ const { getUser } = require('./users');
+ 
++// $500.00 and above needs a manager.
++const MANAGER_APPROVAL_THRESHOLD_CENTS = 50000;
++
+ function approveExpense(store, { actorId, expenseId }) {
+   const actor = getUser(actorId);
+ 
+@@ -23,6 +26,14 @@ function approveExpense(store, { actorId, expenseId }) {
+     throw new Error(`cannot approve a ${expense.status} expense`);
+   }
+ 
++  if (expense.ownerId === actor.id) {
++    throw new Error('cannot approve your own expense');
++  }
++
++  if (expense.amountCents >= MANAGER_APPROVAL_THRESHOLD_CENTS && actor.role !== 'manager') {
++    throw new Error('expenses of $500.00 or more require manager approval');
++  }
++
+   return store.update(expenseId, { status: 'approved', decidedBy: actor.id });
+ }
+ 
+@@ -46,4 +57,4 @@ function rejectExpense(store, { actorId, expenseId, reason }) {
+   return store.update(expenseId, { status: 'rejected', decidedBy: actor.id, reason });
+ }
+ 
+-module.exports = { approveExpense, rejectExpense };
++module.exports = { approveExpense, rejectExpense, MANAGER_APPROVAL_THRESHOLD_CENTS };
