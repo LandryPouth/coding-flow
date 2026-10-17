@@ -19,6 +19,11 @@ All notable changes to this project are documented here. The format is based on
   (Node 22) next to the Ubuntu × Node 18/20/22 matrix, and configures git (identity,
   `core.autocrlf=false`) before checkout. Tests that need a POSIX shell are skipped on
   Windows with a stated reason.
+- **`harness.js` split by responsibility** (story 11-01, internal). 3 233 lines become
+  `harness-config`, `security-policy`, `diff-scope`, `risk`, `validation-run`,
+  `coverage-gate`, `evidence` and `harness-report`; `harness.js` keeps the command entry
+  points (556 lines) and its exports. No behaviour change. The guard no longer loads
+  `harness.js`: 6 modules per tool call instead of 12.
 
 ### Fixed
 

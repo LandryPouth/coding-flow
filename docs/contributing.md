@@ -40,7 +40,15 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/util.js` | Generic helpers (I/O, hash, JSON, paths, glob, file walking) |
 | `lib/config.js` | Project config `.coding-flow/config.json` (storage, branchPerEpic, autoMergeEpic, validation) |
 | `lib/templates.js` | Installation, manifest, scripts, cheat-sheet, `upgrade` |
-| `lib/harness.js` | Security, scan of secrets/sensitive files, preflight/check/`verify`/evidence |
+| `lib/harness.js` | `harness` and `verify` entry points, story scope, the re-exported surface |
+| `lib/harness-config.js` | The policy file `.coding-flow/harness.json`: paths, defaults, read, create |
+| `lib/security-policy.js` | Secret patterns and scan, allowlist, sensitive paths, `.env` gitignore |
+| `lib/diff-scope.js` | Diff base per request, changed files and lines, deleted files, coverage scoping |
+| `lib/risk.js` | Story risk, structural git signals, diff risk, their combination |
+| `lib/validation-run.js` | Validation commands: resolution, execution, timeouts, clean env, cache detection |
+| `lib/coverage-gate.js` | Patch coverage and floor, test weakening, acceptance criteria, contrary signals |
+| `lib/evidence.js` | Preflight, story evidence check, `verifyStoryOnce`, fingerprints, reuse, writing |
+| `lib/harness-report.js` | Printing the check report and the verify verdict |
 | `lib/identity.js` | Git provenance (commit, branch, author, dirty, PR) injected into every proof |
 | `lib/guard.js` | Deterministic PreToolUse hook (refusal of blocked paths / secrets before write) |
 | `lib/settings.js` | Idempotent merge/upgrade of the `guard` hook into `.claude/settings.json` (resolved binary, npx fallback) |
@@ -62,7 +70,8 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/commands.js` | `help` and `commands` |
 
 The dependency graph is acyclic:
-`context → util → config → harness → templates → {doctor, uninstall, skills, commands}`;
+`context → util → config → harness-config → templates → {doctor, uninstall, skills, commands}`;
+`guard` requires `harness-config` and `security-policy`, never `harness`;
 `status` builds on `config`/`storage`/`policy`/`worktree`.
 
 ## The two distribution channels
