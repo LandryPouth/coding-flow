@@ -18,4 +18,3 @@ serve is not.
 - [ ] One row in `docs/DOGFOODING.md` if the result changes what to build
       next.
 
-## Status: planned

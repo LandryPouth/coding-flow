@@ -22,4 +22,3 @@ the product and the rest as layers you add when they pay for themselves.
       ways, no decision taken here.
 - [ ] Links checked (`grep` for every relative link target).
 
-## Status: planned

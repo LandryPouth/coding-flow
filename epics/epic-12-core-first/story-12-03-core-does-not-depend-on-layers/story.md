@@ -18,4 +18,3 @@ module, directly or transitively.
       bypassed by omission.
 - [ ] `npm test` green.
 
-## Status: planned
