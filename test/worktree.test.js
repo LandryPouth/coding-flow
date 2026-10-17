@@ -746,9 +746,11 @@ test('worktree land waits for the shared land lock instead of racing a concurren
     Atomics.wait(pollBuf, 0, 0, 10);
   }
 
-  const before = Date.now();
+  // Monotonic clock: the wall clock can step backwards (WSL2 resyncs it), which
+  // once measured a negative wait here.
+  const before = process.hrtime.bigint();
   const { code, output } = run(repo, ['land', 'story-01']);
-  const elapsed = Date.now() - before;
+  const elapsed = Number((process.hrtime.bigint() - before) / 1000000n);
 
   assert.equal(code, 0, `land must still succeed once the held lock is released: ${output}`);
   assert.ok(
