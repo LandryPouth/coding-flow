@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **`scripts/smoke-hosts.sh`** (story 11-02): asks each installed host (Claude Code, OpenCode 1.x/2.x) to write `.env` in a throwaway project and HOME, and prints host × case → refused / WRITTEN / inconclusive / skipped / ERROR; exits 1 on any WRITTEN, 2 when a throwaway project cannot be installed. Hosts never read the global config (a globally installed guard would answer for the project). `SMOKE_BREAK=1` (guard unwired) and `SMOKE_BREAK=v1` (1.x-only OpenCode plugin) self-check that a broken guard is caught. Part of the release checklist in `docs/contributing.md`.
 - **README: what the guard does not see** (story 05-05). One short section lists what stays out of reach (scripts and compiled programs, computed paths, downloads, TOCTOU, writes by validation tools, nested-project policy quirks) and the answer when the boundary must hold: `mode: strict` plus OS-level isolation. Every case from the guard measurement is now one row of `test/guard-adversarial.test.js`, and each documented limit fails the suite if the README stops describing it.
 - **`npm run release`** (this repository): after the maintainer's own `npm publish`, tags `vx.y.z`,
   pushes it and creates the GitHub release from the CHANGELOG section. Idempotent, `--dry-run`

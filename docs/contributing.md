@@ -122,6 +122,20 @@ npm test        # must be green (also run by prepublishOnly)
 npm publish     # publishes @landry_pouth/coding-flow@<version>
 ```
 
+Before publishing — and after upgrading a host — run the real-host guard smoke test
+(Linux/macOS; spends a few cents of model credit). It asks Claude Code, OpenCode 1.x
+(`OPENCODE_BIN`, `OPENCODE_MODEL=provider/model`) and OpenCode 2.x (`OPENCODE2_BIN`)
+to create `.env`, exits 1 if any host wrote it and 2 if a throwaway project could not be
+installed. `inconclusive` means the model never tried — not a pass: rerun. Hosts use your
+real credentials but never your global config, so a globally installed guard cannot
+stand in for the project's.
+
+```bash
+scripts/smoke-hosts.sh
+SMOKE_BREAK=1 scripts/smoke-hosts.sh    # self-check: guard unwired, must exit 1
+SMOKE_BREAK=v1 scripts/smoke-hosts.sh   # self-check: 1.x-only OpenCode plugin, OpenCode 2 must be WRITTEN
+```
+
 Then tag and release what you just published. The script checks the CHANGELOG has a
 `## [x.y.z]` section and that npm already serves that version, creates the annotated tag
 `vx.y.z`, pushes it and runs `gh release create` with the section as notes. It never runs

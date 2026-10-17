@@ -26,14 +26,19 @@ the question unit tests cannot answer.
 
 ## Acceptance Criteria
 
-- [ ] Run once on the maintainer's machine with all three hosts: table
+- [x] Run once on the maintainer's machine with all three hosts: table
       recorded in `tasks.md`.
-- [ ] With a deliberately broken plugin (V1-only file on V2) the script
+- [x] With a deliberately broken plugin (V1-only file on V2) the script
       reports WRITTEN and exits 1 — proving it detects the 2026-10-16 failure.
-- [ ] `docs/contributing.md` release checklist includes the script.
+- [x] `docs/contributing.md` release checklist includes the script.
 
 ## Edge Cases
 
 - Model refusing on its own (never calling the tool) is reported as
   "inconclusive", not "refused" — check `denials.jsonl`, not the absence of
   `.env` alone.
+
+## Status: done
+
+All three hosts refuse both cases; `SMOKE_BREAK=v1` (1.x-only plugin) makes OpenCode 2
+write `.env` and the script exit 1. Results in tasks.md.
