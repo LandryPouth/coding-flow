@@ -101,6 +101,11 @@ parent are now tried; the deny reason's `(via …)` shows the path as given. Lef
 05-05: `mkdir d && cp|mv KEY d` (05-03's directory-destination check has the
 same blind spot).
 
+A sixth review (2026-10-17) found a one-operand `ln SRC` never checked the
+link it makes in the cwd (`./<name of SRC>`): `ln -sf /tmp/x/.env` replaced
+`.env` while `ln -sf /tmp/x/.env .` was refused. Fixed and tested; the `-T`
+over-deny is recorded in `plan.md`.
+
 ### Rollback Notes
 
 `git revert` the commit; no data or config migration.

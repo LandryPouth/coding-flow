@@ -32,3 +32,8 @@
 - Reason text keeps the existing sentence shape so `denials.jsonl` readers and
   `report` need no change; it only adds `(via <lexical>)` when lexical and real
   differ.
+- Without `-T`, an `ln` destination is read both as the link's name and as a
+  directory the link lands in, since a `mkdir` earlier in the same command can
+  make it one. A link meant as `x/y` that resolves outside the project from `x`
+  but inside it from `x/y` (`ln -s ../../.env x/y`) is therefore denied: the
+  over-deny is the price of not reading the shell's future, and `-T` lifts it.

@@ -553,6 +553,12 @@ function shellWrites(command, startCwd = process.cwd()) {
         directory = files[files.length - 1];
         sources = files.slice(0, -1);
         add(directory, "write");
+      } else if (name === "ln" && classify(files[0]) === "path") {
+        // `ln SRC` (one operand) makes `./<name of SRC>` here: `ln -sf /tmp/x/.env` replaces .env.
+        const link = path.posix.basename(expandHome(files[0]));
+        if (link !== "." && link !== "..") {
+          add(link, "write");
+        }
       }
 
       // A directory destination receives `DIR/<name of each source>`: that is the file written.

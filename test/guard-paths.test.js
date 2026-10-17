@@ -103,6 +103,22 @@ test('a link made into a directory is read from that directory', (t) => {
   assert.equal(guard(dir, bash('ln -s ../../README.md x/y/')).code, 0);
 });
 
+test('a one-operand ln writes the link it makes in the cwd', (t) => {
+  const dir = tmp(t);
+  const outside = tmp(t);
+  fs.writeFileSync(path.join(outside, '.env'), 'E=1');
+  fs.mkdirSync(path.join(dir, 'x'));
+  const evil = path.join(outside, '.env');
+
+  // `ln SRC` makes ./.env -> SRC: it replaces (or creates) the protected file.
+  assert.equal(guard(dir, bash(`ln -sf ${evil}`)).code, 2);
+  assert.equal(guard(dir, bash(`ln -f ${evil}`)).code, 2, 'a hard link too');
+  assert.equal(guard(dir, bash(`ln -s ${evil}`)).code, 2, 'with no .env yet');
+  // Made in a subdirectory, x/.env is not a protected path; an ordinary name stays allowed.
+  assert.equal(guard(dir, bash(`cd x && ln -s ${evil}`)).code, 0);
+  assert.equal(guard(dir, bash(`ln -s ${path.join(outside, 'notes.txt')}`)).code, 0);
+});
+
 test('a relative target is read from the real cwd when the cwd is reached through a link', (t) => {
   const dir = tmp(t);
   fs.mkdirSync(path.join(dir, '.coding-flow'));
