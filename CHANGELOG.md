@@ -90,6 +90,13 @@ All notable changes to this project are documented here. The format is based on
   reviews by reviewer and lists passes with accepted P0/P1, and older ones recorded
   with an open P1 (`pre-0.13`). Existing review files are read as written.
 
+- **`ship` commits the story, not the whole tree.** In a shared checkout the
+  automatic commit takes the story's directory, dirty files the branch already
+  touched since its base, new files beside those, and the story's run files; the
+  rest is listed as `Left out of the commit` and stays dirty. `--all` restores
+  the old `git add -A`; a story worktree and a branch with no linked story keep
+  committing everything. `--dry-run` prints the include/exclude lists, and the
+  secret scan now reads only the files being committed.
 - **The command time limit is configurable.** `validation.timeoutMs` in
   `config.json` replaces the fixed 600 s, and an entry of `validation.commands` /
   `quality` may be `{ "command": "...", "timeoutMs": 1200000 }` (strings still

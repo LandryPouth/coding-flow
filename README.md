@@ -267,6 +267,7 @@ opens **one** idempotent PR against the base (via `gh` if available):
 ai-flow ship                       # commit + push + PR to the default branch
 ai-flow ship --base develop --draft
 ai-flow ship --no-commit           # push existing commits only, old behavior
+ai-flow ship --all                 # commit the whole dirty tree, not only the story's files
 ai-flow ship --dry-run
 ```
 
