@@ -95,20 +95,22 @@ per cell; the grader was not blind; ten sessions ran in parallel, so timings are
 indicative; arm B was driven by the harness, not a person; "files forgotten" and
 "escaped defects" were graded by hand after the fact, from the committed diffs.
 
-| Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cost | Time |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 Fix | vanilla | yes | 0 | 8/1036 | 109,514 | $0.14 | 22s |
-| 1 Fix | coding-flow | yes | 0 | 24/5606 | 503,036 | $0.46 | 75s |
-| 2 CRUD | vanilla | no | 1 | 16/4687 | 215,940 | $0.31 | 58s |
-| 2 CRUD | coding-flow | no | 1 | 34/12066 | 704,599 | $0.76 | 139s |
-| 3 Refactor | vanilla | yes | 0 | 10/2646 | 141,031 | $0.17 | 36s |
-| 3 Refactor | coding-flow | yes | 0 | 26/9543 | 578,240 | $0.56 | 103s |
-| 4 Auth | vanilla | yes | 0 | 10/1987 | 142,921 | $0.17 | 60s |
-| 4 Auth | coding-flow | yes | 0 | 20/9594 | 440,134 | $0.81 | 96s |
-| 5 Cross-module | vanilla | yes | 0 | 12/1630 | 183,478 | $0.17 | 41s |
-| 5 Cross-module | coding-flow | no | 1 | 46/10645 | 1,032,980 | $0.78 | 134s |
-| **Total** | vanilla | 4/5 | 1 | 56/11,986 | 792,884 | $0.97 | 217s |
-| **Total** | coding-flow | 3/5 | 2 | 150/47,454 | 3,258,989 | $3.36 | 547s |
+| Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cache write | Cost | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 Fix | vanilla | yes | 0 | 8/1036 | 109,514 | 30,490 | $0.14 | 22s |
+| 1 Fix | coding-flow | yes | 0 | 24/5606 | 503,036 | 88,900 | $0.46 | 75s |
+| 2 CRUD | vanilla | no | 1 | 16/4687 | 215,940 | 61,509 | $0.31 | 58s |
+| 2 CRUD | coding-flow | no | 1 | 34/12066 | 704,599 | 141,605 | $0.76 | 139s |
+| 3 Refactor | vanilla | yes | 0 | 10/2646 | 141,031 | 33,070 | $0.17 | 36s |
+| 3 Refactor | coding-flow | yes | 0 | 26/9543 | 578,240 | 100,782 | $0.56 | 103s |
+| 4 Auth | vanilla | yes | 0 | 10/1987 | 142,921 | 34,226 | $0.17 | 60s |
+| 4 Auth | coding-flow | yes | 0 | 20/9594 | 440,134 | 53,187 | $0.81 | 96s |
+| 5 Cross-module | vanilla | yes | 0 | 12/1630 | 183,478 | 33,033 | $0.17 | 41s |
+| 5 Cross-module | coding-flow | no | 1 | 46/10645 | 1,032,980 | 142,194 | $0.78 | 134s |
+| **Total** | vanilla | 4/5 | 1 | 56/11,986 | 792,884 | 192,328 | $0.97 | 217s |
+| **Total** | coding-flow | 3/5 | 2 | 150/47,454 | 3,258,989 | 526,668 | $3.36 | 547s |
+
+Cache writes are reported beside reads: coding-flow wrote about 2.7× as many cache tokens (526,668 against 192,328), as it loads `RULES.md` and story files.
 
 All ten runs ended green on acceptance and regression after at most one re-prompt.
 
@@ -126,8 +128,8 @@ the time. The arm that lost is coding-flow, on tasks 2 and 5.
   passed after one re-prompt. No difference.
 - **Where coding-flow did differ is the tests it left behind.** Hand-graded against
   each `REFERENCE.md`: vanilla added no test of its own on task 3 (the refactor);
-  coding-flow added 5 tests (`spec/{approvals,expenses,routes,users}.spec.js`, 124
-  lines). On tasks 1 and 5 coding-flow added 15 and 39 net lines of specs against
+  coding-flow added 13 tests (`spec/{approvals,expenses,routes,users}.spec.js`, 124
+  lines). On tasks 1 and 5 coding-flow added 15 and 44 lines of specs against
   vanilla's 2 and 10; on task 4, 76 against 28; on task 2, 158 against 84. That is the only
   measured advantage, and acceptance does not score it.
 - **Scope (tasks 3 and 4).** Vanilla left `rejectExpense` alone in both. On task 3
