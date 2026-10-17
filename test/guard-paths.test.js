@@ -37,6 +37,9 @@ function guard(cwd, payload, env = {}) {
 
 const write = (file_path) => ({ tool_name: 'Write', tool_input: { file_path, content: 'A=1' } });
 const bash = (command) => ({ tool_name: 'Bash', tool_input: { command } });
+// A path as it appears in a shell command: bash reads a backslash as an escape, so
+// a Windows path goes in with forward slashes (`D:/a/x`), the way Git Bash takes it.
+const shellPath = (p) => p.split(path.sep).join('/');
 
 test('a symlink to .env is refused by Write and by a shell redirection', (t) => {
   const dir = tmp(t);
@@ -69,7 +72,7 @@ test('a nested .coding-flow cannot swap in a weaker policy', (t) => {
 test('a link under a linked directory is read from its real directory', (t) => {
   const dir = tmp(t);
   fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
-  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'), 'dir');
 
   // Creating the link through `a/` aliases <root>/.env, not <root>/../.env.
   assert.equal(guard(dir, bash('ln -s ../../.env a/x')).code, 2);
@@ -85,7 +88,7 @@ test('a link made into a directory is read from that directory', (t) => {
   const dir = tmp(t);
   fs.mkdirSync(path.join(dir, 'x', 'y'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
-  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'), 'dir');
 
   // Each lands as x/y/.env -> ../../.env, which is <root>/.env.
   assert.equal(guard(dir, bash('ln -s ../../.env x/y/')).code, 2);
@@ -93,8 +96,10 @@ test('a link made into a directory is read from that directory', (t) => {
   assert.equal(guard(dir, bash('ln -s -t x/y ../../.env')).code, 2);
   assert.equal(guard(dir, bash('ln -s ../.env x/')).code, 2);
   // Through a linked directory: a/ is sub/deep, so ../../.env from there is <root>/.env.
-  assert.equal(guard(dir, bash('ln -s ../../.env a/')).code, 2);
-  assert.equal(guard(dir, bash('ln -s -t a ../../.env')).code, 2);
+  for (const command of ['ln -s ../../.env a/', 'ln -s -t a ../../.env']) {
+    const seen = decide({ cwd: dir, ...bash(command) }, dir);
+    assert.equal(guard(dir, bash(command)).code, 2, `${command}: ${seen.decision} — ${seen.reason}`);
+  }
   // A directory made earlier in the same command does not exist when the guard reads it.
   assert.equal(guard(dir, bash('mkdir -p p/q && ln -s ../../.env p/q')).code, 2);
   assert.equal(guard(dir, bash('mkdir -p p/q && ln -s ../../.env p/q && echo A=1 > p/q/.env')).code, 2);
@@ -109,7 +114,7 @@ test('a one-operand ln writes the link it makes in the cwd', (t) => {
   const outside = tmp(t);
   fs.writeFileSync(path.join(outside, '.env'), 'E=1');
   fs.mkdirSync(path.join(dir, 'x'));
-  const evil = path.join(outside, '.env');
+  const evil = shellPath(path.join(outside, '.env'));
 
   // `ln SRC` makes ./.env -> SRC: it replaces (or creates) the protected file.
   assert.equal(guard(dir, bash(`ln -sf ${evil}`)).code, 2);
@@ -117,14 +122,14 @@ test('a one-operand ln writes the link it makes in the cwd', (t) => {
   assert.equal(guard(dir, bash(`ln -s ${evil}`)).code, 2, 'with no .env yet');
   // Made in a subdirectory, x/.env is not a protected path; an ordinary name stays allowed.
   assert.equal(guard(dir, bash(`cd x && ln -s ${evil}`)).code, 0);
-  assert.equal(guard(dir, bash(`ln -s ${path.join(outside, 'notes.txt')}`)).code, 0);
+  assert.equal(guard(dir, bash(`ln -s ${shellPath(path.join(outside, 'notes.txt'))}`)).code, 0);
 });
 
 test('a relative target is read from the real cwd when the cwd is reached through a link', (t) => {
   const dir = tmp(t);
   fs.mkdirSync(path.join(dir, '.coding-flow'));
   fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
-  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'), 'dir');
   const cwd = path.join(dir, 'a');
   const at = (payload) => decide({ cwd, ...payload }, cwd).decision;
 
@@ -306,11 +311,22 @@ test('a git that refuses the repository (safe.directory) makes the decision unch
   fs.mkdirSync(path.join(dir, '.coding-flow'));
   execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
   // git's own knob (git >= 2.35.2) for "this repository belongs to someone else".
-  const saved = process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
-  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1';
+  // The machine's git config is shut out: a CI runner trusting every directory
+  // (`safe.directory = *`) would otherwise let git accept the repository.
+  const emptyConfig = path.join(dir, 'empty.gitconfig');
+  fs.writeFileSync(emptyConfig, '');
+  const env = {
+    GIT_TEST_ASSUME_DIFFERENT_OWNER: '1',
+    GIT_CONFIG_GLOBAL: emptyConfig,
+    GIT_CONFIG_NOSYSTEM: '1',
+  };
+  const saved = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, env);
   t.after(() => {
-    if (saved === undefined) delete process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
-    else process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = saved;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   const result = decide({ cwd: dir, ...write('src.js') }, dir);
