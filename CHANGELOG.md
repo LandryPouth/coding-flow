@@ -90,6 +90,16 @@ All notable changes to this project are documented here. The format is based on
   reviews by reviewer and lists passes with accepted P0/P1, and older ones recorded
   with an open P1 (`pre-0.13`). Existing review files are read as written.
 
+- **Commands from `plan.md` need a human.** `verify` refuses to run commands an agent
+  wrote into a story's `plan.md` when nobody is watching (no TTY, `CI=true`,
+  `run`, `worktree land`): the evidence says `refused`, nothing executes, and
+  `--allow-plan-commands` is the explicit way through. In a terminal they run after
+  a notice naming their source; config commands are unchanged. `--clean-env` drops
+  credential-looking variables (`SECRET`, `TOKEN`, `API_KEY`…) from the commands'
+  environment and records their names, never their values. Evidence now carries
+  `unattended`. A refusal is not recorded as a verify (it never turns a verified story
+  into a blocked one) and `run` reports it as skipped; `--clean-env` never replays a
+  cached proof; any non-empty `CI` other than `0`/`false` counts as unattended; `AI_FLOW_FORCE_TTY` is honoured under `NODE_ENV=test` only (the flow-run skill forbids agents from using it). `run` prints the plan.md notice in a terminal too.
 - **`ship` commits the story, not the whole tree.** In a shared checkout the
   automatic commit takes the story's directory, dirty files the branch already
   touched since its base, new files beside those, and the story's run files; the

@@ -21,6 +21,8 @@ function run(cwd, args) {
       cwd,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      // These tests exercise plan.md commands; a terminal is what lets them run.
+      env: { ...process.env, CI: '', AI_FLOW_FORCE_TTY: '1', NODE_ENV: 'test' },
     });
     return { code: 0, output };
   } catch (err) {

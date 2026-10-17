@@ -128,7 +128,7 @@ function printReport(report, reportPath) {
 
   for (const entry of report.stories) {
     if (!entry.executed) {
-      log(`- [skip] ${entry.story} — no validation commands`);
+      log(`- [skip] ${entry.story} — ${entry.refused ? `refused: ${entry.refused}` : "no validation commands"}`);
       continue;
     }
 
@@ -211,8 +211,8 @@ function run({ story = null, epic = null, driver = "none", json = false, dryRun 
   for (const entry of target.stories) {
     // Driver "none" implements nothing — it verifies work already done. A future
     // driver would implement the story here, before it is verified.
-    const evidence = verifyStoryOnce({ story: entry.path });
-    const executed = evidence.commandsFound > 0;
+    const evidence = verifyStoryOnce({ story: entry.path, announce: !json });
+    const executed = evidence.commandsFound > 0 && !evidence.refused;
     // Only persist an auditable verify when something actually ran: recording a
     // not-yet-ready story as a failed verify would wrongly mark it blocked.
     const evidencePath = executed ? writeVerifyEvidence(evidence) : null;
@@ -225,6 +225,7 @@ function run({ story = null, epic = null, driver = "none", json = false, dryRun 
       commandsFound: evidence.commandsFound,
       executed,
       commandsOk: evidence.commandsOk,
+      ...(evidence.refused ? { refused: evidence.refused } : {}),
       coverage: evidence.coverage,
       contrary: evidence.contrary,
       ok: evidence.ok,

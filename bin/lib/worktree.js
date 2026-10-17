@@ -937,7 +937,7 @@ function worktreeLand(name, { cwd, story }) {
         // test exemption a landed story already earned. Judging the merged result on
         // whether its commands pass, not on a heuristic scoped to the wrong diff, is
         // what this re-verify is for; coverage stays a per-story concern.
-        const evidence = verifyStoryOnce({ story: null, skipCoverage: true });
+        const evidence = verifyStoryOnce({ story: null, skipCoverage: true, unattended: true });
         const evidencePath = writeVerifyEvidence(evidence);
         printVerify(evidence, evidencePath);
 

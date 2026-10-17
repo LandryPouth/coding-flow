@@ -121,6 +121,7 @@ test('verify falls back to the plan.md Commands block for a story', (t) => {
     'verify',
     '--story',
     'epics/epic-01/story-01-01-demo',
+    '--allow-plan-commands',
     '--json',
   ]);
   assert.equal(code, 0, output);
