@@ -306,11 +306,22 @@ test('a git that refuses the repository (safe.directory) makes the decision unch
   fs.mkdirSync(path.join(dir, '.coding-flow'));
   execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
   // git's own knob (git >= 2.35.2) for "this repository belongs to someone else".
-  const saved = process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
-  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1';
+  // The machine's git config is shut out: a CI runner trusting every directory
+  // (`safe.directory = *`) would otherwise let git accept the repository.
+  const emptyConfig = path.join(dir, 'empty.gitconfig');
+  fs.writeFileSync(emptyConfig, '');
+  const env = {
+    GIT_TEST_ASSUME_DIFFERENT_OWNER: '1',
+    GIT_CONFIG_GLOBAL: emptyConfig,
+    GIT_CONFIG_NOSYSTEM: '1',
+  };
+  const saved = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, env);
   t.after(() => {
-    if (saved === undefined) delete process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
-    else process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = saved;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   const result = decide({ cwd: dir, ...write('src.js') }, dir);
