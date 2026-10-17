@@ -473,7 +473,7 @@ function shellWrites(command, startCwd = process.cwd()) {
     } else if (cwd === null || cwd === start || path.isAbsolute(expandHome(token))) {
       entry = { target: token, kind };
     } else {
-      entry = { target: path.relative(start, path.resolve(cwd, token)), kind };
+      entry = { target: normalizePortable(path.relative(start, path.resolve(cwd, token))), kind };
     }
 
     const key = `${entry.kind}\0${entry.target}\0${entry.unchecked || ""}`;
@@ -657,10 +657,12 @@ function shellWrites(command, startCwd = process.cwd()) {
             if (where === "." || where === "./") {
               continue;
             }
-            add(path.join(where, source), "alias");
+            // add() reads shell words, where a backslash is an escape: a path built
+            // here goes in with forward slashes, or Windows' `D:\a\.env` loses them.
+            add(path.posix.join(where, source), "alias");
             if (cwd !== null && classify(reduceWord(where)) === "path") {
               const linkDir = realPathOf(path.resolve(cwd, expandHome(reduceWord(where))));
-              add(path.resolve(linkDir, reduceWord(source)), "alias");
+              add(normalizePortable(path.resolve(linkDir, reduceWord(source))), "alias");
             }
           }
         }
