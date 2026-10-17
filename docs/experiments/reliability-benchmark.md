@@ -1,13 +1,12 @@
-# Reliability benchmark (harness ready, runs pending)
+# Reliability benchmark (run once, 2026-10-17)
 
 Coding Flow claims to make Claude Code **more reliable**: fewer forgotten files and
 higher first-pass success, because the machine verifies instead of the agent
 asserting. That claim is **unvalidated by data**. This document is the harness to
 validate or refute it.
 
-Numbers below are **pending**. Do not cite them, and do not fill the table with
-estimates — a tool whose thesis is *"executed proof beats assertion"* cannot ship an
-asserted benchmark.
+The results below are one run per cell: indicative, not proof. Cite them with that
+caveat, and do not extrapolate them into a rate.
 
 ## Hypothesis
 
@@ -80,22 +79,70 @@ property of the tool.
 | Files correct / missed | Diff vs. the reference solution, graded by hand |
 | Time to green | `duration_ms`, summed across re-prompts |
 
-## Results (PENDING — do not fill with estimates)
+## Results
 
-| Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cost | Files missed | Time |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 Fix | vanilla | — | — | — | — | — | — | — |
-| 1 Fix | coding-flow | — | — | — | — | — | — | — |
-| 2 CRUD | vanilla | — | — | — | — | — | — | — |
-| 2 CRUD | coding-flow | — | — | — | — | — | — | — |
-| 3 Refactor | vanilla | — | — | — | — | — | — | — |
-| 3 Refactor | coding-flow | — | — | — | — | — | — | — |
-| 4 Auth | vanilla | — | — | — | — | — | — | — |
-| 4 Auth | coding-flow | — | — | — | — | — | — | — |
-| 5 Cross-module | vanilla | — | — | — | — | — | — | — |
-| 5 Cross-module | coding-flow | — | — | — | — | — | — | — |
+Run 2026-10-17. Model `claude-sonnet-5-5` in both arms, coding-flow 0.12.1 (plugin)
+with `ai-flow init` from this checkout, `claude` 2.1.302, headless
+(`-p --output-format json --permission-mode acceptEdits`). **N = 1 per cell.**
+Raw per-run JSON and acceptance output were not committed; the figures below are
+read off them. Arm B = `/flow-plan` then `/flow-run` (two sessions, summed).
 
-Model: _record here_ · Date: _record here_ · coding-flow version: _record here_
+| Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cost | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 Fix | vanilla | yes | 0 | 8/1036 | 109,514 | $0.14 | 21s |
+| 1 Fix | coding-flow | yes | 0 | 24/5606 | 503,036 | $0.46 | 75s |
+| 2 CRUD | vanilla | no | 1 | 16/4687 | 215,940 | $0.31 | 58s |
+| 2 CRUD | coding-flow | no | 1 | 34/12066 | 704,599 | $0.76 | 139s |
+| 3 Refactor | vanilla | yes | 0 | 10/2646 | 141,031 | $0.17 | 35s |
+| 3 Refactor | coding-flow | yes | 0 | 26/9543 | 578,240 | $0.56 | 102s |
+| 4 Auth | vanilla | yes | 0 | 10/1987 | 142,921 | $0.17 | 60s |
+| 4 Auth | coding-flow | yes | 0 | 20/9594 | 440,134 | $0.81 | 95s |
+| 5 Cross-module | vanilla | yes | 0 | 12/1630 | 183,478 | $0.17 | 40s |
+| 5 Cross-module | coding-flow | no | 1 | 46/10645 | 1,032,980 | $0.78 | 134s |
+| **Total** | vanilla | 4/5 | 1 | 56/11,986 | 792,884 | $0.97 | 217s |
+| **Total** | coding-flow | 3/5 | 3 | 150/47,454 | 3,258,989 | $3.36 | 547s |
+
+All ten runs ended green on acceptance and regression after at most one re-prompt.
+
+### What the numbers say
+
+**The hypothesis is not supported by this run.** Coding Flow did not beat the agent
+alone on first-pass success (3/5 against 4/5) and cost about 3.5× as much and 2.5×
+the time. The arm that lost is coding-flow, on tasks 2 and 5.
+
+- **Task 5 (cross-module) is the clearest loss.** Vanilla made a 3-line change in
+  `report.js` and passed first time. Coding Flow added a `countsTowardTotals` helper
+  to `approvals.js` (a file the fix did not need) and failed all 5 acceptance tests
+  on its first attempt, passing after one re-prompt.
+- **Task 2:** both arms failed the same 3 of 6 acceptance tests first time and
+  passed after one re-prompt. No difference.
+- **Where coding-flow did differ is the tests it left behind.** Hand-graded against
+  each `REFERENCE.md`: vanilla added no test of its own on task 3 (the refactor);
+  coding-flow added 5 (`spec/approvals.spec.js`, `spec/expenses.spec.js`) and
+  pinned the behaviour first. On tasks 1 and 5 coding-flow wrote 15 and 39 lines of
+  specs against vanilla's 2 and 10; on task 4, 78 against 28. That is the only
+  measured advantage, and acceptance does not score it.
+- **Scope (tasks 3 and 4).** Vanilla left `rejectExpense` alone in both. On task 3
+  coding-flow routed `rejectExpense` through a new shared `requireActor` helper (the
+  role check is not added, so behaviour is unchanged) and removed the router's copy;
+  it ended at 1 duplicated occurrence against a target of 2. Neither arm asked about
+  the `rejectExpense` inconsistency.
+- Nothing here shows coding-flow catching a defect vanilla shipped.
+
+### Deviations from the protocol and limits
+
+- **N = 1 per cell, non-deterministic model.** A single re-prompt on one task is the
+  whole difference in first-pass counts; do not read 3/5 against 4/5 as a rate.
+- **The grader was not blind.** The same person set up, ran and graded both arms.
+  "Files missed" was not graded by hand beyond the acceptance command and the notes
+  above; the column is dropped from the table rather than filled with a guess.
+- **Time** is `duration_ms` summed over the planning session, the run and any
+  re-prompt, so arm B pays for `/flow-plan` in every task.
+- **Arm B's operator was the harness**: the task prompt was passed to `/flow-plan`
+  verbatim, then `/flow-run the story you just planned`. A hand-guided session may
+  do better or worse.
+- Tasks ran in parallel, ten sessions at once; timings are indicative only.
+- The model was `claude-sonnet-5-5`; a stronger model may erase the gap the other way.
 
 ## The fixture and the prompts
 
@@ -120,8 +167,8 @@ node evals/benchmark/run.js accept "$WORKSPACE" 05-cross-module
 The harness is itself validated against two arms: a run that does nothing fails all
 five tasks, and `reference.patch` passes all five with the regression suite green.
 
-**What remains is the runs.** Ten sessions, five tasks in two arms, with the model
-pinned and recorded.
+The ten sessions have been run once (see Results); more runs per cell are what would
+make them a rate.
 
 ## Honesty rules
 

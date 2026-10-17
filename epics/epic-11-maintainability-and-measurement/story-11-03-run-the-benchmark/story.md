@@ -9,13 +9,24 @@ serve is not.
 
 ## Acceptance Criteria
 
-- [ ] The protocol is run as written (or its deviations are listed first),
+- [x] The protocol is run as written (or its deviations are listed first),
       on at least the task count it specifies, for both arms.
-- [ ] Recorded per task: first-try success, files forgotten, time, tokens,
+- [x] Recorded per task: first-try success, files forgotten, time, tokens,
       escaped defects found afterwards.
-- [ ] Results written into the experiment document, including the arm that
+- [x] Results written into the experiment document, including the arm that
       lost and anything that contradicts the hypothesis.
-- [ ] One row in `docs/DOGFOODING.md` if the result changes what to build
+- [x] One row in `docs/DOGFOODING.md` if the result changes what to build
       next.
 
-## Status: planned
+## Result
+
+Ran all five tasks in both arms (10 headless sessions, `claude-sonnet-5-5`, N=1).
+Coding Flow 3/5 first-pass against 4/5 for the agent alone, ~3.5× the cost. The
+hypothesis is not supported; deviations and the losing arm are listed in
+`docs/experiments/reliability-benchmark.md`. DOGFOODING row added.
+
+## Test Exemption
+
+Documentation and measurement only; no product code or test file changes.
+
+## Status: done
