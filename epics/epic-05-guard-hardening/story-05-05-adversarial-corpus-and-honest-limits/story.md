@@ -39,4 +39,12 @@ or a documented limit):
   re-impose a refusal the owner lifted (from inside that repo only).
 - A `$HOME` that is a git repo (dotfiles) bounds the `.coding-flow/` search at `~`.
 
+## Handed over from 05-04
+
+- The guard reads `mode` from its roots only (outermost and nearest
+  `.coding-flow/`, the repo top): a strict `.coding-flow/` *between* them is
+  skipped by the hook and the in-process guard, while the OpenCode plugin's
+  fallback (`isStrict`) honours it. A corpus row, or `strictOutcome` reads every
+  `.coding-flow/` up to the outermost one.
+
 ## Status: planned

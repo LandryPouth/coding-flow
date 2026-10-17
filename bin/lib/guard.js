@@ -1380,11 +1380,12 @@ function evaluate(hook, root) {
       // the climb itself failed: the host's directory is all there is
     }
     const result = strictOutcome({ decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` }, hook, roots);
+    // Logged where the try logs: the project, not a subdirectory with no .coding-flow/.
     if (result.decision === "deny") {
-      recordDenial({ root, hook, result });
+      recordDenial({ root: roots[0], hook, result });
       return { ...result, reason: forAgent(result.reason) };
     }
-    recordUnchecked({ root, hook, result });
+    recordUnchecked({ root: roots[0], hook, result });
     return result;
   }
 }

@@ -104,10 +104,26 @@ function noteUnchecked(hook, reason) {
 // `mode: strict` in harness.json makes "not checked" a refusal. Read here, not asked
 // of the guard: the case that matters is the guard failing to load or run. An
 // unreadable file is the standard posture, and says so. OpenCode's `directory` is
-// where it was started, which can be below the project root: every enclosing
-// harness.json is read (the guard's own roots climb too), and any strict one wins.
+// where it was started, which can be below the project root. Bounded like the guard's
+// own roots: inside a repository, every harness.json up to its outermost enclosing
+// work tree (a `.git` marks one), any strict one winning; outside any, the nearest
+// project decides. A strict file above the repository is not this project's policy.
 function isStrict(directory) {
+  const dirs = [];
+  let top = -1;
   for (let dir = resolve(directory); ; dir = dirname(dir)) {
+    dirs.push(dir);
+    if (existsSync(join(dir, ".git"))) {
+      top = dirs.length - 1;
+    }
+    if (dirname(dir) === dir) {
+      break;
+    }
+  }
+  for (const dir of top < 0 ? dirs : dirs.slice(0, top + 1)) {
+    if (!existsSync(join(dir, ".coding-flow"))) {
+      continue;
+    }
     try {
       if (JSON.parse(readFileSync(join(dir, ".coding-flow", "harness.json"), "utf8").replace(/^\uFEFF/, "")).mode === "strict") {
         return true;
@@ -117,10 +133,11 @@ function isStrict(directory) {
         process.stderr.write("coding-flow guard: harness.json could not be read; standard mode applies\n");
       }
     }
-    if (dirname(dir) === dir) {
-      return false;
+    if (top < 0) {
+      return false; // no repository to bound the search: the nearest project decides
     }
   }
+  return false;
 }
 
 // Strictness alone never refuses a write to the policy file itself: the user must

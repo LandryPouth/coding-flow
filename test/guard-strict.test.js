@@ -48,7 +48,9 @@ test('hook: strict refuses what it could not check, standard allows it', (t) => 
   assert.match(strict.stdout, /"permissionDecision":"deny"/);
   assert.match(strict.stdout, /not checked, refused in strict mode:/);
 
-  assert.equal(cli(project(t, 'standard'), ['guard'], bash(UNCHECKED)).code, 0);
+  const standard = project(t, 'standard');
+  assert.equal(cli(standard, ['guard'], bash(UNCHECKED)).code, 0);
+  assert.match(fs.readFileSync(path.join(standard, '.coding-flow', 'guard-unchecked.jsonl'), 'utf8'), /"tool":"Bash"/);
   assert.equal(cli(project(t), ['guard'], bash(UNCHECKED)).code, 0);
 });
 
@@ -100,12 +102,13 @@ test('doctor prints the posture for both modes', (t) => {
 
 // The plugin, loaded the way OpenCode loads it, with its binary gone and its
 // fallback unable to run — the case where no guard can decide.
-async function brokenPlugin(t, dir, directory = dir) {
+// \`fallback\` replaces the npx spawn: by default a command that cannot start.
+async function brokenPlugin(t, dir, directory = dir, fallback = '["coding-flow-no-such-command", []]') {
   assert.equal(cli(dir, ['init', '--opencode']).code, 0);
   const source = fs
     .readFileSync(path.join(dir, PLUGIN), 'utf8')
     .replace(/const BINARY = .*;/, 'const BINARY = "/nonexistent/ai-flow.js";')
-    .replace('["npx", ["--yes", FALLBACK, "guard"]]', '["coding-flow-no-such-command", []]');
+    .replace('["npx", ["--yes", FALLBACK, "guard"]]', fallback);
   const copy = path.join(dir, 'plugin-under-test.mjs');
   fs.writeFileSync(copy, source);
   const mod = await import(pathToFileURL(copy).href);
@@ -124,8 +127,29 @@ test('plugin: with no decision available, strict throws and standard lets the wr
   const strict = await brokenPlugin(t, project(t, 'strict'));
   await assert.rejects(() => strict(write, args), /not checked, refused in strict mode/);
 
-  const standard = await brokenPlugin(t, project(t, 'standard'));
+  const dir = project(t, 'standard');
+  const standard = await brokenPlugin(t, dir);
   await standard(write, args);
+  assert.match(fs.readFileSync(path.join(dir, '.coding-flow', 'guard-unchecked.jsonl'), 'utf8'), /could not run/);
+});
+
+test('plugin: a fallback that runs but gives no decision is refused in strict', async (t) => {
+  const crashing = `["${process.execPath.replace(/\\/g, '\\\\')}", ["-e", "process.exit(1)"]]`;
+  const hook = await brokenPlugin(t, project(t, 'strict'), undefined, crashing);
+  await assert.rejects(
+    () => hook({ tool: 'write' }, { args: { filePath: 'src/a.js', content: 'ok' } }),
+    /not checked, refused in strict mode: the guard gave no decision \(exit 1\)/,
+  );
+});
+
+test('plugin: a strict harness.json above the repository is not the project policy', async (t) => {
+  // The guard's roots stop at the outermost work tree; the plugin's fallback must too.
+  const outer = project(t, 'strict');
+  const repo = path.join(outer, 'repo');
+  fs.mkdirSync(path.join(repo, '.coding-flow'), { recursive: true });
+  execFileSync('git', ['init', '-q'], { cwd: repo });
+  const hook = await brokenPlugin(t, repo);
+  await hook({ tool: 'write' }, { args: { filePath: 'src/a.js', content: 'ok' } });
 });
 
 test('plugin: strict holds when OpenCode starts below the project root', async (t) => {
