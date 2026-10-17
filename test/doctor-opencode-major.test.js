@@ -44,7 +44,7 @@ function setup(t, output, { globalPlugin = null, exit = 0, stream = 'stdout' } =
   return { run, project, calls: () => (fs.existsSync(path.join(root, 'calls.log')) ? fs.readFileSync(path.join(root, 'calls.log'), 'utf8') : '') };
 }
 
-test('2.x host + a plugin from before the 2.x entry: the guard is reported as not loaded, and doctor fails', (t) => {
+test('2.x host + a plugin from before the 2.x entry: the guard is reported as not loaded, and doctor fails', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const { run, project, calls } = setup(t, '2.0.30');
   fs.writeFileSync(path.join(project, PLUGIN), V1_ONLY);
 
@@ -82,7 +82,7 @@ test('no opencode binary: one informational line, no failure', (t) => {
   assert.doesNotMatch(res.output, /not loaded/);
 });
 
-test('every --version format parses; anything else counts as 1.x', (t) => {
+test('every --version format parses; anything else counts as 1.x', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   for (const [printed, fails] of [['opencode 2.0.30', true], ['v2.1.0', true], ['2.0.30', true], ['dev-build', false], ['', false]]) {
     const { run, project } = setup(t, printed);
     fs.writeFileSync(path.join(project, PLUGIN), V1_ONLY);
@@ -91,7 +91,7 @@ test('every --version format parses; anything else counts as 1.x', (t) => {
   }
 });
 
-test('2.x host + a global plugin without the 2.x entry points at upgrade --global', (t) => {
+test('2.x host + a global plugin without the 2.x entry points at upgrade --global', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const { run } = setup(t, '2.0.30', { globalPlugin: V1_ONLY });
   const res = run(['doctor']);
   assert.notEqual(res.code, 0);
@@ -99,7 +99,7 @@ test('2.x host + a global plugin without the 2.x entry points at upgrade --globa
   assert.match(res.output, /ai-flow upgrade --global/);
 });
 
-test('a binary that prints its version on stderr is still read as 2.x', (t) => {
+test('a binary that prints its version on stderr is still read as 2.x', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const { run, project } = setup(t, '2.0.30', { stream: 'stderr' });
   fs.writeFileSync(path.join(project, PLUGIN), V1_ONLY);
   const res = run(['doctor']);
@@ -107,7 +107,7 @@ test('a binary that prints its version on stderr is still read as 2.x', (t) => {
   assert.match(res.output, /guard is not loaded on OpenCode 2/);
 });
 
-test('a binary that exits non-zero is found: no "not on PATH" note', (t) => {
+test('a binary that exits non-zero is found: no "not on PATH" note', { skip: process.platform === 'win32' && 'the fake binary is a POSIX /bin/sh script' }, (t) => {
   const { run, project } = setup(t, 'boom', { exit: 1 });
   fs.writeFileSync(path.join(project, PLUGIN), V1_ONLY);
   const res = run(['doctor']);

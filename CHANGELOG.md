@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **CI runs on Windows and macOS.** The test workflow adds `windows-latest` and `macos-latest`
+  (Node 22) next to the Ubuntu × Node 18/20/22 matrix, and configures git (identity,
+  `core.autocrlf=false`) before checkout. Tests that need a POSIX shell are skipped on
+  Windows with a stated reason.
+
+### Fixed
+
+- **Worktree commands on macOS and Windows.** `worktree place`, `lock`, `land` and `status` compared
+  a project path with the path git reports, which differ when the project is reached through a
+  symlink (`/var` → `/private/var`) or a Windows short name (`RUNNER~1`): placement refused with
+  "project root is inside git repo", and `--story` paths were rejected. Paths are now compared by
+  real path. `autoland` also leaves the worktree it removes (Windows cannot delete the current
+  directory). On Windows the removal is retried briefly, best-effort: the landed directory can
+  still stay locked (open, logged in `docs/DOGFOODING.md`).
+
 ### Fixed
 
 - **Guard: `ed`, `ex`, `patch` FILE are writes** (story 05-03 review). `patch` without a FILE (paths read from the diff) and `find -exec` stay unread (known limits).

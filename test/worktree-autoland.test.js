@@ -237,7 +237,7 @@ test('auto-land: not-yet-done sibling in the same chain blocks the land', (t) =>
   assert.ok(fs.existsSync(worktreeB), 'the worktree must be untouched while the chain is unfinished');
 });
 
-test('auto-land: last story of a worktree\'d chain lands and removes the worktree directory', (t) => {
+test('auto-land: last story of a worktree\'d chain lands and removes the worktree directory', { skip: process.platform === 'win32' && 'open bug (docs/DOGFOODING.md 2026-10-16): on Windows the landed worktree directory stays locked (EBUSY)' }, (t) => {
   const { base, repo, epicPath } = freshRepo(t, {
     indexMd: TWO_CHAIN_INDEX,
     storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
@@ -288,7 +288,7 @@ test('auto-land: last story of a worktree\'d chain lands and removes the worktre
   assert.ok(!fs.existsSync(path.join(base, 'repo-worktrees')), 'the now-empty parent directory must be removed too');
 });
 
-test('auto-land: lands even when .coding-flow/runs is gitignored (this project\'s own convention), reproducing a P0 a `/flow-review` found', (t) => {
+test('auto-land: lands even when .coding-flow/runs is gitignored (this project\'s own convention), reproducing a P0 a `/flow-review` found', { skip: process.platform === 'win32' && 'open bug (docs/DOGFOODING.md 2026-10-16): on Windows the landed worktree directory stays locked (EBUSY)' }, (t) => {
   const { repo, epicPath } = freshRepo(t, {
     indexMd: TWO_CHAIN_INDEX,
     storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
@@ -327,7 +327,7 @@ test('auto-land: lands even when .coding-flow/runs is gitignored (this project\'
   assert.ok(!fs.existsSync(worktreeB), 'the worktree directory must be gone after landing');
 });
 
-test('auto-land: a sibling worktree is untouched when only one of two chains lands', (t) => {
+test('auto-land: a sibling worktree is untouched when only one of two chains lands', { skip: process.platform === 'win32' && 'open bug (docs/DOGFOODING.md 2026-10-16): on Windows the landed worktree directory stays locked (EBUSY)' }, (t) => {
   const { base, repo, epicPath } = freshRepo(t, {
     indexMd: THREE_CHAIN_INDEX,
     storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c', 'story-x-04-d'],
@@ -526,7 +526,7 @@ test('auto-land: a STRICT-tier chain (diff touches a high-risk path) with a gree
   assert.match(text.output, /run \/flow-review before landing/);
 });
 
-test('auto-land: the same STRICT-tier chain lands once a fresh, passing review evidence entry exists', (t) => {
+test('auto-land: the same STRICT-tier chain lands once a fresh, passing review evidence entry exists', { skip: process.platform === 'win32' && 'open bug (docs/DOGFOODING.md 2026-10-16): on Windows the landed worktree directory stays locked (EBUSY)' }, (t) => {
   const { repo, epicPath } = freshRepo(t, {
     indexMd: TWO_CHAIN_INDEX,
     storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],

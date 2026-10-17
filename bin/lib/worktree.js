@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { hasStoryContent } = require("./story");
-const { readJson, writeJson } = require("./util");
+const { readJson, writeJson, canonicalPath, samePath } = require("./util");
 const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
@@ -95,7 +95,7 @@ function worktreeDest(root, name) {
 // worktree<->story mapping deterministic and stateless (see status).
 function resolveStory(root, cwd, story) {
   const full = path.resolve(cwd, story);
-  const rel = path.relative(root, full);
+  const rel = path.relative(canonicalPath(root), canonicalPath(full));
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
     fail(`the story must be inside the repository: ${story}`);
   }
@@ -405,7 +405,7 @@ function worktreeRemove(name, { force, dryRun, cwd }) {
 
   const entries = parseWorktrees(root);
   const match =
-    entries.find((e) => e.path === dest) ||
+    entries.find((e) => samePath(e.path, dest)) ||
     entries.find((e) => path.basename(e.path) === name) ||
     entries.find((e) => e.branch === name);
 
@@ -616,7 +616,41 @@ function landCleanup(root, match, branch, found) {
   // cleanup failure here must not be reported as a failed land, but it must
   // not silently swallow a real error either — surface it, once the lock is
   // already free, with a message that says what actually happened.
-  const remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
+  // Windows cannot delete a directory that is some process's working directory,
+  // and `autoland` runs from inside the worktree it is about to remove (this
+  // moves the process's cwd; the CLI exits right after).
+  try {
+    if (samePath(process.cwd(), match.path) || canonicalPath(process.cwd()).startsWith(canonicalPath(match.path) + path.sep)) {
+      process.chdir(root);
+    }
+  } catch {
+    // the cwd is already gone: nothing holds the directory
+  }
+
+  let remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
+
+  // Windows releases a directory a moment after the last process using it (an
+  // antivirus scan, the indexer, a just-exited child) is gone. Git may then
+  // have dropped the worktree's registration and left the directory: finish
+  // that deletion ourselves, retrying briefly, before calling the removal failed.
+  for (let attempt = 0; process.platform === "win32" && remove.code !== 0 && attempt < 10; attempt += 1) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+
+    if (/is not a working tree/.test(remove.stderr)) {
+      try {
+        fs.rmSync(match.path, { recursive: true, force: true });
+      } catch (err) {
+        remove = { ...remove, stderr: `${remove.stderr.trim()} (deleting the directory: ${err.code} ${err.path || ""})` };
+        continue;
+      }
+
+      remove = { code: 0, stdout: "", stderr: "" };
+      break;
+    }
+
+    remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
+  }
+
   if (remove.code !== 0) {
     throw new Error(
       `the merge for "${branch}" already landed, but removing its worktree (${match.path}) failed: ` +
@@ -748,7 +782,7 @@ function worktreeLand(name, { cwd, story }) {
   const entries = parseWorktrees(root);
   const dest = worktreeDest(root, lookupName);
   const match =
-    entries.find((e) => e.path === dest) ||
+    entries.find((e) => samePath(e.path, dest)) ||
     entries.find((e) => path.basename(e.path) === lookupName) ||
     entries.find((e) => e.branch === lookupName);
 
@@ -756,14 +790,14 @@ function worktreeLand(name, { cwd, story }) {
     fail(`worktree not found for "${lookupName}". See: ai-flow worktree list`);
   }
 
-  if (path.resolve(match.path) === path.resolve(root)) {
+  if (samePath(match.path, root)) {
     // entries[0] (git's primary worktree) is not reliably "the target" once
     // worktrees nest more than one level (e.g. a story worktree inside an
     // epic worktree inside the main checkout) — naming it here would point
     // at the wrong branch. Name it only when there is exactly one other
     // worktree to choose from; otherwise list every candidate instead of
     // guessing.
-    const others = entries.filter((e) => path.resolve(e.path) !== path.resolve(match.path));
+    const others = entries.filter((e) => !samePath(e.path, match.path));
     const hint =
       others.length === 1
         ? `Run it from the target checkout instead (${others[0].path}).`

@@ -27,7 +27,15 @@ function run(cwd, args) {
 
 function project(t, validation) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-timeout-')));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    } catch (err) {
+      // On Windows the killed command can hold the directory a little longer;
+      // a leftover temp directory is not a failed test.
+      if (process.platform !== 'win32' || err.code !== 'EBUSY') throw err;
+    }
+  });
   assert.equal(run(dir, ['init', '--minimal']).code, 0);
   fs.writeFileSync(path.join(dir, 'slow.js'), 'setTimeout(() => {}, 2000);\n');
   fs.writeFileSync(path.join(dir, 'fast.js'), "console.log('fast');\n");
