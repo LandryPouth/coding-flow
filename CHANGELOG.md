@@ -28,6 +28,13 @@ All notable changes to this project are documented here. The format is based on
   real path. `autoland` also leaves the worktree it removes (Windows cannot delete the current
   directory). On Windows the removal is retried briefly, best-effort: the landed directory can
   still stay locked (open, logged in `docs/DOGFOODING.md`).
+- **Guard: an OpenCode guard that gives no decision is no longer silent** (story 05-02 review). When
+  the plugin fell back to spawning the guard and the guard exited with neither 0 nor 2 (a crash, a
+  signal, an offline `npx` that could not fetch the package), the write went through with no stderr
+  line and no log entry. It is now reported as "the guard gave no decision (exit N); this write was
+  NOT checked" and logged to `guard-unchecked.jsonl`. An unchecked call caused by a non-string path
+  (a number, an array) is now logged too, and the plugin's own fallback log is bounded like the
+  guard's.
 
 ### Fixed
 

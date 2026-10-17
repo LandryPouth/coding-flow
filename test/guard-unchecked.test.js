@@ -288,3 +288,43 @@ test('the plugin forwards the spawned guard\'s NOT checked line when it falls ba
   assert.ok(plugin.lines.some((line) => /NOT checked/.test(line)));
   assert.equal(logLines(dir).length, 1);
 });
+
+test('an exception from a non-string path is unchecked and still logged', (t) => {
+  const dir = tmp(t);
+  for (const file_path of [5, ['a', '.env'], { x: 1 }]) {
+    assert.equal(evaluate({ tool_name: 'Write', tool_input: { file_path, content: 'x' }, cwd: dir }, dir).decision, 'unchecked');
+  }
+  const lines = logLines(dir);
+  assert.equal(lines.length, 3);
+  assert.ok(lines.every((line) => line.path === null && /guard error/.test(line.reason)));
+});
+
+test('the plugin reports a spawned guard that exits with no decision', async (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init', '--opencode']).code, 0);
+  // A binary that crashes (exit 1) and no in-process module: the spawn path.
+  const crash = path.join(dir, 'crash.js');
+  fs.writeFileSync(crash, 'process.exit(1);\n');
+  const plugin = await loadPlugin(t, dir, (src) => src.replace(/const BINARY = .*;/, `const BINARY = ${JSON.stringify(crash)};`));
+  await plugin.before({ tool: 'write' }, { args: { filePath: 'src/a.js', content: 'x' } });
+  plugin.restore();
+  assert.ok(plugin.lines.some((line) => /no decision \(exit 1\).*NOT checked/.test(line)));
+  assert.equal(logLines(dir).length, 1);
+  assert.match(logLines(dir)[0].reason, /no decision \(exit 1\)/);
+});
+
+test('the plugin keeps its fallback unchecked log bounded', async (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init', '--opencode']).code, 0);
+  const log = path.join(dir, '.coding-flow', 'guard-unchecked.jsonl');
+  const line = JSON.stringify({ at: new Date().toISOString(), tool: 'x', path: null, reason: 'old'.padEnd(200, '.') });
+  fs.writeFileSync(log, `${Array(2000).fill(line).join('\n')}\n`);
+  assert.ok(fs.statSync(log).size > 256 * 1024);
+  const noModule = await loadPlugin(t, dir, (src) =>
+    src.replace(/const BINARY = .*;/, 'const BINARY = "/nonexistent/ai-flow.js";').replace(/const FALLBACK = .*;/, 'const FALLBACK = "";'));
+  await noModule.before({ tool: 'shell' }, { args: { command: 'echo hi' } });
+  noModule.restore();
+  const lines = logLines(dir);
+  assert.equal(lines.length, 201);
+  assert.match(lines[200].reason, /no guard module/);
+});

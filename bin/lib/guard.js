@@ -1158,7 +1158,9 @@ function recordEvent(file, { root, hook, result }) {
         return null;
       }
     };
-    const target = result.path || field(() => hook.tool_input.file_path);
+    // A non-string path (a number, an array) is what made the decision throw: log the line without it.
+    const given = result.path || field(() => hook.tool_input.file_path);
+    const target = typeof given === "string" ? given : null;
 
     fs.appendFileSync(
       logPath,

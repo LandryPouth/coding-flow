@@ -33,7 +33,7 @@ const MARKER = "// coding-flow:guard-plugin";
 // `bash` is checked on the command text and its write targets, like Claude's.
 const PLUGIN_BODY = `
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const BINARY = __BINARY__;
@@ -117,8 +117,14 @@ function noteUnchecked(hook, reason) {
     if (local && typeof local.recordUnchecked === "function") {
       local.recordUnchecked({ root: hook.cwd, hook, result: { reason } });
     } else if (existsSync(hook.cwd + "/.coding-flow")) {
+      // Bounded like the guard's own writer: a guard that stays broken must not grow the log forever.
+      const log = hook.cwd + "/.coding-flow/guard-unchecked.jsonl";
+      if (existsSync(log) && statSync(log).size > 256 * 1024) {
+        const kept = readFileSync(log, "utf8").split("\\n").filter(Boolean).slice(-200);
+        writeFileSync(log, kept.length ? kept.join("\\n") + "\\n" : "");
+      }
       appendFileSync(
-        hook.cwd + "/.coding-flow/guard-unchecked.jsonl",
+        log,
         JSON.stringify({ at: new Date().toISOString(), tool: hook.tool_name || null, path: null, reason }) + "\\n",
       );
     }
@@ -158,8 +164,15 @@ function spawnGuard(payload) {
     return { decision: "deny", reason: (res.stderr || "").replace(/^coding-flow guard: /, "").trim() };
   }
 
-  // Neither a clean allow nor a refusal (a timeout, a signal): no decision.
-  return res.status === 0 ? null : { decision: "unchecked", reason: "the guard gave no decision" };
+  if (res.status === 0) {
+    return null;
+  }
+
+  // Neither a clean allow nor a refusal (a crash, a signal, an npx that could not
+  // fetch the package): no decision, and the guard logged nothing — say so here.
+  const reason = \`the guard gave no decision (\${res.signal ? "signal " + res.signal : "exit " + res.status})\`;
+  noteUnchecked(payload, reason);
+  return { decision: "unchecked", reason };
 }
 
 // Not a named export: 1.x loads \`default.server\` (checked on 1.19.0), and a

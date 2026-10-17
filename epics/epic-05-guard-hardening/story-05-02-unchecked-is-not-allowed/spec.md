@@ -65,3 +65,5 @@ which tool, why — instead of reading silence as protection.
 Deviation: a `harness.json` that is a directory does not make `decide` throw (`loadPolicy` already degrades to defaults), so the exception case is tested with a hook whose field throws.
 
 Second deviation: `mcp__*` tools and the `Artifact*` tools are not counted as unknown write tools (they would bury the real unknowns in noise). Claude Code never sends MCP tools to the guard (the hook matcher is `Write|Edit|MultiEdit|NotebookEdit|Bash`), so the exemption only matters to OpenCode. A path outside the project is logged as `(outside project)`, and a spawned guard prints its "NOT checked" line on stderr so the OpenCode fallback can forward it.
+
+Review follow-up (2026-10-17): a spawned guard that exits with neither 0 nor 2 (crash, signal, offline npx) was a silent allow in the OpenCode fallback; it is now "NOT checked" and logged. A non-string path no longer drops its unchecked line, and the plugin's fallback log is bounded.
