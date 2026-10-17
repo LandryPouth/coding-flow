@@ -717,6 +717,9 @@ const gitMemo = new Map();
 // "no repo" for the call that timed out: it is recorded in `issues`, so a
 // decision made without the repository bound is `unchecked`, not `allow`.
 const GIT_TIMEOUT = "git did not answer in time (the project root was not checked)";
+// Same for a git that refuses the repository (`safe.directory`, common on mounted
+// volumes): it is not saying "no repo", so the bound it would give is not dropped silently.
+const GIT_REFUSED = "git refused the repository (safe.directory: the project root was not checked)";
 
 function git(cwd, args, issues = null) {
   const key = `${cwd}\0${args.join(" ")}`;
@@ -728,13 +731,14 @@ function git(cwd, args, issues = null) {
   try {
     out = execFileSync("git", ["-C", cwd, ...args], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
       timeout: 2000,
     }).trim();
   } catch (err) {
-    if (err && (err.signal || err.code === "ETIMEDOUT")) {
-      if (issues && !issues.includes(GIT_TIMEOUT)) {
-        issues.push(GIT_TIMEOUT);
+    const reason = err && (err.signal || err.code === "ETIMEDOUT") ? GIT_TIMEOUT : /dubious ownership|safe\.directory/.test(String((err && err.stderr) || "")) ? GIT_REFUSED : null;
+    if (reason) {
+      if (issues && !issues.includes(reason)) {
+        issues.push(reason);
       }
       return null;
     }
@@ -743,8 +747,10 @@ function git(cwd, args, issues = null) {
   return out || null;
 }
 
-// The OUTERMOST `.coding-flow/` between `cwd` and the git toplevel (so a nested
-// one cannot swap in a weaker policy), else the git toplevel, else `cwd` itself.
+// The OUTERMOST `.coding-flow/` between `cwd` and the outermost enclosing git
+// toplevel (so a nested one cannot swap in a weaker policy), else the nearest git
+// toplevel, else `cwd` itself. A submodule or a vendored repo inside the project is
+// part of it: from `vendor/lib`, the project's `.coding-flow/` still governs.
 //
 // The bound is checked on real paths: git prints the toplevel resolved (and with
 // `/` on Windows), so comparing it to a cwd reached through a symlink, or to a
@@ -753,7 +759,15 @@ function projectRoot(cwd, issues = null) {
   const start = path.resolve(cwd);
   const gitTop = git(start, ["rev-parse", "--show-toplevel"], issues);
   const top = gitTop ? path.resolve(gitTop) : null;
-  const realTop = top ? realPathOf(top) : null;
+  let outer = top;
+  for (let at = top && path.dirname(top); at && at !== outer; at = path.dirname(outer)) {
+    const enclosing = git(at, ["rev-parse", "--show-toplevel"], issues);
+    if (!enclosing) {
+      break;
+    }
+    outer = path.resolve(enclosing);
+  }
+  const realTop = outer ? realPathOf(outer) : null;
   let found = null;
 
   for (let dir = start; ; dir = path.dirname(dir)) {

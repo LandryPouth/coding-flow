@@ -285,3 +285,35 @@ test('a timed-out git lookup is retried, not remembered as "no repository"', { s
   assert.match(first.reason, /git did not answer in time/);
   assert.equal(decide(hook, worktree).decision, 'deny');
 });
+
+test('a session inside a nested repo (submodule, vendored repo) still protects the project .env', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+  const nested = path.join(dir, 'vendor', 'lib');
+  fs.mkdirSync(nested, { recursive: true });
+  execFileSync('git', ['init', '-q'], { cwd: nested, stdio: 'ignore' });
+
+  assert.equal(guard(nested, write('../../.env')).code, 2);
+  assert.equal(guard(nested, write(path.join(dir, '.env'))).code, 2);
+  assert.equal(guard(nested, bash('echo A=2 > ../../.env')).code, 2);
+  assert.equal(guard(nested, write('src.js')).code, 0);
+});
+
+test('a git that refuses the repository (safe.directory) makes the decision unchecked, not allow', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+  // git's own knob (git >= 2.35.2) for "this repository belongs to someone else".
+  const saved = process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
+  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1';
+  t.after(() => {
+    if (saved === undefined) delete process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
+    else process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = saved;
+  });
+
+  const result = decide({ cwd: dir, ...write('src.js') }, dir);
+  assert.equal(result.decision, 'unchecked');
+  assert.match(result.reason, /safe\.directory/);
+  assert.equal(decide({ cwd: dir, ...write('.env') }, dir).decision, 'deny');
+});

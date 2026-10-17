@@ -106,6 +106,12 @@ link it makes in the cwd (`./<name of SRC>`): `ln -sf /tmp/x/.env` replaced
 `.env` while `ln -sf /tmp/x/.env .` was refused. Fixed and tested; the `-T`
 over-deny is recorded in `plan.md`.
 
+A seventh review (2026-10-17) found a cwd inside a nested repo (submodule,
+vendored repo) took that repo as the root, so the project's `.coding-flow/` and
+`.env` were out of reach; and a git refusing the repository (`safe.directory`)
+was remembered as "no repo". The search now climbs to the outermost enclosing
+git repository, and a refusal makes the decision `unchecked`. Both fixed and tested.
+
 ### Rollback Notes
 
 `git revert` the commit; no data or config migration.
