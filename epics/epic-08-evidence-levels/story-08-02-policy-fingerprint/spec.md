@@ -39,3 +39,5 @@ under the old rules.
 - `harness.json` is excluded from the tree token on purpose
   (`identity.js`): keep it that way — the fingerprint is the separate channel
   the audit asked for (`subjectFingerprint` vs `policyFingerprint`).
+
+## Status: done

@@ -31,3 +31,5 @@ reviewed only by its own author is visibly so.
 
 - Existing review files with pass + P1 (bethl has one) are read as they are;
   audit lists them as "pass with open P1 (pre-0.13)".
+
+## Status: done
