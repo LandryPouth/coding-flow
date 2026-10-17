@@ -138,6 +138,12 @@ checked against every root it answers to (outermost and nearest `.coding-flow/`,
 nearest toplevel), each with its own policy; the climb only moves to a strict
 ancestor. Both fixed and tested.
 
+A ninth review (2026-10-17) passed with no P0/P1. It noted that the roots come
+from the session `cwd`, not from the target (a nested project's `.env` is judged
+differently from inside and outside it under a custom outer policy), and that a
+nested repo without `.coding-flow/` gets the default policy. Both recorded in
+`plan.md` and handed to 05-05.
+
 ### Rollback Notes
 
 `git revert` the commit; no data or config migration.

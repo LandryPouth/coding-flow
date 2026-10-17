@@ -26,4 +26,17 @@ lists, in one short section, what the guard still does not see.
       sandboxed agent mode) when the boundary must hold.
 - [ ] `npm test` green.
 
+## Handed over from 05-01
+
+Limits 05-01's reviews found and left here, each to become a corpus row (deny,
+or a documented limit):
+
+- `mkdir d && cp|mv KEY d` — a directory made earlier in the same command.
+- Case-insensitive mounts on Linux (WSL `/mnt/c`): the platform default misjudges them.
+- Roots come from the session `cwd`: under a custom root-anchored outer policy,
+  a nested project's `pkg/.env` is allowed from the outer project, denied from `pkg/`.
+- A nested git repo without `.coding-flow/` gets the default policy, which can
+  re-impose a refusal the owner lifted (from inside that repo only).
+- A `$HOME` that is a git repo (dotfiles) bounds the `.coding-flow/` search at `~`.
+
 ## Status: planned
