@@ -125,8 +125,9 @@ npm publish     # publishes @landry_pouth/coding-flow@<version>
 Before publishing — and after upgrading a host — run the real-host guard smoke test
 (Linux/macOS; spends a few cents of model credit). It asks Claude Code, OpenCode 1.x
 (`OPENCODE_BIN`, `OPENCODE_MODEL=provider/model`) and OpenCode 2.x (`OPENCODE2_BIN`)
-to create `.env`, exits 1 if any host wrote it and 2 if a throwaway project could not be
-installed. `inconclusive` means the model never tried — not a pass: rerun. Hosts use your
+to create `.env`, exits 1 if any host wrote it, 2 if a throwaway project could not be
+installed and 3 if nothing was proven (a case `inconclusive`, or every host skipped). Only
+0 is a pass. `inconclusive` means the model never tried: rerun. Hosts use your
 real credentials but never your global config, so a globally installed guard cannot
 stand in for the project's.
 

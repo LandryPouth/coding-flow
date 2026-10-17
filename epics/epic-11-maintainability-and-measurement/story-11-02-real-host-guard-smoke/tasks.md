@@ -19,7 +19,7 @@ The `v1` run is the 2026-10-16 failure reproduced: the plugin without `setup` st
 1.x and lets 2.x write `.env`.
 
 Twice in five intact OpenCode 1.x runs, `big-pickle` printed the shell tool call as text instead
-of calling it: `inconclusive`, as the edge case requires — rerun, it is not a pass.
+of calling it: `inconclusive`, as the edge case requires — rerun, it is not a pass — and since review, such a run exits 3 instead of 0.
 
 ## Findings
 

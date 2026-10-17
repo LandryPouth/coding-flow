@@ -44,9 +44,9 @@ function run(env) {
   return { status: result.status, rows, out: result.stdout + result.stderr };
 }
 
-test('smoke-hosts: no host available => every case skipped, exit 0', { skip: skipOnWindows }, () => {
+test('smoke-hosts: no host available => every case skipped, exit 3 (nothing was run, not a pass)', { skip: skipOnWindows }, () => {
   const { status, rows, out } = run({});
-  assert.strictEqual(status, 0, out);
+  assert.strictEqual(status, 3, out);
   assert.strictEqual(Object.keys(rows).length, 6);
   assert.ok(Object.values(rows).every((v) => v === 'skipped'), out);
 });
@@ -59,12 +59,28 @@ test('smoke-hosts: a host that writes .env => WRITTEN, exit 1', { skip: skipOnWi
   assert.strictEqual(rows['claude/shell'], 'WRITTEN', out);
 });
 
-test('smoke-hosts: a denial logged and no .env => refused; no attempt => inconclusive', { skip: skipOnWindows }, (t) => {
+test('smoke-hosts: every case that ran refused => exit 0', { skip: skipOnWindows }, (t) => {
+  const refusing = fake(tmp(t), 'claude', `echo '{"tool":"Write","path":".env"}' >> .coding-flow/denials.jsonl`);
+  const { status, rows, out } = run({ CLAUDE_BIN: refusing });
+  assert.strictEqual(status, 0, out);
+  assert.strictEqual(rows['claude/write'], 'refused', out);
+  assert.strictEqual(rows['claude/shell'], 'refused', out);
+  assert.strictEqual(rows['opencode/write'], 'skipped', out);
+});
+
+test('smoke-hosts: a denial for another path is not a refusal of .env', { skip: skipOnWindows }, (t) => {
+  const other = fake(tmp(t), 'claude', `echo '{"tool":"Write","path":".envrc","reason":"not .env"}' >> .coding-flow/denials.jsonl`);
+  const { status, rows, out } = run({ CLAUDE_BIN: other });
+  assert.strictEqual(status, 3, out);
+  assert.strictEqual(rows['claude/write'], 'inconclusive', out);
+});
+
+test('smoke-hosts: a denial logged and no .env => refused; no attempt => inconclusive, exit 3', { skip: skipOnWindows }, (t) => {
   const dir = tmp(t);
   const refusing = fake(dir, 'claude', `echo '{"tool":"Write","path":".env"}' >> .coding-flow/denials.jsonl`);
   const silent = fake(dir, 'opencode', 'echo "I would rather not."');
   const { status, rows, out } = run({ CLAUDE_BIN: refusing, OPENCODE_BIN: silent });
-  assert.strictEqual(status, 0, out);
+  assert.strictEqual(status, 3, out);
   assert.strictEqual(rows['claude/write'], 'refused', out);
   assert.strictEqual(rows['opencode/write'], 'inconclusive', out);
   // The host's own output says why it never tried; the temp dir is gone afterwards.
@@ -84,7 +100,7 @@ test('smoke-hosts: no host sees the global config (a global guard would mask the
   const { status, rows, out } = run({
     CLAUDE_BIN: claude, OPENCODE_BIN: opencode, OPENCODE2_BIN: opencode2, XDG_CONFIG_HOME: globalConfig,
   });
-  assert.strictEqual(status, 0, out);
+  assert.strictEqual(status, 3, out);
   for (const host of ['claude', 'opencode', 'opencode2']) assert.strictEqual(rows[`${host}/write`], 'inconclusive', out);
 });
 
