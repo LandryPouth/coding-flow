@@ -8,10 +8,11 @@ improves reliability" gets numbers.
 
 ## Why
 
-- `bin/lib/harness.js` is 2 620 lines: secret detection, path policy, risk,
-  diff analysis, command execution, coverage, evidence, story verification,
-  printing. Epics 05–09 touch most of these; after them, the boundaries are
-  known and tested, which is the right moment to extract — not before.
+- `bin/lib/harness.js` is 3 233 lines (2 620 when this epic was planned; epics
+  07–09 added to it): secret detection, path policy, risk, diff analysis,
+  command execution, coverage gate, contrary signals, evidence, story
+  verification, printing. Epics 05–09 have landed (PR #53, 2026-10-17): the
+  boundaries are known and tested, which is the right moment to extract.
 - The guard's behaviour depends on host versions (OpenCode 2 broke it
   silently, 2026-10-16). Unit tests load the plugin with fake contexts; only
   a real host proves the hook is called.
@@ -51,7 +52,7 @@ s4
 ## Stories
 
 1. **story-11-01-split-harness-by-responsibility** *(STANDARD — mechanical
-   but wide; run after epics 05–09 have landed)*
+   but wide; epics 05–09 have landed, ready to run)*
 2. **story-11-02-real-host-guard-smoke** *(STANDARD)*
 3. **story-11-03-run-the-benchmark** *(QUICK — protocol exists; this is
    execution and a write-up)*
@@ -61,11 +62,18 @@ s4
 
 ## Decisions
 
-- Extraction targets follow the audit's proposal, adjusted to the code:
-  `security-policy` (secrets, blocked/sensitive paths — shared with
-  `guard.js`), `diff-scope` (epic-07's resolver, changed files and lines),
-  `risk` (story + diff + structural signals), `validation-run` (command
-  resolution and execution, cache detection), `coverage-gate` (rung, floor,
-  weakening, criteria), `evidence` (assembly, fingerprints, reuse, writing),
-  `harness-report` (printing). `harness.js` keeps the command entry points
-  and re-exports.
+- Extraction targets follow the audit's proposal, adjusted to the code as of
+  2026-10-17: `harness-config` (defaults, read/ensure — what `templates.js`
+  and `policy-fingerprint.js` need), `security-policy` (secrets,
+  blocked/sensitive paths — what `guard.js` needs), `diff-scope` (changed
+  files and lines, on top of epic-07's `diff-base.js`), `risk` (story + diff
+  + structural signals), `validation-run` (command resolution and execution,
+  cache detection), `coverage-gate` (floor, weakening, criteria, contrary
+  signals, on top of `coverage.js`), `evidence` (preflight, assembly,
+  fingerprints, reuse, writing), `harness-report` (printing). The shared
+  story readers join `story.js`. `harness.js` keeps the command entry points
+  and re-exports. The story's spec holds the line-by-line map.
+- Split along the dependency rule, not only by responsibility
+  (`docs/plans/uncle-bob-gauntlet.md`): the guard and `policy-fingerprint.js`
+  depend on `harness-config`/`security-policy`, never on `harness.js`; the
+  core → story/speckit edges are left to story 12-03.

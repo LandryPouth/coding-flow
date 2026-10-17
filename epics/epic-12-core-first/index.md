@@ -92,8 +92,9 @@ story-07-01 (diff base), `s3` needs story-11-01 (the split).
 
 ## Decisions
 
-- **Core modules** (after 11-01): `guard`, `security-policy`, `diff-scope`,
-  `risk`, `validation-run`, `coverage`, `coverage-gate`, `evidence`,
+- **Core modules** (after 11-01): `guard`, `harness`, `harness-config`,
+  `security-policy`, `policy-fingerprint`, `diff-base`, `diff-scope`, `risk`,
+  `validation-run`, `coverage`, `coverage-gate`, `evidence`, `harness-report`,
   `identity`, `audit`, `report`, `doctor` (core checks), `util`, `context`,
   `policy`. **Layer modules**: `story`, `storage/*`, `worktree*`,
   `placement-store`, `backbone`, `next`, `run`, `status` (story view),
