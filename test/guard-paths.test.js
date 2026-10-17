@@ -37,6 +37,9 @@ function guard(cwd, payload, env = {}) {
 
 const write = (file_path) => ({ tool_name: 'Write', tool_input: { file_path, content: 'A=1' } });
 const bash = (command) => ({ tool_name: 'Bash', tool_input: { command } });
+// A path as it appears in a shell command: bash reads a backslash as an escape, so
+// a Windows path goes in with forward slashes (`D:/a/x`), the way Git Bash takes it.
+const shellPath = (p) => p.split(path.sep).join('/');
 
 test('a symlink to .env is refused by Write and by a shell redirection', (t) => {
   const dir = tmp(t);
@@ -69,7 +72,7 @@ test('a nested .coding-flow cannot swap in a weaker policy', (t) => {
 test('a link under a linked directory is read from its real directory', (t) => {
   const dir = tmp(t);
   fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
-  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'), 'dir');
 
   // Creating the link through `a/` aliases <root>/.env, not <root>/../.env.
   assert.equal(guard(dir, bash('ln -s ../../.env a/x')).code, 2);
@@ -85,7 +88,7 @@ test('a link made into a directory is read from that directory', (t) => {
   const dir = tmp(t);
   fs.mkdirSync(path.join(dir, 'x', 'y'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
-  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'), 'dir');
 
   // Each lands as x/y/.env -> ../../.env, which is <root>/.env.
   assert.equal(guard(dir, bash('ln -s ../../.env x/y/')).code, 2);
@@ -109,7 +112,7 @@ test('a one-operand ln writes the link it makes in the cwd', (t) => {
   const outside = tmp(t);
   fs.writeFileSync(path.join(outside, '.env'), 'E=1');
   fs.mkdirSync(path.join(dir, 'x'));
-  const evil = path.join(outside, '.env');
+  const evil = shellPath(path.join(outside, '.env'));
 
   // `ln SRC` makes ./.env -> SRC: it replaces (or creates) the protected file.
   assert.equal(guard(dir, bash(`ln -sf ${evil}`)).code, 2);
@@ -117,14 +120,14 @@ test('a one-operand ln writes the link it makes in the cwd', (t) => {
   assert.equal(guard(dir, bash(`ln -s ${evil}`)).code, 2, 'with no .env yet');
   // Made in a subdirectory, x/.env is not a protected path; an ordinary name stays allowed.
   assert.equal(guard(dir, bash(`cd x && ln -s ${evil}`)).code, 0);
-  assert.equal(guard(dir, bash(`ln -s ${path.join(outside, 'notes.txt')}`)).code, 0);
+  assert.equal(guard(dir, bash(`ln -s ${shellPath(path.join(outside, 'notes.txt'))}`)).code, 0);
 });
 
 test('a relative target is read from the real cwd when the cwd is reached through a link', (t) => {
   const dir = tmp(t);
   fs.mkdirSync(path.join(dir, '.coding-flow'));
   fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
-  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'), 'dir');
   const cwd = path.join(dir, 'a');
   const at = (payload) => decide({ cwd, ...payload }, cwd).decision;
 

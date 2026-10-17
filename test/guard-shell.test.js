@@ -48,7 +48,7 @@ test('a cd the guard cannot follow makes later relative writes unchecked', (t) =
 
 test('an absolute target is still judged after an unknown cd', (t) => {
   const dir = project(t);
-  assert.equal(run(dir, `cd "$DIR" && echo A=1 > ${path.join(dir, '.env')}`), 'deny');
+  assert.equal(run(dir, `cd "$DIR" && echo A=1 > ${path.join(dir, '.env').split(path.sep).join('/')}`), 'deny');
 });
 
 test('a write target decided by a variable or substitution is unchecked', (t) => {
