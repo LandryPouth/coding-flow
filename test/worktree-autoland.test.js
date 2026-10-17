@@ -553,8 +553,8 @@ test('auto-land: the same STRICT-tier chain lands once a fresh, passing review e
   writeReviewFile(worktreeB, `${epicPath}/story-x-03-c`, { verdict: 'pass' });
   commitAll(worktreeB, 'chore: capture review evidence for the chain');
 
-  const { code, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
-  assert.equal(code, 0, `a satisfied review gate must land cleanly: ${JSON.stringify(result)}`);
+  const { code, result, output } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
+  assert.equal(code, 0, `a satisfied review gate must land cleanly:\n${output}`);
   assert.equal(result.landed, true);
   assert.ok(!fs.existsSync(worktreeB), 'the worktree directory must be gone after landing');
 });
