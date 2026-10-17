@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { decide, shellWriteTargets } = require('../bin/lib/guard');
+const { decide, shellWriteTargets, isShellLimit } = require('../bin/lib/guard');
 
 function project(t) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-shell-')));
@@ -330,4 +330,35 @@ test('-t inside a flag cluster still names the destination directory', (t) => {
 
 test('sponge writes its operand like tee', (t) => {
   expectAll(t, 'deny', ['cat x | sponge .env']);
+});
+
+test('inline code behind a combined or later flag is still read', (t) => {
+  expectAll(t, 'deny', [
+    `node -pe "require('fs').writeFileSync('.env','x')"`,
+    `perl -E 'open(F, ">.env")'`,
+    `deno eval --ext=ts "Deno.writeTextFileSync('.env','x')"`,
+  ]);
+  expectAll(t, 'allow', ['node -pe "1+1"', 'ruby -E UTF-8 -e "puts 1"']);
+});
+
+test('sed -i with its script in -e, --expression or -f edits every operand', (t) => {
+  expectAll(t, 'deny', [
+    'sed -i -es/a/b/ .env',
+    'sed --expression=s/a/b/ -i .env',
+    'sed -i -e s/a/b/ -e s/c/d/ .env',
+    'sed -ie s/a/b/ .env',
+    'sed -i -f fix.sed .env',
+    'sed -i -- s/a/b/ .env',
+  ]);
+  expectAll(t, 'allow', ['sed -i -e s/a/b/ notes.md', 'sed -i s/.env/x/ notes.md']);
+});
+
+test('a shell or interpreter reading its program from a pipe is unchecked, as a shell limit', (t) => {
+  const dir = project(t);
+  for (const command of ["echo 'echo A=1 > .env' | sh", 'cat <<EOF | bash\necho A=1 > .env\nEOF', 'cat x | python3 -']) {
+    const result = decide({ tool_name: 'Bash', tool_input: { command }, cwd: dir }, dir);
+    assert.equal(result.decision, 'unchecked', command);
+    assert.ok(isShellLimit(result.reason), result.reason);
+  }
+  expectAll(t, 'allow', ['cat data.json | python3 -m json.tool', 'echo 1 | node -e "console.log(1)"', 'npm test 2>&1 | tee log.txt']);
 });

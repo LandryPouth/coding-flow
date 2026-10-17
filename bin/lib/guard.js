@@ -216,10 +216,11 @@ const EXPANSION = "write target depends on shell expansion";
 const UNKNOWN_CWD = "the working directory depends on shell expansion";
 const PATHSPEC_FILE = "git reads its paths from a file";
 const HEREDOC_PROGRAM = "an interpreter reads its program from a heredoc";
+const PIPED_PROGRAM = "an interpreter reads its program from a pipe";
 // A command too dynamic to read is a limit of reading shell text, met in everyday
 // use (`> "$out"`, `node <<EOF`): `report` counts it, `doctor` does not warn on it.
 // Every other unchecked reason means the guard itself could not do its job.
-const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM]);
+const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM]);
 const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 
 // Splits a command into segments at `&&`, `||`, `;`, `|`, `&`, newline and
@@ -306,11 +307,12 @@ function splitSegments(command) {
 }
 
 // The inline program an interpreter was handed, in its flag spellings: `-c code`,
-// `-Bc code`, `--eval code`, `--eval=code`, `deno eval code`.
+// `-Bc code`, `-pe code`, `--eval code`, `--eval=code`, `perl -E code`, `deno eval [options] code`.
 const INTERPRETERS = [
   [/^python[\d.]*$/, /^-[A-Za-z]*c$/],
-  [/^(node|nodejs|bun)$/, /^(-e|-p|--eval|--print)$/],
-  [/^(perl|ruby)$/, /^-[A-Za-z]*e$/],
+  [/^(node|nodejs|bun)$/, /^(-e|-p|-pe|--eval|--print)$/],
+  [/^perl$/, /^-[A-Za-z\d]*[eE]$/],
+  [/^ruby$/, /^-[A-Za-z]*e$/],
   [/^deno$/, /^eval$/],
 ];
 
@@ -321,7 +323,10 @@ function inlineCode(name, args) {
       continue;
     }
     args.forEach((arg, at) => {
-      if (flag.test(arg) && args[at + 1] !== undefined) {
+      if (name === "deno" && flag.test(arg)) {
+        // `deno eval --ext=ts code`: options may come first, so every word that is not one is read.
+        programs.push(...args.slice(at + 1).filter((word) => !word.startsWith("-")));
+      } else if (flag.test(arg) && args[at + 1] !== undefined) {
         programs.push(args[at + 1]);
       } else if (/^--(eval|print)=/.test(arg)) {
         programs.push(unquote(arg.slice(arg.indexOf("=") + 1)));
@@ -342,6 +347,43 @@ function stringLiterals(code) {
     }
   }
   return found;
+}
+
+// The files `sed -i` edits. The script is the first operand only when no
+// `-e`/`-f`/`--expression`/`--file` gave it (`sed -i -es/a/b/ .env` edits .env).
+// In a short cluster, `i` takes the rest as its backup suffix (`-ie` is suffix "e").
+function sedFiles(args) {
+  const operands = [];
+  let script = false;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--") {
+      operands.push(...args.slice(i + 1));
+      break;
+    } else if (/^--(expression|file)=/.test(arg)) {
+      script = true;
+    } else if (arg === "--expression" || arg === "--file" || arg === "--line-length") {
+      script = script || arg !== "--line-length";
+      i += 1;
+    } else if (arg.startsWith("--")) {
+      continue;
+    } else if (arg.startsWith("-") && arg.length > 1) {
+      // `-e`, `-f`, `-l` take a value: the rest of the cluster, else the next word.
+      for (let at = 1; at < arg.length; at += 1) {
+        if (arg[at] === "i") {
+          break;
+        }
+        if ("efl".includes(arg[at])) {
+          script = script || arg[at] !== "l";
+          i += at === arg.length - 1 ? 1 : 0;
+          break;
+        }
+      }
+    } else {
+      operands.push(arg);
+    }
+  }
+  return (script ? operands : operands.slice(1)).filter((arg) => classify(arg) !== "skip");
 }
 
 // `git checkout <tree> [--] <paths>` and `git restore <paths>` overwrite working
@@ -539,8 +581,7 @@ function shellWrites(command, startCwd = process.cwd()) {
     } else if (name === "tee" || name === "sponge") {
       files.forEach((file) => add(file, "write"));
     } else if (name === "sed" && args.some((arg) => arg === "--in-place" || arg.startsWith("--in-place=") || /^-[A-Za-z]*i/.test(arg))) {
-      // sed -i '<script>' <files…>: the script is the first non-flag argument.
-      files.slice(1).forEach((file) => add(file, "write"));
+      sedFiles(operands).forEach((file) => add(file, "write"));
     } else if (DESTINATION_LAST.has(name) && files.length >= 1) {
       const symbolic = args.some((arg) => /^-[A-Za-z]*[sl]/.test(arg) || arg === "--symbolic" || arg === "--link" || arg === "--symbolic-link");
       const aliasing = name === "ln" || (name === "cp" && symbolic);
@@ -687,10 +728,15 @@ function shellWrites(command, startCwd = process.cwd()) {
         }),
       );
 
-      // A program read from a heredoc / here-string is data to the splitter: it cannot be judged.
+      // A program read from a heredoc / here-string, or piped in (`cat <<EOF | bash`,
+      // `curl … | sh`), is data to the splitter: it cannot be judged.
       const reader = INTERPRETERS.some(([pattern]) => pattern.test(name)) || SHELLS.has(name);
-      if (reader && programs.length === 0 && segment.text.includes("<<") && args.every((arg) => arg.startsWith("-") || arg.startsWith("<"))) {
-        found.push({ target: `(${name} program)`, kind: "write", unchecked: HEREDOC_PROGRAM });
+      if (reader && programs.length === 0 && args.every((arg) => arg.startsWith("-") || arg.startsWith("<"))) {
+        if (segment.text.includes("<<")) {
+          found.push({ target: `(${name} program)`, kind: "write", unchecked: HEREDOC_PROGRAM });
+        } else if (segment.before === "pipe") {
+          found.push({ target: `(${name} program)`, kind: "write", unchecked: PIPED_PROGRAM });
+        }
       }
     }
 
