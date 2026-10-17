@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **README: what the guard does not see** (story 05-05). One short section lists what stays out of reach (scripts and compiled programs, computed paths, downloads, TOCTOU, writes by validation tools, nested-project policy quirks) and the answer when the boundary must hold: `mode: strict` plus OS-level isolation. Every case from the guard measurement is now one row of `test/guard-adversarial.test.js`, and each documented limit fails the suite if the README stops describing it.
 - **`npm run release`** (this repository): after the maintainer's own `npm publish`, tags `vx.y.z`,
   pushes it and creates the GitHub release from the CHANGELOG section. Idempotent, `--dry-run`
   prints the plan, never publishes. `doctor` warns here when the current version has no tag.

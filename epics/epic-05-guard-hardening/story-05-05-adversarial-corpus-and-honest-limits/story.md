@@ -9,7 +9,7 @@ lists, in one short section, what the guard still does not see.
 
 ## Acceptance Criteria
 
-- [ ] `test/guard-adversarial.test.js` holds a table `[name, setup, hook,
+- [x] `test/guard-adversarial.test.js` holds a table `[name, setup, hook,
       expected]` covering at least: direct write, `../`, symlink (Write and
       Bash), `ln -s` alias, `cd ../`, subshell `cd`, `~/.ssh`, worktree
       primary `.env`, monorepo subdirectory, `git checkout --`, `python -c`,
@@ -17,14 +17,14 @@ lists, in one short section, what the guard still does not see.
       target (unchecked), `bash script.sh` (allow — documented limit), unknown
       write tool (unchecked), unparseable input (unchecked), tee/cp/mv/`sed
       -i`/`dd`, secret in content, secret in command.
-- [ ] Each "documented limit" row links (comment) to the README section, so
+- [x] Each "documented limit" row links (comment) to the README section, so
       changing it requires changing the docs.
-- [ ] README: a "What the guard does not see" section (≤ 15 lines): scripts
+- [x] README: a "What the guard does not see" section (≤ 15 lines): scripts
       and compiled programs, computed paths, network downloads, TOCTOU, writes
       by the tools the validation commands run; and the advice: use
       `mode: strict` plus OS-level isolation (container, devcontainer, a
       sandboxed agent mode) when the boundary must hold.
-- [ ] `npm test` green.
+- [x] `npm test` green.
 
 ## Handed over from 05-01
 
@@ -47,4 +47,33 @@ or a documented limit):
   fallback (`isStrict`) honours it. A corpus row, or `strictOutcome` reads every
   `.coding-flow/` up to the outermost one.
 
-## Status: planned
+## Status: done
+
+## Result
+
+`test/guard-adversarial.test.js`: 37 rows `[name, setup, hook, expected, limit?]`
+run through `evaluate()` in a fresh git repo each, plus one test that reads the
+README section. A row's optional fifth element is the README phrase that
+documents it; the last test fails when the README stops saying it (checked by
+removing one phrase: red, restored: green). Every expected decision was observed
+before it was written down; none of the measured holes is still open except the
+documented limits.
+
+Every handed-over limit is a row: `mkdir d && cp .env d` (allow), `.ENV` on a
+case-sensitive platform (allow on Linux, deny on macOS/Windows), the root-anchored
+outer policy (allow from outside `pkg/`, deny from inside), the nested git repo
+without `.coding-flow/` (deny), the git `$HOME` (`~/.coding-flow/` governs a project
+under it), and 05-04's intermediate strict `.coding-flow/` (unchecked, not refused).
+
+README: the "What the guard does not see" section (14 lines), and the two older
+sentences that still called `python -c` out of reach (05-03 refuses it when the
+code names a protected path) now point to it. The symlink rows skip on Windows,
+like `guard-unchecked.test.js`.
+
+The first two verifies went red on `test/worktree-autoland.test.js` (the flake in
+`docs/DOGFOODING.md`, 2026-10-17), made more frequent by this file's load. Root
+cause, captured: under load this WSL2 clock steps back ~2.5 s every ~30 s, and
+"latest verify" is chosen by `generatedAt`, so a fixture written before a step
+outranked the real re-verify written after it. The auto-land fixtures are now
+stamped from a fixed past clock (stamping them 5 s ahead reproduces both failing
+tests on demand); verify `2026-10-17T16-37-48-295Z` is green.

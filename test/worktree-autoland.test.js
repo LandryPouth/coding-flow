@@ -23,6 +23,18 @@ function sh(cwd, cmd, args) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+// Hand-written evidence is stamped from a fixed past clock, one second apart, not
+// from the wall clock: "latest" is chosen by `generatedAt`, and under load this
+// suite has seen the wall clock step back ~2.5 s every ~30 s (WSL2), which made a
+// fixture written before a step look newer than the real re-verify written after
+// it — the land then judged that fixture stale (docs/DOGFOODING.md, 2026-10-17).
+// Fixtures stay ordered among themselves; real verifies (stamped now) always follow.
+let fixtureClock = Date.UTC(2020, 0, 1);
+function fixtureStamp() {
+  fixtureClock += 1000;
+  return fixtureClock;
+}
+
 function commitAll(cwd, message) {
   sh(cwd, 'git', ['add', '-A']);
   sh(cwd, 'git', ['commit', '-m', message]);
@@ -164,12 +176,13 @@ function writeReviewFile(worktreePath, storyRel, { verdict = 'pass' } = {}) {
   const runsDir = path.join(worktreePath, '.coding-flow', 'runs');
   fs.mkdirSync(runsDir, { recursive: true });
   const treeToken = currentTreeToken(worktreePath);
-  const file = path.join(runsDir, `${Date.now()}-${Math.random().toString(16).slice(2, 8)}-review.json`);
+  const at = fixtureStamp();
+  const file = path.join(runsDir, `${at}-${Math.random().toString(16).slice(2, 8)}-review.json`);
   fs.writeFileSync(
     file,
     JSON.stringify(
       {
-        generatedAt: new Date().toISOString(),
+        generatedAt: new Date(at).toISOString(),
         story: storyRel,
         ok: verdict === 'pass',
         verdict,
@@ -196,12 +209,13 @@ function writeVerify(worktreePath, storyRel, { ok = true } = {}) {
   const runsDir = path.join(worktreePath, '.coding-flow', 'runs');
   fs.mkdirSync(runsDir, { recursive: true });
   const treeToken = currentTreeToken(worktreePath);
-  const file = path.join(runsDir, `${Date.now()}-${Math.random().toString(16).slice(2, 8)}-verify.json`);
+  const at = fixtureStamp();
+  const file = path.join(runsDir, `${at}-${Math.random().toString(16).slice(2, 8)}-verify.json`);
   fs.writeFileSync(
     file,
     JSON.stringify(
       {
-        generatedAt: new Date().toISOString(),
+        generatedAt: new Date(at).toISOString(),
         ok,
         story: storyRel,
         commandsFound: 1,
