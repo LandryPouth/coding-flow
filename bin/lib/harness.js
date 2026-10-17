@@ -25,7 +25,13 @@ const {
   resolveCoverageFloor,
   DEFAULT_REPORT_PATHS,
 } = require("./coverage");
-const { PART_FILES, readStoryPart, storyPartPath } = require("./story");
+const {
+  readStoryPart,
+  storyPartPath,
+  resolveProjectPath,
+  readStoryBundle,
+  extractSection,
+} = require("./story");
 const {
   detectFeature: detectSpecKitFeature,
   isFeatureOf: isSpecKitFeatureOf,
@@ -527,43 +533,6 @@ function checkEnvGitignore(report, { strict = false } = {}) {
   }
 }
 
-function resolveProjectPath(relativeOrAbsolutePath) {
-  if (!relativeOrAbsolutePath) {
-    return null;
-  }
-
-  const fullPath = path.resolve(cwd, relativeOrAbsolutePath);
-  const relativePath = path.relative(cwd, fullPath);
-
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    return {
-      fullPath,
-      relativePath: normalizePortable(relativePath),
-      insideRoot: false,
-      exists: false,
-    };
-  }
-
-  return {
-    fullPath,
-    relativePath: normalizePortable(relativePath),
-    insideRoot: true,
-    exists: fs.existsSync(fullPath),
-  };
-}
-
-// Keyed by the canonical filename so callers read unchanged, but resolved by role:
-// a single-file story answers all three from story.md.
-function readStoryBundle(storyFullPath) {
-  const files = {};
-
-  for (const [part, name] of Object.entries(PART_FILES)) {
-    files[name] = readStoryPart(storyFullPath, part);
-  }
-
-  return files;
-}
-
 // Whole words only. A naked `includes` made "auth" fire on "author", "token" on
 // "design tokens", and "migration" on a story titled "color migration" — terms
 // are configurable, so the pattern is escaped before it becomes a regex.
@@ -1023,6 +992,7 @@ function collectHarnessReport({ quick = false, strict = false, story = null, fil
 // is measured from. Resolved once per run and per HEAD, not once per function:
 // five readers disagreeing about the base would make the evidence incoherent.
 let diffBaseRequest = { flagBase: null, story: null };
+
 let diffBaseCache = new Map();
 
 function setDiffBaseRequest({ flagBase = null, story = null } = {}) {
@@ -1080,44 +1050,6 @@ function getChangedFiles(root = cwd) {
     ...runGitList(["diff", "--name-only"], root),
     ...runGitList(["diff", "--cached", "--name-only"], root),
   ])].sort();
-}
-
-// Extract a markdown section by heading, at any level (## through ######), and
-// stop at the next heading of the same or higher level. So `Result` (a ##)
-// keeps its ### children, while `Rollback Notes` (a ### nested under Result)
-// returns just its own body.
-function extractSection(content, heading) {
-  const lines = content.split(/\r?\n/);
-  const target = heading.toLowerCase();
-
-  let start = -1;
-  let level = 0;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const match = lines[index].match(/^(#{2,6})\s+(.*)$/);
-    if (match && match[2].trim().toLowerCase() === target) {
-      start = index;
-      level = match[1].length;
-      break;
-    }
-  }
-
-  if (start === -1) {
-    return "";
-  }
-
-  const section = [];
-
-  for (let index = start + 1; index < lines.length; index += 1) {
-    const match = lines[index].match(/^(#{1,6})\s+/);
-    if (match && match[1].length <= level) {
-      break;
-    }
-
-    section.push(lines[index]);
-  }
-
-  return section.join("\n").trim();
 }
 
 function buildHarnessEvidence({ story = null } = {}) {
