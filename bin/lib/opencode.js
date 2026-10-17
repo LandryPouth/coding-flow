@@ -35,6 +35,7 @@ const PLUGIN_BODY = `
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 
 const BINARY = __BINARY__;
 const FALLBACK = __FALLBACK__;
@@ -133,16 +134,32 @@ function noteUnchecked(hook, reason) {
 
 // \`mode: strict\` in harness.json makes "not checked" a refusal. Read here, not asked
 // of the guard: the case that matters is the guard failing to load or run. An
-// unreadable file is the standard posture, and says so.
+// unreadable file is the standard posture, and says so. OpenCode's \`directory\` is
+// where it was started, which can be below the project root: every enclosing
+// harness.json is read (the guard's own roots climb too), and any strict one wins.
 function isStrict(directory) {
-  try {
-    return JSON.parse(readFileSync(directory + "/.coding-flow/harness.json", "utf8").replace(/^\\uFEFF/, "")).mode === "strict";
-  } catch (err) {
-    if (err && err.code !== "ENOENT") {
-      process.stderr.write("coding-flow guard: harness.json could not be read; standard mode applies\\n");
+  for (let dir = resolve(directory); ; dir = dirname(dir)) {
+    try {
+      if (JSON.parse(readFileSync(join(dir, ".coding-flow", "harness.json"), "utf8").replace(/^\\uFEFF/, "")).mode === "strict") {
+        return true;
+      }
+    } catch (err) {
+      if (err && err.code !== "ENOENT" && err.code !== "ENOTDIR") {
+        process.stderr.write("coding-flow guard: harness.json could not be read; standard mode applies\\n");
+      }
     }
-    return false;
+    if (dirname(dir) === dir) {
+      return false;
+    }
   }
+}
+
+// Strictness alone never refuses a write to the policy file itself: the user must
+// be able to switch back. Blocked-path rules still apply (the guard judges those).
+function isPolicyWrite(hook) {
+  const file = hook.tool_input && (hook.tool_input.file_path || hook.tool_input.path);
+  return (hook.tool_name === "Write" || hook.tool_name === "Edit") &&
+    typeof file === "string" && /(^|[\\\\/])\\.coding-flow[\\\\/]harness\\.json$/.test(file);
 }
 
 function spawnGuard(payload) {
@@ -184,7 +201,7 @@ const CodingFlowGuard = async ({ directory }) => ({
       // Defensive: a generated plugin always carries FALLBACK; a hand-edited one may not.
       if (!local && !(BINARY && existsSync(BINARY)) && !FALLBACK) {
         noteUnchecked(hook, "no guard module to run");
-        if (isStrict(directory)) {
+        if (!isPolicyWrite(hook) && isStrict(directory)) {
           throw new Error("coding-flow guard: not checked, refused in strict mode: no guard module to run");
         }
         continue;
@@ -202,7 +219,7 @@ const CodingFlowGuard = async ({ directory }) => ({
       }
       // Strict: no decision is a refusal. (The in-process guard has already turned
       // its own unchecked into a deny; this covers the spawn that could not run.)
-      if (result && result.decision === "unchecked" && isStrict(directory)) {
+      if (result && result.decision === "unchecked" && !isPolicyWrite(hook) && isStrict(directory)) {
         throw new Error(\`coding-flow guard: not checked, refused in strict mode: \${result.reason}\`);
       }
     }

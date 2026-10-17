@@ -65,8 +65,18 @@ test('hook: an ordinary strict session is not refused', (t) => {
 });
 
 test('hook: strict never locks out a write to harness.json because of strictness alone', (t) => {
+  // A strict repo holding a nested project whose harness.json is broken: every write
+  // from there is unchecked (its policy cannot be read), so strict refuses it — except
+  // the write that repairs that file.
   const dir = project(t, 'strict');
-  assert.equal(cli(dir, ['guard'], { tool_name: 'Write', tool_input: { file_path: '.coding-flow/harness.json', content: '{"mode":"standard"}' } }).code, 0);
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+  const nested = path.join(dir, 'pkg');
+  fs.mkdirSync(path.join(nested, '.coding-flow'), { recursive: true });
+  fs.writeFileSync(path.join(nested, '.coding-flow', 'harness.json'), '{ not json');
+  const write = (file_path) => ({ cwd: nested, tool_name: 'Write', tool_input: { file_path, content: '{"mode":"standard"}' } });
+
+  assert.equal(cli(nested, ['guard'], write('src/a.js')).code, 2);
+  assert.equal(cli(nested, ['guard'], write('.coding-flow/harness.json')).code, 0);
 });
 
 test('an unreadable harness.json is the standard posture', (t) => {
@@ -90,7 +100,7 @@ test('doctor prints the posture for both modes', (t) => {
 
 // The plugin, loaded the way OpenCode loads it, with its binary gone and its
 // fallback unable to run — the case where no guard can decide.
-async function brokenPlugin(t, dir) {
+async function brokenPlugin(t, dir, directory = dir) {
   assert.equal(cli(dir, ['init', '--opencode']).code, 0);
   const source = fs
     .readFileSync(path.join(dir, PLUGIN), 'utf8')
@@ -104,7 +114,7 @@ async function brokenPlugin(t, dir) {
   t.after(() => {
     process.stderr.write = original;
   });
-  return (await mod.default.server({ directory: dir }))['tool.execute.before'];
+  return (await mod.default.server({ directory }))['tool.execute.before'];
 }
 
 test('plugin: with no decision available, strict throws and standard lets the write through', async (t) => {
@@ -116,6 +126,30 @@ test('plugin: with no decision available, strict throws and standard lets the wr
 
   const standard = await brokenPlugin(t, project(t, 'standard'));
   await standard(write, args);
+});
+
+test('plugin: strict holds when OpenCode starts below the project root', async (t) => {
+  const dir = project(t, 'strict');
+  fs.mkdirSync(path.join(dir, 'sub'));
+  const hook = await brokenPlugin(t, dir, path.join(dir, 'sub'));
+  await assert.rejects(() => hook({ tool: 'write' }, { args: { filePath: 'a.js', content: 'ok' } }), /not checked, refused in strict mode/);
+});
+
+test('plugin: with no decision available, strict still lets the user repair harness.json', async (t) => {
+  const hook = await brokenPlugin(t, project(t, 'strict'));
+  await hook({ tool: 'write' }, { args: { filePath: '.coding-flow/harness.json', content: '{"mode":"standard"}' } });
+  await hook({ tool: 'edit' }, { args: { filePath: '.coding-flow/harness.json', newString: '"standard"' } });
+  await assert.rejects(
+    () => hook({ tool: 'write' }, { args: { filePath: '.coding-flow/harness.json.bak', content: 'x' } }),
+    /not checked, refused in strict mode/,
+  );
+});
+
+test('doctor says why the posture is standard when harness.json cannot be read', (t) => {
+  const dir = project(t);
+  assert.equal(cli(dir, ['init', '--minimal']).code, 0);
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'harness.json'), '{ not json');
+  assert.match(cli(dir, ['doctor']).stdout + '', /guard: standard \(\.coding-flow\/harness\.json could not be read;/);
 });
 
 test('plugin: strict refuses an unchecked call the in-process guard returns', async (t) => {

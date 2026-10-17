@@ -633,11 +633,15 @@ function collectMinimalReport({ strict = false } = {}) {
 // One line on what the guard does with a write it could not check, so the posture
 // is read, not assumed.
 function guardPosture() {
-  const mode = loadPolicy(cwd).mode;
-  return {
-    guardMode: mode,
-    guardPosture: mode === "strict" ? "guard: strict (unchecked writes are refused)" : "guard: standard (unchecked writes are allowed and logged)",
-  };
+  const { mode, unreadable } = loadPolicy(cwd);
+  let guardPosture = "guard: standard (unchecked writes are allowed and logged)";
+  if (mode === "strict") {
+    guardPosture = "guard: strict (unchecked writes are refused)";
+  } else if (unreadable) {
+    // Say why: a project that set strict and broke the file must not read "standard" as a choice.
+    guardPosture = "guard: standard (.coding-flow/harness.json could not be read; unchecked writes are allowed and logged)";
+  }
+  return { guardMode: mode, guardPosture };
 }
 
 function collectDoctorReport({ strict = false } = {}) {

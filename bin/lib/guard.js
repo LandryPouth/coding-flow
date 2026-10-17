@@ -1371,7 +1371,15 @@ function evaluate(hook, root) {
 
     return result;
   } catch (err) {
-    const result = strictOutcome({ decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` }, hook, root);
+    // The roots the policy comes from, as in the try: the host's directory can sit
+    // below the project, and a strict project must still refuse a crash.
+    let roots = [root];
+    try {
+      roots = projectRoots(hookCwd(hook, root)).concat(root);
+    } catch {
+      // the climb itself failed: the host's directory is all there is
+    }
+    const result = strictOutcome({ decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` }, hook, roots);
     if (result.decision === "deny") {
       recordDenial({ root, hook, result });
       return { ...result, reason: forAgent(result.reason) };
