@@ -19,11 +19,12 @@ const fs = require("fs");
 const path = require("path");
 
 const { hasStoryContent } = require("./story");
-const { readJson, writeJson } = require("./util");
+const { readJson, writeJson, canonicalPath, samePath } = require("./util");
 const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
+const { policyFingerprint } = require("./policy-fingerprint");
 const { verifyStoryOnce, writeVerifyEvidence, printVerify, resolveValidationCommands } = require("./harness");
 // Leaf modules only (neither requires this file) — safe from here without
 // creating a cycle with worktree-plan.js, which itself requires this file
@@ -94,7 +95,7 @@ function worktreeDest(root, name) {
 // worktree<->story mapping deterministic and stateless (see status).
 function resolveStory(root, cwd, story) {
   const full = path.resolve(cwd, story);
-  const rel = path.relative(root, full);
+  const rel = path.relative(canonicalPath(root), canonicalPath(full));
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
     fail(`the story must be inside the repository: ${story}`);
   }
@@ -261,6 +262,16 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   git(root, addArgs);
+  if (!branchExists) {
+    // The fork point travels with the branch in the repository's own config, so
+    // verify can measure the story from where it forked, not from main. The ref
+    // is a branch name, re-resolved on every run: a rebase keeps it valid.
+    const forkRef =
+      from || git(root, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }).stdout.trim();
+    if (forkRef && forkRef !== "HEAD" && !forkRef.startsWith("-")) {
+      git(root, ["config", `branch.${name}.codingFlowBase`, forkRef], { allowFail: true });
+    }
+  }
   if (!quiet) {
     log(`Worktree created: ${dest}`);
     log(`Branch: ${name}${branchExists ? " (existing)" : ""}`);
@@ -394,7 +405,7 @@ function worktreeRemove(name, { force, dryRun, cwd }) {
 
   const entries = parseWorktrees(root);
   const match =
-    entries.find((e) => e.path === dest) ||
+    entries.find((e) => samePath(e.path, dest)) ||
     entries.find((e) => path.basename(e.path) === name) ||
     entries.find((e) => e.branch === name);
 
@@ -605,7 +616,41 @@ function landCleanup(root, match, branch, found) {
   // cleanup failure here must not be reported as a failed land, but it must
   // not silently swallow a real error either — surface it, once the lock is
   // already free, with a message that says what actually happened.
-  const remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
+  // Windows cannot delete a directory that is some process's working directory,
+  // and `autoland` runs from inside the worktree it is about to remove (this
+  // moves the process's cwd; the CLI exits right after).
+  try {
+    if (samePath(process.cwd(), match.path) || canonicalPath(process.cwd()).startsWith(canonicalPath(match.path) + path.sep)) {
+      process.chdir(root);
+    }
+  } catch {
+    // the cwd is already gone: nothing holds the directory
+  }
+
+  let remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
+
+  // Windows releases a directory a moment after the last process using it (an
+  // antivirus scan, the indexer, a just-exited child) is gone. Git may then
+  // have dropped the worktree's registration and left the directory: finish
+  // that deletion ourselves, retrying briefly, before calling the removal failed.
+  for (let attempt = 0; process.platform === "win32" && remove.code !== 0 && attempt < 10; attempt += 1) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+
+    if (/is not a working tree/.test(remove.stderr)) {
+      try {
+        fs.rmSync(match.path, { recursive: true, force: true });
+      } catch (err) {
+        remove = { ...remove, stderr: `${remove.stderr.trim()} (deleting the directory: ${err.code} ${err.path || ""})` };
+        continue;
+      }
+
+      remove = { code: 0, stdout: "", stderr: "" };
+      break;
+    }
+
+    remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
+  }
+
   if (remove.code !== 0) {
     throw new Error(
       `the merge for "${branch}" already landed, but removing its worktree (${match.path}) failed: ` +
@@ -703,8 +748,10 @@ const LAND_LOCK_STALE_MARGIN_MS = 5 * 60 * 1000;
 // (impure, config-reading) command count lookup below so the scaling itself
 // is unit-testable with a plain number, without needing a real project
 // checkout.
-function landLockTimeouts(commandCount) {
-  const worstCaseMs = commandCount * PER_COMMAND_TIMEOUT_MS;
+// `worstCaseMs` overrides the default-limit estimate when the project raised a
+// command's limit (`validation.timeoutMs`): a lock sized for 10 min per command
+// would be stolen from a re-verify legitimately running for 20.
+function landLockTimeouts(commandCount, worstCaseMs = commandCount * PER_COMMAND_TIMEOUT_MS) {
   return {
     waitTimeoutMs: Math.max(LAND_LOCK_WAIT_TIMEOUT_MS, worstCaseMs + LAND_LOCK_WAIT_MARGIN_MS),
     staleMs: Math.max(LAND_LOCK_STALE_MS, worstCaseMs + LAND_LOCK_STALE_MARGIN_MS),
@@ -735,7 +782,7 @@ function worktreeLand(name, { cwd, story }) {
   const entries = parseWorktrees(root);
   const dest = worktreeDest(root, lookupName);
   const match =
-    entries.find((e) => e.path === dest) ||
+    entries.find((e) => samePath(e.path, dest)) ||
     entries.find((e) => path.basename(e.path) === lookupName) ||
     entries.find((e) => e.branch === lookupName);
 
@@ -743,14 +790,14 @@ function worktreeLand(name, { cwd, story }) {
     fail(`worktree not found for "${lookupName}". See: ai-flow worktree list`);
   }
 
-  if (path.resolve(match.path) === path.resolve(root)) {
+  if (samePath(match.path, root)) {
     // entries[0] (git's primary worktree) is not reliably "the target" once
     // worktrees nest more than one level (e.g. a story worktree inside an
     // epic worktree inside the main checkout) — naming it here would point
     // at the wrong branch. Name it only when there is exactly one other
     // worktree to choose from; otherwise list every candidate instead of
     // guessing.
-    const others = entries.filter((e) => path.resolve(e.path) !== path.resolve(match.path));
+    const others = entries.filter((e) => !samePath(e.path, match.path));
     const hint =
       others.length === 1
         ? `Run it from the target checkout instead (${others[0].path}).`
@@ -812,12 +859,18 @@ function worktreeLand(name, { cwd, story }) {
   // unreadable config must not block land over sizing a lock, so this falls
   // back to the fixed floors in `landLockTimeouts` rather than throwing.
   let landCommandCount = 0;
+  let landWorstCaseMs = 0;
   try {
-    landCommandCount = resolveValidationCommands({ storyDir: null }).commands.length;
+    const landResolution = resolveValidationCommands({ storyDir: null });
+    landCommandCount = landResolution.commands.length;
+    landWorstCaseMs = landResolution.commands.reduce(
+      (total, command) => total + ((landResolution.timeouts && landResolution.timeouts[command]) || PER_COMMAND_TIMEOUT_MS),
+      0,
+    );
   } catch {
     // Falls back to the fixed floors below.
   }
-  const { waitTimeoutMs, staleMs } = landLockTimeouts(landCommandCount);
+  const { waitTimeoutMs, staleMs } = landLockTimeouts(landCommandCount, landWorstCaseMs);
 
   try {
     withFileLock(
@@ -852,9 +905,9 @@ function worktreeLand(name, { cwd, story }) {
         }
 
         const currentToken = currentTreeToken(match.path);
-        if (isStale(verifyEntry, currentToken)) {
+        if (isStale(verifyEntry, currentToken, policyFingerprint(match.path))) {
           throw new Error(
-            `the verify recorded for story "${found.story.path}" is stale (the tree changed since). ` +
+            `the verify recorded for story "${found.story.path}" is stale (the tree or the policy changed since). ` +
               `Run "ai-flow verify --story ${found.story.path}" again in the worktree.`,
           );
         }
@@ -918,7 +971,7 @@ function worktreeLand(name, { cwd, story }) {
         // test exemption a landed story already earned. Judging the merged result on
         // whether its commands pass, not on a heuristic scoped to the wrong diff, is
         // what this re-verify is for; coverage stays a per-story concern.
-        const evidence = verifyStoryOnce({ story: null, skipCoverage: true });
+        const evidence = verifyStoryOnce({ story: null, skipCoverage: true, unattended: true });
         const evidencePath = writeVerifyEvidence(evidence);
         printVerify(evidence, evidencePath);
 

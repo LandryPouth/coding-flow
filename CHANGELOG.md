@@ -6,6 +6,220 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **README: what the guard does not see** (story 05-05). One short section lists what stays out of reach (scripts and compiled programs, computed paths, downloads, TOCTOU, writes by validation tools, nested-project policy quirks) and the answer when the boundary must hold: `mode: strict` plus OS-level isolation. Every case from the guard measurement is now one row of `test/guard-adversarial.test.js`, and each documented limit fails the suite if the README stops describing it.
+- **`npm run release`** (this repository): after the maintainer's own `npm publish`, tags `vx.y.z`,
+  pushes it and creates the GitHub release from the CHANGELOG section. Idempotent, `--dry-run`
+  prints the plan, never publishes. `doctor` warns here when the current version has no tag.
+
+### Changed
+
+- **CI runs on Windows and macOS.** The test workflow adds `windows-latest` and `macos-latest`
+  (Node 22) next to the Ubuntu × Node 18/20/22 matrix, and configures git (identity,
+  `core.autocrlf=false`) before checkout. Tests that need a POSIX shell are skipped on
+  Windows with a stated reason.
+
+### Fixed
+
+- **`mode: strict` in the OpenCode fallback stops at the repository** (story 05-04 review). With the guard unable to run, the plugin no longer reads a strict `harness.json` from a folder above the repository (the guard itself never did), so both agree on the posture `doctor` prints.
+- **`mode: strict` holds in more places** (story 05-04 review). The OpenCode plugin reads every enclosing `harness.json`, so strict still refuses when OpenCode starts in a subdirectory and the guard cannot run; that same path no longer refuses a write repairing `harness.json`; a guard crash in strict is refused against the project's policy, not only the start directory's. `doctor` says when `harness.json` could not be read instead of reporting `standard` as if chosen. A project that already had `mode: strict` (until now only stricter harness checks) also gets the guard refusals. README: protect `harness.json` with `blockedPaths` for a boundary the agent cannot lower.
+- **Worktree commands on macOS and Windows.** `worktree place`, `lock`, `land` and `status` compared
+  a project path with the path git reports, which differ when the project is reached through a
+  symlink (`/var` → `/private/var`) or a Windows short name (`RUNNER~1`): placement refused with
+  "project root is inside git repo", and `--story` paths were rejected. Paths are now compared by
+  real path. `autoland` also leaves the worktree it removes (Windows cannot delete the current
+  directory). On Windows the removal is retried briefly, best-effort: the landed directory can
+  still stay locked (open, logged in `docs/DOGFOODING.md`).
+- **Guard: an OpenCode guard that gives no decision is no longer silent** (story 05-02 review). When
+  the plugin fell back to spawning the guard and the guard exited with neither 0 nor 2 (a crash, a
+  signal, an offline `npx` that could not fetch the package), the write went through with no stderr
+  line and no log entry. It is now reported as "the guard gave no decision (exit N); this write was
+  NOT checked" and logged to `guard-unchecked.jsonl`. An unchecked call caused by a non-string path
+  (a number, an array) is now logged too, and the plugin's own fallback log is bounded like the
+  guard's.
+- **Guard: a Bash call with no `command`, and a hook input that names no tool, are unchecked**
+  (story 05-02 review). `{"tool_name":"Bash","tool_input":{}}` (or a renamed `cmd` field) and `{}`
+  were allowed with no log line: a renamed field would have left every shell write unguarded in
+  silence. Only an explicit empty command is still allowed.
+- **`doctor` no longer warns on shell commands too dynamic to read** (story 05-02 review). A
+  write target built from `$VAR`, a `cd "$DIR"`, a heredoc-fed interpreter or a git pathspec file
+  are everyday use (about 100 a day on this repository): `report` still counts them, `doctor` warns
+  only when the guard itself could not do its job (an error, an unknown tool, a guard that could not
+  run). In OpenCode, MCP tools are named `<server>_<tool>`, not `mcp__…`: one carrying a path is
+  logged as unchecked like any unknown tool (the earlier note said they were exempt). A command that
+  mixes both (`> "$X"; > loop/x`) is reported under the real failure, so the shell limit no longer
+  hides it from `doctor`, and the `doctor` warning names its most frequent reason.
+
+### Fixed
+
+- **Guard: a nested project keeps its own `.env`, and a pinned git no longer hangs the guard** (story 05-01 review). Once the root climbed to the outer project, a nested project's own `.env` was judged as `proj/.env`, which the root-anchored `.env` pattern does not match, so it was allowed. A write is now checked against every root it answers to: the governing (outermost) `.coding-flow/`, the nearest `.coding-flow/` and the nearest git toplevel, each with its own policy; a hit on any refuses, and a nested `mode: "strict"` applies too. With `GIT_DIR` and `GIT_WORK_TREE` set (vcsh, yadm, a session started from a git hook), git answered the same toplevel from every directory and the climb looped forever, hanging the Claude hook and freezing the OpenCode host; it now climbs only to a strict ancestor.
+- **Guard: a session inside a nested repo keeps the project policy** (story 05-01 review). From a cwd inside a submodule or a vendored repo (`vendor/lib` with its own `.git`), the nested repo was taken as the project root: the project's `.coding-flow/` was never found and `../../.env` (or its absolute path) was allowed. The `.coding-flow/` search now climbs to the outermost enclosing git repository. A git that refuses the repository (`safe.directory`, "dubious ownership" on mounted volumes) now makes the decision `unchecked` instead of an `allow` judged without the repository bound; in `mode: "strict"` that is a refusal until `safe.directory` is set.
+- **Guard: a one-operand `ln` writes the link it makes** (story 05-01 review). `ln -sf /tmp/x/.env` makes `./.env` in the current directory and replaced a protected `.env` with a link (or a hard link with `ln -f`); only its source was checked. The link's name is now checked as a write, like `ln -sf /tmp/x/.env .` already was.
+- **Guard: a link made into a directory created in the same command** (story 05-01 review). `mkdir -p x/y && ln -s ../../.env x/y` put the link at `x/y/.env -> <root>/.env`, but `x/y` did not exist yet when the guard read the command, so the link was read from `x` and allowed. Without `-T`, the link is now read from both the destination and its parent. A denial's `(via …)` now shows the path as it was given (`../../.env`), not its reading from the project root.
+- **Guard: a link made into a directory, and `..` from a linked cwd** (story 05-01 review). `ln -s ../../.env x/y/`, `ln -s ../../.env x/y` (an existing directory) and `ln -s -t x/y ../../.env` put the link inside `x/y`, so its `..` is read from there and reaches `<root>/.env`; it used to be read from `x` and judged outside the project. From a cwd reached through a symlink (`<root>/a`, `a -> sub/deep`), a relative target is also resolved from the real cwd, as the kernel does: `../../.env` is `<root>/.env`.
+- **Guard: a link under a linked directory is read from its real directory** (story 05-01 review). Under `a -> sub/deep`, `ln -s ../../.env a/x` and a write to a dangling `a/x -> ../../.env` reach `<root>/.env` and are refused; `..` used to be collapsed lexically and judged them outside the project. A git lookup that times out now makes the decision `unchecked` instead of an `allow` judged without the repository bound.
+- **Guard: the project root stays inside the repository** (story 05-01 review). From a cwd reached through a symlink, or on Windows (git prints `C:/…`), the search for `.coding-flow/` climbed past the git toplevel and an outer `.coding-flow/` became the root, so `.env` was judged as `proj/.env` and allowed. The bound is now checked on real paths. Also: the secret-scan allowlist applies only when every name a target resolves to is allowlisted (`docs/notes.md -> ../src/app.js` is scanned like `src/`), and a timed-out git lookup is retried instead of memoised as "no repository" for the life of the OpenCode plugin.
+- **Guard: more inline-code and `sed -i` spellings, piped programs** (story 05-03 review). `node -pe`, `perl -E` and `deno eval --ext=ts …` were allowed whatever their code wrote; they are now read like `node -e`. `sed -i -es/a/b/ .env` and `sed --expression=… -i .env` dropped the file as if it were the script, and are now refused. A shell or interpreter reading its program from a pipe (`curl … | sh`, `cat <<EOF | bash`) is `unchecked` instead of allowed, like the heredoc form. `env -C`, unlisted wrappers (`stdbuf`, `busybox`), `perl -0pi` and directory-content copies (`cp -r src/. .`) stay unread (known limits).
+- **Guard: more ways a shell is handed its program** (story 05-03 review). `curl … | sh -s x` and `| bash -s -- foo` (arguments after `-s`), `… |& sh` (read as a background job before) and `bash <(curl …)` were allowed; they are now `unchecked` like `curl … | sh`. With `mode: strict`, an `unchecked` command is refused, so piped installers (`curl … | bash`) and `… | python3 -` are now refused there: run the downloaded script as a file instead.
+- **Guard: `ed`, `ex`, `patch` FILE are writes** (story 05-03 review). `patch` without a FILE (paths read from the diff) and `find -exec` stay unread (known limits).
+- **Guard: quote-spliced and glob targets** (story 05-03 review). `echo A > .e""nv`, `.e''nv` and `.e\nv` are the file the shell opens and are judged as `.env`; an unquoted glob or brace list in a write target (`cp x .e*`, `> .en{v,}`) is `unchecked` instead of allowed.
+- **Guard: spliced redirection targets, `-t` clusters, `sponge`** (story 05-03 review). `echo A > '.e'nv` is read as one word and judged as `.env`; `cp -rt DIR`, `mv -ft DIR` and `install -Dt DIR` name their destination directory like `-t`; `sponge FILE` is a write; a backslash-newline inside a target is joined first.
+- **Guard: directory destinations and download targets** (story 05-03 review). `mv /tmp/x/.env .`, `cp -t . …` and `install … .` are judged as `DIR/<source name>`; `curl -o` and `wget -O` are write targets; `tee out < .env` no longer counts the input as a write. `tar -x`, `unzip` and `curl -O` stay unread (known limits).
+
+### Added
+
+- **`mode: strict` fails closed** (story 05-04). With `"mode": "strict"` in `harness.json`, a call the guard could not check is refused with "not checked, refused in strict mode: …" — by the Claude hook (exit 2) and by the OpenCode plugin (throw), including when the plugin can neither load the guard nor spawn it. `standard` is unchanged; an unreadable `harness.json` is `standard`; a write to `harness.json` itself is never refused for strictness alone. `ai-flow doctor` prints `guard: strict (unchecked writes are refused)` or `guard: standard (unchecked writes are allowed and logged)`.
+
+### Fixed
+
+- **Guard: three silent allows closed** (story 05-03 review). `sudo -u root tee .env`, `nice -n 5 …` and `timeout 5 …` no longer read the option's value as the verb; a mode inside an inline literal (`perl -e 'open(F,">.env")'`) is stripped before matching; an interpreter or shell fed by a heredoc (`python3 - <<EOF`) is `unchecked` instead of allowed.
+- **Guard: `cd` through a symlink** (story 05-03 review). `cd lnk && echo > ../../.env` was judged on the lexical `..` while the shell resolves it physically, so a protected write slipped through; the directory is now the real one (also for `git -C`). `sed --in-place`, `perl -pi`, `awk -i inplace` and `truncate` are write targets too, and a bare `open()` mode (`'w'`) in inline code is no longer read as a path.
+- **Guard: `cd x || exit; echo > ../.env`** was judged against the old directory (the `||` branch's directory leaked to the commands after it), and `bash -c "…"` / `sh -c '…'` scripts were not read. Both are now followed, as is `eval "…"`, and an escaped quote inside a `-c` script (`bash -c "echo \"x\" > .env"`) no longer hides the write.
+- **The guard follows the shell.** A Bash command is walked segment by segment with
+  the working directory it will really run in: `cd`/`pushd` (and `( … )`, which
+  restores it) move where a later `> ../.env` lands; a `cd` it cannot follow
+  (`cd "$DIR"`, `cd -`, `popd`) makes later relative targets `unchecked`. Also refused:
+  `ln` with a protected source, `git checkout <ref> -- <path>` and `git restore <path>`
+  onto a protected file, and `python -c` / `node -e` / `perl -e` / `ruby -e` / `deno eval`
+  whose inline code names a protected path. A write target built from `$VAR`, `$(…)` or
+  backticks is `unchecked`. Literals only: `'.e'+'nv'` and scripts are still out of reach.
+- **Shell redirections the guard missed.** `echo a>.env` (no spaces), `>|`, `&>` and `>& file` are now caught, and a `cd` after `then`/`do`/`else`/`{` is followed.
+- **"The guard did not look" is no longer "allowed".** A call the guard cannot judge —
+  unparseable input, an internal error, an unknown tool carrying a path, a write with
+  no readable target, a path that cannot be resolved, an unreadable `harness.json`, and in OpenCode an unreadable
+  write/patch or a guard that could not run — is `unchecked`: still let through, but
+  logged to `.coding-flow/guard-unchecked.jsonl`, counted by `ai-flow report`, and
+  warned about by `ai-flow doctor` for 7 days. Claude-style `mcp__*` tools and the `Artifact*` tools are
+  not counted as unknown write tools; a path outside the project is logged as
+  `(outside project)` (in `denials.jsonl` too, instead of a `../` chain); a spawned guard prints its "NOT checked" line on stderr.
+- **The guard judges the file a write reaches, not the string it was given.** The
+  project root is the outermost `.coding-flow/` within the git toplevel (else the toplevel), not the
+  hook cwd; each target is checked by its lexical and its real path (symlinks,
+  nearest existing parent for new files); a path outside the root is matched
+  against the primary checkout (a story worktree's `.env` link) and `$HOME`
+  (`.ssh/**`); `~`, `$HOME` and `${HOME}` expand in shell targets; `.ENV` is
+  `.env` on case-insensitive platforms. A denial through a link names both
+  (`… (via alias)`).
+
+### Changed
+
+- The `flow-run` and `flow-review` skills tell the agent to settle acceptance criteria
+  (`[x]` / `[~]`) and name deleted tests in a `## Test Exemption` before verifying in a
+  strict project.
+
+### Added
+
+- **Contrary signals can fail a strict run.** In `mode: strict` (or on a high-risk
+  story with `harness.json` `failOnContrarySignals: true`) a deleted test file and
+  an acceptance criterion still open make `verify` report `NOT PROVEN`, unless a
+  `## Test Exemption` names the deleted file, or the criterion is marked `[~]` /
+  listed under `## Deferred Criteria`. Removed assertions stay a warning. Elsewhere
+  the verdict is unchanged but the summary reads `passed, with warnings (3 deleted
+  test files, 5 open criteria)` and `status --json` exposes
+  `warnings: { deletedTests, openCriteria }`. A renamed test is not a deleted one
+  (`--find-renames`), and editing the policy re-runs an earlier proof.
+
+- **The coverage rung can gate `ok`.** `harness.json` `coverageFloor`
+  (`{ high, medium, low }`, each `verified | evidence | exempted | not-required`)
+  sets the rung a risk level must reach. Defaults keep `standard` as it was
+  (`evidence` on high/medium) and require `verified` on high risk in `strict`.
+  A run below its floor reports `NOT PROVEN`, keeps the rung it reached as `coverage.tier`, and carries `coverage.floor`
+  (`{ required, reached }`) and how to climb (emit a coverage report, or write an
+  exemption, which satisfies any floor). `status --json` exposes `coverageTier`
+  and `audit` counts verify runs per rung.
+
+- **A proof knows the policy it was made under.** Every verify / check / evidence JSON
+  carries `policyFingerprint` (sha1 of the canonical effective `harness.json`, the
+  `validation` block, `baseBranch` and the coding-flow major.minor). `verify` no longer
+  answers "already proved" after the policy changed; `status` shows such a story as
+  `stale (policy changed)` (`staleReason` in `--json`), and `audit --check`, `worktree land`
+  and auto-land treat it as stale. Evidence from before the field is never reused for the
+  cache but is not flipped to stale.
+
+- **A review "pass" that holds.** `ai-flow review capture --verdict pass` with an open P0
+  or P1 is refused (exit 1, nothing written) unless `--accept "<reason>"` is given; the
+  reason is stored as `acceptedRisk`. `status` shows `review: pass (self)` on a STRICT
+  story reviewed only by its author (`--json` exposes `reviewer`), and `audit` counts
+  reviews by reviewer and lists passes with accepted P0/P1, and older ones recorded
+  with an open P1 (`pre-0.13`). Existing review files are read as written.
+
+- **Commands from `plan.md` need a human.** `verify` refuses to run commands an agent
+  wrote into a story's `plan.md` when nobody is watching (no TTY, `CI=true`,
+  `run`, `worktree land`): the evidence says `refused`, nothing executes, and
+  `--allow-plan-commands` is the explicit way through. In a terminal they run after
+  a notice naming their source; config commands are unchanged. `--clean-env` drops
+  credential-looking variables (`SECRET`, `TOKEN`, `API_KEY`…) from the commands'
+  environment and records their names, never their values. Evidence now carries
+  `unattended`. A refusal is not recorded as a verify (it never turns a verified story
+  into a blocked one) and `run` reports it as skipped; `--clean-env` never replays a
+  cached proof; any non-empty `CI` other than `0`/`false` counts as unattended; `AI_FLOW_FORCE_TTY` is honoured under `NODE_ENV=test` only (the flow-run skill forbids agents from using it). `run` prints the plan.md notice in a terminal too.
+- **`ship` commits the story, not the whole tree.** In a shared checkout the
+  automatic commit takes the story's directory, dirty files the branch already
+  touched since its base, new files beside those, and the story's run files; the
+  rest is listed as `Left out of the commit` and stays dirty. `--all` restores
+  the old `git add -A`; a story worktree and a branch with no linked story keep
+  committing everything. `--dry-run` prints the include/exclude lists, and the
+  secret scan now reads only the files being committed.
+- **The command time limit is configurable.** `validation.timeoutMs` in
+  `config.json` replaces the fixed 600 s, and an entry of `validation.commands` /
+  `quality` may be `{ "command": "...", "timeoutMs": 1200000 }` (strings still
+  work). A timed-out command prints `timeout after 600 s (validation.timeoutMs)`,
+  the limit is part of the commands fingerprint (a different limit is a different
+  proof), and `land` sizes its lock for the raised limits.
+- **Cache replays are recorded.** Each validation command's result carries
+  `cache` (`full` / `partial` / `none` / `unknown`), read from the whole output
+  of turbo (`Cached: N cached, M total`, `>>> FULL TURBO`) and nx (cache-read
+  lines) with ANSI codes stripped. `verify` prints `replayed from cache: 12/12
+  tasks` and the PR evidence table marks the command. Opt in with `freshTestsFor:
+  ["high"]` in `harness.json`: at those risk levels a full replay is not proof
+  and the verify fails with advice; `validation.freshCommands` in `config.json`
+  run instead of `validation.commands` there (e.g. `npm run test -- --force`); `quality` commands (lint, format) are never refused for replaying.
+- **Monorepo coverage: every package's report is read.** `coverageReports` entries
+  may be globs (`apps/*/coverage/lcov.info`); in a workspace (`workspaces` in
+  `package.json`, or `pnpm-workspace.yaml`) the defaults also include
+  `*/*/coverage/lcov.info` and `*/*/coverage/coverage-final.json`. All fresh
+  reports are loaded and merged (max hits), each resolved against its own package
+  root, so Jest's package-relative `SF:` paths map to the right repo file. A stale
+  report in one package no longer discards the others. A changed file outside every
+  report's package is *unmeasured*, not uncovered: it falls back to "a test file
+  changed in its package", the run's rung is the weakest part (`evidence`), and
+  the evidence lists `coverage.unmeasured` and `coverage.patch.report.reports`.
+
+### Fixed
+
+- This repository's own guard no longer hard-codes the maintainer's home path: run from the coding-flow checkout, `init`/`upgrade` write the OpenCode plugin's binary relative to the plugin file and the Claude hook through `$CLAUDE_PROJECT_DIR`, so a guard change is live in every clone. Other projects are unchanged.
+- OpenCode guard: the generated plugin now also exports the OpenCode 2.x entry (`default.setup`) and reads V2 argument names (`path`, `shell`, `patch`), so `.env` writes are refused on 2.x as on 1.x. Run `ai-flow upgrade` to regenerate it.
+- `doctor` reads `opencode --version` and fails with "the guard is not loaded on OpenCode 2" when the project or global guard plugin predates the 2.x entry (run `ai-flow upgrade` / `upgrade --global`). On 1.x it stays the stale warning; without `opencode` on PATH it adds one note and never fails (a binary that exits non-zero or prints its version on stderr still counts as found).
+
+- **Coverage, risk and weakening are measured on the story's own diff.** Every
+  diff-based signal compared against `origin/HEAD`/`main`, so a story forked from
+  an epic branch inherited the whole epic's files, tests and migrations (on a real
+  project: 508 changed files for one story, and a `high` risk from other stories'
+  migrations). One `resolveDiffBase` now picks the base, in order: `--base <ref>`,
+  `config.json` `baseBranch`, the fork point `worktree add` records in
+  `branch.<name>.codingFlowBase`, the nearest of the epic branch / `develop` /
+  the default branch, then the default branch. The evidence records
+  `diffBase: { ref, mergeBase, source, scope }`, and a proof made against another
+  base is not reused. `verify` and `harness check` accept `--base`. `next` measures
+  "unshipped work" from the same base, and a configured `baseBranch` that does not
+  resolve is recorded as `configUnresolved` instead of being dropped silently.
+
+- **The tool's own run files and generated code are not "changes".** `.coding-flow/**`
+  is always left out of the changed-file sets that feed coverage, risk, test-weakening
+  and deleted-test detection, and `harness.json` gains `ignoredPaths` (globs, default
+  `[]`) for the project's generated output (`apps/api/generated/**`, `**/openapi.json`).
+  The guard (`blockedPaths`) and secret scanning do not read it. `doctor` suggests
+  `ignoredPaths` when the last verify counted more than 20 files under a `generated/`,
+  `__generated__/` or `gen/` directory.
+
+- **The scope of a verdict is shown.** `verify` prints `Scope: story — diff against
+  feature/EPIC-32-geo (fork point), 12 files`, the PR evidence block carries the same
+  line, and `status` adds `coverage verified (epic scope)` next to a story whose last
+  proof was not measured on its own diff. `doctor` warns when a remote exists but
+  `refs/remotes/origin/HEAD` does not (the default base was then a guessed `main`):
+  run `git remote set-head origin -a`.
+
 ## [0.12.1] - 2026-10-16
 
 ### Fixed

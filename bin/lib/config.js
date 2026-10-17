@@ -107,14 +107,32 @@ function readConfig(cwd) {
     ? [...new Set(existing.alsoTargets.filter((t) => PLATFORM_TARGETS.includes(t) && t !== target))]
     : defaults.alsoTargets;
 
+  // A command is a string, or `{ command, timeoutMs }` for a per-command limit.
+  // A malformed timeout is dropped (the command keeps the global/default limit);
+  // a malformed entry is dropped like an empty string always was.
+  const validTimeout = (value) => Number.isFinite(value) && value > 0;
   const cleanCommandList = (value) =>
-    Array.isArray(value) ? value.filter((c) => typeof c === "string" && c.trim()) : [];
+    Array.isArray(value)
+      ? value.flatMap((c) => {
+          if (typeof c === "string") {
+            return c.trim() ? [c] : [];
+          }
+
+          if (c && typeof c === "object" && typeof c.command === "string" && c.command.trim()) {
+            return [validTimeout(c.timeoutMs) ? { command: c.command, timeoutMs: c.timeoutMs } : c.command];
+          }
+
+          return [];
+        })
+      : [];
 
   const validation =
     existing.validation && typeof existing.validation === "object" && !Array.isArray(existing.validation)
       ? {
           commands: cleanCommandList(existing.validation.commands),
           quality: cleanCommandList(existing.validation.quality),
+          freshCommands: cleanCommandList(existing.validation.freshCommands),
+          ...(validTimeout(existing.validation.timeoutMs) ? { timeoutMs: existing.validation.timeoutMs } : {}),
         }
       : defaults.validation;
 

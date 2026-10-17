@@ -53,6 +53,17 @@ function guardBinaryPath() {
   }
 }
 
+// True when the project being wired is this package's own checkout. There the
+// guard must resolve `bin/ai-flow.js` relative to the project, never as the
+// maintainer's absolute path (which every other clone would silently miss).
+function isSelfInstall(root = cwd) {
+  try {
+    return fs.realpathSync(path.resolve(__dirname, "..", "..")) === fs.realpathSync(root);
+  } catch {
+    return false;
+  }
+}
+
 // Characters that would break the path when single-quoted inside the shell
 // command. npm/global install paths never contain these; if one ever does, we
 // skip the fast path rather than emit a broken command.
@@ -72,9 +83,14 @@ function isShellSafePath(p) {
 // (non-zero), and `||` would then ALSO run the npx fallback — which reads a
 // stdin already consumed by the fast path, fails open, and masks the deny with
 // an allow. if/else runs exactly one branch and preserves its exit code.
-function guardCommandString() {
-  const binary = guardBinaryPath();
+function guardCommandString(root = cwd) {
   const fallback = `npx --yes ${packageJson.name}@${packageJson.version} guard`;
+
+  if (isSelfInstall(root)) {
+    return `R="$CLAUDE_PROJECT_DIR/bin/ai-flow.js"; if [ -f "$R" ]; then node "$R" guard; else ${fallback}; fi`;
+  }
+
+  const binary = guardBinaryPath();
 
   if (binary && isShellSafePath(binary)) {
     return `R='${binary}'; if [ -f "$R" ]; then node "$R" guard; else ${fallback}; fi`;
@@ -89,7 +105,7 @@ function settingsPath() {
 function guardHookEntry() {
   return {
     matcher: GUARD_MATCHER,
-    hooks: [{ type: "command", command: guardCommandString(), timeout: GUARD_TIMEOUT }],
+    hooks: [{ type: "command", command: guardCommandString(cwd), timeout: GUARD_TIMEOUT }],
   };
 }
 
@@ -152,7 +168,7 @@ function ensureHookSettings({ dryRun = false } = {}) {
 
   if (found) {
     const { entry, hook: existing } = found;
-    const current = guardCommandString();
+    const current = guardCommandString(cwd);
     // Only a matcher we ourselves shipped is rewritten; a customized one is the
     // user's call and survives untouched.
     const matcherIsOurs = KNOWN_DEFAULT_MATCHERS.has(entry.matcher);
@@ -201,6 +217,7 @@ module.exports = {
   findGuardEntry,
   guardCommandString,
   guardBinaryPath,
+  isSelfInstall,
   GUARD_MATCHER,
   GUARD_TIMEOUT,
 };

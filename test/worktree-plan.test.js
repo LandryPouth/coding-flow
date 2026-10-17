@@ -289,7 +289,9 @@ test('CLI: worktree place --json reports created + parallelTo for a sibling chai
   const result = JSON.parse(output);
   assert.equal(result.created, true);
   assert.equal(result.chainId, 's3');
-  assert.deepEqual(result.parallelTo, { chainId: 's1', location: path.resolve(repo) });
+  // git reports the real path (macOS: /private/var/...), the temp dir does not.
+  assert.equal(result.parallelTo.chainId, 's1');
+  assert.equal(fs.realpathSync.native(result.parallelTo.location), fs.realpathSync.native(repo));
 });
 
 test('CLI: worktree place without --story fails with a clear message', (t) => {
@@ -517,4 +519,18 @@ test('CLI: worktree place surfaces a decidePlacement error instead of a stack tr
 
   assert.equal(code, 1);
   assert.match(output, /is not listed in/);
+});
+
+test('a project root reached through a symlink is still the git root', { skip: process.platform === 'win32' && 'symlink creation needs Developer Mode on Windows' }, (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    epicDirName: 'epic-18-two-chains',
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-18-01-a', 'story-18-02-b', 'story-18-03-c', 'story-18-04-d', 'story-18-05-e'],
+  });
+  const link = `${repo}-link`;
+  fs.symlinkSync(repo, link, 'dir');
+
+  const result = decidePlacement({ cwd: link, epicPath, storyPath: `${epicPath}/story-18-01-a` });
+
+  assert.equal(result.created, false);
 });

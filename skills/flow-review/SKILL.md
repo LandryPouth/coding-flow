@@ -39,6 +39,9 @@ separately-invoked path when that extra parallel coverage is worth its cost.
 - Read `RULES.md`, the relevant `docs/`, and the active story files before claiming.
 - Cite files and lines; rank findings by severity. Treat missing validation evidence
   as a risk, and any unrun command as an evidence gap.
+- In a strict project, check that no acceptance criterion is still open without `[~]` or
+  a `## Deferred Criteria` entry, and that every deleted test file is named in a
+  `## Test Exemption`; `verify` fails on both.
 - Run the suite yourself when in doubt — never trust a reported result. When `ai-flow`
   is present, run `ai-flow verify --story <dir>` and read the captured evidence.
 
@@ -253,8 +256,11 @@ ai-flow review capture --story <story-dir> --verdict pass|fail \
   --architecture quick|deep|skipped --tests quick|deep|skipped \
   --security quick|deep|skipped --quality quick|deep|skipped --e2e quick|deep|skipped \
   --p0 <count> --p1 <count> --p2 <count> --p3 <count> \
-  [--reviewer self|subagent]
+  [--reviewer self|subagent] [--accept "<reason>"]
 ```
+
+A `pass` with an open P0 or P1 is refused unless you add `--accept "<reason>"` — only
+with the user's agreement, never on your own. The reason is stored as `acceptedRisk`.
 
 - `--verdict` is this pass's own Verdict line.
 - Each dimension flag is `deep` if that dimension's Deep section ran, `quick`

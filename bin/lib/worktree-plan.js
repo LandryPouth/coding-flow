@@ -20,6 +20,7 @@ const { execFileSync } = require("child_process");
 
 const { parseBackbone, labelForDir, dirForLabel } = require("./backbone");
 const { worktreeAdd, requireRepo } = require("./worktree");
+const { samePath } = require("./util");
 const {
   gitCommonDir,
   placementStatePath,
@@ -30,6 +31,7 @@ const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
+const { policyFingerprint } = require("./policy-fingerprint");
 const {
   readHarnessConfig,
   changedFilesForCoverage,
@@ -77,7 +79,7 @@ function resolveStoryChain(cwd, epicPath, storyPath) {
 // same principle as backbone.js's malformed-tree guard.
 function requireProjectRootIsGitRoot(cwd, storyPath) {
   const root = requireRepo(cwd);
-  if (path.resolve(root) !== path.resolve(cwd)) {
+  if (!samePath(root, cwd)) {
     throw new Error(
       "worktree placement requires the coding-flow project root to be the git repository root " +
         `(project root "${cwd}" is inside git repo "${root}"). Multi-install monorepos are not supported ` +
@@ -404,7 +406,7 @@ function autoLandIfChainFinished({ cwd, epicPath, storyPath }) {
     const rootEntry = verifyByDir.get(rootStoryPath);
     const currentToken = currentTreeToken(cwd);
 
-    if (!rootEntry || isStale(rootEntry, currentToken)) {
+    if (!rootEntry || isStale(rootEntry, currentToken, policyFingerprint(cwd))) {
       try {
         execFileSync(process.execPath, [cliPath, "verify", "--story", rootStoryPath], {
           cwd: here,

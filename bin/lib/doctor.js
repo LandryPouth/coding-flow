@@ -5,6 +5,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const { cwd, packageJson } = require("./context");
 const { log, toPortable, parseFrontmatter, readJson, hashFile, isCommandAvailable, binaryPathNote } = require("./util");
@@ -28,13 +29,14 @@ const { COMMAND_PLATFORMS } = require("./platforms/registry");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
+const { loadPolicy, isShellLimit } = require("./guard");
 const { inspectCodexSandbox } = require("./codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./codex-probe");
 const { recordProbeEvidence } = require("./platforms/evidence");
-const { inspectOpenCodePlugin, usesOpenCode } = require("./opencode");
+const { inspectOpenCodePlugin, probeOpenCode, usesOpenCode } = require("./opencode");
 const { servedByClaude } = require("./platforms/opencode");
 const { EXPLICIT_TARGETS } = require("./detect");
-const { inspectOpenCodeInstructions, inspectGlobalCommands } = require("./opencode-config");
+const { inspectOpenCodeInstructions, inspectGlobalCommands, globalOpenCodeDir } = require("./opencode-config");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -118,6 +120,113 @@ function checkOversizedEpics(warnings) {
   }
 }
 
+const GENERATED_DIR_NAMES = new Set(["generated", "__generated__", "gen"]);
+const GENERATED_DIR_THRESHOLD = 20;
+
+// The last verify's changed files are the ones coverage and risk judged. A big
+// generated directory in there is noise a person did not write, and the fix is
+// one line in `ignoredPaths`. Files already ignored never reach that list, so
+// the hint stops once the project has acted on it.
+function checkGeneratedDirectories(warnings) {
+  const runsDir = path.join(cwd, ".coding-flow", "runs");
+  let latest;
+
+  try {
+    latest = fs.readdirSync(runsDir).filter((name) => name.endsWith("-verify.json")).sort().pop();
+  } catch {
+    return;
+  }
+
+  const evidence = latest ? readJson(path.join(runsDir, latest), null) : null;
+  const files = evidence && evidence.coverage && Array.isArray(evidence.coverage.changedFiles)
+    ? evidence.coverage.changedFiles
+    : [];
+  const counts = new Map();
+
+  for (const file of files) {
+    const parts = toPortable(file).split("/");
+
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      if (GENERATED_DIR_NAMES.has(parts[index])) {
+        const dir = parts.slice(0, index + 1).join("/");
+        counts.set(dir, (counts.get(dir) || 0) + 1);
+        break;
+      }
+    }
+  }
+
+  for (const [dir, count] of counts) {
+    if (count > GENERATED_DIR_THRESHOLD) {
+      warnings.push({
+        code: "generated_not_ignored",
+        file: dir,
+        message:
+          `the last verify counted ${count} changed files under ${dir}/ — if they are generated, ` +
+          `add "${dir}/**" to ignoredPaths in .coding-flow/harness.json`,
+      });
+    }
+  }
+}
+
+function gitQuiet(args) {
+  try {
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+// Without refs/remotes/origin/HEAD the default base silently becomes the literal
+// "main", which is wrong on a repository whose trunk is called anything else (or
+// whose clone predates the ref). Only a remote named `origin` makes the ref
+// expected at all: `set-head origin` is what creates it.
+function checkOriginHead(warnings) {
+  const remotes = gitQuiet(["remote"]);
+
+  if (!remotes || !remotes.split(/\r?\n/).includes("origin")) {
+    return;
+  }
+
+  if (gitQuiet(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"])) {
+    return;
+  }
+
+  warnings.push({
+    code: "origin_head_missing",
+    message:
+      "refs/remotes/origin/HEAD is not set, so verify measures against a guessed \"main\" — " +
+      "run `git remote set-head origin -a`",
+  });
+}
+
+// This repository only: the maintainer publishes on npm by hand, and the tag
+// plus GitHub release follow with `npm run release`. A version with no tag is
+// the "published but not released" gap that script closes.
+function checkReleaseTag(warnings) {
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8"));
+  } catch {
+    return;
+  }
+
+  if (pkg.name !== "@landry_pouth/coding-flow" || !pkg.version) {
+    return;
+  }
+
+  const tags = gitQuiet(["tag", "-l", `v${pkg.version}`]);
+
+  if (tags === null || tags.split(/\r?\n/).includes(`v${pkg.version}`)) {
+    return;
+  }
+
+  warnings.push({
+    code: "release_tag_missing",
+    file: "package.json",
+    message: `version ${pkg.version} has no v${pkg.version} tag — after \`npm publish\`, run \`npm run release\``,
+  });
+}
+
 // The epic/story number is picked from a local, unsynced scan of `epics/` at
 // plan time. Two people branching from the same base can independently land
 // on `epic-05-` (or the same story number inside one epic) with different
@@ -197,6 +306,46 @@ function checkDuplicateNumbering(warnings) {
   }
 }
 
+// Calls the guard let through because it could not judge them. Silence there
+// reads as protection; a recent entry says it was not. A shell command too dynamic
+// to read (`> "$out"`, `node <<EOF`) is everyday use, ~100 a day here: `report`
+// counts it, but a warning that is always on is a warning nobody reads.
+function checkGuardUnchecked(warnings) {
+  const file = path.join(cwd, ".coding-flow", "guard-unchecked.jsonl");
+  let recent = 0;
+  // Named in the warning: an OpenCode MCP read with a `path` looks like an unknown
+  // write tool and keeps this on; the reason is what tells the two apart.
+  const reasons = new Map();
+
+  try {
+    const since = Date.now() - 7 * 24 * 3600 * 1000;
+
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      try {
+        const entry = line ? JSON.parse(line) : null;
+        if (entry && Date.parse(entry.at) >= since && !isShellLimit(entry.reason)) {
+          recent += 1;
+          const reason = String(entry.reason || "no reason").slice(0, 120);
+          reasons.set(reason, (reasons.get(reason) || 0) + 1);
+        }
+      } catch {
+        // a torn line is not an entry
+      }
+    }
+  } catch {
+    return;
+  }
+
+  if (recent) {
+    const [top] = [...reasons].sort((a, b) => b[1] - a[1])[0];
+    warnings.push({
+      code: "guard_unchecked",
+      file: ".coding-flow/guard-unchecked.jsonl",
+      message: `the guard could not check ${recent} write(s) in the last 7 days — they were allowed, not protected (most often: ${top}); see \`ai-flow report\``,
+    });
+  }
+}
+
 // The guard is the one part of the install where "wired" and "wired correctly"
 // silently diverge: a stale command still runs (settings.js falls back to npx
 // when the resolved binary is gone) so it never crashes, and a project that
@@ -234,7 +383,7 @@ function checkGuardWiring(errors, warnings) {
     return;
   }
 
-  if (found.hook.command !== guardCommandString()) {
+  if (found.hook.command !== guardCommandString(cwd)) {
     warnings.push({
       code: "guard_hook_stale",
       file: ".claude/settings.json",
@@ -335,12 +484,19 @@ function checkOpenCodeGlobal(warnings) {
   }
 }
 
-function checkOpenCodeWiring(errors, warnings) {
+function checkOpenCodeWiring(errors, warnings, notes = []) {
   if (!usesOpenCode()) {
     return;
   }
 
   checkOpenCodeGlobal(warnings);
+
+  const host = probeOpenCode();
+  const onV2 = host.found && host.major !== null && host.major >= 2;
+
+  if (!host.found) {
+    notes.push({ code: "opencode_not_on_path", message: "`opencode` is not on PATH, so the OpenCode version the guard must fit was not checked" });
+  }
 
   // OpenCode never expands CLAUDE.md's `@RULES.md`: without `instructions` in
   // opencode.json the rulebook is not in the model's context at all.
@@ -393,12 +549,32 @@ function checkOpenCodeWiring(errors, warnings) {
       file,
       message: "this project uses OpenCode but no guard plugin is installed — writes are not protected there; run `ai-flow upgrade`",
     });
+  } else if (plugin.state === "stale" && onV2 && !plugin.v2) {
+    // Not outdated: absent. 2.x ignores a V1-only plugin without a word.
+    errors.push({
+      code: "opencode_guard_not_loaded",
+      file,
+      message: `the guard is not loaded on OpenCode ${host.major}: this plugin predates the 2.x entry, so writes are not protected — run \`ai-flow upgrade\``,
+    });
   } else if (plugin.state === "stale") {
     warnings.push({
       code: "opencode_guard_stale",
       file,
       message: "the OpenCode guard plugin does not match this install — run `ai-flow upgrade` to re-wire it",
     });
+  }
+
+  // The plugin `init --global` puts in ~/.config/opencode applies to every project.
+  if (onV2) {
+    const global = inspectOpenCodePlugin(cwd, path.join(globalOpenCodeDir(), "plugins", "coding-flow-guard.js"));
+
+    if (global.state === "stale" && !global.v2) {
+      errors.push({
+        code: "opencode_global_guard_not_loaded",
+        file: global.path,
+        message: `the global guard is not loaded on OpenCode ${host.major} (${global.path} predates the 2.x entry) — run \`ai-flow upgrade --global\``,
+      });
+    }
   }
 }
 
@@ -409,6 +585,7 @@ function checkOpenCodeWiring(errors, warnings) {
 function collectMinimalReport({ strict = false } = {}) {
   const errors = [];
   const warnings = [];
+  const notes = [];
 
   if (!fs.existsSync(path.join(cwd, ".coding-flow", "harness.json"))) {
     errors.push({
@@ -431,15 +608,19 @@ function collectMinimalReport({ strict = false } = {}) {
   }
 
   checkGuardWiring(errors, warnings);
+  checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
-  checkOpenCodeWiring(errors, warnings);
+  checkOpenCodeWiring(errors, warnings, notes);
+  checkReleaseTag(warnings);
 
   return {
     ok: errors.length === 0,
     root: cwd,
     version: packageJson.version,
     strict,
+    ...guardPosture(),
     codexProbe,
+    notes,
     install: "minimal",
     skillsMode: "plugin",
     skills: [],
@@ -447,6 +628,20 @@ function collectMinimalReport({ strict = false } = {}) {
     errors,
     warnings,
   };
+}
+
+// One line on what the guard does with a write it could not check, so the posture
+// is read, not assumed.
+function guardPosture() {
+  const { mode, unreadable } = loadPolicy(cwd);
+  let guardPosture = "guard: standard (unchecked writes are allowed and logged)";
+  if (mode === "strict") {
+    guardPosture = "guard: strict (unchecked writes are refused)";
+  } else if (unreadable) {
+    // Say why: a project that set strict and broke the file must not read "standard" as a choice.
+    guardPosture = "guard: standard (.coding-flow/harness.json could not be read; unchecked writes are allowed and logged)";
+  }
+  return { guardMode: mode, guardPosture };
 }
 
 function collectDoctorReport({ strict = false } = {}) {
@@ -640,16 +835,21 @@ function collectDoctorReport({ strict = false } = {}) {
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
   checkOversizedEpics(warnings);
+  checkGeneratedDirectories(warnings);
+  checkOriginHead(warnings);
+  checkReleaseTag(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
+  checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
-  checkOpenCodeWiring(errors, warnings);
+  checkOpenCodeWiring(errors, warnings, notes);
 
   return {
     ok: errors.length === 0,
     root: cwd,
     version: packageJson.version,
     strict,
+    ...guardPosture(),
     codexProbe,
     install: "full",
     skillsMode,
@@ -744,6 +944,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     }
 
     log("");
+    log(report.guardPosture);
     log(binaryPathNote(report.binaryOnPath));
   } else {
     log("Coding Flow has installation issues:");
@@ -769,6 +970,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     log("");
     log("Run `ai-flow doctor --fix` to restore missing files.");
     log("");
+    log(report.guardPosture);
     log(binaryPathNote(report.binaryOnPath));
   }
 

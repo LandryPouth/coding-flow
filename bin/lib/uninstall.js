@@ -91,6 +91,7 @@ function collectUninstallPlan({ force = false } = {}) {
     ".coding-flow/harness.json",
     ".coding-flow/config.json",
     ".coding-flow/denials.jsonl",
+    ".coding-flow/guard-unchecked.jsonl",
   ]) {
     const target = path.join(cwd, generated);
 

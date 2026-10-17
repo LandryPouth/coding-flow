@@ -14,6 +14,8 @@ const crypto = require("crypto");
 const { cwd } = require("./context");
 const { log, normalizePortable, readJson } = require("./util");
 const { currentTreeToken } = require("./identity");
+const { policyFingerprint, policyChanged } = require("./policy-fingerprint");
+const { coverageTier } = require("./coverage");
 
 function runsDir(root) {
   return path.join(root, ".coding-flow", "runs");
@@ -199,6 +201,11 @@ function entryFromRunFile(file, root) {
     // proof that still describes the current code from a stale one. Absent on
     // pre-freshness or non-git evidence -> treated leniently (never stale).
     treeToken: git ? git.treeToken || null : null,
+    // The rung this run reached (verify only), so the ledger can count runs per
+    // rung without reopening every run file. Null on evidence written before it.
+    coverageTier: type === "verify" && data.coverage ? data.coverage.tier || coverageTier(data.coverage) : null,
+    // The rules the run was computed under; absent on older evidence (lenient).
+    policyFingerprint: data.policyFingerprint || null,
     summary,
   };
 }
@@ -285,11 +292,27 @@ function syncLedger(root, { dryRun = false } = {}) {
 // A green verify is "stale" when its captured working-tree token no longer
 // matches the current one: the code changed after the proof was produced. Only
 // decidable when both tokens exist — otherwise (old/non-git evidence) lenient.
-function isStale(entry, currentToken) {
-  return Boolean(entry.ok && entry.treeToken && currentToken && entry.treeToken !== currentToken);
+// A different policy fingerprint makes it stale too ("policy changed", see
+// `staleReason`); `currentPolicy` is optional, and evidence without a fingerprint
+// is never stale for it, so an upgrade does not flip every historical story.
+function isStale(entry, currentToken, currentPolicy = null) {
+  return Boolean(
+    entry.ok &&
+      ((entry.treeToken && currentToken && entry.treeToken !== currentToken) ||
+        policyChanged(entry.policyFingerprint, currentPolicy)),
+  );
 }
 
-function gate(entries, { currentToken = null } = {}) {
+// Why a green proof is stale: the rules moved, or the code did.
+function staleReason(entry, currentToken, currentPolicy = null) {
+  if (entry.ok && policyChanged(entry.policyFingerprint, currentPolicy)) {
+    return "policy changed";
+  }
+
+  return isStale(entry, currentToken) ? "code changed" : null;
+}
+
+function gate(entries, { currentToken = null, currentPolicy = null } = {}) {
   const verify = entries.filter((entry) => entry.type === "verify");
 
   if (verify.length === 0) {
@@ -309,7 +332,7 @@ function gate(entries, { currentToken = null } = {}) {
   const failing = latest.filter((entry) => !entry.ok);
   // A stale proof is not a passing proof: the latest green run no longer
   // describes the code being pushed, so re-verification is required.
-  const stale = latest.filter((entry) => isStale(entry, currentToken));
+  const stale = latest.filter((entry) => isStale(entry, currentToken, currentPolicy));
 
   return { ok: failing.length === 0 && stale.length === 0, reason: null, failing, stale, latest };
 }
@@ -333,7 +356,12 @@ function latestVerifyByStoryDir(root) {
     const prev = byDir.get(dir);
 
     if (!prev || (entry.generatedAt || "") > (prev.generatedAt || "")) {
-      byDir.set(dir, { ok: entry.ok, generatedAt: entry.generatedAt || "", treeToken: entry.treeToken || null });
+      byDir.set(dir, {
+        ok: entry.ok,
+        generatedAt: entry.generatedAt || "",
+        treeToken: entry.treeToken || null,
+        policyFingerprint: entry.policyFingerprint || null,
+      });
     }
   }
 
@@ -374,11 +402,102 @@ function latestReviewByStoryDir(root) {
         ok: Boolean(data.ok),
         generatedAt: data.generatedAt || "",
         treeToken: (data.provenance && data.provenance.git && data.provenance.git.treeToken) || null,
+        reviewer: data.reviewer || "self",
       });
     }
   }
 
   return byDir;
+}
+
+// Every captured review, summarised: how many per reviewer kind, and the passes
+// that were recorded next to an open P0/P1. A pass with `acceptedRisk` was
+// accepted on purpose; one without it predates the rule (a file is read as it
+// was written, never rewritten).
+function summarizeReviews(root) {
+  const dir = runsDir(root);
+  const summary = { total: 0, byReviewer: {}, acceptedRisk: [], preRule: [] };
+
+  if (!fs.existsSync(dir)) {
+    return summary;
+  }
+
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!name.endsWith("-review.json")) {
+      continue;
+    }
+
+    const data = readJson(path.join(dir, name), null);
+    if (!data || !data.story) {
+      continue;
+    }
+
+    const reviewer = data.reviewer || "self";
+    const counts = data.findingCounts || {};
+    const open = (Number(counts.p0) || 0) + (Number(counts.p1) || 0);
+    summary.total += 1;
+    summary.byReviewer[reviewer] = (summary.byReviewer[reviewer] || 0) + 1;
+
+    if (data.verdict === "pass" && open > 0) {
+      const item = { story: data.story, generatedAt: data.generatedAt || "", p0: Number(counts.p0) || 0, p1: Number(counts.p1) || 0 };
+
+      if (data.acceptedRisk) {
+        summary.acceptedRisk.push({ ...item, reason: data.acceptedRisk });
+      } else {
+        summary.preRule.push(item);
+      }
+    }
+  }
+
+  return summary;
+}
+
+// Latest VERIFY's coverage tier and diff scope per story directory, read from
+// the run files (the ledger keeps a summary without them). `status` shows the
+// scope only when it is not "story", so a verdict measured on an epic branch
+// never reads like a per-story one.
+function latestVerifyScopeByStoryDir(root) {
+  const byDir = new Map();
+  const dir = runsDir(root);
+
+  if (!fs.existsSync(dir)) {
+    return byDir;
+  }
+
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!name.endsWith("-verify.json")) {
+      continue;
+    }
+
+    const data = readJson(path.join(dir, name), null);
+    if (!data || !data.story) {
+      continue;
+    }
+
+    const key = data.story.endsWith(".md") ? data.story.split("/").slice(0, -1).join("/") : data.story;
+    const prev = byDir.get(key);
+    if (!prev || (data.generatedAt || "") > prev.generatedAt) {
+      byDir.set(key, {
+        generatedAt: data.generatedAt || "",
+        tier: data.coverage ? data.coverage.tier || coverageTier(data.coverage) : null,
+        scope: data.diffBase ? data.diffBase.scope || null : null,
+        warnings: contraryWarningCounts(data.contrary),
+        treeToken: data.provenance && data.provenance.git ? data.provenance.git.treeToken || null : null,
+      });
+    }
+  }
+
+  return byDir;
+}
+
+// How many deleted tests and open criteria a passing run still carries; null
+// when there are none, or when the evidence predates the signals.
+function contraryWarningCounts(contrary) {
+  const w = contrary && contrary.warnings;
+  const deletedTests = w && Array.isArray(w.deletedTests) ? w.deletedTests.length : 0;
+  const openCriteria = w && Array.isArray(w.openCriteria) ? w.openCriteria.length : 0;
+
+  return deletedTests + openCriteria > 0 ? { deletedTests, openCriteria } : null;
 }
 
 function buildAuditMarkdown(entries) {
@@ -469,7 +588,9 @@ function audit({
     if (since) {
       entries = entries.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
     }
-    const result = gate(entries, { currentToken: currentTreeToken(root) });
+    const currentToken = currentTreeToken(root);
+    const currentPolicy = policyFingerprint(root);
+    const result = gate(entries, { currentToken, currentPolicy });
 
     if (json) {
       log(JSON.stringify(result, null, 2));
@@ -485,9 +606,9 @@ function audit({
         }
       }
       if (result.stale.length > 0) {
-        log("Audit check FAILED — latest verify is stale (code changed since the proof); re-run `ai-flow verify --story <dir>` for:");
+        log("Audit check FAILED — latest verify is stale (code or policy changed since the proof); re-run `ai-flow verify --story <dir>` for:");
         for (const entry of result.stale) {
-          log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree`);
+          log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree (${staleReason(entry, currentToken, currentPolicy)})`);
         }
       }
     }
@@ -520,9 +641,37 @@ function audit({
 
   const passed = entries.filter((entry) => entry.ok).length;
   log(`Audit ledger: ${entries.length} entr(ies), ${passed} passed, ${entries.length - passed} failed.`);
+  const perRung = {};
+  for (const entry of entries) {
+    if (entry.type === "verify" && entry.coverageTier) {
+      perRung[entry.coverageTier] = (perRung[entry.coverageTier] || 0) + 1;
+    }
+  }
+  if (Object.keys(perRung).length > 0) {
+    log(`Verify runs per coverage rung: ${Object.entries(perRung).map(([tier, n]) => `${tier} ${n}`).join(", ")}.`);
+  }
   log(`${dryRun ? "Would append" : "Appended"} ${sync.added.length} new run(s) to ${normalizePortable(path.relative(root, ledgerPath(root)))}.`);
+  printReviewSummary(summarizeReviews(root));
   if (!exportMd) {
     log("Run `ai-flow audit --export` to write docs/AUDIT.md, or `--check` to gate on the latest verify.");
+  }
+}
+
+function printReviewSummary(reviews) {
+  if (reviews.total === 0) {
+    return;
+  }
+
+  const kinds = Object.entries(reviews.byReviewer).map(([kind, count]) => `${count} ${kind}`).join(", ");
+  log(`Reviews: ${reviews.total} captured (${kinds}).`);
+
+  for (const item of reviews.acceptedRisk) {
+    log(`- pass with accepted P0/P1: ${item.story} (${item.p0} P0, ${item.p1} P1) — ${item.reason}`);
+  }
+
+  for (const item of reviews.preRule) {
+    const open = [item.p0 ? "P0" : "", item.p1 ? "P1" : ""].filter(Boolean).join("/");
+    log(`- pass with open ${open} (pre-0.13): ${item.story}`);
   }
 }
 
@@ -543,8 +692,11 @@ module.exports = {
   syncLedger,
   gate,
   isStale,
+  staleReason,
   latestVerifyByStoryDir,
   latestReviewByStoryDir,
+  summarizeReviews,
+  latestVerifyScopeByStoryDir,
   buildAuditMarkdown,
   entryFromRunFile,
   collectDecisions,

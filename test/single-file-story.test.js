@@ -17,7 +17,7 @@ const path = require('node:path');
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
 function run(cwd, args) {
-  const result = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8', env: { ...process.env, CI: '', AI_FLOW_FORCE_TTY: '1', NODE_ENV: 'test' } });
   return {
     code: result.status ?? 1,
     output: `${result.stdout || ''}${result.stderr || ''}`,

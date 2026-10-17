@@ -132,7 +132,7 @@ function buildChain(storyRel, ancestry) {
   if (!chain.evidence) {
     chain.gaps.push("no verify evidence recorded");
   } else if (!chain.evidence.ok) {
-    chain.gaps.push("latest verify evidence is red");
+    chain.gaps.push("latest verify evidence is red (or not proven: see `ai-flow verify`)");
   }
 
   return chain;

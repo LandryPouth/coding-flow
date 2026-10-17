@@ -342,6 +342,16 @@ the answer is not "later", it is "no".
 
 ---
 
+### Amended by story 08-03: surfaced by default, enforced on request
+
+Entry 9 held that criteria never change `ok`. That stays true by default. Where the
+project asks for strictness (`mode: strict`, or `failOnContrarySignals` on a
+high-risk story) an open criterion now fails the run, because an open criterion is
+the story's own written claim that the work is unfinished, and failing on it only
+**lowers** what the tool asserts. The direction rule above still holds: the escapes
+(`[~]`, `## Deferred Criteria`, a `## Test Exemption` naming a deleted file) lower
+the claim too, and there is still no binding of a criterion to a named test.
+
 ## 10. Multi-platform support — the second freeze exception
 
 **Decided 2026-08-23.** Planned as `epics/epic-01-multi-platform-support/`
@@ -389,3 +399,29 @@ a freeze exception requires the premise to have changed, stated out loud —
 this is the second time that has happened, five days apart, on two
 unrelated proposals judged by the same test, not a pattern of exceptions
 accumulating.
+
+## 11. MCP tools are not "unchecked writes"
+
+The guard reports `unchecked` for an unknown tool carrying a path field
+(story 05-02). `mcp__*` tools and the `Artifact*` tools are deliberately
+exempt: they are a server's own tools, not a write tool the guard could learn,
+and counting every one would bury the real unknowns in noise. Claude Code never
+sends them to the guard (the hook matcher is `Write|Edit|MultiEdit|NotebookEdit|Bash`),
+so today the `mcp__` exemption only matters to a host that would send that spelling.
+
+**Corrected in the 05-02 review**: OpenCode does not spell MCP tools `mcp__…`; it
+names them `<server>_<tool>` (`sanitize(server) + "_" + sanitize(tool)`, OpenCode's
+`mcp/catalog.ts`), which no name test can tell from a built-in. So in OpenCode an
+MCP tool carrying a `path` is **not** exempt: an MCP filesystem write
+(`fs_write_file`) is logged as unchecked — the earlier "neither checked nor
+logged" gap does not exist — and an MCP read with a `path` is logged too. That
+read noise is accepted: a per-server allowlist is policy the guard does not own,
+and keeping unknown tools out of `doctor` would silence an unknown write tool too.
+`doctor`'s warning names its most frequent reason instead, so the noise is
+recognizable. Revisit if it buries the real unknowns.
+
+**`doctor` does not warn on shell-reading limits.** A write target built from
+`$VAR`, a `cd` into an expansion, a heredoc-fed interpreter and a git pathspec
+file are limits of reading shell text, not a guard failure, and they are
+everyday use: ~100 a day on this repository's own log. `report` counts them;
+`doctor` warns only on the reasons that mean the guard could not do its job.

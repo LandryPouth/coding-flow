@@ -11,12 +11,18 @@ const { spawnSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
+const { policyFingerprint } = require("./policy-fingerprint");
 const { captureIdentity, currentTreeToken } = require("./identity");
-const { defaultBranch, currentBranch } = require("./policy");
+const { currentBranch } = require("./policy");
+const { resolveDiffBase, describeScope } = require("./diff-base");
 const {
-  loadCoverageReport,
+  loadCoverageReports,
+  reportCandidates,
+  packageOfFile,
   measurePatchCoverage,
   coverageTier,
+  tierRank,
+  resolveCoverageFloor,
   DEFAULT_REPORT_PATHS,
 } = require("./coverage");
 const { PART_FILES, readStoryPart, storyPartPath } = require("./story");
@@ -230,11 +236,18 @@ function defaultHarnessConfig() {
     // the stronger one cannot be.
     coverageReports: DEFAULT_REPORT_PATHS,
     minPatchCoverage: 80,
+    // Risk levels at which a validation command that only replayed a build-tool
+    // cache (turbo, nx) does not count as executed proof. See verifyStoryOnce.
+    freshTestsFor: [],
     secretPatterns: defaultSecretPatterns(),
     secretScanAllowlist: defaultSecretScanAllowlist(),
     highRiskPaths: defaultHighRiskPaths(),
     testGlobs: defaultTestGlobs(),
     nonBehaviorGlobs: defaultNonBehaviorGlobs(),
+    // Paths that are output, not authorship (a regenerated client, an OpenAPI
+    // dump): left out of coverage, risk, weakening and deleted-test signals.
+    // Never consulted by the guard (`blockedPaths`) or by secret scanning.
+    ignoredPaths: [],
     blockedPaths: [
       ".env",
       ".env.*",
@@ -307,6 +320,7 @@ function readHarnessConfig(root = cwd) {
         : defaults.secretScanAllowlist,
       highRiskPaths: Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaults.highRiskPaths,
       testGlobs: Array.isArray(config.testGlobs) ? config.testGlobs : defaults.testGlobs,
+      ignoredPaths: Array.isArray(config.ignoredPaths) ? config.ignoredPaths : defaults.ignoredPaths,
       nonBehaviorGlobs: Array.isArray(config.nonBehaviorGlobs)
         ? config.nonBehaviorGlobs
         : defaults.nonBehaviorGlobs,
@@ -317,6 +331,9 @@ function readHarnessConfig(root = cwd) {
       coverageReports: Array.isArray(config.coverageReports)
         ? config.coverageReports
         : defaults.coverageReports,
+      freshTestsFor: Array.isArray(config.freshTestsFor)
+        ? config.freshTestsFor.filter((level) => typeof level === "string")
+        : defaults.freshTestsFor,
       minPatchCoverage: Number.isFinite(config.minPatchCoverage)
         ? config.minPatchCoverage
         : defaults.minPatchCoverage,
@@ -678,12 +695,7 @@ function addedLinesByFile(root, files) {
   if (files.length === 0) return byFile;
   const wanted = new Set(files);
 
-  const base = defaultBranch(root);
-  let mergeBase = null;
-  for (const ref of [base, `origin/${base}`]) {
-    mergeBase = runGitList(["merge-base", ref, "HEAD"], root)[0];
-    if (mergeBase) break;
-  }
+  const mergeBase = currentDiffBase(root).mergeBase;
 
   try {
     const diffArgs = mergeBase ? ["diff", "-U0", mergeBase] : ["diff", "-U0"];
@@ -867,6 +879,7 @@ function buildHarnessPreflight({ story = null } = {}) {
   return {
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     configPath: normalizePortable(path.relative(cwd, harnessConfigPath())),
     configExists: exists,
     story: resolvedStory ? resolvedStory.relativePath : null,
@@ -962,17 +975,19 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
   }
 }
 
-function collectHarnessReport({ quick = false, strict = false, story = null } = {}) {
+function collectHarnessReport({ quick = false, strict = false, story = null, files: onlyFiles = null } = {}) {
   const { config, exists } = readHarnessConfig();
   const report = {
     ok: false,
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     configPath: normalizePortable(path.relative(cwd, harnessConfigPath())),
     configExists: exists,
     mode: config.mode,
     quick,
     strict,
+    diffBase: publicDiffBase(currentDiffBase(cwd)),
     story: story || null,
     config,
     stats: {
@@ -991,7 +1006,8 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
     );
   }
 
-  const files = walkProjectFiles(cwd, { quick });
+  // An explicit list (what `ship` is about to stage) replaces the tree walk.
+  const files = Array.isArray(onlyFiles) ? onlyFiles : walkProjectFiles(cwd, { quick });
   report.stats.filesScanned = files.length;
 
   checkSensitivePaths(files, config, report);
@@ -1001,6 +1017,49 @@ function collectHarnessReport({ quick = false, strict = false, story = null } = 
 
   report.ok = report.errors.length === 0;
   return report;
+}
+
+// The base every diff-derived signal (coverage, risk, weakening, deleted tests)
+// is measured from. Resolved once per run and per HEAD, not once per function:
+// five readers disagreeing about the base would make the evidence incoherent.
+let diffBaseRequest = { flagBase: null, story: null };
+let diffBaseCache = new Map();
+
+function setDiffBaseRequest({ flagBase = null, story = null } = {}) {
+  diffBaseRequest = { flagBase, story };
+  diffBaseCache = new Map();
+}
+
+function publicDiffBase({ ref, mergeBase, source, scope, forkPointMissing, configUnresolved }) {
+  return {
+    ref,
+    mergeBase,
+    source,
+    scope,
+    ...(forkPointMissing ? { forkPointMissing } : {}),
+    ...(configUnresolved ? { configUnresolved } : {}),
+  };
+}
+
+function currentDiffBase(root = cwd) {
+  const head = runGitList(["rev-parse", "HEAD"], root)[0] || "";
+  const branch = currentBranch(root) || "";
+  const configured = readConfig(root).baseBranch || "";
+  const key = [root, head, branch, configured, diffBaseRequest.flagBase, diffBaseRequest.story].join("\0");
+
+  if (!diffBaseCache.has(key)) {
+    let value;
+
+    try {
+      value = resolveDiffBase(root, diffBaseRequest);
+    } catch (error) {
+      fail(error.message);
+    }
+
+    diffBaseCache.set(key, value);
+  }
+
+  return diffBaseCache.get(key);
 }
 
 function runGitList(argsForGit, root = cwd) {
@@ -1084,8 +1143,10 @@ function buildHarnessEvidence({ story = null } = {}) {
   return {
     generatedAt: new Date().toISOString(),
     root: cwd,
+    policyFingerprint: policyFingerprint(cwd),
     provenance: captureIdentity(cwd),
     story: preflight.story,
+    diffBase: publicDiffBase(currentDiffBase(cwd)),
     risk: preflight.risk,
     recommendedMode: preflight.recommendedMode,
     filesChanged: getChangedFiles(),
@@ -1167,7 +1228,8 @@ function printHarnessReport(report) {
   }
 }
 
-function harnessCheck({ json = false, quick = false, strict = false, story = null } = {}) {
+function harnessCheck({ json = false, quick = false, strict = false, story = null, base = null } = {}) {
+  setDiffBaseRequest({ flagBase: base, story });
   const report = collectHarnessReport({ quick, strict, story });
 
   if (json) {
@@ -1306,20 +1368,47 @@ function parseTestsCommands(testsMarkdown) {
 
 // Source of the commands, by decreasing priority: explicit config, then the
 // story's plan.md contract, then the usual package.json scripts.
-function resolveValidationCommands({ storyDir = null } = {}) {
+function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
   const config = readConfig(cwd);
 
   if (config.validation) {
     // Correctness (`commands`) and deterministic quality (`quality`) both flow
     // through the same executed-and-captured proof; a red quality command blocks
     // exactly like a red test. Tests run first, then quality.
+    // `fresh`: the story's risk asks for tests that really ran, so the project's
+    // cache-bypassing commands stand in for the usual ones when it declared any.
+    const freshCommands = Array.isArray(config.validation.freshCommands) ? config.validation.freshCommands : [];
+    const entries = (value) => (Array.isArray(value) ? value : []);
+    const quality = entries(config.validation.quality);
     const declared = [
-      ...(Array.isArray(config.validation.commands) ? config.validation.commands : []),
-      ...(Array.isArray(config.validation.quality) ? config.validation.quality : []),
+      ...(fresh && freshCommands.length > 0 ? freshCommands : entries(config.validation.commands)),
+      ...quality,
     ];
 
     if (declared.length > 0) {
-      return { source: "config", commands: declared };
+      // Entries are strings or `{ command, timeoutMs }`; everything downstream
+      // keeps seeing command strings, and the limits travel beside them.
+      const globalTimeout = Number.isFinite(config.validation.timeoutMs) ? config.validation.timeoutMs : null;
+      // Keyed by command string: one limit per distinct command, the last declared wins.
+      const timeouts = {};
+      const commandOf = (entry) => {
+        const command = typeof entry === "string" ? entry : entry.command;
+        const timeoutMs = typeof entry === "string" ? globalTimeout : entry.timeoutMs || globalTimeout;
+
+        if (timeoutMs) {
+          timeouts[command] = timeoutMs;
+        }
+
+        return command;
+      };
+
+      // `quality` is returned so a cached lint is not refused as stale tests.
+      return {
+        source: "config",
+        commands: declared.map(commandOf),
+        quality: quality.map(commandOf),
+        timeouts,
+      };
     }
   }
 
@@ -1371,7 +1460,80 @@ function outputBufferBytes() {
   return Number.isFinite(override) && override > 0 ? override : 256 * 1024 * 1024;
 }
 
-function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
+// Did this command run, or did a build tool replay a previous run? Read from the
+// WHOLE output (the stored tail may have lost the summary). turbo and nx only;
+// anything else is "unknown". `cached`/`total` are present when the summary
+// gave counts.
+function detectCacheState(output) {
+  const text = String(output || "").replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
+
+  const turbo = [...text.matchAll(/Cached:\s+(\d+)\s+cached,\s+(\d+)\s+total/g)].pop();
+  if (turbo) {
+    const cached = Number(turbo[1]);
+    const total = Number(turbo[2]);
+    const state = cached === 0 ? "none" : cached >= total ? "full" : "partial";
+    return { cache: state, cached, total };
+  }
+
+  if (/>>>\s*FULL TURBO/.test(text)) {
+    return { cache: "full" };
+  }
+
+  const nx = [...text.matchAll(/read the output from the cache instead of running the command for (\d+) out of (\d+) tasks/g)].pop();
+  if (nx) {
+    const cached = Number(nx[1]);
+    const total = Number(nx[2]);
+    return { cache: cached >= total ? "full" : "partial", cached, total };
+  }
+
+  if (/Nx read the output from the cache|\[existing outputs match the cache|\[local cache\]/.test(text)) {
+    return { cache: "partial" };
+  }
+
+  return { cache: "unknown" };
+}
+
+const DEFAULT_COMMAND_TIMEOUT_MS = 600000;
+
+// Variables a clean-env run drops, by NAME only: the values are never read or recorded.
+const SECRET_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|ACCESS_?KEY)/i;
+
+// The child environment with credential-looking variables removed. PATH, HOME and
+// CI always stay; anything else (NODE_*, npm_*, the rest) stays unless its name
+// looks like a credential — NODE_AUTH_TOKEN is a secret whatever its prefix.
+function cleanEnvironment(source = process.env) {
+  const env = {};
+  const dropped = [];
+
+  for (const [name, value] of Object.entries(source)) {
+    if (["PATH", "HOME", "CI"].includes(name) || !SECRET_ENV_NAME.test(name)) {
+      env[name] = value;
+    } else {
+      dropped.push(name);
+    }
+  }
+
+  return { env, dropped: dropped.sort() };
+}
+
+// Nobody is watching: no terminal on both ends, or a CI runner. Agents run with
+// no TTY, which is the point. AI_FLOW_FORCE_TTY=1 exists for tests only, so it is
+// honoured under NODE_ENV=test alone: an agent cannot use it to skip the refusal.
+function isUnattended() {
+  const ci = (process.env.CI || "").toLowerCase();
+
+  if (!["", "0", "false"].includes(ci)) {
+    return true;
+  }
+
+  if (process.env.NODE_ENV === "test" && process.env.AI_FLOW_FORCE_TTY === "1") {
+    return false;
+  }
+
+  return !(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env } = {}) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
   const result = spawnSync(command, [], {
@@ -1380,6 +1542,7 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
     encoding: "utf8",
     timeout: timeoutMs,
     maxBuffer: maxOutputBytes,
+    ...(env ? { env } : {}),
   });
 
   const cap = 4000;
@@ -1405,8 +1568,10 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
     exitCode: toolError ? null : exitCode,
     ok,
     timedOut,
+    ...(timedOut ? { timeoutMs } : {}),
     toolError,
     durationMs: Date.now() - started,
+    ...detectCacheState(`${result.stdout || ""}\n${result.stderr || ""}`),
     stdoutTail: (result.stdout || "").slice(-cap),
     stderrTail: (result.stderr || "").slice(-cap),
     // Selected from the WHOLE output, which only exists here: by the time anyone
@@ -1416,6 +1581,13 @@ function runValidationCommand(command, { timeoutMs = 600000 } = {}) {
     // ledger is append-only.
     ...(ok ? {} : { failureLines: selectFailureLines(`${result.stdout || ""}\n${result.stderr || ""}`) }),
   };
+}
+
+// The limit one command runs under, when the project declared one.
+function commandTimeout(resolution, command) {
+  const timeoutMs = resolution.timeouts && resolution.timeouts[command];
+
+  return timeoutMs ? { timeoutMs } : {};
 }
 
 function resultStatus(item) {
@@ -1458,8 +1630,13 @@ function formatLineRanges(lines) {
 function printVerify(evidence, outputPath) {
   const coverage = evidence.coverage || { required: false, ok: true };
   const coverageBlocked = evidence.commandsOk && !coverage.ok;
+  const contrary = evidence.contrary || NO_CONTRARY;
+  const contraryBlocked = evidence.commandsOk && coverage.ok && !contrary.ok;
 
-  if (evidence.commandsFound === 0) {
+  if (evidence.refused) {
+    log(`Harness verify REFUSED — ${evidence.refused}.`);
+    log(`Nothing was executed (${evidence.commandsFound} command(s) found in plan.md).`);
+  } else if (evidence.commandsFound === 0) {
     log("Harness verify: no validation commands found.");
     log("Declare them in plan.md under '## Commands' as a fenced code block, one command per line,");
     log("or in config.validation.commands.");
@@ -1478,7 +1655,10 @@ function printVerify(evidence, outputPath) {
     // Line-level: name the lines. "80% of the diff is uncovered" sends someone
     // reading the whole change; "src/auth.js:41-46" sends them to the code.
     if (coverage.patch) {
-      log(`  Measured from ${coverage.patch.report.path} (${coverage.patch.report.format}).`);
+      const reports = coverage.patch.report.reports || [];
+      log(reports.length > 1
+        ? `  Measured from ${reports.length} reports: ${reports.map((r) => r.path).join(", ")}.`
+        : `  Measured from ${coverage.patch.report.path} (${coverage.patch.report.format}).`);
 
       for (const entry of coverage.patch.uncovered.slice(0, 5)) {
         const detail = entry.absentFromReport
@@ -1492,10 +1672,18 @@ function printVerify(evidence, outputPath) {
     }
 
     printWeakenedTests(coverage);
-    log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
-    log('  or re-run with --test-exemption "<reason>" if there is no story.');
+    if (coverage.floor) {
+      log("  Emit a coverage report (lcov.info / coverage-final.json) so the added lines are measured,");
+      log("  or declare a '## Test Exemption' section (or --test-exemption) to ship on a written reason.");
+    } else {
+      log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
+      log('  or re-run with --test-exemption "<reason>" if there is no story.');
+    }
   } else if (evidence.ok) {
-    log(`Harness verify passed (${evidence.results.length} command(s)).`);
+    const warnings = describeContraryWarnings(contrary);
+    log(warnings
+      ? `Harness verify passed, with warnings (${warnings}): ${evidence.results.length} command(s).`
+      : `Harness verify passed (${evidence.results.length} command(s)).`);
 
     // Name the rung before the sentence. "Coverage: evidence — 1 test file(s)
     // changed" and "Coverage: verified — 92% of the added lines ran" now read as
@@ -1505,11 +1693,16 @@ function printVerify(evidence, outputPath) {
     if (coverage.exemption) {
       log(`  Coverage: exempted — "${coverage.exemption.split(/\r?\n/)[0]}"`);
     } else if (coverage.required) {
-      log(`  Coverage: ${tier} — ${coverage.reason}`);
+      const reportCount = coverage.patch ? (coverage.patch.report.reports || []).length : 0;
+      log(`  Coverage: ${tier} — ${coverage.reason}` +
+        (tier === "verified" && reportCount > 1 ? ` (${reportCount} reports)` : ""));
 
       // The one rung worth explaining: it passed on a proxy, and the way to earn
       // the stronger word is a coverage report this run actually produced.
-      if (tier === "evidence") {
+      if (tier === "evidence" && coverage.patch) {
+        log("  Some changed files lie outside every coverage report's package, so they are");
+        log("  unmeasured; emit a report in their package to get 'verified'.");
+      } else if (tier === "evidence") {
         log("  A test file moved; no fresh coverage report was found, so nothing measured");
         log("  this change. Emit lcov.info or coverage-final.json to get 'verified'.");
       }
@@ -1518,6 +1711,14 @@ function printVerify(evidence, outputPath) {
     // Printed at every rung, including `verified`. A measured 92% next to three
     // deleted tests is still three deleted tests, and the reader decides what that
     // means — this only refuses to let a good number hide it.
+    printWeakenedTests(coverage);
+    printOpenCriteria(evidence);
+    printContraryFailures(contrary);
+  } else if (contraryBlocked) {
+    // The commands passed and the coverage gate held. What stops this is the
+    // project's own strictness reading the story and the diff against the verdict.
+    log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the run contradicts itself.`);
+    printContraryFailures(contrary);
     printWeakenedTests(coverage);
     printOpenCriteria(evidence);
   } else {
@@ -1533,8 +1734,32 @@ function printVerify(evidence, outputPath) {
     log(`Commands from: ${evidence.commandSource}`);
   }
 
+  // Which diff the coverage and risk verdicts above were measured on. "82 test
+  // files" means one thing against the epic branch and another against main.
+  const scopeLine = describeScope(
+    evidence.diffBase,
+    // A skipped coverage gate (low risk) never listed the files; "0 files" would lie.
+    coverage.required !== false && Array.isArray(coverage.changedFiles) ? coverage.changedFiles.length : null,
+  );
+
+  if (scopeLine) {
+    log(scopeLine);
+  }
+
   for (const item of evidence.results) {
-    log(`- [${resultStatus(item)}] ${item.command} (${item.durationMs}ms)`);
+    const replay = item.cache === "full" || item.cache === "partial"
+      ? `, replayed from cache${item.total ? `: ${item.cached}/${item.total} tasks` : ""}`
+      : "";
+    log(`- [${resultStatus(item)}] ${item.command} (${item.durationMs}ms${replay})`);
+
+    if (item.freshRequired) {
+      log(`    ${item.freshRequired}`);
+    }
+
+    // Name the knob: a timeout is a limit the project can raise, not a failure of the code.
+    if (item.timedOut) {
+      log(`    timeout after ${Number((item.timeoutMs / 1000).toFixed(1))} s (validation.timeoutMs)`);
+    }
 
     if (item.toolError) {
       log(`    ${item.toolError}`);
@@ -1557,7 +1782,9 @@ function printVerify(evidence, outputPath) {
     }
   }
 
-  log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+  if (outputPath) {
+    log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+  }
 }
 
 // Reproducibility fingerprint: a green verify is only auditable if we know the
@@ -1614,21 +1841,33 @@ function captureEnvironment() {
 // - a diff of docs/story/lockfile-only changes trips nothing (no behavior moved);
 // - outside git, or with no visible diff, the gate cannot see and stays silent.
 
+// The tool's own run files are never a change a person or agent made; the
+// project's `ignoredPaths` are the generated ones. This is the single choke
+// point for the diff-derived signals (coverage, risk, weakening, deleted tests).
+// Secret scanning and the guard read other lists and keep seeing everything.
+function isScopedOut(file, config) {
+  const portable = normalizePortable(file);
+
+  return (
+    portable.startsWith(".coding-flow/") ||
+    (config.ignoredPaths || []).some((pattern) => typeof pattern === "string" && matchesPattern(portable, pattern))
+  );
+}
+
+function filterScopedFiles(files, config) {
+  return files.filter((file) => !isScopedOut(file, config));
+}
+
 // Everything this branch contributes, not just what is uncommitted: a story whose
 // tests are already committed must not read as "no test changed". Falls back to
 // the working tree when there is no base to compare against.
 function changedFilesForCoverage(root = cwd) {
   const files = new Set();
-  const base = defaultBranch(root);
+  const { mergeBase } = currentDiffBase(root);
 
-  for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"], root)[0];
-
-    if (mergeBase) {
-      for (const file of runGitList(["diff", "--name-only", mergeBase], root)) {
-        files.add(file);
-      }
-      break;
+  if (mergeBase) {
+    for (const file of runGitList(["diff", "--name-only", mergeBase], root)) {
+      files.add(file);
     }
   }
 
@@ -1642,7 +1881,7 @@ function changedFilesForCoverage(root = cwd) {
     files.add(file);
   }
 
-  return [...files].map(normalizePortable).sort();
+  return filterScopedFiles([...files].map(normalizePortable), readHarnessConfig(root).config).sort();
 }
 
 // The lines this change ADDED, per file. Only added lines: a deleted line has no
@@ -1711,15 +1950,10 @@ function changedLinesForCoverage() {
     }
   };
 
-  const base = defaultBranch(cwd);
+  const { mergeBase } = currentDiffBase(cwd);
 
-  for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
-
-    if (mergeBase) {
-      merge(parseAddedLines(runGitText(["diff", "--unified=0", mergeBase])));
-      break;
-    }
+  if (mergeBase) {
+    merge(parseAddedLines(runGitText(["diff", "--unified=0", mergeBase])));
   }
 
   merge(parseAddedLines(runGitText(["diff", "--unified=0"])));
@@ -1736,7 +1970,9 @@ function changedLinesForCoverage() {
     }
   }
 
-  return byFile;
+  const config = readHarnessConfig(cwd).config;
+
+  return Object.fromEntries(Object.entries(byFile).filter(([file]) => !isScopedOut(file, config)));
 }
 
 // An escape hatch that leaves a mark. Some real changes cannot carry a test (a
@@ -1782,10 +2018,10 @@ function readAcceptanceCriteria(storyDir) {
   const items = [];
 
   for (const line of section.split(/\r?\n/)) {
-    const match = line.match(/^\s*[-*]\s*\[([ xX])\]\s*(.+?)\s*$/);
+    const match = line.match(/^\s*[-*]\s*\[([ xX~])\]\s*(.+?)\s*$/);
 
     if (match) {
-      items.push({ done: match[1].toLowerCase() === "x", text: match[2] });
+      items.push({ state: match[1] === "~" ? "deferred" : match[1] === " " ? "open" : "done", text: match[2] });
     }
   }
 
@@ -1795,31 +2031,58 @@ function readAcceptanceCriteria(storyDir) {
     return null;
   }
 
+  // A criterion is deferred on purpose when its line says `[~]` (the convention
+  // `tasks.md` already uses) or when a `## Deferred Criteria` section names it.
+  const named = deferredCriteriaNames(storyDir);
+  const isDeferred = (item) =>
+    item.state === "deferred" ||
+    (item.state === "open" && named.some((name) => matchesDeferredName(name, normalizeCriterion(item.text))));
+
   return {
     total: items.length,
-    unchecked: items.filter((item) => !item.done).map((item) => item.text),
+    unchecked: items.filter((item) => item.state !== "done" && !isDeferred(item)).map((item) => item.text),
+    deferred: items.filter((item) => item.state !== "done" && isDeferred(item)).map((item) => item.text),
   };
+}
+
+// The criterion must appear in the deferred line (or equal it), never the other
+// way round: a generic line such as "performance" must not defer every criterion
+// that mentions it, and a one-word criterion must not hide inside any line.
+function matchesDeferredName(name, criterion) {
+  return name === criterion || (criterion.length >= 8 && name.includes(criterion));
+}
+
+function normalizeCriterion(text) {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// The lines of a `## Deferred Criteria` section, normalised for matching. Too
+// short a line is skipped: "a" would otherwise "name" every criterion.
+function deferredCriteriaNames(storyDir) {
+  const text = extractSection(Object.values(readStoryBundle(storyDir)).join("\n\n"), "Deferred Criteria");
+
+  return text
+    .split(/\r?\n/)
+    .map((line) => normalizeCriterion(line.replace(/^\s*[-*]\s*(\[[ xX~]\]\s*)?/, "")))
+    .filter((line) => line.length >= 8);
 }
 
 // The line-level verdict, or null when it cannot be established — in which case
 // the caller keeps the test-file heuristic. Never guesses: a missing report, an
 // unparseable one, or one written before this run all mean "no line-level
 // answer", not "uncovered".
-function evaluatePatchCoverage({ config, behaviorFiles, startedAt }) {
-  const report = loadCoverageReport(cwd, {
-    candidates: Array.isArray(config.coverageReports) && config.coverageReports.length > 0
-      ? config.coverageReports
-      : DEFAULT_REPORT_PATHS,
+function evaluatePatchCoverage({ config, behaviorFiles, testFiles = [], startedAt }) {
+  // `testFiles` here are the ones that count as proof: strengthened or neutral,
+  // never weakened-only (see scanTestWeakening).
+  // Freshness is per report: a package whose report predates the run is ignored
+  // on its own, and the others still count. A months-old lcov quietly waving a
+  // change through is the failure this guards against.
+  const report = loadCoverageReports(cwd, {
+    candidates: reportCandidates(cwd, config.coverageReports),
+    since: startedAt,
   });
 
   if (!report) {
-    return null;
-  }
-
-  // A report older than the run proves something about code from before it. The
-  // most dangerous failure mode here is a months-old lcov quietly waving every
-  // change through, so an out-of-date report is treated as no report at all.
-  if (startedAt && report.generatedAt && report.generatedAt < startedAt) {
     return null;
   }
 
@@ -1836,11 +2099,22 @@ function evaluatePatchCoverage({ config, behaviorFiles, startedAt }) {
     return null;
   }
 
-  const measured = measurePatchCoverage({ report, changedLinesByFile: scoped });
+  const measured = measurePatchCoverage({
+    report,
+    changedLinesByFile: scoped,
+  });
 
-  // Nothing executable changed (comments, formatting) — no line-level claim to
-  // make, so defer to the heuristic rather than report a vacuous 100%.
-  if (measured.totalLines === 0) {
+  // A behaviour file outside every report's package falls back to the test-file
+  // rule for ITS package; the run's rung is the weakest of the two parts.
+  const unprovenUnmeasured = measured.unmeasured.filter((file) => {
+    const pkg = packageOfFile(cwd, file);
+    return !testFiles.some((test) => packageOfFile(cwd, test) === pkg);
+  });
+
+  // Nothing executable changed and nothing unmeasured (comments, formatting) —
+  // no line-level claim to make, so defer to the heuristic rather than report a
+  // vacuous 100%.
+  if (measured.totalLines === 0 && measured.unmeasured.length === 0) {
     return null;
   }
 
@@ -1849,8 +2123,13 @@ function evaluatePatchCoverage({ config, behaviorFiles, startedAt }) {
   return {
     ...measured,
     min,
-    ok: measured.percent >= min,
-    report: { path: report.path, format: report.format },
+    ok: measured.totalLines === 0 ? true : measured.percent >= min,
+    unprovenUnmeasured,
+    report: {
+      path: report.path,
+      format: report.format,
+      reports: report.reports,
+    },
   };
 }
 
@@ -1931,16 +2210,13 @@ function parseChangedText(diffText) {
 
 function deletedFilesInDiff() {
   const deleted = new Set();
-  const base = defaultBranch(cwd);
-  const sources = [["diff", "--name-status"], ["diff", "--cached", "--name-status"]];
+  const { mergeBase } = currentDiffBase(cwd);
+  // `--find-renames` is explicit: a moved test file is not a deleted one, and a
+  // user's `diff.renames=false` must not turn every move into a deletion.
+  const sources = [["diff", "--find-renames", "--name-status"], ["diff", "--find-renames", "--cached", "--name-status"]];
 
-  for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
-
-    if (mergeBase) {
-      sources.push(["diff", "--name-status", mergeBase]);
-      break;
-    }
+  if (mergeBase) {
+    sources.push(["diff", "--find-renames", "--name-status", mergeBase]);
   }
 
   for (const argsForGit of sources) {
@@ -1953,28 +2229,25 @@ function deletedFilesInDiff() {
     }
   }
 
-  return [...deleted];
+  const config = readHarnessConfig(cwd).config;
+
+  return filterScopedFiles([...deleted], config);
 }
 
 // Per test file: did this diff make it stronger, weaker, or neither?
 function scanTestWeakening(config) {
   const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
   const byFile = {};
-  const base = defaultBranch(cwd);
-  const diffs = [["diff"], ["diff", "--cached"]];
+  const { mergeBase } = currentDiffBase(cwd);
+  const diffs = [["diff", "--find-renames"], ["diff", "--find-renames", "--cached"]];
 
-  for (const ref of [base, `origin/${base}`]) {
-    const mergeBase = runGitList(["merge-base", ref, "HEAD"])[0];
-
-    if (mergeBase) {
-      diffs.push(["diff", mergeBase]);
-      break;
-    }
+  if (mergeBase) {
+    diffs.push(["diff", "--find-renames", mergeBase]);
   }
 
   for (const argsForGit of diffs) {
     for (const [file, change] of Object.entries(parseChangedText(runGitText(argsForGit)))) {
-      if (!isTest(file)) {
+      if (!isTest(file) || isScopedOut(file, config)) {
         continue;
       }
 
@@ -2029,7 +2302,9 @@ function scanTestWeakening(config) {
   return { findings, strengthened, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
 }
 
-function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }) {
+// `ctx.riskLevel` is null until the risk is scored: a result returned before that
+// point (coverage off, no diff) has no level, so no floor applies to it.
+function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }, ctx = { riskLevel: null }) {
   const skip = (reason) => ({ required: false, ok: true, reason, changedFiles: [], testFiles: [] });
 
   if (!config.requireTestChange) {
@@ -2052,6 +2327,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
     ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
     : { level: "low", matchedTerms: [], reason: "no story to read." };
   const risk = combineRisk(storyRisk, scoreDiffRisk(changedFiles, config));
+  ctx.riskLevel = risk.level;
 
   if (risk.level === "low") {
     return skip(`risk is low (${risk.reason})`);
@@ -2088,10 +2364,34 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   // heuristic otherwise. The stronger measure always supersedes the weaker one:
   // "a test file moved" is a proxy for "the change is covered", and a proxy is
   // only worth using while the real thing is unavailable.
-  const patch = evaluatePatchCoverage({ config, behaviorFiles, startedAt });
+  const patch = evaluatePatchCoverage({ config, behaviorFiles, testFiles: weakening.strengthened, startedAt });
 
   if (patch) {
-    if (patch.ok) {
+    const unmeasuredNote = patch.unmeasured.length
+      ? `${patch.unmeasured.length} file(s) outside every coverage report are unmeasured: ` +
+        patch.unmeasured.slice(0, 3).join(", ") +
+        (patch.unmeasured.length > 3 ? ` (+${patch.unmeasured.length - 3} more)` : "")
+      : "";
+
+    if (patch.ok && patch.unprovenUnmeasured.length === 0) {
+      // The weakest part decides the rung: with unmeasured files in the diff the
+      // run is `evidence` (a test file moved in their package), never `verified`.
+      if (patch.unmeasured.length > 0) {
+        return {
+          required: true,
+          ok: true,
+          mode: "test-file",
+          reason:
+            (patch.totalLines > 0
+              ? `${patch.percent}% of the ${patch.totalLines} measured added line(s) are executed; `
+              : "") + `${unmeasuredNote}, with a test file changed in their package`,
+          riskSource: risk.source,
+          changedFiles,
+          testFiles,
+          patch,
+        };
+      }
+
       return {
         required: true,
         ok: true,
@@ -2124,9 +2424,11 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
       required: true,
       ok: false,
       mode: "diff-lines",
-      reason:
-        `only ${patch.percent}% of the ${patch.totalLines} added line(s) are executed by the suite ` +
-        `(min ${patch.min}%). The suite ran; it did not reach this change.`,
+      reason: patch.ok
+        ? `${unmeasuredNote}, and no test file changed in their package. ` +
+          "No report reaches them; a green suite elsewhere proves nothing about them."
+        : `only ${patch.percent}% of the ${patch.totalLines} added line(s) are executed by the suite ` +
+          `(min ${patch.min}%). The suite ran; it did not reach this change.`,
       riskSource: risk.source,
       riskPaths: risk.matchedPaths,
       changedFiles,
@@ -2233,9 +2535,11 @@ function printOpenCriteria(evidence) {
     return;
   }
 
-  const ticked = criteria.total - criteria.unchecked.length;
+  const deferred = criteria.deferred || [];
+  const ticked = criteria.total - criteria.unchecked.length - deferred.length;
 
-  log(`  Acceptance criteria: ${ticked}/${criteria.total} ticked in the story. Still open:`);
+  log(`  Acceptance criteria: ${ticked}/${criteria.total} ticked in the story` +
+    (deferred.length > 0 ? ` (${deferred.length} deferred)` : "") + ". Still open:");
 
   for (const text of criteria.unchecked.slice(0, 5)) {
     log(`    - [ ] ${text}`);
@@ -2245,17 +2549,62 @@ function printOpenCriteria(evidence) {
     log(`    - … and ${criteria.unchecked.length - 5} more`);
   }
 
+  if (evidence.contrary && evidence.contrary.enforced) {
+    log("  The commands passed, but this project is strict: open criteria block the verdict.");
+    return;
+  }
+
   log("  The commands passed. These are the story's own claims, unproven either way —");
   log("  this changes no verdict and blocks nothing.");
+}
+
+function printContraryFailures(contrary) {
+  for (const failure of contrary.failures) {
+    log(`  ${failure.detail}`);
+  }
+
+  if (contrary.failures.some((failure) => failure.signal === "deleted-tests")) {
+    log("  Restore the test, or name the deleted file in a '## Test Exemption' section with the reason.");
+  }
 }
 
 // The verdict, plus the name of the rung it landed on. Stamped in one place so
 // no return path can forget it, and so `mode` stays what it has always been —
 // how the answer was obtained — while `tier` says how strong the answer is.
 function evaluateCoverage(options) {
-  const result = evaluateCoverageResult(options);
+  const ctx = { riskLevel: null };
+  const result = evaluateCoverageResult(options, ctx);
+  const floored = applyCoverageFloor(result, ctx.riskLevel, options.config);
 
-  return { ...result, tier: coverageTier(result) };
+  // A run held back by its floor keeps the rung it reached; `ok: false` and
+  // `floor` say it is not enough.
+  return { ...floored, tier: floored.floor ? floored.floor.reached : coverageTier(floored) };
+}
+
+// A run can pass its checks and still sit below the rung this project asks of
+// its risk level. Only a measured-or-proxy pass is judged: an exemption is a
+// written reason and satisfies any floor, and "not-required" never reached the
+// bar to begin with. The reached rung is kept; only `ok` and the reason change.
+function applyCoverageFloor(result, riskLevel, config) {
+  if (!result.required || !result.ok || result.exemption || !riskLevel) {
+    return result;
+  }
+
+  const reached = coverageTier(result);
+  const required = resolveCoverageFloor(config)[riskLevel];
+
+  if (reached === "not-required" || tierRank(reached) >= tierRank(required)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    ok: false,
+    floor: { required, reached },
+    reason:
+      `coverage reached '${reached}' but ${riskLevel} risk requires '${required}' ` +
+      `(coverageFloor.${riskLevel}). ${result.reason}`,
+  };
 }
 
 // Executes the declared validation commands for one story and returns the
@@ -2273,16 +2622,190 @@ function evaluateCoverage(options) {
 // combined result on the commands it actually declares, not on a heuristic
 // scoped to the wrong diff, is what "the same source `ai-flow verify` reads"
 // (spec.md) means here — coverage stays a per-story concern.
-function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false } = {}) {
+// True when harness.json `freshTestsFor` lists this story's risk level. Risk is
+// scored the way the coverage gate scores it: the story text and the diff.
+function freshTestsRequired({ storyDir, config }) {
+  if (!Array.isArray(config.freshTestsFor) || config.freshTestsFor.length === 0) {
+    return false;
+  }
+
+  return config.freshTestsFor.includes(scoreCombinedRisk({ storyDir, config }).level);
+}
+
+// The story text and the diff, scored the way the coverage gate scores them.
+function scoreCombinedRisk({ storyDir, config }) {
+  const storyRisk = storyDir
+    ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
+    : { level: "low", matchedTerms: [], reason: "no story to read." };
+
+  return combineRisk(storyRisk, scoreDiffRisk(changedFilesForCoverage(), config));
+}
+
+// Signals that contradict a green verdict: tests deleted from the diff, and
+// acceptance criteria the story itself still lists as open. Always collected;
+// they only change `ok` where the project asked for strictness — `mode: strict`,
+// or a high-risk story with `failOnContrarySignals: true`. Elsewhere they are
+// warnings, so a project that never opted in sees a different summary line and
+// the same verdict.
+//
+// `assertions-removed` is a warning even when enforced: refactors move
+// assertions, and the detector is a regex over a diff.
+//
+// A written reason lowers the claim and is accepted: a deleted test file is
+// excused by a Test Exemption that names it, an open criterion by `[~]` or a
+// `## Deferred Criteria` section. Nothing here raises what the tool asserts.
+const NO_CONTRARY = Object.freeze({
+  enforced: false,
+  ok: true,
+  failures: Object.freeze([]),
+  warnings: Object.freeze({ deletedTests: Object.freeze([]), openCriteria: Object.freeze([]), assertionsRemoved: Object.freeze([]) }),
+});
+
+// What the verdict depends on besides the tree: the mode, the flag, and the risk
+// inputs that decide whether "high" applies. `.coding-flow/` is outside the tree
+// token, so an edit to any of them must change this key to re-run a proof.
+function contraryPolicy(config) {
+  return {
+    strict: config.mode === "strict",
+    failOnContrarySignals: config.failOnContrarySignals === true,
+    riskTerms: config.highRiskTerms || null,
+    riskPaths: config.highRiskPaths || null,
+  };
+}
+
+// `text` names `target` when it appears as a whole path token: `index.test.ts`
+// is not named by `reindex.test.ts`, and `a.test.ts` is not inside `data.test.ts`.
+function mentionsPath(text, target) {
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  return new RegExp(`(^|[^\\w./-])${escaped}($|[^\\w-]|\\.(?!\\w))`).test(text);
+}
+
+function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null }) {
+  const policy = contraryPolicy(config);
+  const weakening = currentTreeToken(cwd) ? scanTestWeakening(config) : { findings: [] };
+  const declared = [readTestExemption(storyDir), exemption && exemption.trim()].filter(Boolean).join("\n");
+  const deletedFiles = weakening.findings.filter((finding) => finding.signal === "deleted").map((finding) => finding.file);
+  const excused = (file) => {
+    const base = path.posix.basename(file);
+    // The full path always counts. A bare file name counts only when no other
+    // deleted file shares it, so "index.test.ts" cannot excuse three of them.
+    const uniqueBase = deletedFiles.filter((other) => path.posix.basename(other) === base).length === 1;
+
+    return mentionsPath(declared, file) || (uniqueBase && mentionsPath(declared, base));
+  };
+  const deletedTests = deletedFiles.filter((file) => !excused(file));
+  const assertionsRemoved = weakening.findings
+    .filter((finding) => finding.signal === "assertions-removed")
+    .map((finding) => finding.file);
+  const openCriteria = criteria ? criteria.unchecked : [];
+
+  if (deletedTests.length === 0 && openCriteria.length === 0 && assertionsRemoved.length === 0) {
+    return NO_CONTRARY;
+  }
+
+  const enforced = policy.strict || (policy.failOnContrarySignals && scoreCombinedRisk({ storyDir, config }).level === "high");
+  const failures = [];
+
+  if (enforced && deletedTests.length > 0) {
+    failures.push({
+      signal: "deleted-tests",
+      detail: `${deletedTests.length} test file(s) deleted, and no Test Exemption names them: ${deletedTests.slice(0, 5).join(", ")}`,
+      items: deletedTests,
+    });
+  }
+
+  if (enforced && openCriteria.length > 0) {
+    failures.push({
+      signal: "open-criteria",
+      detail:
+        `${openCriteria.length} acceptance criterion(a) still open: ${openCriteria.slice(0, 5).join("; ")}` +
+        `${openCriteria.length > 5 ? "; …" : ""}. Mark each [x], defer it with [~] or a '## Deferred Criteria' section`,
+      items: openCriteria,
+    });
+  }
+
+  return { enforced, ok: failures.length === 0, failures, warnings: { deletedTests, openCriteria, assertionsRemoved } };
+}
+
+// "3 deleted test files, 5 open criteria" — what a passing run still carries.
+function describeContraryWarnings(contrary) {
+  const w = contrary && contrary.warnings;
+  const parts = [];
+
+  if (w && w.deletedTests.length > 0) {
+    parts.push(`${w.deletedTests.length} deleted test file${w.deletedTests.length === 1 ? "" : "s"}`);
+  }
+
+  if (w && w.openCriteria.length > 0) {
+    parts.push(`${w.openCriteria.length} open criteri${w.openCriteria.length === 1 ? "on" : "a"}`);
+  }
+
+  if (w && w.assertionsRemoved && w.assertionsRemoved.length > 0) {
+    parts.push(`assertions removed in ${w.assertionsRemoved.length} test file${w.assertionsRemoved.length === 1 ? "" : "s"}`);
+  }
+
+  return parts.join(", ");
+}
+
+// A command an agent wrote into plan.md runs with the developer's (or the CI
+// runner's) secrets, so it needs a human watching — or an explicit say-so.
+const PLAN_COMMANDS_REFUSAL =
+  "commands from plan.md are not run unattended; declare them in .coding-flow/config.json " +
+  "(with the user's agreement) or pass --allow-plan-commands";
+
+function verifyStoryOnce({
+  story = null,
+  exemption = null,
+  skipCoverage = false,
+  unattended = isUnattended(),
+  allowPlanCommands = false,
+  cleanEnv = false,
+  announce = false,
+} = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
-  const resolution = resolveValidationCommands({ storyDir });
+  setDiffBaseRequest({ flagBase: diffBaseRequest.flagBase, story });
+  const { config } = readHarnessConfig();
+  const freshRequired = freshTestsRequired({ storyDir, config });
+  const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
+  const refused = resolution.source === "plan.md" && unattended && !allowPlanCommands ? PLAN_COMMANDS_REFUSAL : null;
+  const cleaned = cleanEnv ? cleanEnvironment() : null;
+
+  if (announce && !refused && resolution.source === "plan.md") {
+    log("Running commands from plan.md (not from .coding-flow/config.json):");
+
+    for (const command of resolution.commands) {
+      log(`  ${command}`);
+    }
+  }
+
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const results = resolution.commands.map((command) => runValidationCommand(command));
+  const results = (refused ? [] : resolution.commands).map((command) => {
+    const item = runValidationCommand(command, {
+      ...commandTimeout(resolution, command),
+      ...(cleaned ? { env: cleaned.env } : {}),
+    });
+
+    // A full replay is not wrong, but at this risk level it is not proof that the
+    // tests ran against this code either.
+    // Quality commands (lint, format) are exempt: `freshCommands` cannot replace them.
+    if (freshRequired && item.ok && item.cache === "full" && !(resolution.quality || []).includes(command)) {
+      return {
+        ...item,
+        ok: false,
+        freshRequired:
+          "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
+          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands " +
+          "(`verify --no-cache` only skips the reuse of an earlier proof, not the build tool's cache).",
+      };
+    }
+
+    return item;
+  });
   const commandsOk = results.length > 0 && results.every((item) => item.ok);
-  const { config } = readHarnessConfig();
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.
   const coverage = !commandsOk
@@ -2290,6 +2813,12 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     : skipCoverage
       ? { required: false, ok: true, reason: "not evaluated (no single story to attribute this run to)", changedFiles: [], testFiles: [] }
       : evaluateCoverage({ storyDir, config, exemption, startedAt });
+
+  const acceptanceCriteria = readAcceptanceCriteria(storyDir);
+  // Like coverage, only judged on a green suite for a single story.
+  const contrary = commandsOk && !skipCoverage
+    ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria })
+    : NO_CONTRARY;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -2299,22 +2828,40 @@ function verifyStoryOnce({ story = null, exemption = null, skipCoverage = false 
     commandSource: resolution.source,
     commandsFound: resolution.commands.length,
     // Recorded so a later verify can recognise this proof as still applicable.
-    commandsFingerprint: commandsFingerprint(resolution.commands),
+    commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
+    // The floor this verdict was judged against. `.coding-flow/` is outside the
+    // tree token, so without it an edit to the floor would leave a stale "ok".
+    coverageFloor: resolveCoverageFloor(config),
+    // The rules this verdict was computed under; a different value is a different proof.
+    policyFingerprint: policyFingerprint(cwd),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
-    environment: captureEnvironment(),
+    environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
+    unattended,
+    ...(refused ? { refused } : {}),
     commandsOk,
+    // Which base every diff-derived signal below was measured from: a surprising
+    // coverage or risk verdict is explained by this line before anything else.
+    diffBase: publicDiffBase(currentDiffBase(cwd)),
     coverage,
-    // Recorded, never consulted: `ok` below does not read it, and must not.
-    acceptanceCriteria: readAcceptanceCriteria(storyDir),
-    ok: commandsOk && coverage.ok,
+    acceptanceCriteria,
+    // The policy the contrary-signals verdict was judged under, for the same
+    // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
+    contraryPolicy: contraryPolicy(config),
+    contrary,
+    ok: commandsOk && coverage.ok && contrary.ok,
     results,
   };
 }
 
 // Identifies WHAT was proved, so a recorded proof is only reusable for the same
 // set of commands. Changing config.validation must invalidate every prior green.
-function commandsFingerprint(commands) {
-  return crypto.createHash("sha256").update(commands.join("\n")).digest("hex").slice(0, 40);
+// A different limit is a different command contract: a run that passed under a
+// 20 min limit proves nothing about the same command under 1 s. Commands with no
+// declared limit hash exactly as before, so existing proofs stay valid.
+function commandsFingerprint(commands, timeouts = {}) {
+  const lines = commands.map((command) => (timeouts && timeouts[command] ? `${command}\u0000${timeouts[command]}` : command));
+
+  return crypto.createHash("sha256").update(lines.join("\n")).digest("hex").slice(0, 40);
 }
 
 // The tree token deliberately ignores untracked files (see identity.js), which is
@@ -2341,15 +2888,20 @@ function untrackedDigest() {
 //
 // Conservative by construction: outside git, or when anything cannot be
 // determined, this returns null and the commands run for real.
-function findReusableVerify({ storyRelativePath, commands }) {
+function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
   const token = currentTreeToken(cwd);
+  const mergeBase = currentDiffBase(cwd).mergeBase;
 
   if (!token || commands.length === 0) {
     return null;
   }
 
   const untracked = untrackedDigest();
-  const fingerprint = commandsFingerprint(commands);
+  const fingerprint = commandsFingerprint(commands, timeouts);
+  const harnessConfig = readHarnessConfig().config;
+  const floor = JSON.stringify(resolveCoverageFloor(harnessConfig));
+  const contrary = JSON.stringify(contraryPolicy(harnessConfig));
+  const policy = policyFingerprint(cwd);
   const runsDir = harnessRunsDir();
 
   if (!fs.existsSync(runsDir)) {
@@ -2377,6 +2929,14 @@ function findReusableVerify({ storyRelativePath, commands }) {
     if (
       provenanceToken === token &&
       evidence.commandsFingerprint === fingerprint &&
+      // A proof judged under another floor is a different proof; evidence from
+      // before the floor existed has none and is re-run once.
+      JSON.stringify(evidence.coverageFloor || null) === floor &&
+      JSON.stringify(evidence.contraryPolicy || null) === contrary &&
+      // Evidence without the field predates the policy fingerprint: never reused.
+      evidence.policyFingerprint === policy &&
+      // A proof made against another base is a different proof.
+      (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
       evidence.untrackedDigest === untracked
     ) {
       return { evidence, path: fullPath };
@@ -2434,10 +2994,21 @@ function detectStoryScope() {
     : null;
 }
 
-function harnessVerify({ json = false, dryRun = false, story = null, noCache = false, exemption = null } = {}) {
+function harnessVerify({
+  json = false,
+  dryRun = false,
+  story = null,
+  noCache = false,
+  exemption = null,
+  base = null,
+  allowPlanCommands = false,
+  cleanEnv = false,
+} = {}) {
   if (story !== null) {
     requireStoryScope(story);
   }
+
+  setDiffBaseRequest({ flagBase: base, story });
 
   // No --story, but a Spec Kit project knows which feature is active. Scoping to
   // it is what lets a Spec Kit user run `ai-flow verify` and get the spec's risk
@@ -2452,6 +3023,8 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
       scopeNote = `Story: ${detected.story} (Spec Kit feature, from ${detected.source})`;
     }
   }
+
+  setDiffBaseRequest({ flagBase: base, story });
 
   const resolvedStory = story ? resolveProjectPath(story) : null;
 
@@ -2493,11 +3066,14 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
   // The hit does NOT write a fresh evidence: claiming a run that did not happen is
   // the one thing this tool must never do. The earlier evidence still carries the
   // current tree token, so `status` and `audit` already read it as verified.
-  if (!noCache) {
+  // A clean-env run is asked for a proof made without the secrets; replaying one
+  // made with them would answer a different question.
+  if (!noCache && !cleanEnv) {
     const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
     const reusable = findReusableVerify({
       storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
       commands: resolution.commands,
+      timeouts: resolution.timeouts,
     });
 
     if (reusable) {
@@ -2514,7 +3090,22 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
     }
   }
 
-  const evidence = verifyStoryOnce({ story, exemption });
+  const evidence = verifyStoryOnce({ story, exemption, allowPlanCommands, cleanEnv, announce: !json });
+
+  // A refusal executed nothing: it says who may run these commands, not whether the
+  // code passes. Recording it would overwrite an earlier green proof and turn a
+  // verified story into a blocked one.
+  if (evidence.refused) {
+    if (json) {
+      log(JSON.stringify(evidence, null, 2));
+    } else {
+      printVerify(evidence, null);
+    }
+
+    process.exitCode = 1;
+    return;
+  }
+
   const outputPath = writeVerifyEvidence(evidence);
 
   if (json) {
@@ -2529,9 +3120,24 @@ function harnessVerify({ json = false, dryRun = false, story = null, noCache = f
   }
 }
 
-function harnessCommand({ commandArgs, getFlagValue, flags }) {
+// The request is per command: ship, doctor and status read the same helpers in
+// the same process and must not inherit a --base given to a verify.
+function harnessCommand(args) {
+  try {
+    return harnessCommandInner(args);
+  } finally {
+    setDiffBaseRequest();
+  }
+}
+
+function harnessCommandInner({ commandArgs, getFlagValue, flags }) {
   const subcommand = commandArgs[0] || "check";
   const story = getFlagValue("--story", null);
+  const base = getFlagValue("--base", null);
+
+  if (flags.has("--base") && base === null) {
+    fail("--base requires a ref, e.g. --base feature/EPIC-07-proof-scope.");
+  }
 
   // A flag with no value is a typo in any subcommand: `verify --story --json`
   // used to swallow the flag and quietly verify the whole project.
@@ -2552,13 +3158,16 @@ function harnessCommand({ commandArgs, getFlagValue, flags }) {
       quick: flags.has("--quick"),
       strict: flags.has("--strict"),
       story,
+      base,
     });
   } else if (subcommand === "preflight") {
+    setDiffBaseRequest({ flagBase: base, story });
     harnessPreflight({
       json: flags.has("--json"),
       story,
     });
   } else if (subcommand === "evidence") {
+    setDiffBaseRequest({ flagBase: base, story });
     harnessEvidence({
       json: flags.has("--json"),
       dryRun: flags.has("--dry-run"),
@@ -2580,6 +3189,9 @@ function harnessCommand({ commandArgs, getFlagValue, flags }) {
       story,
       noCache: flags.has("--no-cache"),
       exemption,
+      base,
+      allowPlanCommands: flags.has("--allow-plan-commands"),
+      cleanEnv: flags.has("--clean-env"),
     });
   } else {
     fail(`unknown harness command "${subcommand}". Use init, preflight, check, verify, or evidence.`);
@@ -2591,6 +3203,7 @@ module.exports = {
   harnessRunsDir,
   defaultHarnessConfig,
   readHarnessConfig,
+  filterScopedFiles,
   ensureHarnessConfig,
   collectHarnessReport,
   parseTestsCommands,

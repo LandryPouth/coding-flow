@@ -10,8 +10,9 @@ const path = require("path");
 const { cwd } = require("./context");
 const { log, toPortable } = require("./util");
 const { collectWorktrees, realDirtyLines } = require("./worktree");
-const { latestVerifyByStoryDir, latestReviewByStoryDir, isStale } = require("./audit");
+const { latestVerifyByStoryDir, latestReviewByStoryDir, latestVerifyScopeByStoryDir, isStale, staleReason } = require("./audit");
 const { currentTreeToken } = require("./identity");
+const { policyFingerprint } = require("./policy-fingerprint");
 const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
 const { evaluateBranchPolicy } = require("./policy");
@@ -65,7 +66,7 @@ function computeLandReady(worktreePath, storyPath) {
   const verifyEntry = latestVerifyByStoryDir(worktreePath).get(storyPath);
   const currentToken = currentTreeToken(worktreePath);
 
-  if (!verifyEntry || !verifyEntry.ok || isStale(verifyEntry, currentToken)) {
+  if (!verifyEntry || !verifyEntry.ok || isStale(verifyEntry, currentToken, policyFingerprint(worktreePath))) {
     return "unverified";
   }
 
@@ -172,6 +173,9 @@ function buildStatusModel(config) {
   const mappedBranches = new Set();
   // Shared across every story in this one model build — see `diffRiskForRoot`.
   const diffRiskCache = new Map();
+  // One scan of the run files per worktree root, not one per story.
+  const scopeByRoot = new Map();
+  const verifyByRoot = new Map();
 
   const epics = storage.listEpics().map((epic) => ({
     ...epic,
@@ -185,10 +189,30 @@ function buildStatusModel(config) {
       const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
       const storyRoot = wtEntry ? wtEntry.fullPath : cwd;
       const review = computeReviewStatus(storyRoot, story.path);
+      const reviewEntry = latestReviewByStoryDir(storyRoot).get(story.path);
+      if (!scopeByRoot.has(storyRoot)) {
+        scopeByRoot.set(storyRoot, latestVerifyScopeByStoryDir(storyRoot));
+      }
+      const proof = scopeByRoot.get(storyRoot).get(story.path);
+      // Only a scope other than "story" is worth a word: it is the one that
+      // makes a coverage verdict mean something different.
+      const scope = proof && proof.scope && proof.scope !== "story" ? proof.scope : null;
       // Only computed for a story claiming to be finished — the same subset
       // `chainIsFinished`/`next`'s tier-4 check actually gate on; a
       // planned/in-progress/blocked story can't be landed regardless, so
       // there is nothing for this field to usefully say yet.
+      // Why a green proof went stale: the rules moved ("policy changed") or the code did.
+      let staleWhy = null;
+      if (story.status === "stale") {
+        if (!verifyByRoot.has(storyRoot)) {
+          verifyByRoot.set(storyRoot, latestVerifyByStoryDir(storyRoot));
+        }
+        staleWhy = staleReason(
+          verifyByRoot.get(storyRoot).get(story.path) || {},
+          currentTreeToken(storyRoot),
+          policyFingerprint(storyRoot),
+        );
+      }
       const claimsDone = story.status === "done" || story.status === "verified";
       const reviewRequired = claimsDone ? computeReviewRequired(storyRoot, story, diffRiskCache) : undefined;
 
@@ -197,6 +221,11 @@ function buildStatusModel(config) {
         worktree: wtEntry ? wtEntry.path : null,
         ...(wtEntry ? { landReady } : {}),
         review,
+        ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
+        ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
+        ...(staleWhy ? { staleReason: staleWhy } : {}),
+        ...(review !== "none" && reviewEntry ? { reviewer: reviewEntry.reviewer } : {}),
+        ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
       };
     }),
@@ -262,13 +291,23 @@ function status({ json = false } = {}) {
         // fresh pass gets "(required)" — the same distinction `chainIsFinished`/
         // `next`'s tier-4 check act on, so a human reading this line does not
         // have to separately re-derive the story's own risk tier.
+        // A STRICT story passed only by its own author says so: `pass (self)`.
+        const selfMarker = story.reviewRequired && story.review === "pass" && story.reviewer === "self" ? " (self)" : "";
         const reviewSuffix =
           story.reviewRequired && story.review !== "pass"
             ? `  review: ${story.review} (required)`
             : story.review !== "none"
-              ? `  review: ${story.review}`
+              ? `  review: ${story.review}${selfMarker}`
               : "";
-        log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${wtSuffix}${reviewSuffix}`);
+        const staleSuffix = story.staleReason ? `  (${story.staleReason})` : "";
+        const scopeSuffix = story.scope ? `  coverage ${story.coverage || "?"} (${story.scope} scope)` : "";
+        const warningSuffix = story.warnings
+          ? `  ⚠ ${[
+              story.warnings.deletedTests ? `${story.warnings.deletedTests} deleted test(s)` : "",
+              story.warnings.openCriteria ? `${story.warnings.openCriteria} open criteria` : "",
+            ].filter(Boolean).join(", ")}`
+          : "";
+        log(`- ${story.name.padEnd(42)} ${story.status.padEnd(12)}${staleSuffix}${wtSuffix}${reviewSuffix}${scopeSuffix}${warningSuffix}`);
       }
       log("");
     }

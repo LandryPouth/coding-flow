@@ -110,6 +110,17 @@ npm test        # must be green (also run by prepublishOnly)
 npm publish     # publishes @landry_pouth/coding-flow@<version>
 ```
 
+Then tag and release what you just published. The script checks the CHANGELOG has a
+`## [x.y.z]` section and that npm already serves that version, creates the annotated tag
+`vx.y.z`, pushes it and runs `gh release create` with the section as notes. It never runs
+`npm publish`, and a second run does nothing. `ai-flow doctor` in this repository warns
+while `package.json`'s version has no tag.
+
+```bash
+npm run release -- --dry-run   # print the plan
+npm run release
+```
+
 > The bare name `coding-flow` is taken by a third party on npm; the `@landry_pouth/*`
 > scope guarantees a free, collision-free name.
 

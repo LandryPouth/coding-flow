@@ -9,8 +9,9 @@ const fs = require("fs");
 const path = require("path");
 
 const { toPortable } = require("../util");
-const { latestVerifyByStoryDir } = require("../audit");
+const { latestVerifyByStoryDir, isStale } = require("../audit");
 const { currentTreeToken } = require("../identity");
+const { policyFingerprint } = require("../policy-fingerprint");
 const { readStoryPart } = require("../story");
 
 // Extracts the body of the `## Result` section (with its ### children) from a
@@ -136,6 +137,7 @@ function createLocalStorage(cwd) {
       // current working-tree token to tell a fresh proof from a stale one.
       const verifyByDir = latestVerifyByStoryDir(cwd);
       const currentToken = currentTreeToken(cwd);
+      const currentPolicy = policyFingerprint(cwd);
 
       for (const epicEntry of fs.readdirSync(epicsRoot, { withFileTypes: true })) {
         if (!epicEntry.isDirectory()) {
@@ -153,11 +155,8 @@ function createLocalStorage(cwd) {
             const verify = verifyEntry ? (verifyEntry.ok ? "pass" : "fail") : null;
             // Freshness is only decidable when both tokens exist; otherwise stay
             // lenient (a green proof reads as "verified", as before).
-            const fresh =
-              !verifyEntry ||
-              !verifyEntry.treeToken ||
-              !currentToken ||
-              verifyEntry.treeToken === currentToken;
+            // A different policy fingerprint is stale too (`isStale` knows both).
+            const fresh = !verifyEntry || !isStale(verifyEntry, currentToken, currentPolicy);
 
             stories.push({
               name: storyEntry.name,

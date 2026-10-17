@@ -131,11 +131,13 @@ Usage:
   ai-flow next [--all] [--json]
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
   ai-flow verify --story path [--json] [--dry-run] [--test-exemption "reason"]
+               [--allow-plan-commands] [--clean-env]
   ai-flow bootstrap --scan [--force] [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
   ai-flow audit [--export] [--check] [--since iso] [--decisions] [--json] [--dry-run]
   ai-flow review capture --story path --verdict pass|fail [--reviewer self|subagent]
+                [--accept "reason"]
                 [--architecture|--tests|--security|--quality|--e2e quick|deep|skipped]
                 [--p0 n] [--p1 n] [--p2 n] [--p3 n] [--json]
   ai-flow trace [--story path] [--json]
@@ -149,7 +151,7 @@ Usage:
   ai-flow worktree land <name>|--story <path>
   ai-flow worktree place --epic <path> --story <path> [--json]
   ai-flow worktree autoland --epic <path> --story <path> [--json]
-  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit]
+  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit] [--all]
                [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
   ai-flow hook install|uninstall|status [--dry-run] [--json]
   ai-flow commands [--json]
@@ -212,8 +214,11 @@ Flags:
   --title    Title for the pull request ship opens (default: derived from commits).
   --draft    Open ship's pull request as a draft.
   --web      Open the pull request in the browser after ship.
+  --allow-plan-commands  With verify: run commands written in plan.md even when nobody is watching (no TTY, CI, autoland).
+  --clean-env  With verify: run the commands without credential-looking environment variables (SECRET, TOKEN, API_KEY…).
   --no-evidence  Do not attach the latest verify evidence to ship's PR body.
   --no-commit  Do not auto-commit a dirty tree before ship pushes (push existing commits only).
+  --all  With ship: commit the whole dirty tree, not only the story's files (the default in a story worktree).
   --auto-merge  Force-enable ship's auto-merge for this run (overrides autoMergeEpic config).
   --no-auto-merge  Force-disable ship's auto-merge for this run.
   --merge-method  Merge strategy for ship's auto-merge: merge (default), squash, or rebase.
@@ -224,6 +229,7 @@ Flags:
   --decisions  Aggregate every story's ## Decisions section instead of the run-evidence ledger.
   --verdict    Outcome recorded by review capture: pass or fail.
   --reviewer   Who ran the review capture records: self (default) or subagent.
+  --accept     Reason to record a pass despite an open P0/P1 (stored as acceptedRisk; needs the user's agreement).
   --architecture, --tests, --security, --quality, --e2e
                Depth review capture records per dimension: quick, deep, or skipped (default).
   --p0, --p1, --p2, --p3  Finding counts by severity for review capture (default 0).
