@@ -199,6 +199,34 @@ function checkOriginHead(warnings) {
   });
 }
 
+// This repository only: the maintainer publishes on npm by hand, and the tag
+// plus GitHub release follow with `npm run release`. A version with no tag is
+// the "published but not released" gap that script closes.
+function checkReleaseTag(warnings) {
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8"));
+  } catch {
+    return;
+  }
+
+  if (pkg.name !== "@landry_pouth/coding-flow" || !pkg.version) {
+    return;
+  }
+
+  const tags = gitQuiet(["tag", "-l", `v${pkg.version}`]);
+
+  if (tags === null || tags.split(/\r?\n/).includes(`v${pkg.version}`)) {
+    return;
+  }
+
+  warnings.push({
+    code: "release_tag_missing",
+    file: "package.json",
+    message: `version ${pkg.version} has no v${pkg.version} tag — after \`npm publish\`, run \`npm run release\``,
+  });
+}
+
 // The epic/story number is picked from a local, unsynced scan of `epics/` at
 // plan time. Two people branching from the same base can independently land
 // on `epic-05-` (or the same story number inside one epic) with different
@@ -574,6 +602,7 @@ function collectMinimalReport({ strict = false } = {}) {
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings, notes);
+  checkReleaseTag(warnings);
 
   return {
     ok: errors.length === 0,
@@ -795,6 +824,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOversizedEpics(warnings);
   checkGeneratedDirectories(warnings);
   checkOriginHead(warnings);
+  checkReleaseTag(warnings);
   checkDuplicateNumbering(warnings);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
