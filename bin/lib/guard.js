@@ -579,9 +579,11 @@ function shellWrites(command, startCwd = process.cwd()) {
       if (aliasing) {
         // The link lands in DIR itself when the destination is a directory
         // (`ln -s SRC dir/`, `ln -s -t dir SRC`), else next to the name it is given.
-        // Both are tried when they differ: `-T` and a racing mkdir make either possible.
+        // A destination that does not exist yet may be made earlier in the same command
+        // (`mkdir -p x/y && ln -s ../../.env x/y`), so without `-T` both are tried.
+        const noTarget = args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory");
         const wheres = [...new Set([
-          ...(intoDirectory ? [directory] : []),
+          ...(intoDirectory || (typeof directory === "string" && !noTarget) ? [directory] : []),
           files.length >= 2 && optionAt === -1 ? path.dirname(files[files.length - 1]) : ".",
         ])];
         for (const source of sources) {
@@ -956,7 +958,7 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   if (found) {
     return {
       decision: "deny",
-      reason: `${found.relative}${viaNote(found, relative)} matches a blocked harness path (${found.hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
+      reason: `${found.relative}${viaNote(found, path.isAbsolute(filePath) ? relative : filePath)} matches a blocked harness path (${found.hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
       path: found.relative,
     };
   }

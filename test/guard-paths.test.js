@@ -94,6 +94,11 @@ test('a link made into a directory is read from that directory', (t) => {
   // Through a linked directory: a/ is sub/deep, so ../../.env from there is <root>/.env.
   assert.equal(guard(dir, bash('ln -s ../../.env a/')).code, 2);
   assert.equal(guard(dir, bash('ln -s -t a ../../.env')).code, 2);
+  // A directory made earlier in the same command does not exist when the guard reads it.
+  assert.equal(guard(dir, bash('mkdir -p p/q && ln -s ../../.env p/q')).code, 2);
+  assert.equal(guard(dir, bash('mkdir -p p/q && ln -s ../../.env p/q && echo A=1 > p/q/.env')).code, 2);
+  // `-T` names the link itself: p/q -> ../../.env, read from p, is outside the project.
+  assert.equal(guard(dir, bash('ln -sT ../../.env p/q')).code, 0);
   // The same shape pointing at an ordinary file stays allowed.
   assert.equal(guard(dir, bash('ln -s ../../README.md x/y/')).code, 0);
 });
@@ -112,6 +117,8 @@ test('a relative target is read from the real cwd when the cwd is reached throug
   assert.equal(at(bash('ln -s ../../.env')), 'deny');
   assert.equal(at(bash('cd .. && echo A=1 > ../.env')), 'deny');
   assert.equal(at(write('../../src/new.js')), 'allow');
+  // The reason names the path as it was given, not its lexical reading from the root.
+  assert.match(decide({ cwd, ...write('../../.env') }, cwd).reason, /^\.env \(via \.\.\/\.\.\/\.env\) /);
 });
 
 test('a first path segment that merely starts with .. is not outside the root', (t) => {

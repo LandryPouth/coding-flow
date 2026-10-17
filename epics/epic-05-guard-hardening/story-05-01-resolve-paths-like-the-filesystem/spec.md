@@ -94,6 +94,13 @@ from the parent of a directory destination (`ln -s ../../.env x/y/`, an existing
 reached through a symlink). Both fixed and tested: the link is read from the
 directory it lands in, and a relative target is also resolved from the real cwd.
 
+A fifth review (2026-10-17) found the destination directory could be created
+earlier in the same command (`mkdir -p x/y && ln -s ../../.env x/y`), so the
+link was read from `x` and allowed. Without `-T`, both the destination and its
+parent are now tried; the deny reason's `(via …)` shows the path as given. Left for
+05-05: `mkdir d && cp|mv KEY d` (05-03's directory-destination check has the
+same blind spot).
+
 ### Rollback Notes
 
 `git revert` the commit; no data or config migration.
