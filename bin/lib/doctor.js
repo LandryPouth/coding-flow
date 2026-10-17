@@ -313,6 +313,9 @@ function checkDuplicateNumbering(warnings) {
 function checkGuardUnchecked(warnings) {
   const file = path.join(cwd, ".coding-flow", "guard-unchecked.jsonl");
   let recent = 0;
+  // Named in the warning: an OpenCode MCP read with a `path` looks like an unknown
+  // write tool and keeps this on; the reason is what tells the two apart.
+  const reasons = new Map();
 
   try {
     const since = Date.now() - 7 * 24 * 3600 * 1000;
@@ -322,6 +325,8 @@ function checkGuardUnchecked(warnings) {
         const entry = line ? JSON.parse(line) : null;
         if (entry && Date.parse(entry.at) >= since && !isShellLimit(entry.reason)) {
           recent += 1;
+          const reason = String(entry.reason || "no reason").slice(0, 120);
+          reasons.set(reason, (reasons.get(reason) || 0) + 1);
         }
       } catch {
         // a torn line is not an entry
@@ -332,10 +337,11 @@ function checkGuardUnchecked(warnings) {
   }
 
   if (recent) {
+    const [top] = [...reasons].sort((a, b) => b[1] - a[1])[0];
     warnings.push({
       code: "guard_unchecked",
       file: ".coding-flow/guard-unchecked.jsonl",
-      message: `the guard could not check ${recent} write(s) in the last 7 days — they were allowed, not protected; see \`ai-flow report\``,
+      message: `the guard could not check ${recent} write(s) in the last 7 days — they were allowed, not protected (most often: ${top}); see \`ai-flow report\``,
     });
   }
 }

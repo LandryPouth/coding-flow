@@ -415,8 +415,10 @@ names them `<server>_<tool>` (`sanitize(server) + "_" + sanitize(tool)`, OpenCod
 MCP tool carrying a `path` is **not** exempt: an MCP filesystem write
 (`fs_write_file`) is logged as unchecked — the earlier "neither checked nor
 logged" gap does not exist — and an MCP read with a `path` is logged too. That
-read noise is accepted: a per-server allowlist is policy the guard does not own.
-Revisit if it buries the real unknowns.
+read noise is accepted: a per-server allowlist is policy the guard does not own,
+and keeping unknown tools out of `doctor` would silence an unknown write tool too.
+`doctor`'s warning names its most frequent reason instead, so the noise is
+recognizable. Revisit if it buries the real unknowns.
 
 **`doctor` does not warn on shell-reading limits.** A write target built from
 `$VAR`, a `cd` into an expansion, a heredoc-fed interpreter and a git pathspec

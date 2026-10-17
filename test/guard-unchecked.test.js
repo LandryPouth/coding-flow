@@ -212,7 +212,21 @@ test('report counts unchecked writes with their reasons, and doctor warns', (t) 
   assert.match(report, /Unchecked writes \(3\)/);
   assert.match(report, /3 × tool MultiEdit2 is unknown/);
   const doctor = JSON.parse(cli(dir, ['doctor', '--json']).stdout);
-  assert.ok(doctor.warnings.some((w) => w.code === 'guard_unchecked'));
+  const warning = doctor.warnings.find((w) => w.code === 'guard_unchecked');
+  assert.ok(warning);
+  assert.match(warning.message, /most often: tool MultiEdit2 is unknown/);
+});
+
+test('a shell-reading limit does not hide a real failure in the same command', (t) => {
+  if (process.platform === 'win32') return t.skip('symlinks need privileges on Windows');
+  const dir = tmp(t);
+  fs.symlinkSync('a', path.join(dir, 'b'));
+  fs.symlinkSync('b', path.join(dir, 'a'));
+  for (const command of ['echo a > "$X"; echo b > a/x', 'echo b > a/x; echo a > "$X"']) {
+    const result = decide({ tool_name: 'Bash', tool_input: { command }, cwd: dir }, dir);
+    assert.equal(result.decision, 'unchecked', command);
+    assert.match(result.reason, /ELOOP|too many links/, command);
+  }
 });
 
 test('the OpenCode plugin reports a write it could not read as unchecked, not as allowed', async (t) => {

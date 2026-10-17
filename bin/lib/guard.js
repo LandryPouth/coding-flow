@@ -1121,8 +1121,10 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     };
   }
 
+  // A real failure (ELOOP, a git timeout) is named before a shell-reading limit:
+  // `doctor` skips the limits, and `> "$X"; > loop/x` must not hide the ELOOP.
   if (ctx.issues.length) {
-    return { decision: "unchecked", reason: ctx.issues[0] };
+    return { decision: "unchecked", reason: ctx.issues.find((reason) => !isShellLimit(reason)) || ctx.issues[0] };
   }
 
   return { decision: "allow", reason: "no blocked write target or secret detected" };

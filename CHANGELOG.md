@@ -44,7 +44,9 @@ All notable changes to this project are documented here. The format is based on
   are everyday use (about 100 a day on this repository): `report` still counts them, `doctor` warns
   only when the guard itself could not do its job (an error, an unknown tool, a guard that could not
   run). In OpenCode, MCP tools are named `<server>_<tool>`, not `mcp__…`: one carrying a path is
-  logged as unchecked like any unknown tool (the earlier note said they were exempt).
+  logged as unchecked like any unknown tool (the earlier note said they were exempt). A command that
+  mixes both (`> "$X"; > loop/x`) is reported under the real failure, so the shell limit no longer
+  hides it from `doctor`, and the `doctor` warning names its most frequent reason.
 
 ### Fixed
 
