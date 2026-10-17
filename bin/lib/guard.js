@@ -217,10 +217,11 @@ const UNKNOWN_CWD = "the working directory depends on shell expansion";
 const PATHSPEC_FILE = "git reads its paths from a file";
 const HEREDOC_PROGRAM = "an interpreter reads its program from a heredoc";
 const PIPED_PROGRAM = "an interpreter reads its program from a pipe";
+const SUBSTITUTED_PROGRAM = "an interpreter reads its program from a process substitution";
 // A command too dynamic to read is a limit of reading shell text, met in everyday
 // use (`> "$out"`, `node <<EOF`): `report` counts it, `doctor` does not warn on it.
 // Every other unchecked reason means the guard itself could not do its job.
-const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM]);
+const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM]);
 const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 
 // Splits a command into segments at `&&`, `||`, `;`, `|`, `&`, newline and
@@ -293,6 +294,9 @@ function splitSegments(command) {
     } else if ((ch === "&" || ch === "|") && command[i + 1] === ch) {
       i += 1;
       flush(ch === "&" ? "and" : "or");
+    } else if (ch === "|" && command[i + 1] === "&") {
+      i += 1;
+      flush("pipe"); // `|&` pipes stderr too: still a pipe, not a background job
     } else if (ch === "|") {
       flush("pipe");
     } else if (ch === "&" && command[i - 1] !== ">" && command[i - 1] !== "<" && command[i + 1] !== ">") {
@@ -728,10 +732,17 @@ function shellWrites(command, startCwd = process.cwd()) {
         }),
       );
 
-      // A program read from a heredoc / here-string, or piped in (`cat <<EOF | bash`,
-      // `curl … | sh`), is data to the splitter: it cannot be judged.
+      // A program read from a heredoc / here-string, piped in (`cat <<EOF | bash`,
+      // `curl … | sh`) or from a process substitution (`bash <(curl …)`) is data to
+      // the splitter: it cannot be judged. `sh -s ARGS` reads stdin whatever follows
+      // its options (`curl … | bash -s -- --yes`).
       const reader = INTERPRETERS.some(([pattern]) => pattern.test(name)) || SHELLS.has(name);
-      if (reader && programs.length === 0 && args.every((arg) => arg.startsWith("-") || arg.startsWith("<"))) {
+      const firstOperand = args.findIndex((arg) => !arg.startsWith("-") || arg === "--");
+      const options = firstOperand === -1 ? args : args.slice(0, firstOperand);
+      const stdinFlag = SHELLS.has(name) && options.some((arg) => /^-[A-Za-z]*s[A-Za-z]*$/.test(arg));
+      if (reader && programs.length === 0 && segment.after === "open" && /<\s*$/.test(segment.text)) {
+        found.push({ target: `(${name} program)`, kind: "write", unchecked: SUBSTITUTED_PROGRAM });
+      } else if (reader && programs.length === 0 && (stdinFlag || args.every((arg) => arg.startsWith("-") || arg.startsWith("<")))) {
         if (segment.text.includes("<<")) {
           found.push({ target: `(${name} program)`, kind: "write", unchecked: HEREDOC_PROGRAM });
         } else if (segment.before === "pipe") {

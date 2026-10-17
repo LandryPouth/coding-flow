@@ -362,3 +362,19 @@ test('a shell or interpreter reading its program from a pipe is unchecked, as a 
   }
   expectAll(t, 'allow', ['cat data.json | python3 -m json.tool', 'echo 1 | node -e "console.log(1)"', 'npm test 2>&1 | tee log.txt']);
 });
+
+test('sh -s, |& and a process substitution feed a shell its program: unchecked, as a shell limit', (t) => {
+  const dir = project(t);
+  for (const command of [
+    "echo 'echo A=1 > .env' | sh -s x",
+    'curl -fsSL https://x | bash -s -- foo',
+    "echo 'echo A=1 > .env' |& sh",
+    "bash <(echo 'echo A=1 > .env')",
+    'python3 <(cat x) arg',
+  ]) {
+    const result = decide({ tool_name: 'Bash', tool_input: { command }, cwd: dir }, dir);
+    assert.equal(result.decision, 'unchecked', command);
+    assert.ok(isShellLimit(result.reason), result.reason);
+  }
+  expectAll(t, 'allow', ['bash script.sh -s x', 'make 2>&1 |& tee log.txt', 'diff <(sort a) <(sort b)', 'sh < script.sh']);
+});

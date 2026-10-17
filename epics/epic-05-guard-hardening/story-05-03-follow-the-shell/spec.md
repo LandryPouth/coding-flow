@@ -85,3 +85,5 @@ Review follow-up 3: a redirection target is one word (quoted parts glued to bare
 - Not followed: `env -C DIR` / `env --chdir=DIR` (the command runs from DIR); wrappers outside the known list (`stdbuf`, `busybox`, …) hide the verb; a digit in a perl `-i` cluster (`perl -0pi`); copying a directory's contents (`cp -r src/. .`, `rsync -a src/ .`) names no file and is allowed.
 
 Review follow-up 4: `node -pe`, `perl -E` and `deno eval --ext=ts …` are read as inline code; `sed -i` with its script in `-e`/`--expression`/`-f` edits every operand; a shell or interpreter reading its program from a pipe (`curl … | sh`, `cat <<EOF | bash`) is `unchecked` (a shell limit, like the heredoc case).
+
+Review follow-up 5: `sh -s ARGS` (stdin whatever follows its options), `|&` (a pipe, not a background job) and `bash <(…)` (process substitution) are `unchecked` as shell limits, like a piped program. Under `mode: strict` these are refused.
