@@ -66,6 +66,25 @@ checkout, or a session opened in a subdirectory each bypass the policy.
 - **Performance**: the plugin calls `evaluate` per tool call; root and
   common-dir lookups are memoised per root.
 
+## Contract
+
+This story is judged on its **Acceptance Criteria** above, nothing else. The User
+Value states an intent; it is not a criterion a review can fail the story on.
+
+Out of scope, and not a finding against 05-01 (record it for the story named):
+
+- **Shell command forms**: how a command names the file it writes or links
+  (`ln`/`cp` destination shapes, a directory made earlier in the same command,
+  `mkdir d && cp|mv KEY d`, `$PWD`, `cd` forms) → 05-03 / 05-05's corpus.
+- **Decisions that cannot be made** (an unreadable link, git refusing or timing
+  out) → 05-02's `unchecked`.
+- **Filesystems the platform default misjudges** (case-insensitive mounts on
+  Linux, WSL `/mnt/c`) → 05-05's honest limits.
+
+A review finds a P0/P1 against 05-01 only when a listed criterion fails, or a
+resolution the criteria rely on (lexical + real path, the project root, the
+primary checkout, `$HOME`, `~`) gives a wrong answer for a plain Write/Edit.
+
 ## Status: done
 
 ## Result
