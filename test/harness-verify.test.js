@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { parseTestsCommands } = require('../bin/lib/harness');
+const { parseTestsCommands } = require('../bin/lib/validation-run');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
