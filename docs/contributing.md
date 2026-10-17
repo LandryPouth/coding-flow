@@ -70,8 +70,11 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/commands.js` | `help` and `commands` |
 
 The dependency graph is acyclic:
-`context → util → config → harness-config → templates → {doctor, uninstall, skills, commands}`;
-`guard` requires `harness-config` and `security-policy`, never `harness`;
+`context → util → config → templates → {doctor, uninstall, skills, commands}`;
+`templates` and `uninstall` require `harness-config`, which requires only
+`context`, `util` and `coverage`; `guard` requires `harness-config` and
+`security-policy`, never `harness` (6 modules per tool call, capped in
+`test/guard.test.js`);
 `status` builds on `config`/`storage`/`policy`/`worktree`.
 
 ## The two distribution channels
