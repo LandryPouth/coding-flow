@@ -556,6 +556,7 @@ function shellWrites(command, startCwd = process.cwd()) {
       }
 
       // A directory destination receives `DIR/<name of each source>`: that is the file written.
+      let intoDirectory = false;
       if (typeof directory === "string" && classify(directory) === "path") {
         const base = cwd === null ? null : path.resolve(cwd, expandHome(directory));
         let isDirectory = /(?:^|\/)\.{0,2}\/?$/.test(directory) || optionAt !== -1;
@@ -564,6 +565,7 @@ function shellWrites(command, startCwd = process.cwd()) {
         } catch {
           // a missing destination is a file name
         }
+        intoDirectory = isDirectory;
         if (isDirectory) {
           for (const source of sources) {
             const name = path.posix.basename(source);
@@ -575,13 +577,24 @@ function shellWrites(command, startCwd = process.cwd()) {
       }
 
       if (aliasing) {
-        const sources = files.length >= 2 ? files.slice(0, -1) : files;
-        const where = files.length >= 2 ? path.dirname(files[files.length - 1]) : ".";
+        // The link lands in DIR itself when the destination is a directory
+        // (`ln -s SRC dir/`, `ln -s -t dir SRC`), else next to the name it is given.
+        // Both are tried when they differ: `-T` and a racing mkdir make either possible.
+        const wheres = [...new Set([
+          ...(intoDirectory ? [directory] : []),
+          files.length >= 2 && optionAt === -1 ? path.dirname(files[files.length - 1]) : ".",
+        ])];
         for (const source of sources) {
           add(source, "alias");
+          if (classify(source) !== "path" || path.isAbsolute(expandHome(source))) {
+            continue;
+          }
           // A relative symlink source is read from the link's own directory — its
           // real one: under `a -> sub/deep`, `ln -s ../../.env a/x` aliases <root>/.env.
-          if (where !== "." && classify(source) === "path" && !path.isAbsolute(expandHome(source))) {
+          for (const where of wheres) {
+            if (where === "." || where === "./") {
+              continue;
+            }
             add(path.join(where, source), "alias");
             if (cwd !== null && classify(reduceWord(where)) === "path") {
               const linkDir = realPathOf(path.resolve(cwd, expandHome(reduceWord(where))));
@@ -834,13 +847,21 @@ function within(base, file) {
 
 // The policy-relative names a target answers to: lexical and real, each made
 // relative to the project root, else to the primary checkout, else to $HOME.
+//
+// A relative target is also read from the REAL cwd, as the kernel does: from a cwd
+// `<root>/a` with `a -> sub/deep`, `../../.env` is `<root>/.env`, not `<root>/../.env`.
 function resolveTargets(ctx, target) {
-  const lexical = path.resolve(ctx.cwd, expandHome(target));
-  const real = realPathOf(lexical, 0, ctx.issues);
+  const expanded = expandHome(target);
+  const lexical = path.resolve(ctx.cwd, expanded);
+  const physical = ctx.realCwd && ctx.realCwd !== ctx.cwd ? path.resolve(ctx.realCwd, expanded) : null;
+  const files = [lexical, realPathOf(lexical, 0, ctx.issues)];
+  if (physical && physical !== lexical) {
+    files.push(physical, realPathOf(physical, 0, ctx.issues));
+  }
   const bases = [ctx.root, ctx.realRoot, ctx.primary, ctx.primary && realPathOf(ctx.primary), os.homedir()].filter(Boolean);
   const found = [];
 
-  for (const file of [lexical, real]) {
+  for (const file of files) {
     for (const base of bases) {
       const rel = within(base, file);
       if (rel !== null) {
@@ -864,7 +885,8 @@ function context(hook, root) {
   const cwd = hookCwd(hook, root);
   const issues = [];
   const top = projectRoot(cwd, issues);
-  return { cwd: path.resolve(cwd), root: top, realRoot: realPathOf(top), primary: primaryCheckout(top, issues), issues };
+  const resolved = path.resolve(cwd);
+  return { cwd: resolved, realCwd: realPathOf(resolved), root: top, realRoot: realPathOf(top), primary: primaryCheckout(top, issues), issues };
 }
 
 // Whether writing to this path is refused by policy. Returns the matched pattern,

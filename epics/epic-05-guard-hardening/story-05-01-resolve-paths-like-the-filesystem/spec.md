@@ -88,6 +88,12 @@ root, in `realPathOf` and in the `ln` alias check), and a git timeout silently
 dropping the repository bound for that call. Both fixed and tested; the timeout
 now makes the decision `unchecked`.
 
+A fourth review (2026-10-17) found the `ln` alias check still read a link's `..`
+from the parent of a directory destination (`ln -s ../../.env x/y/`, an existing
+`x/y`, `-t x/y`), and relative targets resolved only against the lexical cwd (a cwd
+reached through a symlink). Both fixed and tested: the link is read from the
+directory it lands in, and a relative target is also resolved from the real cwd.
+
 ### Rollback Notes
 
 `git revert` the commit; no data or config migration.

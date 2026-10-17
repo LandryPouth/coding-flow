@@ -80,6 +80,40 @@ test('a link under a linked directory is read from its real directory', (t) => {
   assert.equal(fs.existsSync(path.join(dir, '.env')), false);
 });
 
+test('a link made into a directory is read from that directory', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, 'x', 'y'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+
+  // Each lands as x/y/.env -> ../../.env, which is <root>/.env.
+  assert.equal(guard(dir, bash('ln -s ../../.env x/y/')).code, 2);
+  assert.equal(guard(dir, bash('ln -s ../../.env x/y')).code, 2, 'an existing directory without the slash');
+  assert.equal(guard(dir, bash('ln -s -t x/y ../../.env')).code, 2);
+  assert.equal(guard(dir, bash('ln -s ../.env x/')).code, 2);
+  // Through a linked directory: a/ is sub/deep, so ../../.env from there is <root>/.env.
+  assert.equal(guard(dir, bash('ln -s ../../.env a/')).code, 2);
+  assert.equal(guard(dir, bash('ln -s -t a ../../.env')).code, 2);
+  // The same shape pointing at an ordinary file stays allowed.
+  assert.equal(guard(dir, bash('ln -s ../../README.md x/y/')).code, 0);
+});
+
+test('a relative target is read from the real cwd when the cwd is reached through a link', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
+  fs.symlinkSync(path.join('sub', 'deep'), path.join(dir, 'a'));
+  const cwd = path.join(dir, 'a');
+  const at = (payload) => decide({ cwd, ...payload }, cwd).decision;
+
+  // The kernel resolves `..` from sub/deep: ../../.env is <root>/.env.
+  assert.equal(at(write('../../.env')), 'deny');
+  assert.equal(at(bash('echo A=1 > ../../.env')), 'deny');
+  assert.equal(at(bash('ln -s ../../.env')), 'deny');
+  assert.equal(at(bash('cd .. && echo A=1 > ../.env')), 'deny');
+  assert.equal(at(write('../../src/new.js')), 'allow');
+});
+
 test('a first path segment that merely starts with .. is not outside the root', (t) => {
   const dir = tmp(t);
   assert.equal(guard(dir, write('..foo/server.pem')).code, 2);
