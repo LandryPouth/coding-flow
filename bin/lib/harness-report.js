@@ -310,10 +310,5 @@ function describeContraryWarnings(contrary) {
 
 module.exports = {
   printHarnessReport,
-  formatLineRanges,
   printVerify,
-  printWeakenedTests,
-  printOpenCriteria,
-  printContraryFailures,
-  describeContraryWarnings,
 };

@@ -328,7 +328,6 @@ module.exports = {
   defaultSecretScanAllowlist,
   defaultTestGlobs,
   defaultHighRiskPaths,
-  defaultNonBehaviorGlobs,
   defaultHarnessConfig,
   readHarnessConfig,
   ensureHarnessConfig,

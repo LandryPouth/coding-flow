@@ -352,7 +352,6 @@ module.exports = {
   isScopedOut,
   filterScopedFiles,
   changedFilesForCoverage,
-  parseAddedLines,
   runGitText,
   changedLinesForCoverage,
   parseChangedText,

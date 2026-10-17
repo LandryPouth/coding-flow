@@ -1,8 +1,10 @@
 "use strict";
 
-// Security harness: policy (.coding-flow/harness.json), scan of secrets and
-// sensitive files, per-story preflight/evidence. The config primitives live in
-// harness-config.js, a leaf copyTemplates (templates.js) can require.
+// The `harness` and `verify` commands: their entry points, the story scope they
+// run on, and the export surface the rest of the CLI imports. The work lives in
+// the modules below — harness-config (the policy file), security-policy
+// (secrets, sensitive paths), diff-scope, risk, validation-run, coverage-gate,
+// evidence and harness-report. Those never require this file.
 
 const fs = require("fs");
 const path = require("path");

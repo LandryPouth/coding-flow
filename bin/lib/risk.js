@@ -233,16 +233,8 @@ function scoreCombinedRisk({ storyDir, config }) {
 }
 
 module.exports = {
-  mentionsTerm,
   scoreStoryRisk,
-  STRUCTURAL_GIT_SIGNALS,
-  isGuardedWindow,
-  GUARD_SPAN_MAX_LINES,
-  callSpanText,
-  structuralRiskCandidateFiles,
-  scanStructuralGitSignals,
   scoreDiffRisk,
-  RISK_RANK,
   combineRisk,
   scoreCombinedRisk,
 };

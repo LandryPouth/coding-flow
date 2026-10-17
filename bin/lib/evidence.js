@@ -398,9 +398,7 @@ module.exports = {
   buildHarnessPreflight,
   checkStoryEvidence,
   commandsFingerprint,
-  untrackedDigest,
   findReusableVerify,
   writeVerifyEvidence,
-  PLAN_COMMANDS_REFUSAL,
   verifyStoryOnce,
 };

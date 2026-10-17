@@ -656,22 +656,10 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
 }
 
 module.exports = {
-  readTestExemption,
   readAcceptanceCriteria,
-  matchesDeferredName,
-  normalizeCriterion,
-  deferredCriteriaNames,
-  evaluatePatchCoverage,
-  SKIP_MARKERS,
-  ASSERTION_MARKERS,
-  countMatching,
-  scanTestWeakening,
-  evaluateCoverageResult,
   evaluateCoverage,
-  applyCoverageFloor,
   freshTestsRequired,
   NO_CONTRARY,
   contraryPolicy,
-  mentionsPath,
   evaluateContrarySignals,
 };
