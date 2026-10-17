@@ -37,7 +37,8 @@ function resultNotes(raw, { singleFile = false } = {}) {
     // unchecked items are the plan — a fresh `## Validation Tasks` /
     // `- [ ] npm test passes` read as "validation … pass" and called an
     // untouched story done.
-    // The wrapped lines of an unchecked item are the plan too.
+    // In a single-file story the wrapped lines of an unchecked item are the plan
+    // too (its criteria wrap); a split tasks.md is read as it always was.
     let inPlanItem = false;
 
     return lines
@@ -47,7 +48,7 @@ function resultNotes(raw, { singleFile = false } = {}) {
           return false;
         }
 
-        if (inPlanItem && /^\s+\S/.test(line)) {
+        if (singleFile && inPlanItem && /^\s+\S/.test(line)) {
           return false;
         }
 
@@ -106,7 +107,7 @@ function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
   }
 
   // The prose heuristic (step 3) only sees the executed outcome, not the checklist.
-  const notes = resultNotes(raw, { singleFile: storyPartPath(storyDir, "tasks").endsWith("story.md") });
+  const notes = resultNotes(raw, { singleFile: path.basename(storyPartPath(storyDir, "tasks")) === "story.md" });
 
   // 2. Evidence-backed: a captured verify is proof, prose is not. A green proof
   //    that no longer matches the code is "stale" (re-verify), not "verified".

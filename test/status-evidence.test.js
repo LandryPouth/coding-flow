@@ -191,3 +191,9 @@ test('wrapped lines of an unchecked criterion are the plan, not progress', (t) =
   const dir = singleFileStoryDir(t, wrapped);
   assert.equal(inferStoryStatus(dir, { verify: null }), 'planned');
 });
+
+test('a split tasks.md keeps wrapped lines of an unchecked item as notes', (t) => {
+  const wrapped = `# Tasks\n\n- [ ] a criterion\n      ${'wrapped text that is long enough to count as notes. '.repeat(5)}\n`;
+  const dir = storyDirWithNotes(t, wrapped);
+  assert.equal(inferStoryStatus(dir, { verify: null }), 'in-progress');
+});
