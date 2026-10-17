@@ -92,7 +92,8 @@ values, so they can differ by a cent from the rows. Arm B = `/flow-plan` then
 
 **Deviations first** (detail under *Deviations from the protocol and limits*): N = 1
 per cell; the grader was not blind; ten sessions ran in parallel, so timings are
-indicative; arm B was driven by the harness, not a person; "files forgotten" and
+indicative; arm B was driven by the harness, not a person; arm A ran with the
+coding-flow plugin installed (not initialised, not invoked); "files forgotten" and
 "escaped defects" were graded by hand after the fact, from the committed diffs.
 
 | Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cache write | Cost | Time |
@@ -120,10 +121,19 @@ All ten runs ended green on acceptance and regression after at most one re-promp
 alone on first-pass success (3/5 against 4/5) and cost about 3.5× as much and 2.5×
 the time. The arm that lost is coding-flow, on tasks 2 and 5.
 
-- **Task 5 (cross-module) is the clearest loss.** Vanilla made a 3-line change in
-  `report.js` and passed first time. Coding Flow added a `countsTowardTotals` helper
-  to `approvals.js` (a file the fix did not need) and failed all 5 acceptance tests
-  on its first attempt, passing after one re-prompt.
+- **Task 5 (cross-module) is the clearest loss, and it contradicts the hypothesis
+  directly.** Vanilla made a 3-line change in `report.js` and passed first time.
+  Coding Flow failed all 5 acceptance tests on its first attempt, and the cause is
+  the plan, not the code: `/flow-plan` assumed "paid out" meant `approved` only
+  (`run-plan.json`, *Assumptions*) and wrote that unconfirmed assumption into the
+  story's acceptance criteria, so submitted expenses were dropped from the totals.
+  `/flow-run` implemented those criteria faithfully, `ai-flow verify` went green
+  against them, and the story was marked `done` (`run-0.json`). The re-prompt
+  fixed it; the agent's own words: "the story's assumption ... was wrong"
+  (`run-1.json`). The machine verified the agent's spec, and the spec was wrong.
+  Separately, Coding Flow put the status predicate (`countsTowardTotals`) in
+  `approvals.js` rather than `report.js`, a file the fix did not need; the final
+  logic is the same as vanilla's, so this is scope, not the cause of the failure.
 - **Task 2:** both arms failed the same 3 of 6 acceptance tests first time and
   passed after one re-prompt. No difference.
 - **Where coding-flow did differ is the tests it left behind.** Hand-graded against
@@ -164,6 +174,12 @@ the time. The arm that lost is coding-flow, on tasks 2 and 5.
 - **Arm B's operator was the harness**: the task prompt was passed to `/flow-plan`
   verbatim, then `/flow-run the story you just planned`. A hand-guided session may
   do better or worse.
+- **Arm A was not isolated from the coding-flow plugin.** The plugin is enabled at
+  user scope on the machine that ran both arms, and no step disabled it for arm A,
+  so its skills were available there too (as were the user's global `CLAUDE.md`
+  and other plugins, in both arms). Arm A never ran `init`, and none of its diffs
+  contains a story file, so the effect is probably small, but "vanilla" here means
+  "not initialised and not invoked", not "absent".
 - Tasks ran in parallel, ten sessions at once; timings are indicative only.
 - The model was `claude-sonnet-5-5`; a stronger model may erase the gap the other way.
 
