@@ -24,7 +24,7 @@ const {
   removeFileIfExists,
   removeEmptyDirsUpward,
 } = require("./util");
-const { ensureHarnessConfig } = require("./harness");
+const { ensureHarnessConfig } = require("./harness-config");
 
 function ensureTemplatesExist() {
   if (!fs.existsSync(templatesRoot)) {

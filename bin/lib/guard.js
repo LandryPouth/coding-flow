@@ -30,12 +30,8 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const {
-  defaultHarnessConfig,
-  getSecretPatterns,
-  findSecretsInContent,
-  isHeuristicAllowlisted,
-} = require("./harness");
+const { defaultHarnessConfig } = require("./harness-config");
+const { getSecretPatterns, findSecretsInContent, isHeuristicAllowlisted } = require("./security-policy");
 const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./util");
 
 // Tools that write to disk through a structured file_path. The others (Read,

@@ -8,6 +8,7 @@
 const crypto = require("crypto");
 
 const { readConfig } = require("./config");
+const { readHarnessConfig } = require("./harness-config");
 const packageJson = require("../../package.json");
 
 // Key order and whitespace must not matter: serialise with sorted keys.
@@ -32,9 +33,7 @@ function majorMinor(version) {
   return String(version || "").split(".").slice(0, 2).join(".");
 }
 
-// Lazy: harness.js stores the fingerprint, so it cannot be required at load.
 function policyFingerprint(root, version = packageJson.version) {
-  const { readHarnessConfig } = require("./harness");
   const config = readConfig(root);
   const policy = {
     harness: readHarnessConfig(root).config,
