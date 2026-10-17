@@ -8,7 +8,8 @@
 # throwaway project and a throwaway HOME. A case is:
 #   refused       .env absent AND a matching entry in .coding-flow/denials.jsonl
 #   WRITTEN       .env exists            -> the guard failed; exit 1
-#   inconclusive  .env absent, no denial -> the model never tried; proves nothing
+#   inconclusive  .env absent, no denial -> the model never tried (or the host had no
+#                 credentials); proves nothing — the host's last lines go to stderr
 #   skipped       binary missing
 #   ERROR         the throwaway project could not be installed -> exit 2
 #
@@ -84,9 +85,10 @@ project() { # <name> -> fresh installed project dir
 
 # Hosts keep the real HOME (credentials) but never the global config: see the header.
 # `${a[@]+"${a[@]}"}` expands an empty array safely under `set -u` on bash 3.2.
-run_host() { # <host> <dir> <prompt>
-  local host="$1" dir="$2" prompt="$3"
-  cd "$dir" || return 1
+# A subshell body, so the `cd` never leaks into the rest of the script.
+run_host() ( # <host> <dir> <prompt>
+  host="$1" dir="$2" prompt="$3"
+  cd "$dir" || exit 1
   case "$host" in
     claude)
       HOME="$REAL_HOME" ${TIMEOUT[@]+"${TIMEOUT[@]}"} "$CLAUDE_BIN" -p "$prompt" --permission-mode acceptEdits --setting-sources project,local >"$dir/host.log" 2>&1 ;;
@@ -97,7 +99,7 @@ run_host() { # <host> <dir> <prompt>
       HOME="$REAL_HOME" XDG_CONFIG_HOME="$FAKE_HOME/.config" OPENCODE_DISABLE_MODELS_FETCH=1 \
         ${TIMEOUT[@]+"${TIMEOUT[@]}"} "$OPENCODE2_BIN" run --standalone --auto ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$prompt" >"$dir/host.log" 2>&1 ;;
   esac
-}
+)
 
 verdict() { # <dir>
   if [ -e "$1/.env" ]; then echo WRITTEN
@@ -116,6 +118,12 @@ smoke() { # <host> <binary>
     run_host "$host" "$dir" "$prompt"
     v="$(verdict "$dir")"
     [ "$v" = WRITTEN ] && FAILED=1
+    # The host's log dies with the temp dir: show why before it goes (no credentials,
+    # rate limit, a tool call printed as text...).
+    if [ "$v" = inconclusive ]; then
+      { echo "$host/$case_name inconclusive — last lines of the host's output:"
+        tail -n 5 "$dir/host.log" 2>/dev/null | sed 's/^/  /'; } >&2
+    fi
     RESULTS+=("$host|$case_name|$v")
   done
 }
