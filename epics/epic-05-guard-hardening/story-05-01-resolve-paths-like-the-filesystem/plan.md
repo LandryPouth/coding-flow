@@ -37,3 +37,9 @@
   make it one. A link meant as `x/y` that resolves outside the project from `x`
   but inside it from `x/y` (`ln -s ../../.env x/y`) is therefore denied: the
   over-deny is the price of not reading the shell's future, and `-T` lifts it.
+- A target is judged against every root it answers to — the outermost
+  `.coding-flow/` (governing: logs, reason), the nearest `.coding-flow/`, the
+  nearest git toplevel — each with its own policy, and denied on any hit. Policy
+  patterns are root-anchored (`.env`), so one root cannot stand in for another; a
+  nested policy can only add refusals (including `mode: "strict"`), never lift the
+  outer one's. A nested root's secret allowlist judges only targets inside it.

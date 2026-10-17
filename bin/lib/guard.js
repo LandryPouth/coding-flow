@@ -747,27 +747,36 @@ function git(cwd, args, issues = null) {
   return out || null;
 }
 
-// The OUTERMOST `.coding-flow/` between `cwd` and the outermost enclosing git
-// toplevel (so a nested one cannot swap in a weaker policy), else the nearest git
-// toplevel, else `cwd` itself. A submodule or a vendored repo inside the project is
-// part of it: from `vendor/lib`, the project's `.coding-flow/` still governs.
+// Every root a write from `cwd` answers to, the governing one first: the OUTERMOST
+// `.coding-flow/` between `cwd` and the outermost enclosing git toplevel (so a
+// nested one cannot swap in a weaker policy), else the nearest git toplevel, else
+// `cwd` itself. A submodule or a vendored repo inside the project is part of it:
+// from `vendor/lib`, the project's `.coding-flow/` still governs.
+//
+// The nearest `.coding-flow/` and the nearest git toplevel follow as roots of
+// their own: a nested project's `.env` is `.env` to its own policy even when the
+// outer one sees it as `proj/.env`. A nested policy only ADDS refusals.
 //
 // The bound is checked on real paths: git prints the toplevel resolved (and with
 // `/` on Windows), so comparing it to a cwd reached through a symlink, or to a
 // `C:\…` path, never matches and the walk would climb past the repository.
-function projectRoot(cwd, issues = null) {
+function projectRoots(cwd, issues = null) {
   const start = path.resolve(cwd);
   const gitTop = git(start, ["rev-parse", "--show-toplevel"], issues);
   const top = gitTop ? path.resolve(gitTop) : null;
   let outer = top;
   for (let at = top && path.dirname(top); at && at !== outer; at = path.dirname(outer)) {
     const enclosing = git(at, ["rev-parse", "--show-toplevel"], issues);
-    if (!enclosing) {
+    const next = enclosing ? path.resolve(enclosing) : null;
+    // Climb only to a STRICT ancestor: a git pinned to one work tree (GIT_DIR and
+    // GIT_WORK_TREE set, `core.worktree`) answers the same toplevel from anywhere.
+    if (!next || next === outer || within(next, outer) === null) {
       break;
     }
-    outer = path.resolve(enclosing);
+    outer = next;
   }
   const realTop = outer ? realPathOf(outer) : null;
+  let nearest = null;
   let found = null;
 
   for (let dir = start; ; dir = path.dirname(dir)) {
@@ -776,6 +785,7 @@ function projectRoot(cwd, issues = null) {
     }
     try {
       if (fs.statSync(path.join(dir, ".coding-flow")).isDirectory()) {
+        nearest = nearest || dir;
         found = dir;
         if (!top) {
           break; // no repo to bound the search: nearest wins
@@ -789,7 +799,17 @@ function projectRoot(cwd, issues = null) {
     }
   }
 
-  return found || top || start;
+  const roots = [];
+  for (const dir of [found || top || start, nearest, top]) {
+    if (dir && !roots.some((seen) => realPathOf(seen) === realPathOf(dir))) {
+      roots.push(dir);
+    }
+  }
+  return roots;
+}
+
+function projectRoot(cwd, issues = null) {
+  return projectRoots(cwd, issues)[0];
 }
 
 // When `root` is a linked worktree (its `.git` is a file), the primary checkout.
@@ -868,11 +888,12 @@ function within(base, file) {
 }
 
 // The policy-relative names a target answers to: lexical and real, each made
-// relative to the project root, else to the primary checkout, else to $HOME.
+// relative to the scope's root, else to its primary checkout, else to $HOME.
+// `inside` says the name came from the scope itself, not from $HOME.
 //
 // A relative target is also read from the REAL cwd, as the kernel does: from a cwd
 // `<root>/a` with `a -> sub/deep`, `../../.env` is `<root>/.env`, not `<root>/../.env`.
-function resolveTargets(ctx, target) {
+function resolveTargets(ctx, scope, target) {
   const expanded = expandHome(target);
   const lexical = path.resolve(ctx.cwd, expanded);
   const physical = ctx.realCwd && ctx.realCwd !== ctx.cwd ? path.resolve(ctx.realCwd, expanded) : null;
@@ -880,7 +901,8 @@ function resolveTargets(ctx, target) {
   if (physical && physical !== lexical) {
     files.push(physical, realPathOf(physical, 0, ctx.issues));
   }
-  const bases = [ctx.root, ctx.realRoot, ctx.primary, ctx.primary && realPathOf(ctx.primary), os.homedir()].filter(Boolean);
+  const home = os.homedir();
+  const bases = [scope.root, scope.realRoot, scope.primary, scope.primary && realPathOf(scope.primary), home].filter(Boolean);
   const found = [];
 
   for (const file of files) {
@@ -889,7 +911,7 @@ function resolveTargets(ctx, target) {
       if (rel !== null) {
         const relative = normalizePortable(rel);
         if (!found.some((entry) => entry.relative === relative)) {
-          found.push({ relative });
+          found.push({ relative, inside: base !== home });
         }
         break;
       }
@@ -903,12 +925,20 @@ function hookCwd(hook, fallback) {
   return hook && typeof hook.cwd === "string" && hook.cwd ? hook.cwd : fallback;
 }
 
+const UNREADABLE = "harness.json could not be read (default policy applied)";
+
 function context(hook, root) {
   const cwd = hookCwd(hook, root);
   const issues = [];
-  const top = projectRoot(cwd, issues);
   const resolved = path.resolve(cwd);
-  return { cwd: resolved, realCwd: realPathOf(resolved), root: top, realRoot: realPathOf(top), primary: primaryCheckout(top, issues), issues };
+  const scopes = projectRoots(cwd, issues).map((dir) => {
+    const policy = loadPolicy(dir);
+    if (policy.unreadable && !issues.includes(UNREADABLE)) {
+      issues.push(UNREADABLE);
+    }
+    return { root: dir, realRoot: realPathOf(dir), primary: primaryCheckout(dir, issues), policy };
+  });
+  return { cwd: resolved, realCwd: realPathOf(resolved), root: scopes[0].root, scopes, issues };
 }
 
 // Whether writing to this path is refused by policy. Returns the matched pattern,
@@ -965,22 +995,21 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   }
 
   const ctx = context(hook, root);
-  const policy = loadPolicy(ctx.root);
-  if (policy.unreadable) {
-    ctx.issues.push("harness.json could not be read (default policy applied)");
-  }
   const filePath = targetPath(toolInput);
-  const names = filePath ? resolveTargets(ctx, filePath) : [];
-  const found = firstHit(names, policy, caseInsensitive);
   const relative = filePath ? normalizePortable(path.relative(ctx.root, path.resolve(ctx.cwd, filePath))) : null;
+  const named = ctx.scopes.map((scope) => ({ scope, names: filePath ? resolveTargets(ctx, scope, filePath) : [] }));
 
-  // Check 1 — path blocked by the policy.
-  if (found) {
-    return {
-      decision: "deny",
-      reason: `${found.relative}${viaNote(found, path.isAbsolute(filePath) ? relative : filePath)} matches a blocked harness path (${found.hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
-      path: found.relative,
-    };
+  // Check 1 — path blocked by the policy of any root the target answers to.
+  for (const { scope, names } of named) {
+    const found = firstHit(names, scope.policy, caseInsensitive);
+    if (found) {
+      const given = path.isAbsolute(filePath) ? normalizePortable(path.relative(scope.root, filePath)) : filePath;
+      return {
+        decision: "deny",
+        reason: `${found.relative}${viaNote(found, given)} matches a blocked harness path (${found.hit}). Writing secrets or protected files at the tool boundary is refused by policy.`,
+        path: found.relative,
+      };
+    }
   }
 
   // Check 2 — secret in the written content. On an allowlisted path (docs,
@@ -988,21 +1017,28 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   // placeholder in an example is not a leak, an AWS key in one still is.
   const content = writtenContent(toolName, toolInput);
 
-  if (content) {
-    const secret = findSecretsInContent(content, getSecretPatterns(policy), {
-      // Every name must be allowlisted: `docs/notes.md -> ../src/app.js` writes
-      // into src/, and the docs allowance does not travel through the link.
-      skipHeuristics: names.length > 0 && names.every((entry) => isHeuristicAllowlisted(entry.relative, policy)),
-      first: true,
-    })[0];
+  // A nested root's policy applies only to a target inside it (its allowlist
+  // cannot judge a `$HOME`-relative name); the governing one always applies.
+  const secret = !content
+    ? null
+    : named
+        .filter(({ names }, index) => index === 0 || names.some((entry) => entry.inside))
+        .map(({ scope, names }) =>
+          findSecretsInContent(content, getSecretPatterns(scope.policy), {
+            // Every name must be allowlisted: `docs/notes.md -> ../src/app.js` writes
+            // into src/, and the docs allowance does not travel through the link.
+            skipHeuristics: names.length > 0 && names.every((entry) => isHeuristicAllowlisted(entry.relative, scope.policy)),
+            first: true,
+          })[0],
+        )
+        .find(Boolean);
 
-    if (secret) {
-      return {
-        decision: "deny",
-        reason: `Potential secret detected in written content (${secret.name}). Refused before it can reach the disk.`,
-        path: relative,
-      };
-    }
+  if (secret) {
+    return {
+      decision: "deny",
+      reason: `Potential secret detected in written content (${secret.name}). Refused before it can reach the disk.`,
+      path: relative,
+    };
   }
 
   // Nothing refused: what could not be judged (a missing path) is said, not allowed silently.
@@ -1033,10 +1069,6 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   }
 
   const ctx = context(hook, root);
-  const policy = loadPolicy(ctx.root);
-  if (policy.unreadable) {
-    ctx.issues.push("harness.json could not be read (default policy applied)");
-  }
 
   for (const entry of shellWrites(command, ctx.cwd)) {
     if (entry.unchecked) {
@@ -1045,7 +1077,10 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     }
 
     const target = entry.target;
-    const found = firstHit(resolveTargets(ctx, target), policy, caseInsensitive);
+    let found = null;
+    for (const scope of ctx.scopes) {
+      found = found || firstHit(resolveTargets(ctx, scope, target), scope.policy, caseInsensitive);
+    }
 
     if (found) {
       const what =
@@ -1059,10 +1094,9 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     }
   }
 
-  const secret = findSecretsInContent(command, getSecretPatterns(policy), {
-    skipHeuristics: true,
-    first: true,
-  })[0];
+  const secret = ctx.scopes
+    .map((scope) => findSecretsInContent(command, getSecretPatterns(scope.policy), { skipHeuristics: true, first: true })[0])
+    .find(Boolean);
 
   if (secret) {
     return {
@@ -1168,14 +1202,14 @@ function forAgent(reason) {
 // so strictness alone can never lock the user out of switching back.
 const STRICT_PREFIX = "not checked, refused in strict mode:";
 
-function strictOutcome(result, hook, root) {
+function strictOutcome(result, hook, roots) {
   if (!result || result.decision !== "unchecked") {
     return result;
   }
 
   let strict = false;
   try {
-    strict = loadPolicy(root).mode === "strict";
+    strict = [].concat(roots).some((root) => loadPolicy(root).mode === "strict");
   } catch {
     strict = false;
   }
@@ -1194,7 +1228,8 @@ function guardCommand({ getFlagValue, flags }) {
   const raw = readHookInput({ inputFile });
   const hook = parseHookInput(raw);
   // Root: cwd provided by the hook if present, otherwise the process cwd.
-  const root = projectRoot(hookCwd(hook, process.cwd()));
+  const roots = projectRoots(hookCwd(hook, process.cwd()));
+  const root = roots[0];
 
   let result;
   try {
@@ -1203,7 +1238,7 @@ function guardCommand({ getFlagValue, flags }) {
     result = { decision: "unchecked", reason: `guard error: ${(err && (err.code || err.name)) || "unknown"}` };
   }
 
-  result = strictOutcome(result, hook, root);
+  result = strictOutcome(result, hook, roots);
 
   if (result.decision === "unchecked") {
     recordUnchecked({ root, hook, result });
@@ -1246,15 +1281,16 @@ function guardCommand({ getFlagValue, flags }) {
 // return the result. Never throws — a guard that crashes its host gets removed.
 function evaluate(hook, root) {
   try {
-    const result = strictOutcome(decide(hook, root), hook, projectRoot(hookCwd(hook, root)));
+    const roots = projectRoots(hookCwd(hook, root));
+    const result = strictOutcome(decide(hook, root), hook, roots);
 
     if (result.decision === "deny") {
-      recordDenial({ root: projectRoot(hookCwd(hook, root)), hook, result });
+      recordDenial({ root: roots[0], hook, result });
       return { ...result, reason: forAgent(result.reason) };
     }
 
     if (result.decision === "unchecked") {
-      recordUnchecked({ root: projectRoot(hookCwd(hook, root)), hook, result });
+      recordUnchecked({ root: roots[0], hook, result });
     }
 
     return result;

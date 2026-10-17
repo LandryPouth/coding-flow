@@ -27,6 +27,7 @@ function guard(cwd, payload, env = {}) {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, ...env },
+      timeout: 20000,
     });
     return { code: 0, stderr: '' };
   } catch (err) {
@@ -316,4 +317,43 @@ test('a git that refuses the repository (safe.directory) makes the decision unch
   assert.equal(result.decision, 'unchecked');
   assert.match(result.reason, /safe\.directory/);
   assert.equal(decide({ cwd: dir, ...write('.env') }, dir).decision, 'deny');
+});
+
+test('a nested project keeps its own policy inside an outer one: its .env stays .env', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+  const nested = path.join(dir, 'proj');
+  fs.mkdirSync(path.join(nested, '.coding-flow'), { recursive: true });
+  execFileSync('git', ['init', '-q'], { cwd: nested, stdio: 'ignore' });
+
+  assert.equal(guard(nested, write('.env')).code, 2);
+  assert.equal(guard(nested, write('.env.local')).code, 2);
+  assert.equal(guard(nested, bash('echo A=2 > .env')).code, 2);
+  assert.equal(guard(nested, write('../.env')).code, 2);
+  assert.equal(guard(nested, write('src.js')).code, 0);
+});
+
+test('a nested strict policy makes an unchecked call a refusal under a standard outer one', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+  const nested = path.join(dir, 'proj');
+  fs.mkdirSync(path.join(nested, '.coding-flow'), { recursive: true });
+  fs.writeFileSync(path.join(nested, '.coding-flow', 'harness.json'), JSON.stringify({ mode: 'strict' }));
+  execFileSync('git', ['init', '-q'], { cwd: nested, stdio: 'ignore' });
+
+  const unknown = { tool_name: 'Frobnicate', tool_input: { file_path: 'src.js' } };
+  assert.equal(guard(nested, unknown).code, 2);
+  assert.equal(guard(dir, unknown).code, 0);
+});
+
+test('a git pinned to one work tree (GIT_DIR, GIT_WORK_TREE) does not hang the guard', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+  const env = { GIT_DIR: path.join(dir, '.git'), GIT_WORK_TREE: dir };
+
+  assert.equal(guard(dir, write('.env'), env).code, 2);
+  assert.equal(guard(dir, write('src.js'), env).code, 0);
 });

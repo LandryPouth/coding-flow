@@ -112,6 +112,13 @@ vendored repo) took that repo as the root, so the project's `.coding-flow/` and
 was remembered as "no repo". The search now climbs to the outermost enclosing
 git repository, and a refusal makes the decision `unchecked`. Both fixed and tested.
 
+An eighth review (2026-10-17) found that fix let a nested project's own `.env`
+through (judged `proj/.env` against the outer root), and that a git pinned to one
+work tree (`GIT_DIR`/`GIT_WORK_TREE`) made the climb loop forever. A write is now
+checked against every root it answers to (outermost and nearest `.coding-flow/`,
+nearest toplevel), each with its own policy; the climb only moves to a strict
+ancestor. Both fixed and tested.
+
 ### Rollback Notes
 
 `git revert` the commit; no data or config migration.
