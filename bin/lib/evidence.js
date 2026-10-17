@@ -10,7 +10,7 @@ const crypto = require("crypto");
 
 const { cwd } = require("./context");
 const { policyFingerprint } = require("./policy-fingerprint");
-const { currentTreeToken } = require("./identity");
+const { currentTreeToken, captureIdentity } = require("./identity");
 const { resolveCoverageFloor } = require("./coverage");
 const {
   storyPartPath,
@@ -23,15 +23,39 @@ const {
   readJson,
   writeTimestampedEvidence,
   addIssue,
+  log,
 } = require("./util");
 const {
   harnessConfigPath,
   harnessRunsDir,
   readHarnessConfig,
 } = require("./harness-config");
-const { currentDiffBase, runGitList, changedFilesForCoverage } = require("./diff-scope");
+const {
+  currentDiffBase,
+  runGitList,
+  changedFilesForCoverage,
+  setDiffBaseRequest,
+  diffBaseFlag,
+  publicDiffBase,
+} = require("./diff-scope");
 const { scoreStoryRisk, scoreDiffRisk, combineRisk } = require("./risk");
-const { contraryPolicy } = require("./coverage-gate");
+const {
+  contraryPolicy,
+  freshTestsRequired,
+  evaluateCoverage,
+  readAcceptanceCriteria,
+  evaluateContrarySignals,
+  NO_CONTRARY,
+} = require("./coverage-gate");
+const {
+  isUnattended,
+  resolveStoryDir,
+  resolveValidationCommands,
+  cleanEnvironment,
+  runValidationCommand,
+  commandTimeout,
+  captureEnvironment,
+} = require("./validation-run");
 
 function buildHarnessPreflight({ story = null } = {}) {
   const { config, exists } = readHarnessConfig();
@@ -265,6 +289,111 @@ function writeVerifyEvidence(evidence) {
   return writeTimestampedEvidence(harnessRunsDir(), "verify", evidence);
 }
 
+// A command an agent wrote into plan.md runs with the developer's (or the CI
+// runner's) secrets, so it needs a human watching — or an explicit say-so.
+const PLAN_COMMANDS_REFUSAL =
+  "commands from plan.md are not run unattended; declare them in .coding-flow/config.json " +
+  "(with the user's agreement) or pass --allow-plan-commands";
+
+function verifyStoryOnce({
+  story = null,
+  exemption = null,
+  skipCoverage = false,
+  unattended = isUnattended(),
+  allowPlanCommands = false,
+  cleanEnv = false,
+  announce = false,
+} = {}) {
+  const resolvedStory = story ? resolveProjectPath(story) : null;
+  const storyDir = resolveStoryDir(story);
+  setDiffBaseRequest({ flagBase: diffBaseFlag(), story });
+  const { config } = readHarnessConfig();
+  const freshRequired = freshTestsRequired({ storyDir, config });
+  const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
+  const refused = resolution.source === "plan.md" && unattended && !allowPlanCommands ? PLAN_COMMANDS_REFUSAL : null;
+  const cleaned = cleanEnv ? cleanEnvironment() : null;
+
+  if (announce && !refused && resolution.source === "plan.md") {
+    log("Running commands from plan.md (not from .coding-flow/config.json):");
+
+    for (const command of resolution.commands) {
+      log(`  ${command}`);
+    }
+  }
+
+  // Captured before the commands run: a coverage report older than this was not
+  // produced by this run, and must not be read as if it were.
+  const startedAt = Date.now();
+  const results = (refused ? [] : resolution.commands).map((command) => {
+    const item = runValidationCommand(command, {
+      ...commandTimeout(resolution, command),
+      ...(cleaned ? { env: cleaned.env } : {}),
+    });
+
+    // A full replay is not wrong, but at this risk level it is not proof that the
+    // tests ran against this code either.
+    // Quality commands (lint, format) are exempt: `freshCommands` cannot replace them.
+    if (freshRequired && item.ok && item.cache === "full" && !(resolution.quality || []).includes(command)) {
+      return {
+        ...item,
+        ok: false,
+        freshRequired:
+          "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
+          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands " +
+          "(`verify --no-cache` only skips the reuse of an earlier proof, not the build tool's cache).",
+      };
+    }
+
+    return item;
+  });
+  const commandsOk = results.length > 0 && results.every((item) => item.ok);
+  // Only evaluated on a green suite: a red one is already not a proof, and
+  // telling someone their failing story also lacks tests is noise.
+  const coverage = !commandsOk
+    ? { required: false, ok: true, reason: "not evaluated (commands did not pass)", changedFiles: [], testFiles: [] }
+    : skipCoverage
+      ? { required: false, ok: true, reason: "not evaluated (no single story to attribute this run to)", changedFiles: [], testFiles: [] }
+      : evaluateCoverage({ storyDir, config, exemption, startedAt });
+
+  const acceptanceCriteria = readAcceptanceCriteria(storyDir);
+  // Like coverage, only judged on a green suite for a single story.
+  const contrary = commandsOk && !skipCoverage
+    ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria })
+    : NO_CONTRARY;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    root: cwd,
+    provenance: captureIdentity(cwd),
+    story: resolvedStory ? resolvedStory.relativePath : null,
+    commandSource: resolution.source,
+    commandsFound: resolution.commands.length,
+    // Recorded so a later verify can recognise this proof as still applicable.
+    commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
+    // The floor this verdict was judged against. `.coding-flow/` is outside the
+    // tree token, so without it an edit to the floor would leave a stale "ok".
+    coverageFloor: resolveCoverageFloor(config),
+    // The rules this verdict was computed under; a different value is a different proof.
+    policyFingerprint: policyFingerprint(cwd),
+    untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
+    environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
+    unattended,
+    ...(refused ? { refused } : {}),
+    commandsOk,
+    // Which base every diff-derived signal below was measured from: a surprising
+    // coverage or risk verdict is explained by this line before anything else.
+    diffBase: publicDiffBase(currentDiffBase(cwd)),
+    coverage,
+    acceptanceCriteria,
+    // The policy the contrary-signals verdict was judged under, for the same
+    // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
+    contraryPolicy: contraryPolicy(config),
+    contrary,
+    ok: commandsOk && coverage.ok && contrary.ok,
+    results,
+  };
+}
+
 module.exports = {
   buildHarnessPreflight,
   checkStoryEvidence,
@@ -272,4 +401,6 @@ module.exports = {
   untrackedDigest,
   findReusableVerify,
   writeVerifyEvidence,
+  PLAN_COMMANDS_REFUSAL,
+  verifyStoryOnce,
 };
