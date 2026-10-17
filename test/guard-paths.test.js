@@ -96,8 +96,10 @@ test('a link made into a directory is read from that directory', (t) => {
   assert.equal(guard(dir, bash('ln -s -t x/y ../../.env')).code, 2);
   assert.equal(guard(dir, bash('ln -s ../.env x/')).code, 2);
   // Through a linked directory: a/ is sub/deep, so ../../.env from there is <root>/.env.
-  assert.equal(guard(dir, bash('ln -s ../../.env a/')).code, 2);
-  assert.equal(guard(dir, bash('ln -s -t a ../../.env')).code, 2);
+  for (const command of ['ln -s ../../.env a/', 'ln -s -t a ../../.env']) {
+    const seen = decide({ cwd: dir, ...bash(command) }, dir);
+    assert.equal(guard(dir, bash(command)).code, 2, `${command}: ${seen.decision} — ${seen.reason}`);
+  }
   // A directory made earlier in the same command does not exist when the guard reads it.
   assert.equal(guard(dir, bash('mkdir -p p/q && ln -s ../../.env p/q')).code, 2);
   assert.equal(guard(dir, bash('mkdir -p p/q && ln -s ../../.env p/q && echo A=1 > p/q/.env')).code, 2);
