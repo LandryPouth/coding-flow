@@ -153,3 +153,60 @@ test('a case-insensitive filesystem treats .ENV as .env', (t) => {
   assert.equal(decide(hook, dir, { caseInsensitive: true }).decision, 'deny');
   assert.equal(decide(hook, dir, { caseInsensitive: false }).decision, 'allow');
 });
+
+test('a cwd reached through a symlink does not climb past the repository to an outer .coding-flow', (t) => {
+  const dir = tmp(t);
+  const real = path.join(dir, 'real', 'proj');
+  fs.mkdirSync(path.join(real, '.coding-flow'), { recursive: true });
+  execFileSync('git', ['init', '-q'], { cwd: real, stdio: 'ignore' });
+  fs.mkdirSync(path.join(dir, 'container', '.coding-flow'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'container', '.coding-flow', 'harness.json'), '{"blockedPaths":[]}');
+  const linked = path.join(dir, 'container', 'proj');
+  fs.symlinkSync(real, linked);
+
+  assert.equal(guard(linked, write('.env')).code, 2);
+  assert.equal(guard(real, write('.env')).code, 2);
+});
+
+test('the secret-scan allowlist does not travel through a link out of docs/', (t) => {
+  const dir = tmp(t);
+  fs.mkdirSync(path.join(dir, 'docs'));
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'app.js'), '');
+  fs.symlinkSync('../src/app.js', path.join(dir, 'docs', 'notes.md'));
+  const secret = (file_path) => ({
+    tool_name: 'Write',
+    tool_input: { file_path, content: "password = 'abcdefghijklmnopqrstuvwxyz'" },
+  });
+
+  assert.equal(guard(dir, secret('docs/notes.md')).code, 2);
+  assert.equal(guard(dir, secret('docs/plain.md')).code, 0);
+});
+
+test('a timed-out git lookup is retried, not remembered as "no repository"', { skip: process.platform === 'win32' }, (t) => {
+  const primary = tmp(t);
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+  git(primary, 'init', '-q');
+  git(primary, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init');
+  const worktree = path.join(tmp(t), 'wt');
+  git(primary, 'worktree', 'add', '-q', worktree);
+
+  // A `git` on PATH that hangs past the guard's timeout on the first
+  // --git-common-dir lookup, then behaves like the real one.
+  const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  const bin = tmp(t);
+  const marker = path.join(bin, 'timed-out');
+  fs.writeFileSync(
+    path.join(bin, 'git'),
+    `#!/bin/sh\ncase "$*" in *--git-common-dir*) [ -e "${marker}" ] || { touch "${marker}"; exec sleep 5; } ;; esac\nexec "${realGit}" "$@"\n`,
+    { mode: 0o755 },
+  );
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${savedPath}`;
+  t.after(() => { process.env.PATH = savedPath; });
+
+  const hook = { cwd: worktree, ...write(path.join(primary, '.env')) };
+  decide(hook, worktree);
+  assert.ok(fs.existsSync(marker), 'the first lookup went through the hanging git');
+  assert.equal(decide(hook, worktree).decision, 'deny');
+});

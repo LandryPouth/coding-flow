@@ -77,6 +77,11 @@ found a dangling-link bypass and a nested-`.coding-flow` policy swap; both fixed
 and tested. Known limits left for 05-03/05-05: a link created in the same command,
 `$PWD`/`cd` forms, case-insensitive mounts on Linux (WSL `/mnt/c`).
 
+A second review (2026-10-17) found the toplevel bound compared a resolved git
+path with a lexical cwd (symlinked cwd, Windows `C:/…`), letting an outer
+`.coding-flow/` become the root; the heuristic secret allowlist judged only the
+name given; a git timeout was memoised as "no repo". All three fixed and tested.
+
 ### Rollback Notes
 
 `git revert` the commit; no data or config migration.

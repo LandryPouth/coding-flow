@@ -685,32 +685,48 @@ function shellWriteTargets(command) {
 
 const gitMemo = new Map();
 
+// A timed-out or killed git is not an answer: it is not memoised, so one slow
+// call under load does not make a long-lived process (the OpenCode plugin) treat
+// the repository as "no repo" for the rest of the session.
 function git(cwd, args) {
   const key = `${cwd}\0${args.join(" ")}`;
-  if (!gitMemo.has(key)) {
-    let out = null;
-    try {
-      out = execFileSync("git", ["-C", cwd, ...args], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-        timeout: 2000,
-      }).trim();
-    } catch {
-      out = null;
-    }
-    gitMemo.set(key, out || null);
+  if (gitMemo.has(key)) {
+    return gitMemo.get(key);
   }
-  return gitMemo.get(key);
+
+  let out = null;
+  try {
+    out = execFileSync("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
+    }).trim();
+  } catch (err) {
+    if (err && (err.signal || err.code === "ETIMEDOUT")) {
+      return null;
+    }
+  }
+  gitMemo.set(key, out || null);
+  return out || null;
 }
 
 // The OUTERMOST `.coding-flow/` between `cwd` and the git toplevel (so a nested
 // one cannot swap in a weaker policy), else the git toplevel, else `cwd` itself.
+//
+// The bound is checked on real paths: git prints the toplevel resolved (and with
+// `/` on Windows), so comparing it to a cwd reached through a symlink, or to a
+// `C:\…` path, never matches and the walk would climb past the repository.
 function projectRoot(cwd) {
   const start = path.resolve(cwd);
-  const top = git(start, ["rev-parse", "--show-toplevel"]);
+  const gitTop = git(start, ["rev-parse", "--show-toplevel"]);
+  const top = gitTop ? path.resolve(gitTop) : null;
+  const realTop = top ? realPathOf(top) : null;
   let found = null;
 
   for (let dir = start; ; dir = path.dirname(dir)) {
+    if (realTop && within(realTop, realPathOf(dir)) === null) {
+      break; // left the repository
+    }
     try {
       if (fs.statSync(path.join(dir, ".coding-flow")).isDirectory()) {
         found = dir;
@@ -721,7 +737,7 @@ function projectRoot(cwd) {
     } catch {
       // not here
     }
-    if (dir === top || path.dirname(dir) === dir) {
+    if (path.dirname(dir) === dir) {
       break;
     }
   }
@@ -849,8 +865,8 @@ function blockedPathHit(relative, policy, caseInsensitive = false) {
 }
 
 // First blocked name among everything this target resolves to.
-function firstHit(ctx, target, policy, caseInsensitive) {
-  for (const entry of resolveTargets(ctx, target)) {
+function firstHit(entries, policy, caseInsensitive) {
+  for (const entry of entries) {
     const hit = blockedPathHit(entry.relative, policy, caseInsensitive);
     if (hit) {
       return { hit, relative: entry.relative };
@@ -895,7 +911,8 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
     ctx.issues.push("harness.json could not be read (default policy applied)");
   }
   const filePath = targetPath(toolInput);
-  const found = filePath ? firstHit(ctx, filePath, policy, caseInsensitive) : null;
+  const names = filePath ? resolveTargets(ctx, filePath) : [];
+  const found = firstHit(names, policy, caseInsensitive);
   const relative = filePath ? normalizePortable(path.relative(ctx.root, path.resolve(ctx.cwd, filePath))) : null;
 
   // Check 1 — path blocked by the policy.
@@ -914,7 +931,9 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
 
   if (content) {
     const secret = findSecretsInContent(content, getSecretPatterns(policy), {
-      skipHeuristics: relative ? isHeuristicAllowlisted(relative, policy) : false,
+      // Every name must be allowlisted: `docs/notes.md -> ../src/app.js` writes
+      // into src/, and the docs allowance does not travel through the link.
+      skipHeuristics: names.length > 0 && names.every((entry) => isHeuristicAllowlisted(entry.relative, policy)),
       first: true,
     })[0];
 
@@ -967,7 +986,7 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     }
 
     const target = entry.target;
-    const found = firstHit(ctx, target, policy, caseInsensitive);
+    const found = firstHit(resolveTargets(ctx, target), policy, caseInsensitive);
 
     if (found) {
       const what =
