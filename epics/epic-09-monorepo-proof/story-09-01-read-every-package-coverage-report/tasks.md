@@ -5,5 +5,5 @@
 - [x] Measured vs unmeasured files; weakest rung.
 - [x] Evidence fields; verify output "verified, N reports".
 - [x] Tests (two packages, partial reports, stale report, single root report).
-- [ ] bethl read-only check recorded here (not run in review; still open).
+- [x] bethl read-only check recorded in `spec.md` (2026-10-17).
 - [x] `npm test`; verify; CHANGELOG; README coverage section with a turbo example.

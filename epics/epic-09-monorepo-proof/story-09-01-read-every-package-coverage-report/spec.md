@@ -50,9 +50,25 @@ A monorepo that already produces coverage gets `verified` instead of the
 
 ## Result
 
-bethl read-only check: **not run** — the project was unavailable. Open follow-up:
-run it before release (real Jest `SF:` paths and mtimes are what the synthetic
-fixtures cannot prove). Fixtures only cover this story until then.
+bethl read-only check (2026-10-17, a throwaway clone of `feature/EPIC-32-geo`
+under the scratchpad; bethl itself untouched, `node_modules` symlinked):
+
+- **Workspace defaults, no `coverageReports`.** `pnpm-workspace.yaml` adds
+  `*/*/coverage/*`; the existing `apps/api/coverage/lcov.info` (Jest, `SF:` relative
+  to `apps/api`) loads as package `apps/api`, 106 files resolved to
+  `apps/api/src/…` (9 missing on disk: files deleted since that May report).
+- **A foreign report is refused, not mis-read.** `apps/web/coverage/coverage-final.json`
+  holds absolute paths under the repo's old location (`…/saas/imob/…`): every key is
+  outside the root, so the report contributes nothing.
+- **A fresh run.** Validation command `cd apps/api && npx jest --coverage
+  --testPathIgnorePatterns openapi-contract` (that suite fails on its own: stale
+  `openapi.json`), plus a new `isAppWeekend` in `src/common/app-time.ts` tested on
+  Saturday only. Verify read the fresh report (213 files, `package: apps/api`) and
+  reported exactly `apps/api/src/common/app-time.ts` line 68 (`return false`) as not
+  executed — Jest's own lcov says `DA:68,0`. Rung: `missing` (NOT PROVEN, 75.2 % of
+  693 added lines against `develop`): the epic diff carries prisma scripts absent from
+  the report and an unmeasured `apps/web` (no fresh web report), which is the gate
+  doing its job, not a resolution error.
 
 ### Rollback Notes
 
