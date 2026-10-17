@@ -110,7 +110,7 @@ test('a normal session logs nothing', (t) => {
     ['WebFetch', { url: 'https://x.test' }], ['Task', { prompt: 'x' }], ['TodoWrite', { todos: [] }],
     ['read', { filePath: 'a.js' }], ['list', { path: dir }], ['skill', { name: 'x' }],
     ['Write', { file_path: 'src/new.js', content: 'x' }], ['Bash', { command: 'npm test' }],
-    ['Artifact', { file_path: 'page.html' }], ['ArtifactData', { file_path: 'd.json' }], ['mcp__fs__read_file', { path: 'a.js' }],
+    ['Artifact', { file_path: 'page.html' }], ['ArtifactData', { file_path: 'd.json' }],
   ];
   for (const [tool_name, tool_input] of calls) {
     assert.notEqual(evaluate({ tool_name, tool_input, cwd: dir }, dir).decision, 'unchecked', tool_name);
@@ -130,10 +130,60 @@ test('a relative path escaping the project logs the marker too', (t) => {
   assert.equal(logLines(dir)[0].path, '(outside project)');
 });
 
-test('an MCP write-named tool is exempt on purpose (design decision 11)', (t) => {
+test('an mcp__ tool is exempt; an OpenCode MCP tool (<server>_<tool>) is judged like any unknown tool (design decision 11)', (t) => {
   const dir = tmp(t);
   assert.equal(evaluate({ tool_name: 'mcp__fs__write_file', tool_input: { path: '.env' }, cwd: dir }, dir).decision, 'allow');
   assert.equal(logLines(dir).length, 0);
+  assert.equal(evaluate({ tool_name: 'fs_write_file', tool_input: { path: '.env' }, cwd: dir }, dir).decision, 'unchecked');
+  assert.equal(logLines(dir).length, 1);
+});
+
+test('a hook input that names no tool is unchecked, not allowed', (t) => {
+  const dir = tmp(t);
+  for (const hook of [{}, [], { cwd: dir, tool_input: { command: 'echo x > .env' } }]) {
+    assert.equal(decide(hook, dir).decision, 'unchecked', JSON.stringify(hook));
+  }
+});
+
+test('a Bash call with a missing or renamed command is unchecked; an empty one is allowed', (t) => {
+  const dir = tmp(t);
+  for (const tool_input of [undefined, {}, { cmd: 'echo x > .env' }]) {
+    assert.equal(decide({ tool_name: 'Bash', tool_input, cwd: dir }, dir).decision, 'unchecked', JSON.stringify(tool_input));
+  }
+  assert.equal(decide({ tool_name: 'Bash', tool_input: { command: '' }, cwd: dir }, dir).decision, 'allow');
+  const res = cli(dir, ['guard'], { tool_name: 'Bash', tool_input: { cmd: 'echo x > .env' } });
+  assert.equal(res.code, 0);
+  assert.equal(logLines(dir).length, 1);
+});
+
+test('the Claude hook turns an exception into unchecked: exit 0, NOT checked, one line', (t) => {
+  const dir = tmp(t);
+  const res = require('node:child_process').spawnSync(process.execPath, [CLI, 'guard'], {
+    cwd: dir, encoding: 'utf8',
+    input: JSON.stringify({ cwd: dir, tool_name: 'Write', tool_input: { file_path: 42, content: 'x' } }),
+  });
+  assert.equal(res.status, 0);
+  assert.match(res.stderr, /guard error.*NOT checked/);
+  assert.equal(logLines(dir).length, 1);
+  assert.match(logLines(dir)[0].reason, /guard error/);
+});
+
+test('a deny through evaluate writes nothing to the unchecked log', (t) => {
+  const dir = tmp(t);
+  assert.equal(evaluate({ tool_name: 'Write', tool_input: { file_path: '.env', content: 'A=1' }, cwd: dir }, dir).decision, 'deny');
+  assert.equal(logLines(dir).length, 0);
+  assert.equal(logLines(dir, 'denials.jsonl').length, 1);
+});
+
+test('a shell command too dynamic to read is counted by report, but doctor does not warn on it', (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init']).code, 0);
+  cli(dir, ['guard'], { tool_name: 'Bash', tool_input: { command: 'echo x > "$OUT"' } });
+  cli(dir, ['guard'], { tool_name: 'Bash', tool_input: { command: "node <<'EOF'\nconsole.log(1)\nEOF" } });
+  assert.equal(logLines(dir).length, 2);
+  assert.match(cli(dir, ['report']).stdout, /Unchecked writes \(2\)/);
+  const doctor = JSON.parse(cli(dir, ['doctor', '--json']).stdout);
+  assert.ok(!doctor.warnings.some((w) => w.code === 'guard_unchecked'));
 });
 
 test('a file whose name starts with two dots inside the project keeps its relative path', (t) => {

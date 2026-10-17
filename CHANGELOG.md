@@ -35,6 +35,16 @@ All notable changes to this project are documented here. The format is based on
   NOT checked" and logged to `guard-unchecked.jsonl`. An unchecked call caused by a non-string path
   (a number, an array) is now logged too, and the plugin's own fallback log is bounded like the
   guard's.
+- **Guard: a Bash call with no `command`, and a hook input that names no tool, are unchecked**
+  (story 05-02 review). `{"tool_name":"Bash","tool_input":{}}` (or a renamed `cmd` field) and `{}`
+  were allowed with no log line: a renamed field would have left every shell write unguarded in
+  silence. Only an explicit empty command is still allowed.
+- **`doctor` no longer warns on shell commands too dynamic to read** (story 05-02 review). A
+  write target built from `$VAR`, a `cd "$DIR"`, a heredoc-fed interpreter or a git pathspec file
+  are everyday use (about 100 a day on this repository): `report` still counts them, `doctor` warns
+  only when the guard itself could not do its job (an error, an unknown tool, a guard that could not
+  run). In OpenCode, MCP tools are named `<server>_<tool>`, not `mcp__…`: one carrying a path is
+  logged as unchecked like any unknown tool (the earlier note said they were exempt).
 
 ### Fixed
 
@@ -73,7 +83,7 @@ All notable changes to this project are documented here. The format is based on
   no readable target, a path that cannot be resolved, an unreadable `harness.json`, and in OpenCode an unreadable
   write/patch or a guard that could not run — is `unchecked`: still let through, but
   logged to `.coding-flow/guard-unchecked.jsonl`, counted by `ai-flow report`, and
-  warned about by `ai-flow doctor` for 7 days. MCP tools and the `Artifact*` tools are
+  warned about by `ai-flow doctor` for 7 days. Claude-style `mcp__*` tools and the `Artifact*` tools are
   not counted as unknown write tools; a path outside the project is logged as
   `(outside project)` (in `denials.jsonl` too, instead of a `../` chain); a spawned guard prints its "NOT checked" line on stderr.
 - **The guard judges the file a write reaches, not the string it was given.** The

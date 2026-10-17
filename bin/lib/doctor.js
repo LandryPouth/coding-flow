@@ -29,7 +29,7 @@ const { COMMAND_PLATFORMS } = require("./platforms/registry");
 const { scanProject } = require("./bootstrap");
 const { getStorage } = require("./storage");
 const { findGuardEntry, guardCommandString } = require("./settings");
-const { loadPolicy } = require("./guard");
+const { loadPolicy, isShellLimit } = require("./guard");
 const { inspectCodexSandbox } = require("./codex-settings");
 const { probeCodexSandbox, describeProbe } = require("./codex-probe");
 const { recordProbeEvidence } = require("./platforms/evidence");
@@ -307,7 +307,9 @@ function checkDuplicateNumbering(warnings) {
 }
 
 // Calls the guard let through because it could not judge them. Silence there
-// reads as protection; a recent entry says it was not.
+// reads as protection; a recent entry says it was not. A shell command too dynamic
+// to read (`> "$out"`, `node <<EOF`) is everyday use, ~100 a day here: `report`
+// counts it, but a warning that is always on is a warning nobody reads.
 function checkGuardUnchecked(warnings) {
   const file = path.join(cwd, ".coding-flow", "guard-unchecked.jsonl");
   let recent = 0;
@@ -317,7 +319,8 @@ function checkGuardUnchecked(warnings) {
 
     for (const line of fs.readFileSync(file, "utf8").split("\n")) {
       try {
-        if (line && Date.parse(JSON.parse(line).at) >= since) {
+        const entry = line ? JSON.parse(line) : null;
+        if (entry && Date.parse(entry.at) >= since && !isShellLimit(entry.reason)) {
           recent += 1;
         }
       } catch {

@@ -406,9 +406,20 @@ The guard reports `unchecked` for an unknown tool carrying a path field
 (story 05-02). `mcp__*` tools and the `Artifact*` tools are deliberately
 exempt: they are a server's own tools, not a write tool the guard could learn,
 and counting every one would bury the real unknowns in noise. Claude Code never
-sends them to the guard (the hook matcher is `Write|Edit|MultiEdit|NotebookEdit|Bash`).
+sends them to the guard (the hook matcher is `Write|Edit|MultiEdit|NotebookEdit|Bash`),
+so today the `mcp__` exemption only matters to a host that would send that spelling.
 
-**Known gap, accepted**: in OpenCode, an MCP filesystem write tool
-(`mcp__fs__write_file` with a `path`) is neither checked nor logged. Closing it
-means a per-server allowlist, which is policy the guard does not own. Revisit
-if a real MCP write bypass is observed.
+**Corrected in the 05-02 review**: OpenCode does not spell MCP tools `mcp__…`; it
+names them `<server>_<tool>` (`sanitize(server) + "_" + sanitize(tool)`, OpenCode's
+`mcp/catalog.ts`), which no name test can tell from a built-in. So in OpenCode an
+MCP tool carrying a `path` is **not** exempt: an MCP filesystem write
+(`fs_write_file`) is logged as unchecked — the earlier "neither checked nor
+logged" gap does not exist — and an MCP read with a `path` is logged too. That
+read noise is accepted: a per-server allowlist is policy the guard does not own.
+Revisit if it buries the real unknowns.
+
+**`doctor` does not warn on shell-reading limits.** A write target built from
+`$VAR`, a `cd` into an expansion, a heredoc-fed interpreter and a git pathspec
+file are limits of reading shell text, not a guard failure, and they are
+everyday use: ~100 a day on this repository's own log. `report` counts them;
+`doctor` warns only on the reasons that mean the guard could not do its job.

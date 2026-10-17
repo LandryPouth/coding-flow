@@ -56,8 +56,10 @@ const READ_ONLY_TOOLS = new Set(
     "Artifact", "ArtifactData", "ArtifactComments", "ArtifactCheck",
   ].map((name) => name.toLowerCase()),
 );
-// MCP tools (`mcp__server__tool`) are the server's own, not a write tool the guard
-// could learn: counting them would bury the real unknowns in noise.
+// MCP tools named `mcp__server__tool` (Claude Code's spelling) are the server's own,
+// not a write tool the guard could learn. Claude Code never sends them (the hook
+// matcher names its write tools). OpenCode spells them `<server>_<tool>`, which no
+// name test can tell from a built-in: those are judged like any unknown tool.
 const isMcpTool = (name) => /^mcp__/i.test(String(name || ""));
 const PATH_FIELDS = ["file_path", "path", "filePath", "notebook_path"];
 
@@ -212,6 +214,13 @@ function classify(token) {
 const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 const EXPANSION = "write target depends on shell expansion";
 const UNKNOWN_CWD = "the working directory depends on shell expansion";
+const PATHSPEC_FILE = "git reads its paths from a file";
+const HEREDOC_PROGRAM = "an interpreter reads its program from a heredoc";
+// A command too dynamic to read is a limit of reading shell text, met in everyday
+// use (`> "$out"`, `node <<EOF`): `report` counts it, `doctor` does not warn on it.
+// Every other unchecked reason means the guard itself could not do its job.
+const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM]);
+const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 
 // Splits a command into segments at `&&`, `||`, `;`, `|`, `&`, newline and
 // parentheses, never inside quotes and never inside a heredoc body. Each segment
@@ -651,7 +660,7 @@ function shellWrites(command, startCwd = process.cwd()) {
       }
       git.paths.forEach((file) => add(file, "write"));
       if (git.fromFile) {
-        found.push({ target: "(pathspec file)", kind: "write", unchecked: "git reads its paths from a file" });
+        found.push({ target: "(pathspec file)", kind: "write", unchecked: PATHSPEC_FILE });
       }
       cwd = saved;
     } else if (name === "eval") {
@@ -681,7 +690,7 @@ function shellWrites(command, startCwd = process.cwd()) {
       // A program read from a heredoc / here-string is data to the splitter: it cannot be judged.
       const reader = INTERPRETERS.some(([pattern]) => pattern.test(name)) || SHELLS.has(name);
       if (reader && programs.length === 0 && segment.text.includes("<<") && args.every((arg) => arg.startsWith("-") || arg.startsWith("<"))) {
-        found.push({ target: `(${name} program)`, kind: "write", unchecked: "an interpreter reads its program from a heredoc" });
+        found.push({ target: `(${name} program)`, kind: "write", unchecked: HEREDOC_PROGRAM });
       }
     }
 
@@ -973,8 +982,13 @@ const CASE_INSENSITIVE = process.platform === "win32" || process.platform === "d
 
 // Pure decision: from the hook input + root, returns allow/deny + reason.
 function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
-  if (!hook || typeof hook !== "object") {
+  if (!hook || typeof hook !== "object" || Array.isArray(hook)) {
     return { decision: "unchecked", reason: "no parseable hook input" };
+  }
+
+  // `{}` or a renamed field: nothing says which tool this is, so nothing was judged.
+  if (typeof hook.tool_name !== "string" || !hook.tool_name) {
+    return { decision: "unchecked", reason: "hook input names no tool" };
   }
 
   const toolName = hook.tool_name;
@@ -1058,11 +1072,12 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
 // line: `psql "password=…"` and `export TOKEN=$(…)` are normal, and a guard that
 // cries wolf on them is a guard people route around.
 function decideBash(toolInput, hook, root, caseInsensitive) {
-  const command = toolInput && typeof toolInput.command === "string" ? toolInput.command : "";
-
-  if (toolInput && typeof toolInput === "object" && "command" in toolInput && typeof toolInput.command !== "string") {
+  // A missing or renamed `command` is not an empty one: only `""` has nothing to check.
+  if (!toolInput || typeof toolInput !== "object" || typeof toolInput.command !== "string") {
     return { decision: "unchecked", reason: "Bash carried no readable command" };
   }
+
+  const command = toolInput.command;
 
   if (!command.trim()) {
     return { decision: "allow", reason: "no command to inspect" };
@@ -1307,4 +1322,4 @@ function evaluate(hook, root) {
   }
 }
 
-module.exports = { guardCommand, decide, evaluate, recordUnchecked, shellWriteTargets, shellWrites, loadPolicy };
+module.exports = { guardCommand, decide, evaluate, recordUnchecked, isShellLimit, shellWriteTargets, shellWrites, loadPolicy };
