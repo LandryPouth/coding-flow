@@ -44,3 +44,30 @@ test('the exemption never applies to an exact pattern, whatever it captures', ()
 
   assert.equal(findSecretsInContent('token="$(vault read x)"', exact).length, 1);
 });
+
+// The exemption is for a value that is ONE expansion, not for any value that
+// merely starts with `$` (independent review of 13-02).
+test('a literal that merely starts with $ or follows an expansion is still a finding', () => {
+  for (const line of [
+    'password="$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"',
+    'secret="${HOME}realliteralsecret1234567890"',
+    'password="$(a)realliteralsecret1234567890$(b)"',
+    'password="`a`realliteralsecret1234567890"',
+  ]) {
+    assert.equal(scan(line).length, 1, line);
+  }
+});
+
+test('a literal assignment after an expansion on the same line is still a finding', () => {
+  const line = 'password="$(aws secretsmanager get-random-password --x)" token="realliteralsecret1234567890"';
+
+  assert.equal(scan(line).length, 1);
+});
+
+test('nested expansions and a global-flag custom pattern behave the same', () => {
+  assert.deepEqual(scan('password="$(aws ssm get-parameter --name $(printf %s x))"'), []);
+
+  const custom = [{ name: 'c', regex: /token\s*=\s*"[^"]{20,}"/g, precision: 'heuristic' }];
+  assert.equal(findSecretsInContent('token="$(vault read secret/app/prod-token)"', custom).length, 0);
+  assert.equal(findSecretsInContent('token="literal-literal-literal-lit"', custom).length, 1);
+});

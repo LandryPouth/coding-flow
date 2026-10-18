@@ -492,3 +492,23 @@ bundled scanners, scoring the developer, persona prompts.
 Entry 6's precedent is reaffirmed, not loosened: three exceptions in two
 months, each on a premise named and measured, not a pattern of arguments
 accumulating.
+
+## 14. The secret heuristic stops at a single shell expansion
+
+Story 13-02. `password="$(aws secretsmanager get-random-password …)"` is a
+secret fetched at run time, not written. A heuristic match is dropped only when
+its quoted value is, as a whole, ONE expansion (`$VAR`, `${VAR:-x}`, a balanced
+`$(…)`, one backtick pair), and every match on the line is judged: `a="$(x)"
+b="literal…"` still reports `b`. Exact formats are never exempt.
+
+What this deliberately lets through, because syntax cannot tell it from the
+case it must allow:
+
+- a literal inside the expansion (`$(echo hunter2…)`): what a command receives
+  as an argument is not inspected;
+- a bare variable-looking value (`"$realsecret1234567890"`) — identical in shape
+  to `"$DB_PASSWORD_FROM_THE_VAULT_X"`.
+
+A literal around the expansion (`$2b$10$<hash>`, `${HOME}secret…`) is reported.
+The detector is a net for accidents, not a proof of absence; exact patterns are
+the guarantee.

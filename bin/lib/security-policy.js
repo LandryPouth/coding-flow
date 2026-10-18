@@ -67,23 +67,56 @@ function isHeuristicAllowlisted(relativePath, config) {
   return allowlist.some((pattern) => matchesPattern(relativePath, pattern));
 }
 
-// A heuristic match whose quoted value starts with `$` or a backtick is a shell
-// expansion (`$(aws secretsmanager …)`, `${VAR:-x}`, `$VAR`): the secret is
-// fetched at run time, it is not written here. Exact formats never get this
-// exemption, so a real key inside a `$(…)` line is still found.
-function isShellExpansion(line, regex) {
-  const match = regex.exec(line);
-  const value = match && /[:=]\s*["']([^"']*)/.exec(match[0]);
+// Whether a quoted value is, as a whole, ONE shell expansion: `$VAR`,
+// `${VAR:-x}`, a balanced `$(…)`, or a single backtick pair. The secret is then
+// fetched at run time, it is not written here. A literal around or after the
+// expansion (`$2b$10$<hash>`, `${HOME}secret…`, `$(a)literal$(b)`) is not
+// exempt. What sits INSIDE the expansion is not inspected: a literal passed as a
+// command argument is an accepted gap of this heuristic (design-decisions).
+function isSingleExpansion(value) {
+  if (/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(value) || /^`[^`]*`$/.test(value)) {
+    return true;
+  }
 
-  return Boolean(value && /^[$`]/.test(value[1]));
-}
+  const open = value.startsWith("${") ? "{" : value.startsWith("$(") ? "(" : null;
 
-function matchesLine(pattern, line) {
-  if (!pattern.regex.test(line)) {
+  if (!open) {
     return false;
   }
 
-  return pattern.precision === "exact" || !isShellExpansion(line, pattern.regex);
+  const close = open === "{" ? "}" : ")";
+  let depth = 0;
+
+  for (let index = 1; index < value.length; index += 1) {
+    if (value[index] === open) {
+      depth += 1;
+    } else if (value[index] === close) {
+      depth -= 1;
+
+      if (depth === 0) {
+        return index === value.length - 1;
+      }
+    }
+  }
+
+  return false;
+}
+
+// A heuristic pattern fires on a line unless EVERY match on it is a single shell
+// expansion: `a="$(x)" b="literal…"` still reports `b`. Exact patterns never get
+// this exemption, so a real key inside a `$(…)` line is still found.
+function matchesLine(pattern, line) {
+  if (pattern.precision === "exact") {
+    return pattern.regex.test(line);
+  }
+
+  const flags = pattern.regex.flags.includes("g") ? pattern.regex.flags : `${pattern.regex.flags}g`;
+
+  return [...line.matchAll(new RegExp(pattern.regex.source, flags))].some((match) => {
+    const value = /[:=]\s*["']([^"']*)/.exec(match[0]);
+
+    return !(value && isSingleExpansion(value[1]));
+  });
 }
 
 // The single scanning primitive, shared by the after-the-fact scan (`harness

@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
-- **A command substitution is not a credential.** The "Long assigned credential" heuristic no longer reports `password="$(aws secretsmanager get-random-password …)"`, `"${DB_PASSWORD:-…}"`, `"$VAR"` or a backtick substitution: the secret is fetched at run time, it is not written in the file. Heuristic matches only; an exact key format (AWS, GitHub, Stripe…) in the same line is still refused.
+- **A command substitution is not a credential.** The "Long assigned credential" heuristic no longer reports `password="$(aws secretsmanager get-random-password …)"`, `"${DB_PASSWORD:-…}"`, `"$VAR"` or a backtick substitution: the secret is fetched at run time, it is not written in the file. Only a value that is one whole expansion is exempt (`$2b$10$…` or `${HOME}secret…` still report, and so does a second literal assignment on the same line); heuristic matches only; an exact key format (AWS, GitHub, Stripe…) in the same line is still refused.
 - **The guard's secret refusal says what to do with a fixture.** A test that needs a key-shaped string builds it at run time (`"AKIA" + "…"`), the convention the suite already follows, instead of leaving the agent to guess.
 
 ## [0.14.0] - 2026-10-18
