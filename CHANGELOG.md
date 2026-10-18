@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-18
+
+Core first: the guard and `verify` stand on their own without stories (story-less verify keeps the coverage gate and diff risk, a test pins the core/layer boundary, the docs lead with the minimal install). `--help` never acts, and a minimal install stays minimal: **a plain `init` no longer promotes a minimal install** (`init --full` does). Also the hardening of epics 05–11: guard, proof scope, evidence levels, ship safety, the real-host smoke test and the first benchmark run. 0.12.1 was never published to npm; its fix ships here.
+
 ### Added
 
 - **`report` counts story-less verify runs apart from story runs** (story 12-01): `activity.verifyStoryRuns` / `activity.verifyStorylessRuns` in `--json`, and a "Verify scope" line in the Markdown. Runs with no story (a core-only install's proofs, and `worktree land`'s re-verifies) are no longer mixed in with story proofs.
@@ -237,6 +241,8 @@ All notable changes to this project are documented here. The format is based on
   run `git remote set-head origin -a`.
 
 ## [0.12.1] - 2026-10-16
+
+Never published to npm (no tag); this fix first ships in 0.13.0.
 
 ### Fixed
 
