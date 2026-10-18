@@ -5,3 +5,5 @@
 - [x] `init` keeps minimal; `--full` promotes (dry-run aware).
 - [x] Snapshot test over every command; minimal/full tests.
 - [x] `npm test`; verify; CHANGELOG; resolve the DOGFOODING row.
+
+## Status: done
