@@ -14,10 +14,16 @@ const { policyFingerprint } = require("./policy-fingerprint");
 const { captureIdentity } = require("./identity");
 const { currentBranch } = require("./policy");
 const { resolveProjectPath, readStoryBundle, extractSection } = require("./story");
-const {
-  detectFeature: detectSpecKitFeature,
-  isFeatureOf: isSpecKitFeatureOf,
-} = require("./speckit");
+
+// Where a work item lives other than epics/ (a Spec Kit feature directory) is
+// layer knowledge: the entry point registers it, the core never requires it.
+// With none registered, only epics/ stories are accepted and nothing is guessed.
+// test/speckit-adapter.test.js drives verify through the CLI to prove the wiring.
+let storyLocator = { detectFeature: () => null, isFeatureOf: () => false };
+
+function registerStoryLocator(locator) {
+  storyLocator = locator;
+}
 const {
   fail,
   log,
@@ -298,7 +304,7 @@ function requireStoryScope(story) {
   // tasks.md are the same three roles under a different parent. Accepting it here
   // is the whole of the adapter — nothing downstream needs to know which layout
   // produced the work item.
-  if (!relative.startsWith("epics/") && !isSpecKitFeatureOf(cwd, storyDir)) {
+  if (!relative.startsWith("epics/") && !storyLocator.isFeatureOf(cwd, storyDir)) {
     fail(
       `--story "${story}" is not under epics/ or specs/. Verify proves stories, not arbitrary directories.`,
     );
@@ -309,7 +315,7 @@ function requireStoryScope(story) {
 // costs nothing and makes the proof layer usable without adopting epics/.
 // The source is always reported: a scope we guessed must say it guessed.
 function detectStoryScope() {
-  const feature = detectSpecKitFeature(cwd, { branch: currentBranch(cwd) });
+  const feature = storyLocator.detectFeature(cwd, { branch: currentBranch(cwd) });
 
   return feature
     ? { story: normalizePortable(path.relative(cwd, feature.dir)), source: feature.source }
@@ -521,6 +527,7 @@ function harnessCommandInner({ commandArgs, getFlagValue, flags }) {
 }
 
 module.exports = {
+  registerStoryLocator,
   harnessConfigPath,
   harnessRunsDir,
   defaultHarnessConfig,
