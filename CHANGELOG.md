@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **`worktree land --dry-run` is a dry run.** It used to start the real rebase and could leave the story worktree mid-rebase. It now runs land's checks, predicts a conflict without touching anything, and prints the steps it would take. `worktree lock`, `unlock`, `place` and `autoland` refuse `--dry-run` instead of ignoring it and acting.
+- **A story whose work is in its worktree is judged there.** From another checkout, `status` reads the story's state from its worktree (not `planned` from the stale copy), `next` reads the proof there and tells you to `cd` to it, and `verify --story` refuses instead of proving the wrong tree. `/flow-review` and `/flow-run` locate the worktree first.
+
 ## [0.13.0] - 2026-10-18
 
 Core first: the guard and `verify` stand on their own without stories (story-less verify keeps the coverage gate and diff risk, a test pins the core/layer boundary, the docs lead with the minimal install). `--help` never acts, and a minimal install stays minimal: **a plain `init` no longer promotes a minimal install** (`init --full` does). Also the hardening of epics 05–11: guard, proof scope, evidence levels, ship safety, the real-host smoke test and the first benchmark run. 0.12.1 was never published to npm; its fix ships here.

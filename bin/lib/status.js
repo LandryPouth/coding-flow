@@ -9,7 +9,8 @@ const path = require("path");
 
 const { cwd } = require("./context");
 const { log, toPortable } = require("./util");
-const { collectWorktrees, realDirtyLines } = require("./worktree");
+const { collectWorktrees, realDirtyLines, storyWorkElsewhere } = require("./worktree");
+const { inferStoryStatus } = require("./storage/local");
 const { latestVerifyByStoryDir, latestReviewByStoryDir, latestVerifyScopeByStoryDir, isStale, staleReason } = require("./audit");
 const { currentTreeToken } = require("./identity");
 const { policyFingerprint } = require("./policy-fingerprint");
@@ -130,6 +131,32 @@ function computeReviewRequired(root, story, cache = new Map()) {
   return risk.level === "high";
 }
 
+// A story with a linked worktree is judged where its work is: the story files,
+// the verify evidence and the tree token of that worktree, not this checkout's
+// copy — which, before the work lands, is the story as planned. A worktree
+// holding commits this checkout lacks, or uncommitted changes, is at least
+// in progress even when its story files say nothing yet. Local storage only:
+// another backend's status does not live in the tree. `null` keeps the status
+// the storage already gave.
+function statusInWorktree(config, wtRoot, story, verifyByRoot) {
+  if (config.storage && config.storage !== "local") return null;
+  const storyDir = path.join(wtRoot, story.path);
+  if (!fs.existsSync(storyDir)) return null;
+
+  if (!verifyByRoot.has(wtRoot)) {
+    verifyByRoot.set(wtRoot, latestVerifyByStoryDir(wtRoot));
+  }
+  const entry = verifyByRoot.get(wtRoot).get(story.path);
+  const verify = entry ? (entry.ok ? "pass" : "fail") : null;
+  const fresh = !entry || !isStale(entry, currentTreeToken(wtRoot), policyFingerprint(wtRoot));
+  const status = inferStoryStatus(storyDir, { verify, fresh });
+
+  if (status === "planned" && storyWorkElsewhere(cwd, story.path)) {
+    return "in-progress";
+  }
+  return status;
+}
+
 const PLANS_DIR = "docs/plans";
 
 // A design doc under docs/plans/ that no epic's index.md references yet — a
@@ -179,8 +206,10 @@ function buildStatusModel(config) {
 
   const epics = storage.listEpics().map((epic) => ({
     ...epic,
-    stories: epic.stories.map((story) => {
-      const wtEntry = wt.byBranch.get(story.name) || null;
+    stories: epic.stories.map((listed) => {
+      const wtEntry = wt.byBranch.get(listed.name) || null;
+      const inWorktree = wtEntry && wtEntry.fullPath !== cwd ? statusInWorktree(config, wtEntry.fullPath, listed, verifyByRoot) : null;
+      const story = inWorktree && inWorktree !== listed.status ? { ...listed, status: inWorktree, statusFrom: "worktree" } : listed;
 
       if (wtEntry) {
         mappedBranches.add(story.name);

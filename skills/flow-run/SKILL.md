@@ -29,6 +29,11 @@ below are that pipeline, inlined.
 
 When `ai-flow` is available, use the harness automatically.
 
+**Work where the story lives.** If `ai-flow status` shows the story with `→ wt: <path>`,
+its work is in that worktree: `cd <path>` before reading, editing or verifying.
+`verify --story` refuses from another checkout while that worktree holds work, and
+says where to go.
+
 > If bare `ai-flow` is not on `PATH` (common when the plugin is installed but the
 > package was never linked globally), run the same commands via
 > `npx @landry_pouth/coding-flow <args>`.

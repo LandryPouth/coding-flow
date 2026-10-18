@@ -29,7 +29,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow worktree remove <name> [--force] [--dry-run]
   ai-flow worktree lock --story <path>
   ai-flow worktree unlock [--story <path>] [--force]
-  ai-flow worktree land <name>|--story <path>
+  ai-flow worktree land <name>|--story <path> [--dry-run]
   ai-flow worktree place --epic <path> --story <path> [--json]
   ai-flow worktree autoland --epic <path> --story <path> [--json]
   ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit] [--all]

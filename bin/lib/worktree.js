@@ -762,7 +762,97 @@ function landLockTimeouts(commandCount, worstCaseMs = commandCount * PER_COMMAND
 // from: ff-only merge when possible, a rebase replay when the target moved,
 // a hard stop (never an auto-resolve) on a real conflict. See spec.md /
 // plan.md under story-02-02 for the full contract.
-function worktreeLand(name, { cwd, story }) {
+// What `git merge-tree` predicts for merging `branch` into HEAD, without
+// touching the index, the tree or any ref (git >= 2.38). A rebase replays
+// commit by commit, so this is a prediction from the two tips, said as one.
+function predictConflicts(root, branch) {
+  const result = git(root, ["merge-tree", "--write-tree", "--name-only", "--no-messages", "HEAD", branch], {
+    allowFail: true,
+  });
+  if (result.code === 0) return { known: true, files: [] };
+  if (result.code === 1) {
+    const files = result.stdout.split("\n").slice(1).map((line) => line.trim()).filter(Boolean);
+    return { known: true, files: [...new Set(files)] };
+  }
+  return { known: false, files: [] };
+}
+
+// `land --dry-run`: the same checks as a real land, in the same order and with
+// the same failure messages, then the steps it would take. Takes no lock and
+// runs nothing that writes — a preview that rebases is not a preview
+// (DOGFOODING, 2026-10-18).
+function previewLand(root, match, branch, found) {
+  const alreadyLanded = git(root, ["merge-base", "--is-ancestor", branch, "HEAD"], { allowFail: true }).code === 0;
+
+  if (alreadyLanded) {
+    log("Dry run — nothing was changed.");
+    log(
+      `Already landed: "${branch}" has nothing new for this branch. land would remove the worktree at ` +
+        `${match.path} and delete the branch "${branch}".`,
+    );
+    return;
+  }
+
+  if (!found) {
+    fail(
+      `worktree "${path.basename(match.path)}" is not linked to a known story (no matching epics/*/story-* directory). ` +
+        "land requires a story with a recorded verify.",
+    );
+  }
+
+  const verifyEntry = latestVerifyByStoryDir(match.path).get(found.story.path);
+  if (!verifyEntry || verifyEntry.ok !== true) {
+    fail(
+      `no green verify recorded for story "${found.story.path}". ` +
+        `Run "ai-flow verify --story ${found.story.path}" in the worktree first.`,
+    );
+  }
+  if (isStale(verifyEntry, currentTreeToken(match.path), policyFingerprint(match.path))) {
+    fail(
+      `the verify recorded for story "${found.story.path}" is stale (the tree or the policy changed since). ` +
+        `Run "ai-flow verify --story ${found.story.path}" again in the worktree.`,
+    );
+  }
+
+  const ahead = git(root, ["rev-list", "--count", `HEAD..${branch}`]).stdout.trim();
+  const steps = [];
+
+  if (git(root, ["merge-base", "--is-ancestor", "HEAD", branch], { allowFail: true }).code === 0) {
+    steps.push(`fast-forward this checkout to "${branch}" (${ahead} commit(s))`);
+  } else {
+    const behind = git(root, ["rev-list", "--count", `${branch}..HEAD`]).stdout.trim();
+    const prediction = predictConflicts(root, branch);
+    if (prediction.files.length) {
+      fail(
+        `Dry run — nothing was changed. land would stop: rebasing "${branch}" onto this checkout's tip ` +
+          `(${behind} new commit(s) here) is predicted to conflict on:\n` +
+          prediction.files.map((f) => `  ${f}`).join("\n"),
+      );
+    }
+    steps.push(
+      `rebase the ${ahead} commit(s) of "${branch}" onto this checkout's tip (${behind} new commit(s) here), ` +
+        `inside the story worktree — ${prediction.known ? "no conflict predicted" : "conflicts not predicted (needs git >= 2.38)"}`,
+    );
+    steps.push(`fast-forward this checkout to the rebased "${branch}"`);
+  }
+
+  let commands = [];
+  try {
+    commands = resolveValidationCommands({ storyDir: null }).commands;
+  } catch {
+    // Reported as "the configured commands" below.
+  }
+  steps.push(
+    `re-run the validation commands on the merged result (${commands.length ? commands.join(", ") : "the configured commands"}) ` +
+      "and reset this checkout if they fail",
+  );
+  steps.push(`remove the worktree at ${match.path} and delete the branch "${branch}"`);
+
+  log("Dry run — nothing was changed. land would:");
+  steps.forEach((step, index) => log(`  ${index + 1}. ${step}`));
+}
+
+function worktreeLand(name, { cwd, story, dryRun = false }) {
   const root = requireRepo(cwd);
   let lookupName = name;
 
@@ -825,6 +915,11 @@ function worktreeLand(name, { cwd, story }) {
   // there, and the normal path also needs it to fail loudly when the branch
   // is not linked to a known story at all.
   const found = findStoryForBranch(root, branch);
+
+  if (dryRun) {
+    previewLand(root, match, branch, found);
+    return;
+  }
 
   // Everything from here on mutates the shared main checkout (`root`) —
   // serialized so a second `land` targeting the same checkout waits its turn
@@ -1027,6 +1122,39 @@ function positionalArgs(args) {
 // them: they are valid `ai-flow worktree <sub>` subcommands from a user's
 // point of view, even though this function's own `sub` branches never see
 // them in practice.
+// Where a story's work lives when it is not here: its linked worktree (branch
+// named after the story directory, the mapping `status` uses), when that
+// worktree holds commits this checkout does not have, or uncommitted changes.
+// `null` when the story has no other worktree, or nothing there is missing
+// here. Read-only. Lets every story-targeted command say "the work is over
+// there" instead of judging this checkout's copy (DOGFOODING, 2026-10-16:
+// `/flow-review` concluded a story was unimplemented while its work sat in a
+// worktree).
+function storyWorkElsewhere(cwd, storyPath) {
+  if (!storyPath) return null;
+  const branch = path.basename(String(storyPath).replace(/[\\/]+$/, ""));
+  const { isRepo, root, entries } = collectWorktrees(cwd);
+  if (!isRepo || !branch.startsWith("story-")) return null;
+
+  const entry = entries.find((e) => !e.bare && e.branch === branch);
+  if (!entry || samePath(entry.path, root)) return null;
+
+  const count = git(root, ["rev-list", "--count", `HEAD..${branch}`], { allowFail: true });
+  const ahead = count.code === 0 ? Number(count.stdout.trim()) || 0 : 0;
+  const dirty = realDirtyLines(entry.path).length;
+  if (ahead === 0 && dirty === 0) return null;
+
+  return { path: entry.path, relative: path.relative(cwd, entry.path) || ".", branch, ahead, dirty };
+}
+
+// A subcommand that writes and has no preview must refuse `--dry-run`, never
+// ignore it: ignoring it runs the real thing for someone who asked to look.
+function refuseDryRun(sub, dryRun) {
+  if (dryRun) {
+    fail(`worktree ${sub} does not support --dry-run; nothing was done.`);
+  }
+}
+
 function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story }) {
   const sub = commandArgs[0];
   const name = positionalArgs(commandArgs.slice(1))[0];
@@ -1038,11 +1166,13 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
   } else if (sub === "remove" || sub === "rm") {
     worktreeRemove(name, { force, dryRun, cwd });
   } else if (sub === "lock") {
+    refuseDryRun(sub, dryRun);
     worktreeLock(story, { cwd });
   } else if (sub === "unlock") {
+    refuseDryRun(sub, dryRun);
     worktreeUnlock({ cwd, story, force });
   } else if (sub === "land") {
-    worktreeLand(name, { cwd, story });
+    worktreeLand(name, { cwd, story, dryRun });
   } else {
     fail(`unknown worktree subcommand: "${sub || ""}". Use add, list, remove, lock, unlock, land, place or autoland.`);
   }
@@ -1052,6 +1182,7 @@ module.exports = {
   worktreeCommand,
   collectWorktrees,
   realDirtyLines,
+  storyWorkElsewhere,
   worktreeAdd,
   worktreeDest,
   requireRepo,
