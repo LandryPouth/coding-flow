@@ -54,6 +54,18 @@ node evals/benchmark/run.js accept "$WORKSPACE" 05-cross-module
 diff at the end is exactly what the arm did. `accept` runs the baseline suite
 (regression) and the grader (acceptance), and exits non-zero if either fails.
 
+## Summarising a committed run
+
+```bash
+node evals/benchmark/run.js summarize evals/benchmark/runs/2026-10-17
+```
+
+Prints the results table (first-pass, round-trips, tokens, cache, cost, time, spec
+lines added, and the coding-flow/vanilla ratios) from a `runs/<date>/` directory laid
+out as its `README.md` describes. The experiment document quotes this output between
+`summarize:begin`/`summarize:end` markers, and `test/benchmark-results.test.js` fails
+when the two differ: regenerate, never edit the table by hand.
+
 ## Validation of the harness itself
 
 Re-run these two if you change anything here.

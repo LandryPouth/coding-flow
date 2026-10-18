@@ -1,0 +1,54 @@
+diff --git a/spec/money.spec.js b/spec/money.spec.js
+index ec6ee05..8a9397c 100644
+--- a/spec/money.spec.js
++++ b/spec/money.spec.js
+@@ -22,6 +22,13 @@ test('amounts render with two decimals', () => {
+   assert.equal(formatAmount(1234), '$12.34');
+   assert.equal(formatAmount(700), '$7.00');
+   assert.equal(formatAmount(5), '$0.05');
++  assert.equal(formatAmount(0), '$0.00');
++});
++
++test('negative amounts render with the sign before the dollar sign', () => {
++  assert.equal(formatAmount(-1234), '-$12.34');
++  assert.equal(formatAmount(-34), '-$0.34');
++  assert.equal(formatAmount(-5), '-$0.05');
+ });
+ 
+ test('summing stays in cents', () => {
+diff --git a/spec/report.spec.js b/spec/report.spec.js
+index 1097d87..6b52176 100644
+--- a/spec/report.spec.js
++++ b/spec/report.spec.js
+@@ -47,3 +47,11 @@ test('the summary renders each category once, sorted', () => {
+ 
+   assert.equal(reporter.summary(), 'meals: $5.00\ntravel: $10.00');
+ });
++
++test('the summary shows a net credit with a leading minus', () => {
++  const { reporter, router } = app();
++  file(router, { amount: '-0.34', category: 'travel' });
++  file(router, { amount: '-12.00', category: 'meals' });
++
++  assert.equal(reporter.summary(), 'meals: -$12.00\ntravel: -$0.34');
++});
+diff --git a/src/money.js b/src/money.js
+index da5a213..13ec3cb 100644
+--- a/src/money.js
++++ b/src/money.js
+@@ -24,10 +24,12 @@ function parseAmount(input) {
+ }
+ 
+ function formatAmount(cents) {
+-  const whole = Math.trunc(cents / 100);
+-  const fraction = Math.abs(cents % 100);
++  const sign = cents < 0 ? '-' : '';
++  const absolute = Math.abs(cents);
++  const whole = Math.trunc(absolute / 100);
++  const fraction = absolute % 100;
+ 
+-  return `$${whole}.${String(fraction).padStart(2, '0')}`;
++  return `${sign}$${whole}.${String(fraction).padStart(2, '0')}`;
+ }
+ 
+ function sumCents(amounts) {

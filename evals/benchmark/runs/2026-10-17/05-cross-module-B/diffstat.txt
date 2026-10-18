@@ -1,0 +1,13 @@
+ spec/report.spec.js | 49 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/approvals.js    |  8 +++++++-
+ src/report.js       |  5 +++++
+ 3 files changed, 56 insertions(+), 6 deletions(-)
+ M spec/report.spec.js
+ M src/approvals.js
+ M src/report.js
+?? .coding-flow/guard-unchecked.jsonl
+?? .coding-flow/runs/2026-10-17T22-47-44-660Z-verify.json
+?? .coding-flow/runs/2026-10-17T22-47-53-828Z-verify.json
+?? .gitignore
+?? epics/epic-01-report-totals-match-payouts/
+?? spec/accept.spec.js

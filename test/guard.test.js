@@ -505,13 +505,13 @@ test('guard loads only the modules it needs', () => {
   });
   const loaded = JSON.parse(raw);
 
-  for (const heavy of ['ship.js', 'worktree.js', 'doctor.js', 'templates.js', 'bootstrap.js', 'audit.js']) {
+  for (const heavy of ['harness.js', 'ship.js', 'worktree.js', 'doctor.js', 'templates.js', 'bootstrap.js', 'audit.js']) {
     assert.ok(!loaded.libs.includes(heavy), `guard must not load ${heavy}`);
   }
 
   assert.ok(!loaded.crypto, 'util.js must not pull in crypto on the guard path');
   assert.ok(!loaded.childProcess, 'util.js must not pull in child_process on the guard path');
-  assert.ok(loaded.libs.length <= 12, `guard's module graph grew to ${loaded.libs.length}: ${loaded.libs.join(', ')}`);
+  assert.ok(loaded.libs.length <= 6, `guard's module graph grew to ${loaded.libs.length}: ${loaded.libs.join(', ')}`);
 });
 
 // `guard` returns before the dispatch chain, so it never reaches the block that

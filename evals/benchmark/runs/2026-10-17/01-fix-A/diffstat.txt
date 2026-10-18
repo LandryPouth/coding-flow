@@ -1,0 +1,6 @@
+ spec/money.spec.js | 2 ++
+ src/money.js       | 8 +++++---
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+ M spec/money.spec.js
+ M src/money.js
+?? spec/accept.spec.js

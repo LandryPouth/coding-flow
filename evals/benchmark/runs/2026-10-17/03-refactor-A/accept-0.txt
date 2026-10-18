@@ -1,0 +1,4 @@
+PASS  regression   17 passed, 0 failed
+PASS  acceptance   4 passed, 0 failed
+
+PASS  duplication  2 occurrence(s) (baseline 4, target 2): approvals.js×1, users.js×1

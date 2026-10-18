@@ -1,0 +1,12 @@
+ spec/money.spec.js  | 7 +++++++
+ spec/report.spec.js | 8 ++++++++
+ src/money.js        | 8 +++++---
+ 3 files changed, 20 insertions(+), 3 deletions(-)
+ M spec/money.spec.js
+ M spec/report.spec.js
+ M src/money.js
+?? .coding-flow/guard-unchecked.jsonl
+?? .coding-flow/runs/2026-10-17T22-45-41-826Z-verify.json
+?? .gitignore
+?? epics/epic-01-credit-formatting/
+?? spec/accept.spec.js

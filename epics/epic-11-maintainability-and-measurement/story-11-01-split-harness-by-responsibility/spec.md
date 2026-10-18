@@ -53,16 +53,16 @@ verify machinery to read four secret-scan functions.
 
 ## Acceptance Criteria
 
-- [ ] `test/harness-risk.test.js` and `test/harness-verify.test.js` import the
+- [x] `test/harness-risk.test.js` and `test/harness-verify.test.js` import the
       functions they test from their new modules (`risk`, `harness-config`,
       `diff-scope`, `validation-run`); every other test is unchanged.
-- [ ] `git diff -M --color-moved=zebra` per commit shows moves, not rewrites:
+- [x] `git diff -M --color-moved=zebra` per commit shows moves, not rewrites:
       outside import/export lines, no changed line inside a moved function.
-- [ ] `npm test` green on every commit of the story.
-- [ ] `harness.js` and each new module load alone without stderr output.
-- [ ] `grep -n 'require("./harness")' bin/lib/guard.js bin/lib/policy-fingerprint.js`
+- [x] `npm test` green on every commit of the story.
+- [x] `harness.js` and each new module load alone without stderr output.
+- [x] `grep -n 'require("./harness")' bin/lib/guard.js bin/lib/policy-fingerprint.js`
       finds nothing.
-- [ ] `wc -l bin/lib/harness.js` ≤ 600.
+- [x] `wc -l bin/lib/harness.js` ≤ 600.
 
 ## Edge Cases
 
@@ -74,4 +74,20 @@ verify machinery to read four secret-scan functions.
 - Hand-written evidence fixtures in tests read `generatedAt` order; moving
   `writeVerifyEvidence` must not change the file name or stamp format.
 
-## Status: planned
+## Result
+
+`harness.js` went from 3 233 to 556 lines, in ten commits from `5c498c3` to
+`7ce459a`. The new modules are `harness-config` (334 lines), `security-policy`
+(202), `diff-scope` (360), `risk` (240), `validation-run` (375),
+`coverage-gate` (665), `evidence` (404) and `harness-report` (314); the story
+readers joined `story.js`. `npm test` (1072 tests) was green after every
+commit. `guard.js` and `policy-fingerprint.js` no longer require `harness.js`,
+and the guard now loads 6 modules per tool call instead of 12. Deviations from
+the plan are in `plan.md` → Decisions.
+
+### Rollback Notes
+
+Moves only, no data or config: `git revert` the range `5c498c3..7ce459a`
+(newest first) restores the single file. No migration, no flag.
+
+## Status: done

@@ -1,0 +1,12 @@
+ spec/approvals.spec.js | 78 ++++++++++++++++++++++++++++++++++++++++++++++++--
+ src/approvals.js       | 15 ++++++++++
+ 2 files changed, 91 insertions(+), 2 deletions(-)
+ M spec/approvals.spec.js
+ M src/approvals.js
+?? .coding-flow/guard-unchecked.jsonl
+?? .coding-flow/runs/2026-10-17T22-48-04-232Z-verify.json
+?? .coding-flow/runs/2026-10-17T22-48-49-443Z-verify.json
+?? .coding-flow/runs/2026-10-17T22-48-50-609Z-evidence.json
+?? .gitignore
+?? epics/epic-01-approval-rules/
+?? spec/accept.spec.js

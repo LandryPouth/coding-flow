@@ -1,0 +1,97 @@
+PASS  regression   17 passed, 0 failed
+FAIL  acceptance   3 passed, 3 failed
+
+TAP version 13
+# Subtest: the router exposes list, create and edit for vendors
+ok 1 - the router exposes list, create and edit for vendors
+  ---
+  duration_ms: 0.933913
+  type: 'test'
+  ...
+# Subtest: a vendor is created and listed
+not ok 2 - a vendor is created and listed
+  ---
+  duration_ms: 1.295425
+  type: 'test'
+  location: '/tmp/bench-02-crud-siRlSt/spec/accept.spec.js:27:1'
+  failureType: 'testCodeFailure'
+  error: '{"error":"unknown field: actorId"}'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 200
+  actual: 400
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/tmp/bench-02-crud-siRlSt/spec/accept.spec.js:31:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: a vendor is edited in place
+not ok 3 - a vendor is edited in place
+  ---
+  duration_ms: 0.394596
+  type: 'test'
+  location: '/tmp/bench-02-crud-siRlSt/spec/accept.spec.js:40:1'
+  failureType: 'testCodeFailure'
+  error: '{"error":"no such vendor: undefined"}'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 200
+  actual: 400
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/tmp/bench-02-crud-siRlSt/spec/accept.spec.js:46:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a blank name and a missing country are both refused
+ok 4 - a blank name and a missing country are both refused
+  ---
+  duration_ms: 0.146979
+  type: 'test'
+  ...
+# Subtest: two vendors cannot share a name
+not ok 5 - two vendors cannot share a name
+  ---
+  duration_ms: 1.614759
+  type: 'test'
+  location: '/tmp/bench-02-crud-siRlSt/spec/accept.spec.js:58:1'
+  failureType: 'testCodeFailure'
+  error: '0 == 1'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 0
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/tmp/bench-02-crud-siRlSt/spec/accept.spec.js:65:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: vendors do not leak into the expense report
+ok 6 - vendors do not leak into the expense report
+  ---
+  duration_ms: 0.852107
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 3
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 79.789027

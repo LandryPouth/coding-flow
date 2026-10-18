@@ -14,6 +14,9 @@
 const fs = require("fs");
 const path = require("path");
 
+const { cwd } = require("./context");
+const { normalizePortable } = require("./util");
+
 const PART_FILES = {
   spec: "spec.md",
   plan: "plan.md",
@@ -51,6 +54,81 @@ function hasStoryContent(storyDir) {
   return STORY_FILES.some((name) => fs.existsSync(path.join(storyDir, name)));
 }
 
+function resolveProjectPath(relativeOrAbsolutePath) {
+  if (!relativeOrAbsolutePath) {
+    return null;
+  }
+
+  const fullPath = path.resolve(cwd, relativeOrAbsolutePath);
+  const relativePath = path.relative(cwd, fullPath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return {
+      fullPath,
+      relativePath: normalizePortable(relativePath),
+      insideRoot: false,
+      exists: false,
+    };
+  }
+
+  return {
+    fullPath,
+    relativePath: normalizePortable(relativePath),
+    insideRoot: true,
+    exists: fs.existsSync(fullPath),
+  };
+}
+
+// Keyed by the canonical filename so callers read unchanged, but resolved by role:
+// a single-file story answers all three from story.md.
+function readStoryBundle(storyFullPath) {
+  const files = {};
+
+  for (const [part, name] of Object.entries(PART_FILES)) {
+    files[name] = readStoryPart(storyFullPath, part);
+  }
+
+  return files;
+}
+
+// Extract a markdown section by heading, at any level (## through ######), and
+// stop at the next heading of the same or higher level. So `Result` (a ##)
+// keeps its ### children, while `Rollback Notes` (a ### nested under Result)
+// returns just its own body.
+function extractSection(content, heading) {
+  const lines = content.split(/\r?\n/);
+  const target = heading.toLowerCase();
+
+  let start = -1;
+  let level = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(#{2,6})\s+(.*)$/);
+    if (match && match[2].trim().toLowerCase() === target) {
+      start = index;
+      level = match[1].length;
+      break;
+    }
+  }
+
+  if (start === -1) {
+    return "";
+  }
+
+  const section = [];
+
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(#{1,6})\s+/);
+    if (match && match[1].length <= level) {
+      break;
+    }
+
+    section.push(lines[index]);
+  }
+
+  return section.join("\n").trim();
+}
+
 module.exports = {
   PART_FILES,
   SINGLE_FILE,
@@ -58,4 +136,7 @@ module.exports = {
   storyPartPath,
   readStoryPart,
   hasStoryContent,
+  resolveProjectPath,
+  readStoryBundle,
+  extractSection,
 };

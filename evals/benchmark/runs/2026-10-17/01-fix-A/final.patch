@@ -1,0 +1,33 @@
+diff --git a/spec/money.spec.js b/spec/money.spec.js
+index ec6ee05..0ff5625 100644
+--- a/spec/money.spec.js
++++ b/spec/money.spec.js
+@@ -22,6 +22,8 @@ test('amounts render with two decimals', () => {
+   assert.equal(formatAmount(1234), '$12.34');
+   assert.equal(formatAmount(700), '$7.00');
+   assert.equal(formatAmount(5), '$0.05');
++  assert.equal(formatAmount(-1234), '-$12.34');
++  assert.equal(formatAmount(-34), '-$0.34');
+ });
+ 
+ test('summing stays in cents', () => {
+diff --git a/src/money.js b/src/money.js
+index da5a213..5d73ad4 100644
+--- a/src/money.js
++++ b/src/money.js
+@@ -24,10 +24,12 @@ function parseAmount(input) {
+ }
+ 
+ function formatAmount(cents) {
+-  const whole = Math.trunc(cents / 100);
+-  const fraction = Math.abs(cents % 100);
++  const sign = cents < 0 ? '-' : '';
++  const abs = Math.abs(cents);
++  const whole = Math.trunc(abs / 100);
++  const fraction = abs % 100;
+ 
+-  return `$${whole}.${String(fraction).padStart(2, '0')}`;
++  return `${sign}$${whole}.${String(fraction).padStart(2, '0')}`;
+ }
+ 
+ function sumCents(amounts) {

@@ -23,7 +23,7 @@ const {
   detectProjectPackageJson,
   removePackageScripts,
 } = require("./templates");
-const { harnessRunsDir } = require("./harness");
+const { harnessRunsDir } = require("./harness-config");
 const { unwireGuards } = require("./unwire");
 
 function collectUninstallPlan({ force = false } = {}) {

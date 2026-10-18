@@ -1,0 +1,8 @@
+ package.json  |  2 +-
+ src/routes.js | 11 ++++++++++-
+ 2 files changed, 11 insertions(+), 2 deletions(-)
+ M package.json
+ M src/routes.js
+?? spec/accept.spec.js
+?? spec/vendors.spec.js
+?? src/vendors.js

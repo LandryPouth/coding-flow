@@ -1,0 +1,268 @@
+diff --git a/spec/vendors.spec.js b/spec/vendors.spec.js
+new file mode 100644
+index 0000000..6f35288
+--- /dev/null
++++ b/spec/vendors.spec.js
+@@ -0,0 +1,158 @@
++'use strict';
++
++const { test } = require('node:test');
++const assert = require('node:assert');
++const { createStore } = require('../src/store');
++const { createReporter } = require('../src/report');
++const { createRouter } = require('../src/routes');
++const { createVendor, updateVendor, listVendors } = require('../src/vendors');
++
++test('creating a vendor stores the trimmed name and country and lists it', () => {
++  const store = createStore();
++  const vendor = createVendor(store, { name: '  Acme ', country: 'FR' });
++
++  assert.ok(vendor.id);
++  assert.equal(vendor.name, 'Acme');
++  assert.equal(vendor.country, 'FR');
++  assert.deepEqual(listVendors(store), [vendor]);
++});
++
++test('listing with no vendors returns an empty array', () => {
++  assert.deepEqual(listVendors(createStore()), []);
++});
++
++test('a duplicate name (any case, surrounding spaces) is refused and not stored', () => {
++  const store = createStore();
++  createVendor(store, { name: 'Acme', country: 'FR' });
++
++  assert.throws(() => createVendor(store, { name: ' acme ', country: 'US' }), /duplicate vendor name/);
++  assert.equal(listVendors(store).length, 1);
++});
++
++test('a missing, empty or blank name is refused on create and edit', () => {
++  const store = createStore();
++  const vendor = createVendor(store, { name: 'Acme', country: 'FR' });
++
++  for (const name of [undefined, '', '   ', null]) {
++    assert.throws(() => createVendor(store, { name, country: 'FR' }), /missing field: name/);
++  }
++
++  for (const name of ['', '   ', null]) {
++    assert.throws(() => updateVendor(store, vendor.id, { name }), /missing field: name/);
++  }
++
++  assert.equal(store.get(vendor.id).name, 'Acme');
++});
++
++test('a missing, empty or blank country is refused on create and edit', () => {
++  const store = createStore();
++  const vendor = createVendor(store, { name: 'Acme', country: 'FR' });
++
++  for (const country of [undefined, '', '   ']) {
++    assert.throws(() => createVendor(store, { name: 'Other', country }), /missing field: country/);
++  }
++
++  assert.throws(() => updateVendor(store, vendor.id, { country: '  ' }), /missing field: country/);
++  assert.equal(store.get(vendor.id).country, 'FR');
++});
++
++test('an unknown field is refused on create', () => {
++  assert.throws(
++    () => createVendor(createStore(), { name: 'Acme', country: 'FR', rating: 5 }),
++    /unknown field: rating/,
++  );
++});
++
++test('editing persists changes and keeps the id', () => {
++  const store = createStore();
++  const vendor = createVendor(store, { name: 'Acme', country: 'FR' });
++
++  const edited = updateVendor(store, vendor.id, { id: vendor.id, name: 'Acme SA', country: 'BE' });
++
++  assert.equal(edited.id, vendor.id);
++  assert.deepEqual(store.get(vendor.id), { id: vendor.id, name: 'Acme SA', country: 'BE' });
++});
++
++test('a partial edit changes only the supplied field', () => {
++  const store = createStore();
++  const vendor = createVendor(store, { name: 'Acme', country: 'FR' });
++
++  updateVendor(store, vendor.id, { country: 'BE' });
++
++  assert.deepEqual(store.get(vendor.id), { id: vendor.id, name: 'Acme', country: 'BE' });
++});
++
++test('re-submitting its own current name is not a duplicate', () => {
++  const store = createStore();
++  const vendor = createVendor(store, { name: 'Acme', country: 'FR' });
++
++  assert.equal(updateVendor(store, vendor.id, { name: 'ACME', country: 'FR' }).name, 'ACME');
++});
++
++test('renaming to another vendor\'s name is refused and both are unchanged', () => {
++  const store = createStore();
++  const acme = createVendor(store, { name: 'Acme', country: 'FR' });
++  const globex = createVendor(store, { name: 'Globex', country: 'US' });
++
++  assert.throws(() => updateVendor(store, globex.id, { name: ' acme' }), /duplicate vendor name/);
++  assert.equal(store.get(acme.id).name, 'Acme');
++  assert.equal(store.get(globex.id).name, 'Globex');
++});
++
++test('editing an unknown vendor id is refused', () => {
++  assert.throws(() => updateVendor(createStore(), 'nope', { name: 'X' }), /no such vendor: nope/);
++});
++
++function app() {
++  const store = createStore();
++  const reporter = createReporter(store);
++  return { router: createRouter(store, reporter) };
++}
++
++test('router: create, list and edit succeed with status 200', () => {
++  const { router } = app();
++
++  const created = router['POST /vendors']({ name: 'Acme', country: 'FR' });
++  assert.equal(created.status, 200);
++
++  const edited = router['PATCH /vendors']({ id: created.body.id, country: 'BE' });
++  assert.equal(edited.status, 200);
++  assert.equal(edited.body.country, 'BE');
++
++  const listed = router['GET /vendors']({});
++  assert.equal(listed.status, 200);
++  assert.deepEqual(listed.body, [{ id: created.body.id, name: 'Acme', country: 'BE' }]);
++});
++
++test('router: refusals return status 400 with an error', () => {
++  const { router } = app();
++  router['POST /vendors']({ name: 'Acme', country: 'FR' });
++
++  assert.deepEqual(router['POST /vendors']({ name: 'acme', country: 'FR' }), {
++    status: 400,
++    body: { error: 'duplicate vendor name' },
++  });
++  assert.equal(router['POST /vendors']({ name: ' ', country: 'FR' }).status, 400);
++  assert.deepEqual(router['PATCH /vendors']({ id: 'zzz', name: 'X' }), {
++    status: 400,
++    body: { error: 'no such vendor: zzz' },
++  });
++});
++
++test('router: vendors do not appear in expenses or the report', () => {
++  const { router } = app();
++  router['POST /expenses']({
++    actorId: 'alice',
++    description: 'Train',
++    amount: '10.00',
++    category: 'travel',
++    spentOn: '2026-03-01',
++  });
++  const expensesBefore = router['GET /expenses']({}).body;
++  const reportBefore = router['GET /report']({}).body;
++
++  router['POST /vendors']({ name: 'Acme', country: 'FR' });
++
++  assert.deepEqual(router['GET /expenses']({}).body, expensesBefore);
++  assert.deepEqual(router['GET /report']({}).body, reportBefore);
++});
+diff --git a/src/routes.js b/src/routes.js
+index 1d061e1..2cec8b4 100644
+--- a/src/routes.js
++++ b/src/routes.js
+@@ -2,10 +2,12 @@
+ 
+ const { getUser } = require('./users');
+ const { createExpense, updateExpense, listExpenses } = require('./expenses');
++const { createVendor, updateVendor, listVendors } = require('./vendors');
++const { createStore } = require('./store');
+ const { approveExpense, rejectExpense } = require('./approvals');
+ 
+ // Thin transport layer: no business rules live here, only shaping.
+-function createRouter(store, reporter) {
++function createRouter(store, reporter, vendorStore = createStore()) {
+   function handle(fn) {
+     try {
+       return { status: 200, body: fn() };
+@@ -55,6 +57,14 @@ function createRouter(store, reporter) {
+         return decided;
+       }),
+ 
++    // Vendors live in their own store and feed nothing the report reads,
++    // so these routes never invalidate the reporter.
++    'GET /vendors': () => handle(() => listVendors(vendorStore)),
++
++    'POST /vendors': (req) => handle(() => createVendor(vendorStore, req)),
++
++    'PATCH /vendors': (req) => handle(() => updateVendor(vendorStore, req.id, req)),
++
+     'GET /report': () => handle(() => reporter.totalsByCategory()),
+   };
+ }
+diff --git a/src/vendors.js b/src/vendors.js
+new file mode 100644
+index 0000000..d699aab
+--- /dev/null
++++ b/src/vendors.js
+@@ -0,0 +1,65 @@
++'use strict';
++
++const { rejectUnknownFields } = require('./validate');
++
++const FIELDS = ['actorId', 'name', 'country'];
++
++// requireFields lets "   " through, so vendor text fields are trimmed here.
++function cleanText(payload, field) {
++  const value = payload[field];
++
++  if (value === undefined || value === null || String(value).trim() === '') {
++    throw new Error(`missing field: ${field}`);
++  }
++
++  return String(value).trim();
++}
++
++function sameName(a, b) {
++  return a.toLowerCase() === b.toLowerCase();
++}
++
++function assertNameFree(store, name, exceptId) {
++  const taken = store.all().some((vendor) => vendor.id !== exceptId && sameName(vendor.name, name));
++
++  if (taken) {
++    throw new Error('duplicate vendor name');
++  }
++}
++
++function createVendor(store, payload) {
++  rejectUnknownFields(payload, FIELDS);
++
++  const name = cleanText(payload, 'name');
++  const country = cleanText(payload, 'country');
++  assertNameFree(store, name);
++
++  return store.insert({ name, country });
++}
++
++function updateVendor(store, id, payload) {
++  const vendor = store.get(id);
++
++  if (!vendor) {
++    throw new Error(`no such vendor: ${id}`);
++  }
++
++  rejectUnknownFields(payload, ['id', ...FIELDS]);
++
++  const changes = {};
++
++  if (payload.name !== undefined) {
++    changes.name = cleanText(payload, 'name');
++    assertNameFree(store, changes.name, id);
++  }
++
++  if (payload.country !== undefined) changes.country = cleanText(payload, 'country');
++
++  return store.update(id, changes);
++}
++
++function listVendors(store) {
++  return store.all();
++}
++
++module.exports = { createVendor, updateVendor, listVendors };

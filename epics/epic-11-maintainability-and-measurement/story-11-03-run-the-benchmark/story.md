@@ -9,13 +9,33 @@ serve is not.
 
 ## Acceptance Criteria
 
-- [ ] The protocol is run as written (or its deviations are listed first),
+- [x] The protocol is run as written (or its deviations are listed first),
       on at least the task count it specifies, for both arms.
-- [ ] Recorded per task: first-try success, files forgotten, time, tokens,
-      escaped defects found afterwards.
-- [ ] Results written into the experiment document, including the arm that
+- [x] Recorded per task: first-try success, files forgotten, time, tokens,
+      escaped defects found afterwards. *(Files forgotten and escaped defects
+      graded by hand after the runs, from the committed diffs — see the
+      experiment document.)*
+- [x] Results written into the experiment document, including the arm that
       lost and anything that contradicts the hypothesis.
-- [ ] One row in `docs/DOGFOODING.md` if the result changes what to build
+- [x] One row in `docs/DOGFOODING.md` if the result changes what to build
       next.
 
-## Status: planned
+## Result
+
+Ran all five tasks in both arms (10 headless sessions, `claude-sonnet-5-5`, N=1).
+Coding Flow 3/5 first-pass against 4/5 for the agent alone, ~3.5× the cost. The
+hypothesis is not supported; deviations and the losing arm are listed in
+`docs/experiments/reliability-benchmark.md`. Raw runs committed in
+`evals/benchmark/runs/2026-10-17/`. DOGFOODING row added.
+
+The results table is generated (`run.js summarize`) and pinned to the raw runs by
+`test/benchmark-results.test.js`: hand-copied figures drifted across five review
+rounds. Every figure in the table is now generated; each figure left in the prose
+cites the raw file it comes from.
+
+## Tests
+
+`test/benchmark-results.test.js` — the document's table equals `summarize` on the
+committed runs; a changed raw run changes the summary; an empty directory is refused.
+
+## Status: done

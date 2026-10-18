@@ -40,7 +40,15 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/util.js` | Generic helpers (I/O, hash, JSON, paths, glob, file walking) |
 | `lib/config.js` | Project config `.coding-flow/config.json` (storage, branchPerEpic, autoMergeEpic, validation) |
 | `lib/templates.js` | Installation, manifest, scripts, cheat-sheet, `upgrade` |
-| `lib/harness.js` | Security, scan of secrets/sensitive files, preflight/check/`verify`/evidence |
+| `lib/harness.js` | `harness` and `verify` entry points, story scope, the re-exported surface |
+| `lib/harness-config.js` | The policy file `.coding-flow/harness.json`: paths, defaults, read, create |
+| `lib/security-policy.js` | Secret patterns and scan, allowlist, sensitive paths, `.env` gitignore |
+| `lib/diff-scope.js` | Diff base per request, changed files and lines, deleted files, coverage scoping |
+| `lib/risk.js` | Story risk, structural git signals, diff risk, their combination |
+| `lib/validation-run.js` | Validation commands: resolution, execution, timeouts, clean env, cache detection |
+| `lib/coverage-gate.js` | Patch coverage and floor, test weakening, acceptance criteria, contrary signals |
+| `lib/evidence.js` | Preflight, story evidence check, `verifyStoryOnce`, fingerprints, reuse, writing |
+| `lib/harness-report.js` | Printing the check report and the verify verdict |
 | `lib/identity.js` | Git provenance (commit, branch, author, dirty, PR) injected into every proof |
 | `lib/guard.js` | Deterministic PreToolUse hook (refusal of blocked paths / secrets before write) |
 | `lib/settings.js` | Idempotent merge/upgrade of the `guard` hook into `.claude/settings.json` (resolved binary, npx fallback) |
@@ -62,7 +70,11 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/commands.js` | `help` and `commands` |
 
 The dependency graph is acyclic:
-`context → util → config → harness → templates → {doctor, uninstall, skills, commands}`;
+`context → util → config → templates → {doctor, uninstall, skills, commands}`;
+`templates` and `uninstall` require `harness-config`, which requires only
+`context`, `util` and `coverage`; `guard` requires `harness-config` and
+`security-policy`, never `harness` (6 modules per tool call, capped in
+`test/guard.test.js`);
 `status` builds on `config`/`storage`/`policy`/`worktree`.
 
 ## The two distribution channels
@@ -110,6 +122,21 @@ npm test        # must be green (also run by prepublishOnly)
 npm publish     # publishes @landry_pouth/coding-flow@<version>
 ```
 
+Before publishing — and after upgrading a host — run the real-host guard smoke test
+(Linux/macOS; spends a few cents of model credit). It asks Claude Code, OpenCode 1.x
+(`OPENCODE_BIN`, `OPENCODE_MODEL=provider/model`) and OpenCode 2.x (`OPENCODE2_BIN`)
+to create `.env`, exits 1 if any host wrote it, 2 if a throwaway project could not be
+installed and 3 if nothing was proven (a case `inconclusive`, or every host skipped). Only
+0 is a pass. `inconclusive` means the model never tried: rerun. Hosts use your
+real credentials but never your global config, so a globally installed guard cannot
+stand in for the project's.
+
+```bash
+scripts/smoke-hosts.sh
+SMOKE_BREAK=1 scripts/smoke-hosts.sh    # self-check: guard unwired, must exit 1
+SMOKE_BREAK=v1 scripts/smoke-hosts.sh   # self-check: 1.x-only OpenCode plugin, OpenCode 2 must be WRITTEN
+```
+
 Then tag and release what you just published. The script checks the CHANGELOG has a
 `## [x.y.z]` section and that npm already serves that version, creates the annotated tag
 `vx.y.z`, pushes it and runs `gh release create` with the section as notes. It never runs
@@ -139,7 +166,7 @@ npm run release
 | [`plans/plugin-directory-submission.md`](plans/plugin-directory-submission.md) | Submitting to the official Claude Code plugin directory: the channel, the payload, the prepared security answers, and the pre-submission install check |
 | [`plans/multi-agent-install.md`](plans/multi-agent-install.md) | Per-agent install targeting, plus a verified capability table: what Claude Code, Codex and OpenCode can each actually enforce |
 | [`plans/storage-backends.md`](plans/storage-backends.md) | Storage seam, project config, branch policy (github backend deferred) |
-| [`experiments/reliability-benchmark.md`](experiments/reliability-benchmark.md) | The (in-progress) benchmark validating the reliability claim |
+| [`experiments/reliability-benchmark.md`](experiments/reliability-benchmark.md) | The benchmark validating the reliability claim |
 | [`../evals/benchmark/README.md`](../evals/benchmark/README.md) | The benchmark's fixture app and five tasks: what each one traps, how the grader works, and how the harness was validated |
 
 ## What belongs in the core
