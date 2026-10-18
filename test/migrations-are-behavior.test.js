@@ -4,9 +4,11 @@
 // in both `highRiskPaths` and the default `nonBehaviorGlobs`, and the coverage
 // gate dropped non-behavior files first: a branch adding only
 // `ALTER TABLE users DROP COLUMN email;` verified green at `not-required`,
-// "docs, story, or lockfile only" (DOGFOODING, 2026-10-18). A path that is
-// high-risk is now never non-behavior; a user's own non-behavior glob that is
-// not high-risk still wins.
+// "docs, story, or lockfile only" (DOGFOODING, 2026-10-18). A file matching a
+// migration glob and a high-risk path is now behavior, whether the high-risk
+// path is the default one or the project's own. Config and generated code under
+// a high-risk directory stay excluded, and a `.sql` matching no high-risk path
+// stays non-behavior.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -127,6 +129,22 @@ test('docs and generated code only: no behavior, and the reason lists what was e
   assert.match(coverage.reason, /docs\/a\.md/);
   assert.match(coverage.reason, /src\/generated\/x\.gen\.ts/);
   assert.doesNotMatch(coverage.reason, /lockfile only/);
+});
+
+// `init` writes both lists into harness.json; a project that narrows
+// `highRiskPaths` to its own migration directory must not reopen the hole.
+test("a project's own high-risk migration path makes the migration behavior", (t) => {
+  const dir = repo(t, 'mig-own-path', {
+    '.coding-flow/harness.json': JSON.stringify({ highRiskPaths: ['src/auth/**', 'db/migrations/**'] }),
+  });
+  write(dir, 'db/migrations/002.sql', DROP);
+  commit(dir, 'drop email');
+
+  const res = run(dir, ['verify']);
+
+  assert.equal(res.code, 1, res.output);
+  const { coverage } = latestVerify(dir);
+  assert.deepEqual(coverage.behaviorFiles, ['db/migrations/002.sql']);
 });
 
 test("a user's non-behavior glob that is not high-risk keeps .sql files non-behavior", (t) => {

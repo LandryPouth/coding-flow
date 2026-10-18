@@ -19,6 +19,13 @@ const {
 } = require("./coverage");
 const { readStoryPart, readStoryBundle, extractSection } = require("./story");
 const { matchesPattern } = require("./util");
+const { defaultHighRiskPaths, defaultNonBehaviorGlobs } = require("./harness-config");
+
+// The default non-behavior entries that are also default high-risk paths: the
+// migration and `.sql` globs (story 13-01).
+const DEFAULT_MIGRATION_GLOBS = defaultNonBehaviorGlobs().filter((pattern) =>
+  defaultHighRiskPaths().includes(pattern),
+);
 const {
   currentDiffBase,
   isScopedOut,
@@ -342,18 +349,24 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   const testFiles = changedFiles.filter((file) =>
     config.testGlobs.some((pattern) => matchesPattern(file, pattern)),
   );
-  // A pattern listed in both `highRiskPaths` and `nonBehaviorGlobs` (the
-  // defaults overlap on `**/migrations/**` and `**/*.sql`) counts as behavior:
-  // letting non-behavior win made `DROP COLUMN` read as "docs only". Only that
-  // overlap changes. A file merely sitting under a high-risk directory
-  // (`packages/auth/tsconfig.json`, `docs/auth/setup.md`) stays excluded, and a
-  // project's own non-behavior glob that is not high-risk wins. Prose is never
-  // behavior, even inside `migrations/`.
-  const highRisk = new Set(Array.isArray(config.highRiskPaths) ? config.highRiskPaths : []);
-  const riskyNonBehavior = config.nonBehaviorGlobs.filter((pattern) => highRisk.has(pattern));
+  // A migration is behavior: letting non-behavior win made `DROP COLUMN` read as
+  // "docs only". The non-behavior patterns that yield are the ones listed in
+  // `highRiskPaths` too, plus the default overlap (`**/migrations/**`,
+  // `**/*.sql`) so that a project's own `highRiskPaths` (`db/migrations/**`)
+  // still catches them. A file matching a yielding pattern is behavior when it
+  // also matches a high-risk path. A file merely sitting under a high-risk
+  // directory (`packages/auth/tsconfig.json`, `docs/auth/setup.md`) stays
+  // excluded, a `.sql` matching no high-risk path stays excluded, and prose is
+  // never behavior, even inside `migrations/`.
+  const riskPatterns = Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaultHighRiskPaths();
+  const yielding = new Set([...riskPatterns, ...DEFAULT_MIGRATION_GLOBS]);
+  const yieldingNonBehavior = config.nonBehaviorGlobs.filter((pattern) => yielding.has(pattern));
+  const isMigration = (file) =>
+    yieldingNonBehavior.some((pattern) => matchesPattern(file, pattern)) &&
+    riskPatterns.some((pattern) => matchesPattern(file, pattern));
   const isExcluded = (file) =>
     config.nonBehaviorGlobs.some((pattern) => matchesPattern(file, pattern)) &&
-    (matchesPattern(file, "**/*.md") || !riskyNonBehavior.some((pattern) => matchesPattern(file, pattern)));
+    (matchesPattern(file, "**/*.md") || !isMigration(file));
   const excluded = changedFiles.filter((file) => !testFiles.includes(file) && isExcluded(file));
   const behaviorFiles = changedFiles.filter((file) => !excluded.includes(file) && !testFiles.includes(file));
 

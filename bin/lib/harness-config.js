@@ -146,11 +146,11 @@ function defaultHighRiskPaths() {
 // clear by lying (a fake test) or by turning the tool off. Every entry below is
 // a case where "not covered" carries no information.
 //
-// An entry that is also listed, as the same pattern, in `highRiskPaths`
-// (`**/migrations/**`, `**/*.sql`) is overridden by it: the coverage gate
-// treats those files as behavior, so a migration needs a test or a declared
-// exemption. The entries stay here so that a project which removes them from
-// `highRiskPaths` keeps them out of the gate.
+// The entries that are also default `highRiskPaths` (`**/migrations/**`,
+// `**/*.sql`) give way to any high-risk match: the coverage gate treats a file
+// matching one of them and any `highRiskPaths` pattern as behavior, so a
+// migration needs a test or a declared exemption. The entries stay here so that
+// a project whose `highRiskPaths` match no migration keeps them out of the gate.
 function defaultNonBehaviorGlobs() {
   return [
     "docs/**",
@@ -329,6 +329,7 @@ module.exports = {
   defaultSecretScanAllowlist,
   defaultTestGlobs,
   defaultHighRiskPaths,
+  defaultNonBehaviorGlobs,
   defaultHarnessConfig,
   readHarnessConfig,
   ensureHarnessConfig,
