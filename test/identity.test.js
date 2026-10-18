@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { captureIdentity } = require('../bin/lib/identity');
+const { captureIdentity, currentTreeToken } = require('../bin/lib/identity');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
@@ -94,4 +94,44 @@ test('verify --json embeds a provenance block', (t) => {
   assert.ok(evidence.provenance, 'the verify evidence must carry provenance');
   assert.ok(evidence.provenance.git, 'provenance.git populated in a repo');
   assert.equal(evidence.provenance.git.branch, 'main');
+});
+
+test('the tree token sees uncommitted edits when a file is intent-to-add', (t) => {
+  const dir = initRepo(t, 'token-ita');
+  fs.writeFileSync(path.join(dir, 'new.txt'), 'new\n');
+  git(dir, ['add', '-N', 'new.txt']);
+  const before = currentTreeToken(dir);
+
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'edited\n');
+  const afterTracked = currentTreeToken(dir);
+  fs.writeFileSync(path.join(dir, 'new.txt'), 'new, edited\n');
+  const afterNew = currentTreeToken(dir);
+
+  assert.ok(before);
+  assert.notEqual(afterTracked, before, 'an edit to a tracked file moves the token');
+  assert.notEqual(afterNew, afterTracked, 'an edit to the intent-to-add file moves it too');
+  assert.equal(currentTreeToken(dir), afterNew, 'the same content gives the same token');
+  assert.ok(
+    execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: dir, encoding: 'utf8' }).trim() === '',
+    'the real index is left untouched',
+  );
+});
+
+test('verify does not replay a proof after an edit when a file is intent-to-add', (t) => {
+  const dir = initRepo(t, 'token-ita-replay');
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  fs.writeFileSync(
+    path.join(dir, '.coding-flow', 'config.json'),
+    JSON.stringify({ validation: { commands: ['node -e "process.exit(0)"'] } }),
+  );
+  git(dir, ['add', '.']);
+  git(dir, ['commit', '-m', 'config']);
+  fs.writeFileSync(path.join(dir, 'new.txt'), 'new\n');
+  git(dir, ['add', '-N', 'new.txt']);
+
+  assert.equal(run(dir, ['verify']).code, 0);
+  assert.match(run(dir, ['verify']).output, /already proved/);
+
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'edited\n');
+  assert.doesNotMatch(run(dir, ['verify']).output, /already proved/);
 });

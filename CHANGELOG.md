@@ -31,6 +31,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **`verify` replayed a stale proof when a file was intent-to-add.** With a `git add -N` entry, `git stash create` refuses the tree, and the tree token fell back to `HEAD`'s, so every uncommitted change was invisible to the cache and `verify` answered "already proved" after an edit. The token now snapshots through a throwaway copy of the index in that case (the real index is untouched). A proof taken in such a tree before this fix should be re-run with `--no-cache`.
 - **A story-less `verify` replayed `worktree land`'s re-verify as a full proof** (story 12-01). Both record no story, and the re-verify skips the coverage gate, so after a land, `ai-flow verify` on the epic branch answered "already proved" with no gate behind it. A proof whose coverage was skipped is no longer replayed; such evidence now carries `coverage.skipped: true`.
 - **`status` no longer reads a single-file story's description as progress** (story 11-04). A fresh `story.md` with no `## Status` and no `## Result` stays `planned` instead of `in-progress`; the text before its first `##` heading is ignored. Split stories (`tasks.md`) are unchanged.
 - **Guard on Windows: a link made into a linked directory is refused.** `ln -s ../../.env a/`, with `a` a link to a directory, was allowed on Windows: the path the guard resolved itself (`D:\a\...\.env`) went back through its shell-word reader, which drops backslashes like the shell does. Paths the guard builds now enter it with forward slashes.
