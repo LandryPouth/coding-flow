@@ -50,6 +50,17 @@ function getFlagValue(name, fallback = null) {
   return fallback;
 }
 
+// `<command> --help` answers from the usage table and exits before anything
+// else loads or runs: asking for help once ran the install it was asked about.
+if (command !== "help" && args.slice(1).some((arg) => arg === "--help" || arg === "-h")) {
+  const usage = require("./lib/usage").usageFor(command);
+
+  if (usage) {
+    process.stdout.write(`${usage}\n`);
+    process.exit(0);
+  }
+}
+
 // `guard` is the only command on a hot path: Claude Code runs it before every
 // Write, Edit and Bash, so its cost is paid tens of times per session while
 // every other command is typed by hand. Loading the other twenty modules to
@@ -342,6 +353,12 @@ function globalCommand(name) {
   log("Start in any project with `/flow-setup`; it scaffolds Coding Flow there. Update later with `ai-flow upgrade --global`.");
 }
 
+const rejected = require("./lib/usage").unknownFlags(command, args.slice(1));
+
+if (rejected.length > 0) {
+  fail(`unknown flag ${rejected.map((flag) => `"${flag}"`).join(", ")} for "${command}". Run "ai-flow ${command} --help".`);
+}
+
 if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command)) {
   globalCommand(command);
 } else if (command === "init") {
@@ -356,7 +373,21 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   // proven" — and that should not require taking on a story format, a docs tree,
   // and a set of skills first. Everything the full install adds can be laid down
   // later with a plain `init`.
-  if (flags.has("--minimal")) {
+  // A project already recorded as minimal stays minimal on a re-run: `init` is
+  // how someone refreshes it, not how it widens. `--full` is the one way up, and
+  // an explicit --target keeps its older meaning (add that platform's commands).
+  const recordedInstall = readConfig(cwd);
+  const keepMinimal =
+    fs.existsSync(configPath(cwd)) &&
+    recordedInstall.install === "minimal" &&
+    !flags.has("--full") &&
+    !getFlagValue("--target", null);
+
+  if (flags.has("--minimal") && flags.has("--full")) {
+    fail("--minimal and --full are contradictory.");
+  }
+
+  if (flags.has("--minimal") || keepMinimal) {
     if (flags.has("--with-skills")) {
       fail("--minimal and --with-skills are contradictory: a minimal install lays down no skills.");
     }
@@ -364,7 +395,10 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     const dryRun = flags.has("--dry-run");
     // The minimal install is the Claude-native default; an explicit --target
     // codex records Codex instead and must not get Claude's settings.json.
-    const minimalTarget = getFlagValue("--target", "claude");
+    const minimalTarget = getFlagValue(
+      "--target",
+      keepMinimal && recordedInstall.target !== "unrecognized" ? recordedInstall.target : "claude",
+    );
 
     if (!EXPLICIT_TARGETS.includes(minimalTarget)) {
       fail(`unknown --target "${minimalTarget}". Use one of: ${EXPLICIT_TARGETS.join(", ")}.`);
@@ -406,7 +440,11 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     log("Installed: the guard hook, the proof layer, and the friction log. No RULES.md, no epics/, no skills.");
     log("Next: `ai-flow verify` on a branch — it needs no story and no scaffolding.");
     log("When something goes wrong: `ai-flow report` collects it into one file you can send.");
-    log("Later: `ai-flow init` (without --minimal) lays down the full workflow when you want it.");
+    if (keepMinimal) {
+      log("Install: minimal (kept). Add the workflow layer with `ai-flow init --full`.");
+    } else {
+      log("Later: `ai-flow init --full` lays down the full workflow when you want it.");
+    }
     log("");
     log(binaryPathNote(isCommandAvailable("ai-flow")));
 
@@ -497,6 +535,13 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     log("Dry run complete.");
   } else {
     log("Coding Flow installed.");
+  }
+
+  if (flags.has("--full") && hadConfig && recorded.install === "minimal" && !platformOnly) {
+    log(`${dryRun ? "Would add" : "Adding"} the workflow layer (${result.copied.length} file${result.copied.length === 1 ? "" : "s"}):`);
+    for (const file of result.copied) {
+      log(`- ${file}`);
+    }
   }
 
   log(`Copied: ${result.copied.length}`);
@@ -718,7 +763,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
       log(JSON.stringify({ install: "minimal", copied: [], updated: [] }, null, 2));
     } else {
       log(flags.has("--dry-run") ? "Upgrade dry run complete." : "Coding Flow upgraded.");
-      log("Templates: none (minimal install) — `ai-flow init` lays down the full workflow when you want it.");
+      log("Templates: none (minimal install) — `ai-flow init --full` lays down the full workflow when you want it.");
     }
   } else {
     upgrade({

@@ -7,6 +7,7 @@ const path = require("path");
 const { cwd, npxCommand } = require("./context");
 const { log, normalizePortable } = require("./util");
 const { detectProjectPackageJson, commandsPath } = require("./templates");
+const { USAGE } = require("./usage");
 
 function printCommands({ json = false } = {}) {
   const detected = detectProjectPackageJson();
@@ -124,41 +125,7 @@ Most of these are invoked automatically by the skills, CI, or the git hook. As a
 user you mainly need: init, status, next, ship (and the /flow-plan, /flow-run skills).
 
 Usage:
-  ai-flow init [--target claude|codex|gemini|opencode|antigravity] [--opencode] [--minimal] [--global] [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
-  ai-flow upgrade [--global] [--with-skills|--no-skills] [--no-guard] [--force] [--dry-run] [--json]
-  ai-flow doctor [--fix] [--strict] [--json]
-  ai-flow status [--json]
-  ai-flow next [--all] [--json]
-  ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
-  ai-flow verify --story path [--json] [--dry-run] [--test-exemption "reason"]
-               [--allow-plan-commands] [--clean-env]
-  ai-flow bootstrap --scan [--force] [--dry-run] [--json]
-  ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
-  ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
-  ai-flow audit [--export] [--check] [--since iso] [--decisions] [--json] [--dry-run]
-  ai-flow review capture --story path --verdict pass|fail [--reviewer self|subagent]
-                [--accept "reason"]
-                [--architecture|--tests|--security|--quality|--e2e quick|deep|skipped]
-                [--p0 n] [--p1 n] [--p2 n] [--p3 n] [--json]
-  ai-flow trace [--story path] [--json]
-  ai-flow ci init [--force] [--dry-run]
-  ai-flow plugin sync|check [--json] [--dry-run]
-  ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
-  ai-flow worktree list
-  ai-flow worktree remove <name> [--force] [--dry-run]
-  ai-flow worktree lock --story <path>
-  ai-flow worktree unlock [--story <path>] [--force]
-  ai-flow worktree land <name>|--story <path>
-  ai-flow worktree place --epic <path> --story <path> [--json]
-  ai-flow worktree autoland --epic <path> --story <path> [--json]
-  ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit] [--all]
-               [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
-  ai-flow hook install|uninstall|status [--dry-run] [--json]
-  ai-flow commands [--json]
-  ai-flow uninstall [--global] [--dry-run] [--force] [--json]
-  ai-flow list-skills [--json]
-  ai-flow version
-  ai-flow help [--all]
+${USAGE}
 
 Setup (you run these):
   init         Install workflow files and the default harness policy into the current project.

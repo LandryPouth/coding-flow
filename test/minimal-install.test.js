@@ -117,11 +117,42 @@ test('verify works on a minimal install — no story, no scaffolding', (t) => {
   assert.equal(JSON.parse(res.output).ok, true, 'the proof layer is the point of a minimal install');
 });
 
-test('a plain init grows a minimal project into the full workflow', (t) => {
+test('a plain init keeps a minimal project minimal', (t) => {
+  const dir = project(t, 'min-kept');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"x","scripts":{}}\n');
+  run(dir, ['init', '--minimal']);
+  const before = fs.readFileSync(path.join(dir, 'package.json'), 'utf8').length;
+
+  const res = run(dir, ['init']);
+  assert.equal(res.code, 0, res.output);
+  assert.match(res.output, /Install: minimal \(kept\)\. Add the workflow layer with `ai-flow init --full`\./);
+
+  for (const file of ['RULES.md', 'examples', 'opencode.json']) {
+    assert.equal(fs.existsSync(path.join(dir, file)), false, `${file} must not appear`);
+  }
+  assert.equal(fs.readFileSync(path.join(dir, 'package.json'), 'utf8').length, before, 'no new package scripts');
+  const config = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'config.json'), 'utf8'));
+  assert.equal(config.install, 'minimal');
+});
+
+test('init --full --dry-run lists the additions and writes nothing', (t) => {
+  const dir = project(t, 'min-full-dry');
+  run(dir, ['init', '--minimal']);
+
+  const res = run(dir, ['init', '--full', '--dry-run']);
+  assert.equal(res.code, 0, res.output);
+  assert.match(res.output, /Would add the workflow layer/);
+  assert.match(res.output, /- RULES\.md/);
+  assert.equal(fs.existsSync(path.join(dir, 'RULES.md')), false);
+  const config = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'config.json'), 'utf8'));
+  assert.equal(config.install, 'minimal');
+});
+
+test('init --full grows a minimal project into the full workflow', (t) => {
   const dir = project(t, 'min-promote');
   run(dir, ['init', '--minimal']);
 
-  const res = run(dir, ['init']);
+  const res = run(dir, ['init', '--full']);
   assert.equal(res.code, 0, res.output);
   assert.match(res.output, /promoted from minimal to full/);
   assert.ok(fs.existsSync(path.join(dir, 'RULES.md')));
