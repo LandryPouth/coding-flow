@@ -46,6 +46,12 @@ useful artifacts, not ceremony.
   sooner, so its PR(s) merge sooner (see auto-merge in `/flow-ship`): a bloated
   epic is not just harder to reason about, it sits open longer.
 - Every story is vertical, testable, and carries acceptance criteria.
+- **Corpus first for a parser- or policy-shaped epic.** When the epic teaches code
+  to recognise inputs — a shell reader, a path policy, a config parser, a route
+  scanner — the case corpus is **story 01**, never the last story. The walking
+  skeleton for such an epic is "the corpus runs, red where unhandled"; later
+  stories turn rows green. Written last, the spec is discovered one missing case
+  per review pass (epic 05: corpus last, 10–12 review passes per story).
 
 ## Walking Skeleton (Story 01)
 

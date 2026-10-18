@@ -170,7 +170,7 @@ test('strict: a Deferred Criteria section names a criterion it defers', (t) => {
 });
 
 test('a story with no criteria raises no criteria signal', (t) => {
-  const dir = repo(t, 'cs-no-criteria', { harness: { mode: 'strict' } });
+  const dir = repo(t, 'cs-no-criteria', { criteria: [], harness: { mode: 'strict' } });
   write(dir, `${STORY}/spec.md`, '# Widget\n\nProse only.\n');
   commitAll(dir);
 

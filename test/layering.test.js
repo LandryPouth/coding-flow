@@ -17,7 +17,7 @@ const CORE = [
   'audit', 'config', 'context', 'coverage', 'coverage-gate', 'detect', 'diff-base',
   'diff-scope', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
   'identity', 'policy', 'policy-fingerprint', 'report', 'risk', 'security-policy',
-  'story', 'util', 'validation-run',
+  'spec-drift', 'story', 'util', 'validation-run',
 ];
 
 // `story` is core: a pure fs/path reader of the optional story files, used only

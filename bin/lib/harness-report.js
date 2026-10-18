@@ -305,6 +305,14 @@ function describeContraryWarnings(contrary) {
     parts.push(`assertions removed in ${w.assertionsRemoved.length} test file${w.assertionsRemoved.length === 1 ? "" : "s"}`);
   }
 
+  if (w && w.criteriaChanged && w.criteriaChanged.length > 0) {
+    parts.push(`${w.criteriaChanged.length} criteria changed: ${w.criteriaChanged.slice(0, 3).join("; ")}`);
+  }
+
+  if (w && w.specInDiff) {
+    parts.push("spec born in this diff");
+  }
+
   return parts.join(", ");
 }
 

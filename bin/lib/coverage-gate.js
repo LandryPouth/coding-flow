@@ -19,6 +19,7 @@ const {
 } = require("./coverage");
 const { readStoryPart, readStoryBundle, extractSection } = require("./story");
 const { matchesPattern } = require("./util");
+const { criterionItems, readSpecDrift } = require("./spec-drift");
 const { defaultHighRiskPaths, defaultNonBehaviorGlobs } = require("./harness-config");
 
 // The default non-behavior entries that are also default high-risk paths: the
@@ -82,15 +83,7 @@ function readAcceptanceCriteria(storyDir) {
     return null;
   }
 
-  const items = [];
-
-  for (const line of section.split(/\r?\n/)) {
-    const match = line.match(/^\s*[-*]\s*\[([ xX~])\]\s*(.+?)\s*$/);
-
-    if (match) {
-      items.push({ state: match[1] === "~" ? "deferred" : match[1] === " " ? "open" : "done", text: match[2] });
-    }
-  }
+  const items = criterionItems(readStoryPart(storyDir, "spec"));
 
   // A criteria section written as prose rather than as a checklist is not a
   // defect to report — there is simply nothing countable in it.
@@ -615,7 +608,13 @@ const NO_CONTRARY = Object.freeze({
   enforced: false,
   ok: true,
   failures: Object.freeze([]),
-  warnings: Object.freeze({ deletedTests: Object.freeze([]), openCriteria: Object.freeze([]), assertionsRemoved: Object.freeze([]) }),
+  warnings: Object.freeze({
+    deletedTests: Object.freeze([]),
+    openCriteria: Object.freeze([]),
+    assertionsRemoved: Object.freeze([]),
+    criteriaChanged: Object.freeze([]),
+    specInDiff: false,
+  }),
 });
 
 // What the verdict depends on besides the tree: the mode, the flag, and the risk
@@ -657,7 +656,16 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     .map((finding) => finding.file);
   const openCriteria = criteria ? criteria.unchecked : [];
 
-  if (deletedTests.length === 0 && openCriteria.length === 0 && assertionsRemoved.length === 0) {
+  const { criteriaChanged, specInDiff } = readSpecDrift(storyDir, currentDiffBase(cwd).mergeBase);
+  const specChange = extractSection(Object.values(readStoryBundle(storyDir || "")).join("\n\n"), "Spec Change");
+
+  if (
+    deletedTests.length === 0 &&
+    openCriteria.length === 0 &&
+    assertionsRemoved.length === 0 &&
+    criteriaChanged.length === 0 &&
+    !specInDiff
+  ) {
     return NO_CONTRARY;
   }
 
@@ -682,7 +690,28 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     });
   }
 
-  return { enforced, ok: failures.length === 0, failures, warnings: { deletedTests, openCriteria, assertionsRemoved } };
+  // A written reason lowers the claim and is accepted, and is kept in the evidence.
+  const drift = criteriaChanged.length > 0 || specInDiff;
+
+  if (enforced && drift && !specChange) {
+    const what = specInDiff
+      ? "the story's spec is born in this diff, so the specifier is the coder"
+      : `${criteriaChanged.length} acceptance criterion(a) changed since the diff base: ${criteriaChanged.slice(0, 5).join("; ")}`;
+
+    failures.push({
+      signal: specInDiff ? "spec-in-diff" : "criteria-changed",
+      detail: `${what}. Explain it in a '## Spec Change' section`,
+      items: criteriaChanged,
+    });
+  }
+
+  return {
+    enforced,
+    ok: failures.length === 0,
+    failures,
+    warnings: { deletedTests, openCriteria, assertionsRemoved, criteriaChanged, specInDiff },
+    ...(drift && specChange ? { specChange } : {}),
+  };
 }
 
 module.exports = {

@@ -1,9 +1,9 @@
 # Story 13-05 — Tasks
 
-- [ ] Criteria at base vs HEAD; three outcomes; tests first.
-- [ ] `## Spec Change` declaration.
-- [ ] flow-plan rule + eval prompt; `plugin sync`.
-- [ ] CHANGELOG (Added).
+- [x] Criteria at base vs HEAD; three outcomes; tests first.
+- [x] `## Spec Change` declaration.
+- [x] flow-plan rule + eval prompt; `plugin sync`.
+- [x] CHANGELOG (Added).
 
 ## Result
 

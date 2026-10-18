@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Criteria drift.** `verify --story` compares the story's acceptance criteria with the diff base: ticking `[ ]` to `[x]`/`[~]` is silent, a removed or reworded criterion is `criteria-changed` (old → new), and a story born in the same diff as its code is `spec-in-diff`. Warnings by default; strict fails unless the story carries a `## Spec Change` section, whose reason is kept in the evidence.
+- **`/flow-plan`: corpus first.** For a parser- or policy-shaped epic the case corpus is story 01, not the last story.
+
 ### Fixed
 
 - **A command substitution is not a credential.** The "Long assigned credential" heuristic no longer reports `password="$(aws secretsmanager get-random-password …)"`, `"${DB_PASSWORD:-…}"`, `"$VAR"` or a backtick substitution: the secret is fetched at run time, it is not written in the file. Only a value that is one whole expansion is exempt (`$2b$10$…` or `${HOME}secret…` still report, and so does a second literal assignment on the same line); heuristic matches only; an exact key format (AWS, GitHub, Stripe…) in the same line is still refused.
