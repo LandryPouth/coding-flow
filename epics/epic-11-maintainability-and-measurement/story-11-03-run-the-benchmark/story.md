@@ -28,8 +28,14 @@ hypothesis is not supported; deviations and the losing arm are listed in
 `docs/experiments/reliability-benchmark.md`. Raw runs committed in
 `evals/benchmark/runs/2026-10-17/`. DOGFOODING row added.
 
-## Test Exemption
+The results table is generated (`run.js summarize`) and pinned to the raw runs by
+`test/benchmark-results.test.js`: hand-copied figures drifted across five review
+rounds. Every figure in the table is now generated; each figure left in the prose
+cites the raw file it comes from.
 
-Documentation and measurement only; no product code or test file changes.
+## Tests
+
+`test/benchmark-results.test.js` — the document's table equals `summarize` on the
+committed runs; a changed raw run changes the summary; an empty directory is refused.
 
 ## Status: in-review

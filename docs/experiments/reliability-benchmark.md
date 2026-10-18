@@ -84,104 +84,107 @@ property of the tool.
 Run 2026-10-17. Model `claude-sonnet-5-5` in both arms, coding-flow 0.12.1 (plugin)
 with `ai-flow init` from this checkout, `claude` 2.1.302, headless
 (`-p --output-format json --permission-mode acceptEdits`). **N = 1 per cell.**
-The raw per-run JSON and acceptance output are committed in
-[`evals/benchmark/runs/2026-10-17/`](../../evals/benchmark/runs/2026-10-17/README.md)
-and every figure below is re-derivable from them. Totals are summed from unrounded
-values, so they can differ by a cent from the rows. Arm B = `/flow-plan` then
-`/flow-run` (two sessions, summed).
+Arm B = `/flow-plan` then `/flow-run` (two sessions, summed).
 
 **Deviations first** (detail under *Deviations from the protocol and limits*): N = 1
 per cell; the grader was not blind; ten sessions ran in parallel, so timings are
 indicative; arm B was driven by the harness, not a person; arm A ran with the
-coding-flow plugin installed (not initialised, not invoked); "files forgotten" and
-"escaped defects" were graded by hand after the fact, from the committed diffs.
+coding-flow plugin installed (not initialised, not invoked); the task 5 prompt
+admits the reading arm B took; "files forgotten" and "escaped defects" were graded
+by hand after the fact, from the committed diffs.
 
-| Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cache write | Cost | Time |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 Fix | vanilla | yes | 0 | 8/1036 | 109,514 | 30,490 | $0.14 | 22s |
-| 1 Fix | coding-flow | yes | 0 | 24/5606 | 503,036 | 88,900 | $0.46 | 75s |
-| 2 CRUD | vanilla | no | 1 | 16/4687 | 215,940 | 61,509 | $0.31 | 58s |
-| 2 CRUD | coding-flow | no | 1 | 34/12066 | 704,599 | 141,605 | $0.76 | 139s |
-| 3 Refactor | vanilla | yes | 0 | 10/2646 | 141,031 | 33,070 | $0.17 | 36s |
-| 3 Refactor | coding-flow | yes | 0 | 26/9543 | 578,240 | 100,782 | $0.56 | 103s |
-| 4 Auth | vanilla | yes | 0 | 10/1987 | 142,921 | 34,226 | $0.17 | 60s |
-| 4 Auth | coding-flow | yes | 0 | 20/9594 | 440,134 | 53,187 | $0.81 | 96s |
-| 5 Cross-module | vanilla | yes | 0 | 12/1630 | 183,478 | 33,033 | $0.17 | 41s |
-| 5 Cross-module | coding-flow | no | 1 | 46/10645 | 1,032,980 | 142,194 | $0.78 | 134s |
-| **Total** | vanilla | 4/5 | 1 | 56/11,986 | 792,884 | 192,328 | $0.97 | 217s |
-| **Total** | coding-flow | 3/5 | 2 | 150/47,454 | 3,258,989 | 526,668 | $3.36 | 547s |
+The table below is the output of
+`node evals/benchmark/run.js summarize evals/benchmark/runs/2026-10-17`, computed
+from the raw runs committed in
+[`evals/benchmark/runs/2026-10-17/`](../../evals/benchmark/runs/2026-10-17/README.md).
+Do not edit it by hand: `test/benchmark-results.test.js` fails when it stops
+matching. Totals and ratios are computed from unrounded values.
 
-Cache writes are reported beside reads: coding-flow wrote about 2.7× as many cache tokens (526,668 against 192,328), as it loads `RULES.md` and story files.
+<!-- summarize:begin -->
+| Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cache write | Cost | Time | Spec lines added |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 fix | vanilla | yes | 0 | 8/1,036 | 109,514 | 30,490 | $0.14 | 22s | 2 |
+| 1 fix | coding-flow | yes | 0 | 24/5,606 | 503,036 | 88,900 | $0.46 | 75s | 15 |
+| 2 crud | vanilla | no | 1 | 16/4,687 | 215,940 | 61,509 | $0.31 | 58s | 84 |
+| 2 crud | coding-flow | no | 1 | 34/12,066 | 704,599 | 141,605 | $0.76 | 139s | 158 |
+| 3 refactor | vanilla | yes | 0 | 10/2,646 | 141,031 | 33,070 | $0.17 | 36s | 0 |
+| 3 refactor | coding-flow | yes | 0 | 26/9,543 | 578,240 | 100,782 | $0.56 | 103s | 124 |
+| 4 auth | vanilla | yes | 0 | 10/1,987 | 142,921 | 34,226 | $0.17 | 60s | 28 |
+| 4 auth | coding-flow | yes | 0 | 20/9,594 | 440,134 | 53,187 | $0.81 | 96s | 76 |
+| 5 cross-module | vanilla | yes | 0 | 12/1,630 | 183,478 | 33,033 | $0.17 | 41s | 10 |
+| 5 cross-module | coding-flow | no | 1 | 46/10,645 | 1,032,980 | 142,194 | $0.78 | 134s | 44 |
+| **Total** | vanilla | 4/5 | 1 | 56/11,986 | 792,884 | 192,328 | $0.97 | 217s | 124 |
+| **Total** | coding-flow | 3/5 | 2 | 150/47,454 | 3,258,989 | 526,668 | $3.36 | 547s | 417 |
 
-All ten runs ended green on acceptance and regression after at most one re-prompt.
+coding-flow against vanilla: cost 3.5×, time 2.5×, cache writes 2.7×, spec lines added 3.4×.
+<!-- summarize:end -->
+
+All ten runs ended green on acceptance and regression after at most one re-prompt
+(`*/accept-*.txt`).
 
 ### What the numbers say
 
 **The hypothesis is not supported by this run.** Coding Flow did not beat the agent
-alone on first-pass success (3/5 against 4/5) and cost about 3.5× as much and 2.5×
-the time. The arm that lost is coding-flow, on tasks 2 and 5.
+alone on first-pass success (3/5 against 4/5) and cost more on every task. It tied
+on tasks 1–4 and lost on task 5; no task shows it ahead on the scored metrics.
 
-- **Task 5 (cross-module) is the clearest loss, and it contradicts the hypothesis
-  directly.** Vanilla made a 3-line change in `report.js` and passed first time.
-  Coding Flow failed all 5 acceptance tests on its first attempt, and the cause is
-  the plan, not the code: `/flow-plan` assumed "paid out" meant `approved` only
-  (`run-plan.json`, *Assumptions*) and wrote that unconfirmed assumption into the
-  story's acceptance criteria, so submitted expenses were dropped from the totals.
-  `/flow-run` implemented those criteria faithfully, `ai-flow verify` went green
-  against them, and the story was marked `done` (`run-0.json`). The re-prompt
-  fixed it; the agent's own words: "the story's assumption ... was wrong"
-  (`run-1.json`). The machine verified the agent's spec, and the spec was wrong.
-  Separately, Coding Flow put the status predicate (`countsTowardTotals`) in
-  `approvals.js` rather than `report.js`, a file the fix did not need; the final
-  logic is the same as vanilla's, so this is scope, not the cause of the failure.
+- **Task 5 (cross-module) is the only first-pass difference, and part of it is the
+  fixture.** Coding Flow passed 0 of 5 acceptance tests on its first attempt
+  (`05-cross-module-B/accept-0.txt`). `/flow-plan` read "paid out" as `approved`
+  only, so `submitted` expenses were left out of the totals, and listed that reading
+  under *Assumptions* (`run-plan.json`). The prompt supports that reading — the
+  totals are "higher than what was actually paid out" (`tasks/05-cross-module/PROMPT.md`),
+  and a submitted expense has not been paid out either — and `REFERENCE.md` does not
+  settle it; only the third acceptance test ("submitted and approved expenses both
+  still count") does. Vanilla read it the grader's way. So this loss says as much
+  about an ambiguous prompt as about either arm.
+- **What task 5 does show about Coding Flow is independent of who was right.**
+  `/flow-plan` settled the ambiguity itself, wrote its reading into the story's
+  acceptance criteria, `/flow-run` implemented them, `ai-flow verify` went green
+  against them and the story was marked `done` (`run-0.json`). Nothing asked. The
+  proof proved the plan, not the request.
 - **Task 2:** both arms failed the same 3 of 6 acceptance tests first time and
-  passed after one re-prompt. No difference.
-- **Where coding-flow did differ is the tests it left behind.** Hand-graded against
-  each `REFERENCE.md`: vanilla added no test of its own on task 3 (the refactor);
-  coding-flow added 13 tests (`spec/{approvals,expenses,routes,users}.spec.js`, 124
-  lines). On tasks 1 and 5 coding-flow added 15 and 44 lines of specs against
-  vanilla's 2 and 10; on task 4, 76 against 28; on task 2, 158 against 84. That is the only
-  measured advantage, and acceptance does not score it.
-- **Scope (tasks 3 and 4).** Vanilla left `rejectExpense` alone in both. On task 3
-  coding-flow routed `rejectExpense` through a new shared `requireActor` helper (the
-  role check is not added, so behaviour is unchanged) and removed the router's copy;
-  it ended at 1 duplicated occurrence against a target of 2. Neither arm asked about
-  the `rejectExpense` inconsistency.
-- **Files forgotten: none, in either arm.** Graded by hand from `final.patch` against
-  each `REFERENCE.md`: every file the reference says should change changed, every
-  required test was written (tasks 2 and 4), and `store.js`, `expenses.js` and
-  `report.js` were left alone where the reference says so. The only out-of-scope
-  edit is coding-flow's `approvals.js` on task 5.
-- **Escaped defects: none found, in either arm.** Hand-graded from the same diffs:
-  neither arm changed `rejectExpense`'s behaviour, moved the comparison in task 4, or
-  leaked vendors into the report, and the regression suite is green in all ten final
-  trees. This is a read of ten small diffs by the person who ran them, not a hunt, and
-  "none found" is not "none". Nothing here shows coding-flow catching a defect
-  vanilla shipped.
+  passed after one re-prompt (`02-crud-*/accept-*.txt`). No difference.
+- **Tests left behind are the one measured edge, and acceptance does not score
+  them.** Coding Flow added more spec lines on every task (*Spec lines added*
+  column); on task 3, the refactor, vanilla added none.
+- **Scope.** Coding Flow made two edits the references put out of scope; vanilla
+  made none. Task 3: it routed `rejectExpense` through a new shared `requireActor`
+  helper, without adding the role check, so behaviour is unchanged, ending at 1
+  duplicated occurrence against a target of 2 (`03-refactor-B/final.patch`,
+  `accept-0.txt`). Task 5: it put the status predicate (`countsTowardTotals`) in
+  `approvals.js` rather than only `report.js` (`05-cross-module-B/final.patch`).
+  Neither arm asked about the `rejectExpense` inconsistency.
+- **Files forgotten: none, in either arm.** Hand-graded from each `final.patch`
+  against each `REFERENCE.md`: every file the reference says should change changed,
+  and the tests tasks 2 and 4 require were written.
+- **Escaped defects: none found, in either arm.** Hand-graded from the same diffs,
+  with the regression suite green in all ten final trees. This is a read of ten
+  small diffs by the person who ran them, not a hunt; "none found" is not "none".
+  Nothing here shows Coding Flow catching a defect vanilla shipped.
 
 ### Deviations from the protocol and limits
 
 - **Files forgotten and escaped defects were graded after the runs**, by hand, from
-  the diffs. The final `src/`+`spec/` diffs were exported from the surviving
-  workspaces after the fact (`final.patch`); everything else in `runs/` is as the
-  runs wrote it.
-- **N = 1 per cell, non-deterministic model.** A single re-prompt on one task is the
-  whole difference in first-pass counts; do not read 3/5 against 4/5 as a rate.
+  the diffs. `final.patch` was exported from the surviving workspaces after the
+  fact; everything else in `runs/` is as the runs wrote it.
+- **N = 1 per cell, non-deterministic model.** One task is the whole difference in
+  first-pass counts; do not read 3/5 against 4/5 as a rate.
+- **The task 5 prompt is ambiguous** (see above). A rerun should make the intended
+  rule unambiguous in `PROMPT.md` or state it in `REFERENCE.md`.
 - **The grader was not blind.** The same person set up, ran and graded both arms.
-  The hand grading of files and defects above has the same limit.
 - **Time** is `duration_ms` summed over the planning session, the run and any
   re-prompt, so arm B pays for `/flow-plan` in every task.
 - **Arm B's operator was the harness**: the task prompt was passed to `/flow-plan`
   verbatim, then `/flow-run the story you just planned`. A hand-guided session may
   do better or worse.
 - **Arm A was not isolated from the coding-flow plugin.** The plugin is enabled at
-  user scope on the machine that ran both arms, and no step disabled it for arm A,
-  so its skills were available there too (as were the user's global `CLAUDE.md`
-  and other plugins, in both arms). Arm A never ran `init`, and none of its diffs
-  contains a story file, so the effect is probably small, but "vanilla" here means
-  "not initialised and not invoked", not "absent".
+  user scope on the machine that ran both arms and no step disabled it for arm A
+  (the user's global `CLAUDE.md` and other plugins were present in both arms). Arm
+  A never ran `init` and none of its diffs contains a story file; "vanilla" here
+  means "not initialised and not invoked", not "absent".
 - Tasks ran in parallel, ten sessions at once; timings are indicative only.
-- The model was `claude-sonnet-5-5`; a stronger model may erase the gap the other way.
+- The model was `claude-sonnet-5-5`; a stronger model may change the gap either way.
 
 ## The fixture and the prompts
 
