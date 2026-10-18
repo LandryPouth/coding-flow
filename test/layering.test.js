@@ -30,7 +30,7 @@ const LAYER = [
   'worktree-plan',
   // install, platform wiring and CLI plumbing: not needed to guard or prove
   'bootstrap', 'ci', 'codex-probe', 'codex-settings', 'commands', 'hook',
-  'opencode', 'opencode-config', 'settings', 'trace', 'uninstall', 'unwire',
+  'opencode', 'opencode-config', 'settings', 'trace', 'uninstall', 'unwire', 'usage',
   'platforms/*', 'storage/*',
 ];
 
