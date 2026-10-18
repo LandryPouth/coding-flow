@@ -148,12 +148,14 @@ on tasks 1–4 and lost on task 5; no task shows it ahead on the scored metrics.
 - **Tests left behind are the one measured edge, and acceptance does not score
   them.** Coding Flow added more spec lines on every task (*Spec lines added*
   column); on task 3, the refactor, vanilla added none.
-- **Scope.** Coding Flow made two edits the references put out of scope; vanilla
-  made none. Task 3: it routed `rejectExpense` through a new shared `requireActor`
+- **Scope.** Coding Flow made two edits outside where the references place the
+  change; vanilla made none. Task 3: it routed `rejectExpense` through a new shared `requireActor`
   helper, without adding the role check, so behaviour is unchanged, ending at 1
   duplicated occurrence against a target of 2 (`03-refactor-B/final.patch`,
   `accept-0.txt`). Task 5: it put the status predicate (`countsTowardTotals`) in
-  `approvals.js` rather than only `report.js` (`05-cross-module-B/final.patch`).
+  `approvals.js`, where the reference places the fix in `report.js` only; it kept
+  every record, so this is not the audit-trail loss the reference warns about
+  (deleting or moving the record) (`05-cross-module-B/final.patch`).
   Neither arm asked about the `rejectExpense` inconsistency.
 - **Files forgotten: none, in either arm.** Hand-graded from each `final.patch`
   against each `REFERENCE.md`: every file the reference says should change changed,

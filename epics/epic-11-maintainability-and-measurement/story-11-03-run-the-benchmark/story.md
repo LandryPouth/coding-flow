@@ -38,4 +38,4 @@ cites the raw file it comes from.
 `test/benchmark-results.test.js` — the document's table equals `summarize` on the
 committed runs; a changed raw run changes the summary; an empty directory is refused.
 
-## Status: in-review
+## Status: done
