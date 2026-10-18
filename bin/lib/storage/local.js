@@ -12,22 +12,50 @@ const { toPortable } = require("../util");
 const { latestVerifyByStoryDir, isStale } = require("../audit");
 const { currentTreeToken } = require("../identity");
 const { policyFingerprint } = require("../policy-fingerprint");
-const { readStoryPart } = require("../story");
+const { readStoryPart, storyPartPath } = require("../story");
 
 // Extracts the body of the `## Result` section (with its ### children) from a
 // tasks.md. The checklist above Result must not influence status, so only the
 // executed-outcome part counts as "notes". A tasks.md without a Result section
 // (e.g. a bare unit-test fixture) is read whole.
-function resultNotes(raw) {
-  const lines = raw.split(/\r?\n/);
+//
+// A single-file story.md opens with its own description (title, paragraph, mode
+// line) before any `##` heading; that is the brief, not progress, so with no
+// `## Result` the text before the first `##` is skipped. A split tasks.md keeps
+// being read whole.
+function resultNotes(raw, { singleFile = false } = {}) {
+  let lines = raw.split(/\r?\n/);
   const start = lines.findIndex((line) => /^##\s+Result\s*$/i.test(line));
 
   if (start === -1) {
+    if (singleFile) {
+      const firstSection = lines.findIndex((line) => /^##\s/.test(line));
+      lines = firstSection === -1 ? [] : lines.slice(firstSection);
+    }
+
     // No `## Result`: the prose is whatever is not the plan. Headings and
     // unchecked items are the plan — a fresh `## Validation Tasks` /
     // `- [ ] npm test passes` read as "validation … pass" and called an
     // untouched story done.
-    return lines.filter((line) => !/^\s*#/.test(line) && !/^\s*[-*]\s+\[ \]/.test(line)).join("\n");
+    // In a single-file story the wrapped lines of an unchecked item are the plan
+    // too (its criteria wrap); a split tasks.md is read as it always was.
+    let inPlanItem = false;
+
+    return lines
+      .filter((line) => {
+        if (/^\s*[-*]\s+\[ \]/.test(line)) {
+          inPlanItem = true;
+          return false;
+        }
+
+        if (singleFile && inPlanItem && /^\s+\S/.test(line)) {
+          return false;
+        }
+
+        inPlanItem = false;
+        return !/^\s*#/.test(line);
+      })
+      .join("\n");
   }
 
   const section = [];
@@ -79,7 +107,7 @@ function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
   }
 
   // The prose heuristic (step 3) only sees the executed outcome, not the checklist.
-  const notes = resultNotes(raw);
+  const notes = resultNotes(raw, { singleFile: path.basename(storyPartPath(storyDir, "tasks")) === "story.md" });
 
   // 2. Evidence-backed: a captured verify is proof, prose is not. A green proof
   //    that no longer matches the code is "stale" (re-verify), not "verified".

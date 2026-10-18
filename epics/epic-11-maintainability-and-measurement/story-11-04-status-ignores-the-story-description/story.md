@@ -10,16 +10,16 @@ single-file stories of epics 05–11 (worked around with `## Status: planned`).
 
 ## Acceptance Criteria
 
-- [ ] Given a `story.md` with a title, a prose paragraph, a mode line in
+- [x] Given a `story.md` with a title, a prose paragraph, a mode line in
       parentheses and an unchecked acceptance-criteria list, no `## Status`,
       no `## Result`, then `inferStoryStatus` returns `planned`.
-- [ ] Given the same file with a `## Result` section holding > 160 characters,
+- [x] Given the same file with a `## Result` section holding > 160 characters,
       then `in-progress` (unchanged).
-- [ ] Given a split story (`tasks.md`) with prose notes outside `## Result`,
+- [x] Given a split story (`tasks.md`) with prose notes outside `## Result`,
       behaviour is unchanged (only text before the first `##` heading is
       ignored, and only for single-file stories).
-- [ ] Remove the `## Status: planned` workaround lines from the epics 05–11
+- [x] Remove the `## Status: planned` workaround lines from the epics 05–11
       single-file stories that are still planned, and check `ai-flow status`.
-- [ ] `npm test` green; DOGFOODING row of 2026-10-16 (status) resolved.
+- [x] `npm test` green; DOGFOODING row of 2026-10-16 (status) resolved.
 
-## Status: planned
+## Status: done

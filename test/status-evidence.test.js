@@ -148,3 +148,52 @@ test('the latest verify wins: red then green -> verified', (t) => {
   run(dir, ['harness', 'verify', '--story', storyRel]);
   assert.equal(statusOf(dir, storyRel), 'verified', 'the most recent evidence must win');
 });
+
+// A single-file story.md opens with its own description. That is the brief, not
+// progress: without a `## Status` or `## Result` it is still "planned".
+const SINGLE_FILE_STORY = [
+  '# Story 11-04 — a thing',
+  '',
+  'A prose paragraph describing the story, long enough to cross the heuristic threshold: '.repeat(3),
+  '',
+  '*(QUICK — one function and its test.)*',
+  '',
+  '## Acceptance Criteria',
+  '',
+  '- [ ] It works.',
+  '',
+].join('\n');
+
+function singleFileStoryDir(t, content) {
+  const dir = tmp('status-single');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'story.md'), content);
+  return dir;
+}
+
+test('a single-file story is planned despite its opening description', (t) => {
+  const dir = singleFileStoryDir(t, SINGLE_FILE_STORY);
+  assert.equal(inferStoryStatus(dir, { verify: null }), 'planned');
+});
+
+test('a single-file story with a long ## Result is still in-progress', (t) => {
+  const dir = singleFileStoryDir(t, `${SINGLE_FILE_STORY}\n## Result\n\n${'Changed the thing and moved on. '.repeat(8)}\n`);
+  assert.equal(inferStoryStatus(dir, { verify: null }), 'in-progress');
+});
+
+test('a split tasks.md keeps its prose notes outside ## Result', (t) => {
+  const dir = storyDirWithNotes(t, `# Tasks\n\n${'Working on it, a long note outside any result section. '.repeat(5)}\n`);
+  assert.equal(inferStoryStatus(dir, { verify: null }), 'in-progress');
+});
+
+test('wrapped lines of an unchecked criterion are the plan, not progress', (t) => {
+  const wrapped = `${SINGLE_FILE_STORY}\n- [ ] ${'A long criterion that wraps onto the next line '.repeat(2)}\n      ${'and keeps going well past the threshold. '.repeat(5)}\n`;
+  const dir = singleFileStoryDir(t, wrapped);
+  assert.equal(inferStoryStatus(dir, { verify: null }), 'planned');
+});
+
+test('a split tasks.md keeps wrapped lines of an unchecked item as notes', (t) => {
+  const wrapped = `# Tasks\n\n- [ ] a criterion\n      ${'wrapped text that is long enough to count as notes. '.repeat(5)}\n`;
+  const dir = storyDirWithNotes(t, wrapped);
+  assert.equal(inferStoryStatus(dir, { verify: null }), 'in-progress');
+});
