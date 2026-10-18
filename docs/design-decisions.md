@@ -425,3 +425,33 @@ recognizable. Revisit if it buries the real unknowns.
 file are limits of reading shell text, not a guard failure, and they are
 everyday use: ~100 a day on this repository's own log. `report` counts them;
 `doctor` warns only on the reasons that mean the guard could not do its job.
+
+## 12. Core first
+
+The external audit (2026-10-16) recommends treating the CLI, the proof engine and
+the guard as the product, and stories, worktrees, skills and auto-merge as
+optional layers. [Epic 12](../epics/epic-12-core-first/index.md) draws that
+boundary in code (stories 12-01 to 12-03: `verify` without a story keeping its
+coverage gate, `--help` never acting, a layering test — landing separately) and
+the README and QUICKSTART now present it in that
+order: **Core** first, then **Optional layers**, each with what it adds, what it
+costs and the command to enable it. Nothing was removed; the order changed.
+
+**Open question for the maintainer — not decided here: should plain `init`
+default to minimal?**
+
+- *For:* the smallest thing worth adopting is the guard and the proof. A new user
+  gets what the audit calls the product, not a story format and a docs tree. It
+  matches the README's own order, and growing is one command
+  (`init` without `--minimal`).
+- *Against:* it changes what every new user gets, and the whole front door
+  (`/flow-setup` → `/flow-plan` → `/flow-run`) assumes the full install. A
+  minimal-by-default `init` would need a louder way to discover the layers —
+  and discoverability is the tool's first risk.
+  The benchmark (`docs/experiments/reliability-benchmark.md`) does not show the
+  workflow paying for its cost yet (it compares the full workflow with a bare
+  agent, not minimal with full), which argues against the full workflow's
+  overhead rather than for minimal; and N=1 is not a basis to change a default.
+
+Revisit with the maintainer's decision; until then `init` keeps installing the
+full workflow.

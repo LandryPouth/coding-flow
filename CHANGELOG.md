@@ -21,6 +21,7 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 - **A verify with nothing to judge says so** (story 12-01): with or without a story, an empty diff's coverage reads `not-required — no change to evaluate (...)` instead of "no diff visible …". Story-less verify already ran the coverage gate and diff risk on the branch's own diff; a new test file (`test/storyless-verify.test.js`) now pins that on a repo with no `epics/`: an auth file without a test fails, a test lifts it to `evidence`, a fresh lcov to `verified`, a green proof is reused until the branch or its base moves, and a run without `--story` never attributes itself to a story.
+- **README and QUICKSTART lead with the core** (story 12-04). README opens with **Core** (what `init --minimal` installs and guarantees, linking *What the guard does not see*) then **Optional layers** (skills, stories/epics, worktrees, review evidence, `ship`/auto-merge — what each adds, costs, and how to enable it). QUICKSTART's first path is the five-command minimal install; the full workflow comes second. `docs/design-decisions.md` entry 12 records the boundary and leaves "should plain `init` default to minimal?" open for the maintainer.
 - **CI runs on Windows and macOS.** The test workflow adds `windows-latest` and `macos-latest`
   (Node 22) next to the Ubuntu × Node 18/20/22 matrix, and configures git (identity,
   `core.autocrlf=false`) before checkout. Tests that need a POSIX shell are skipped on
