@@ -57,10 +57,13 @@ size ratchet as a declared quality check.
 
 ```text
 s1
+
 s2
+
 s3
 ├── s4
 └── s6
+
 s5
 ```
 

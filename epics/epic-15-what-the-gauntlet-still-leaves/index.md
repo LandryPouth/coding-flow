@@ -43,10 +43,15 @@ layer's open question is answered by s6's measurement, not by a story here.
 
 ```text
 s1
+
 s2
+
 s3
+
 s4
 └── s5
+
+s6
 ```
 
 External prerequisites: `s2` needs 13-06 (size ratchet) and 14-04
