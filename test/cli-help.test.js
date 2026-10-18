@@ -73,3 +73,20 @@ test('an unknown flag on init fails instead of installing', (t) => {
   assert.match(`${res.stdout}${res.stderr}`, /unknown flag "--hlep"/);
   assert.equal(snapshot(dir), before);
 });
+
+test('an unknown flag on uninstall fails instead of uninstalling', (t) => {
+  const dir = repo(t);
+  const before = snapshot(dir);
+  const res = spawnSync(process.execPath, [CLI, 'uninstall', '--hlep'], { cwd: dir, encoding: 'utf8' });
+
+  assert.equal(res.status, 1);
+  assert.match(`${res.stdout}${res.stderr}`, /unknown flag "--hlep"/);
+  assert.equal(snapshot(dir), before);
+});
+
+test('every dispatched command is in the usage table, so its --help cannot fall through and run', () => {
+  const source = fs.readFileSync(CLI, 'utf8');
+  const dispatched = [...new Set([...source.matchAll(/command === "([a-z][a-z-]*)"/g)].map((m) => m[1]))];
+
+  assert.deepEqual(dispatched.filter((c) => !COMMANDS.includes(c)), []);
+});

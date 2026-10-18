@@ -217,3 +217,17 @@ test('upgrade keeps a minimal install minimal', (t) => {
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).scripts, { test: 'true' });
   assert.ok(fs.existsSync(path.join(dir, '.claude', 'settings.json')), 'the guard is still wired');
 });
+
+test('init --target on a minimal project adds that platform and never the workflow layer', (t) => {
+  const dir = project(t, 'min-target');
+  run(dir, ['init', '--minimal']);
+
+  const res = run(dir, ['init', '--target', 'codex']);
+  assert.equal(res.code, 0, res.output);
+  assert.ok(fs.existsSync(path.join(dir, '.codex', 'skills')), 'the explicit platform is wired');
+  for (const file of ['RULES.md', 'examples', 'opencode.json']) {
+    assert.equal(fs.existsSync(path.join(dir, file)), false, `${file} must not appear`);
+  }
+  const config = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'config.json'), 'utf8'));
+  assert.equal(config.install, 'minimal');
+});
