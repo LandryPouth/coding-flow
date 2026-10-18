@@ -39,7 +39,9 @@ function parseStoryDirs(indexMdText) {
     // Numbered (`1. **dir**`, the original form) or a plain/checkbox bullet
     // (`- [ ] dir`, what the shipped example and flow-plan's own template write).
     // Position in the list is still the s<N> label either way.
-    const match = lines[i].match(/^(?:\d+\.|[-*])\s+(?:\[[ xX]\]\s+)?(?:\*\*([^*]+)\*\*|(story-[\w.-]+))/);
+    // Also tolerated, because agents write them: a leading ordinal (`- 01 — dir`),
+    // backticks and a trailing slash around the directory name (`` `dir/` ``).
+    const match = lines[i].match(/^(?:\d+\.|[-*])\s+(?:\[[ xX]\]\s+)?(?:\d+\s*[—–:-]\s*)?(?:\*\*([^*]+)\*\*|`?(story-[\w.-]+))/);
     if (match) {
       dirs.push((match[1] || match[2]).trim());
     }

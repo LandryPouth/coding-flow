@@ -203,19 +203,45 @@ function commandsFingerprint(commands, timeouts = {}) {
 // The tree token deliberately ignores untracked files (see identity.js), which is
 // fine for flagging staleness but not for skipping a run: a brand-new, untracked
 // source file is exactly the case where re-running matters. Folding the untracked
-// listing into the cache key closes that hole without touching what `stale` means.
+// listing and contents into the cache key closes that hole without touching what `stale` means.
 // Only ever called once currentTreeToken() has confirmed a git repository, so an
 // empty listing here means "no untracked files", not "git unavailable".
 //
 // `.coding-flow/` is excluded for the same reason the tree token excludes it: it
 // is where proofs are written, so counting it would mean every verify invalidates
 // the proof it just recorded.
+const UNTRACKED_CONTENT_MAX_BYTES = 5 * 1024 * 1024;
+
 function untrackedDigest() {
   const listing = runGitList(["ls-files", "--others", "--exclude-standard"]).filter(
     (file) => file !== ".coding-flow" && !file.startsWith(".coding-flow/"),
   );
 
-  return crypto.createHash("sha256").update(listing.join("\n")).digest("hex").slice(0, 40);
+  // Names alone miss the common case: a file this story created, edited again
+  // after its first verify. Fold each file's content in; a file too big to read
+  // cheaply (or unreadable) falls back to size + mtime, which can only over-invalidate.
+  const hash = crypto.createHash("sha256");
+
+  for (const file of listing) {
+    hash.update(`${file}\0`);
+
+    try {
+      const absolute = path.resolve(cwd, file);
+      const stat = fs.statSync(absolute);
+
+      if (stat.isFile() && stat.size <= UNTRACKED_CONTENT_MAX_BYTES) {
+        hash.update(fs.readFileSync(absolute));
+      } else {
+        hash.update(`${stat.size}:${stat.mtimeMs}`);
+      }
+    } catch {
+      hash.update("unreadable");
+    }
+
+    hash.update("\0");
+  }
+
+  return hash.digest("hex").slice(0, 40);
 }
 
 // Looks for a green verify that already proves this exact story, at this exact

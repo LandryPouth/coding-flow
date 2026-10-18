@@ -78,9 +78,9 @@ function capturePr(cwd) {
 //
 // The key property: the token is content-addressed, so it is stable across the
 // commit that materializes exactly what was verified (no false "stale" on
-// commit), and moves the moment any source content changes. Untracked new files
-// are not part of `stash create`, so they do not move the token (documented
-// limitation). Outside git -> null.
+// commit), and moves the moment any source content changes. Untracked files
+// (not ignored, outside `.coding-flow/`) are part of the snapshot, so creating or
+// editing one moves the token and committing it does not. Outside git -> null.
 const EVIDENCE_DIR = ".coding-flow";
 
 // The tree of the working tree's tracked content, or null. `stash create` comes
@@ -89,7 +89,11 @@ const EVIDENCE_DIR = ".coding-flow";
 // every uncommitted change; a throwaway copy of the index takes the same
 // snapshot instead, never touching the real index.
 function workingTreeTree(cwd, head) {
-  const stash = tryExec("git", ["stash", "create"], cwd);
+  // New files this work created are part of what was proven. Left out, the proof
+  // went stale the moment they were committed (the tree grew), though nothing
+  // had changed. Snapshotting them needs the throwaway index below.
+  const untracked = tryExec("git", ["ls-files", "--others", "--exclude-standard", "--", ".", `:(exclude)${EVIDENCE_DIR}`], cwd);
+  const stash = untracked ? null : tryExec("git", ["stash", "create"], cwd);
 
   if (stash !== null) {
     return gitField(cwd, ["rev-parse", `${stash.length > 0 ? stash : head}^{tree}`]);
@@ -109,7 +113,9 @@ function workingTreeTree(cwd, head) {
     fs.copyFileSync(path.resolve(cwd, index), tempIndex);
     const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
 
-    if (tryExec("git", ["add", "-u"], cwd, env) === null) {
+    const stage = untracked ? ["add", "-A", "--", ".", `:(exclude)${EVIDENCE_DIR}`] : ["add", "-u"];
+
+    if (tryExec("git", stage, cwd, env) === null) {
       return null;
     }
 

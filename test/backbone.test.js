@@ -158,3 +158,19 @@ test("parseBackbone reads checkbox and plain bullets, the form flow-plan's own t
   assert.deepEqual(storyDirs, ["story-01-01-first", "story-01-02-second", "story-01-03-third", "story-01-04-fourth"]);
   assert.equal(labelForDir(storyDirs, "story-01-02-second"), "s2");
 });
+
+test("story lines an agent tends to write still resolve to the same s<N> labels", () => {
+  const { parseStoryDirs } = require("../bin/lib/backbone");
+  const text = [
+    "## Stories",
+    "",
+    "- 01 — `story-01-01-slugify/` — implement and test (walking skeleton)",
+    "- [ ] story-01-02-plain",
+    "2. **story-01-03-bold** — original form",
+    "- 04: `story-01-04-colon`",
+    "- a sentence that is not a story",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(parseStoryDirs(text), ["story-01-01-slugify", "story-01-02-plain", "story-01-03-bold", "story-01-04-colon"]);
+});

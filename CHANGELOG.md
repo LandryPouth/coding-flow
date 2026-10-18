@@ -10,6 +10,12 @@ All notable changes to this project are documented here. The format is based on
 
 - **`worktree land --dry-run` is a dry run.** It used to start the real rebase and could leave the story worktree mid-rebase. It now runs land's checks, predicts a conflict without touching anything, and prints the steps it would take. `worktree lock`, `unlock`, `place` and `autoland` refuse `--dry-run` instead of ignoring it and acting.
 - **A story whose work is in its worktree is judged there.** From another checkout, `status` reads the story's state from its worktree (not `planned` from the stale copy), `next` reads the proof there and tells you to `cd` to it, and `verify --story` refuses instead of proving the wrong tree. `/flow-review` and `/flow-run` locate the worktree first.
+- **`verify` no longer replays a stale proof for an edited untracked file.** The cache key folded in only the *names* of untracked files, so editing a file this story had just created (still uncommitted) answered "already proved". It now hashes their content too (size + mtime above 5 MB, which can only over-invalidate).
+- **An agent cannot grant itself `--allow-plan-commands`.** The guard refuses a Bash call that passes `verify ... --allow-plan-commands` (also through `bash -c`) or sets `AI_FLOW_FORCE_TTY`, on every platform; the person runs it from their own terminal. `/flow-review` now says to stop and ask on `REFUSED`, as `/flow-run` already did.
+- **A proof no longer goes `stale` when you commit exactly what it proved.** The freshness token ignored untracked files, so `verify` → `git commit` of a story's new files moved the token and flipped the story to `stale` (and `review` to stale) with no code change. Untracked, non-ignored files (outside `.coding-flow/`) are now part of the snapshot: creating or editing one moves the token, committing it does not.
+- **`## Stories` lines agents actually write now resolve** (an ordinal prefix like `- 01 — story-01-01-x/ — …`, the name in backticks): a leading ordinal, backticks and a trailing slash no longer make `worktree place` answer "story is not listed".
+- **`uninstall` removes `.coding-flow/active-story.json`** (left by `worktree lock`), so no empty-looking `.coding-flow/` stays behind.
+- **A re-run `init`/`upgrade` that changes nothing leaves `.coding-flow/manifest.json` untouched** (it used to bump `updatedAt` and dirty a tracked file).
 
 ## [0.13.0] - 2026-10-18
 

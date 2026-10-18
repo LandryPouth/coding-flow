@@ -188,6 +188,44 @@ test('a new untracked file invalidates the cached proof', (t) => {
   assert.doesNotMatch(output, /already proved/);
 });
 
+test('editing an already-untracked file invalidates the cached proof', (t) => {
+  const { dir, story } = makeProject(t, 'cache-untracked-edit');
+
+  fs.writeFileSync(path.join(dir, 'new-source.js'), 'module.exports = 1;\n');
+  run(dir, ['verify', '--story', story]);
+
+  // Same name, same listing, different bytes: a story's own new file, edited
+  // again before it was ever committed.
+  fs.writeFileSync(path.join(dir, 'new-source.js'), 'module.exports = 2;\n');
+  const edited = run(dir, ['verify', '--story', story]);
+  assert.doesNotMatch(edited.output, /already proved/);
+
+  // An untouched untracked file must not defeat the cache.
+  const again = run(dir, ['verify', '--story', story]);
+  assert.match(again.output, /already proved/);
+});
+
+test('a proof survives committing the new files it proved, and goes stale when one is edited', (t) => {
+  const { dir, story } = makeProject(t, 'proof-untracked');
+  const status = () => run(dir, ['status', '--json']).stdout;
+  const storyState = () => {
+    const found = JSON.stringify(JSON.parse(status())).match(/"status":"(verified|stale|blocked|planned)"/);
+    return found && found[1];
+  };
+
+  fs.writeFileSync(path.join(dir, 'new-source.js'), 'module.exports = 1;\n');
+  assert.equal(run(dir, ['verify', '--story', story]).code, 0);
+  assert.equal(storyState(), 'verified');
+
+  // Same bytes, now tracked: nothing about the code changed.
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-qm', 'feat: new source']);
+  assert.equal(storyState(), 'verified', 'committing exactly what was verified must not stale the proof');
+
+  fs.writeFileSync(path.join(dir, 'another.js'), 'module.exports = 2;\n');
+  assert.equal(storyState(), 'stale', 'a new untracked file is a code change');
+});
+
 test('changing the declared commands invalidates the cached proof', (t) => {
   const { dir, story } = makeProject(t, 'cache-commands');
 

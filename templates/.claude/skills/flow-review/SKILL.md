@@ -44,6 +44,8 @@ separately-invoked path when that extra parallel coverage is worth its cost.
   `## Test Exemption`; `verify` fails on both.
 - Run the suite yourself when in doubt — never trust a reported result. When `ai-flow`
   is present, run `ai-flow verify --story <dir>` and read the captured evidence.
+  If it reports `REFUSED` (commands from `plan.md`, nobody watching), stop and tell the user: never add
+  `--allow-plan-commands` yourself — the guard refuses it, and the grant is theirs to give.
 
 ## Reviewing Your Own Diff
 
