@@ -1,13 +1,32 @@
 # Quickstart
 
-Coding Flow has a lot of machinery, but you only touch a small front door. The
-rest (verification, evidence, audit, guard) runs *for* you when a skill executes a
-story — you rarely type it yourself.
+Coding Flow is a core — the guard and executed proof — with optional layers on
+top. Start with the core; add the workflow when it pays for itself.
 
-## The whole loop
+## The minimal path (existing repo, no stories)
 
 ```bash
-# 1. Install into the current project (once)
+npx @landry_pouth/coding-flow init --minimal   # 1. guard + proof layer, nothing else
+git switch -c my-change                        # 2. work on a branch
+# ...let the agent change code...
+npx @landry_pouth/coding-flow verify           # 3. runs your commands, records evidence
+npx @landry_pouth/coding-flow doctor           # 4. is the install really wired?
+npx @landry_pouth/coding-flow report           # 5. when something looks wrong
+```
+
+No `RULES.md`, no `epics/`, no skills. The guard refuses secret writes, and
+`verify` says `verified` only when the commands actually passed. What it does
+not see: [README](../README.md#what-the-guard-does-not-see).
+
+## The whole workflow (second)
+
+Coding Flow also has a lot of machinery you can add; you only touch a small front
+door. The rest (verification, evidence, audit, guard) runs *for* you when a skill
+executes a story — you rarely type it yourself. The layers are listed in
+[Optional layers](../README.md#optional-layers).
+
+```bash
+# 1. Install the full workflow into the current project (once)
 npx @landry_pouth/coding-flow init
 ```
 

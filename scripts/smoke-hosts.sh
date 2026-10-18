@@ -73,7 +73,7 @@ project() { # <name> -> fresh installed project dir
   { mkdir -p "$dir" && git -C "$dir" init -q && git -C "$dir" commit -q --allow-empty -m init; } \
     || { echo "git init failed in $dir" >&2; return 1; }
   (cd "$dir" && HOME="$FAKE_HOME" XDG_CONFIG_HOME="$FAKE_HOME/.config" \
-    node "$REPO/bin/ai-flow.js" init --yes --opencode >/dev/null 2>&1) || { echo "init failed in $dir" >&2; return 1; }
+    node "$REPO/bin/ai-flow.js" init --opencode >/dev/null 2>&1) || { echo "init failed in $dir" >&2; return 1; }
   # SMOKE_BREAK=1 unwires the guard: the script must then report WRITTEN and exit 1.
   [ "${SMOKE_BREAK:-}" = 1 ] && rm -rf "$dir/.claude/settings.json" "$dir/.opencode/plugins"
   # SMOKE_BREAK=v1 keeps only the 1.x entry of the OpenCode plugin. A plugin whose export

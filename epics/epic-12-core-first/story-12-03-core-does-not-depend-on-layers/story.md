@@ -8,13 +8,22 @@ module, directly or transitively.
 
 ## Acceptance Criteria
 
-- [ ] `test/layering.test.js` lists core and layer modules (from the epic's
+- [x] `test/layering.test.js` lists core and layer modules (from the epic's
       Decisions), walks `require("./…")` calls statically from each core
       module, and fails with the offending chain (`coverage-gate → story`).
-- [ ] Every violation found is fixed by passing data in from the layer, not
+- [x] Every violation found is fixed by passing data in from the layer, not
       by moving the module to "core".
-- [ ] A new file under `bin/lib/` that is in neither list fails the test
+- [x] A new file under `bin/lib/` that is in neither list fails the test
       with "classify this module as core or layer" — the boundary cannot be
       bypassed by omission.
-- [ ] `npm test` green.
+- [x] `npm test` green.
 
+
+## Result
+
+Test added; `harness → speckit` fixed by injection (`registerStoryLocator`).
+Deviation from the epic Decisions, chosen with the maintainer: `story` is core
+(pure fs/path leaf reading the optional story files) and `doctor` is a layer
+until its install diagnostics are split from its core checks (follow-up).
+
+## Status: done

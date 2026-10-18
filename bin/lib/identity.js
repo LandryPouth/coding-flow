@@ -6,15 +6,18 @@
 // to make it auditable: "asserted != proven; anonymous != auditable".
 
 const os = require("os");
+const fs = require("fs");
+const path = require("path");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 
 // Runs a command and returns trimmed stdout, or null on failure. No exception
 // propagates: provenance must never break an evidence.
-function tryExec(bin, args, cwd) {
+function tryExec(bin, args, cwd, env = undefined) {
   try {
     return execFileSync(bin, args, {
       cwd,
+      env,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
@@ -80,6 +83,47 @@ function capturePr(cwd) {
 // limitation). Outside git -> null.
 const EVIDENCE_DIR = ".coding-flow";
 
+// The tree of the working tree's tracked content, or null. `stash create` comes
+// first so existing tokens keep their value. It refuses a tree holding an
+// intent-to-add entry (`git add -N`), and falling back to HEAD there would hide
+// every uncommitted change; a throwaway copy of the index takes the same
+// snapshot instead, never touching the real index.
+function workingTreeTree(cwd, head) {
+  const stash = tryExec("git", ["stash", "create"], cwd);
+
+  if (stash !== null) {
+    return gitField(cwd, ["rev-parse", `${stash.length > 0 ? stash : head}^{tree}`]);
+  }
+
+  const index = gitField(cwd, ["rev-parse", "--git-path", "index"]);
+
+  if (!index) {
+    return null;
+  }
+
+  let dir = null;
+
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "coding-flow-index-"));
+    const tempIndex = path.join(dir, "index");
+    fs.copyFileSync(path.resolve(cwd, index), tempIndex);
+    const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
+
+    if (tryExec("git", ["add", "-u"], cwd, env) === null) {
+      return null;
+    }
+
+    const tree = tryExec("git", ["write-tree"], cwd, env);
+    return tree && tree.length > 0 ? tree : null;
+  } catch {
+    return null;
+  } finally {
+    if (dir) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+}
+
 function computeTreeToken(cwd) {
   const head = gitField(cwd, ["rev-parse", "HEAD"]);
 
@@ -87,9 +131,7 @@ function computeTreeToken(cwd) {
     return null;
   }
 
-  const stash = tryExec("git", ["stash", "create"], cwd);
-  const ref = stash && stash.length > 0 ? stash : head;
-  const tree = gitField(cwd, ["rev-parse", `${ref}^{tree}`]);
+  const tree = workingTreeTree(cwd, head);
 
   if (!tree) {
     return null;

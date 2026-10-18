@@ -16,12 +16,14 @@ Your CI already tells you whether the repository is green. Coding Flow answers t
 
 Coding Flow is **not** an application framework and does not replace your stack. It installs a small working system around your repo so the agent knows what to read, what to produce, when to stop, what to validate, and how to leave a useful trace.
 
-> **In a hurry?** The front door is small: install the plugin once, run `/flow-setup` (or `ai-flow init`) once per repo, then `/flow-plan` and `/flow-run` in Claude Code. Everything else is machinery the skills run for you. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — the whole loop on one screen.
+> **In a hurry?** Start with the [Core](#core): three commands, no stories, no skills. The workflow on top of it is [optional](#optional-layers). See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** — the minimal path first, the whole loop second.
 
 > **Start light.** Most work is `/flow-run` on a small change — a request and a targeted change, no paperwork. `/flow-run` picks its intensity from the story's risk; the heavier artifacts (Execution Packet, Context Map, the multi-point stop conditions) **only appear at `STANDARD` and `STRICT`**, and you opt into that rigor when the risk earns it. You do not fill out a packet to add a field to a form.
 
 ## Table Of Contents
 
+- [Core](#core)
+- [Optional layers](#optional-layers)
 - [How it works](#how-it-works)
 - [Installation](#installation)
 - [Getting started](#getting-started)
@@ -35,6 +37,36 @@ Coding Flow is **not** an application framework and does not replace your stack.
 - [CLI commands](#cli-commands)
 - [Uninstall](#uninstall)
 - [Documentation](#documentation)
+
+## Core
+
+The product is three things, and they work in a repository that uses nothing else — no stories, no epics, no worktrees, no skills:
+
+```bash
+npx @landry_pouth/coding-flow init --minimal   # the guard, the proof layer, the friction log — nothing else
+git switch -c my-change                        # ...let the agent work...
+npx @landry_pouth/coding-flow verify           # runs your commands itself; verified only if they passed
+```
+
+`init --minimal` installs the guard hook, the harness config and `docs/DOGFOODING.md`. No `RULES.md`, no `epics/`, no skills. What that gives you:
+
+- **The guard** refuses to write a `.env`, a key or a secret before it reaches the disk — through the editing tools and the common shell write forms.
+- **`verify`** executes the configured commands and records verbatim pass/fail as evidence under `.coding-flow/runs/`. The evidence goes stale when the code changes afterwards, so a green result never outlives the diff it was earned on. For work tied to a story, a coverage gate checks that a risky diff carries a test (`NOT PROVEN` otherwise) and `Coverage:` names the strength of the pass; without a story, `verify` keeps the same gate as far as [epic 12](epics/epic-12-core-first/index.md) (story 12-01) has landed.
+- **`doctor`** checks the install is really wired; **`report`** collects what the machine saw (denials, failures, install health) into one redacted file you can send.
+
+What it does not guarantee: it reads shell text, not program semantics — scripts, computed paths and the rest are listed in [What the guard does not see](#what-the-guard-does-not-see). Pair it with `mode: strict` and OS-level isolation when the boundary must hold.
+
+## Optional layers
+
+Everything else is a layer you add when it pays for itself. A plain `init` (without `--minimal`) lays down the full workflow; a minimal install is never widened by `upgrade`.
+
+| Layer | What it adds | What it costs | Enable |
+| --- | --- | --- | --- |
+| **Skills** | `/flow-plan`, `/flow-run`, `/flow-review`, `/flow-ship`, `/flow-status`, `/flow-next` — structured prompts that call the harness for you | A prompt-driven workflow the agent can still misread; skills guide, only the CLI proves | Claude Code: `/plugin install coding-flow` then `/flow-setup`; others: `init --target <agent>` |
+| **Stories and epics** | `epics/` with vertical stories whose acceptance criteria and risk feed `verify` | A story format and scaffolding (`RULES.md`, `docs/`) to maintain | `ai-flow init`, then `/flow-plan` |
+| **Worktrees and placement** | One Git worktree per parallel chain of stories, placed and landed automatically | More checkouts on disk, and the rules that go with them | `ai-flow worktree add`; `/flow-run` places stories itself |
+| **Review evidence** | A findings-first pre-merge review attached to the proof | An extra pass over the diff; independent (a fresh agent) at STRICT | `/flow-review` or `ai-flow review` |
+| **Ship and auto-merge** | One PR per branch with the latest evidence in its body; optional merge once the epic is done | Pushes and PRs on your behalf; needs `gh` for the PR | `ai-flow ship`, `ai-flow ship --auto-merge` |
 
 ## How It Works
 

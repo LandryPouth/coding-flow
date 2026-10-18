@@ -256,6 +256,11 @@ function buildReport({ root = cwd, raw = false } = {}) {
       verifyRuns: verifies.length,
       verifyGreen: verifies.filter((run) => run.ok).length,
       verifyRed: verifies.filter((run) => !run.ok).length,
+      // Counted apart so a core-only user's proofs (and land's re-verifies) are
+      // not read as story proofs, or the reverse. `story`, not `diffBase.scope`:
+      // story runs are measured on the branch diff too.
+      verifyStoryRuns: verifies.filter((run) => run.story).length,
+      verifyStorylessRuns: verifies.filter((run) => !run.story).length,
       evidenceRuns: evidence.length,
       medianVerifyMs: durations.length ? durations[Math.floor(durations.length / 2)] : null,
       riskLevels: countBy(evidence, (run) => (run.risk ? run.risk.level : null)),
@@ -320,6 +325,9 @@ function renderMarkdown(report) {
   push("## Activity");
   push();
   push(`- Verify runs: **${report.activity.verifyRuns}** (${report.activity.verifyGreen} green, ${report.activity.verifyRed} red)`);
+  push(
+    `- Verify scope: ${report.activity.verifyStoryRuns} for a story, ${report.activity.verifyStorylessRuns} without one`,
+  );
   push(
     `- Median verify: ${
       report.activity.medianVerifyMs ? `${(report.activity.medianVerifyMs / 1000).toFixed(1)}s` : "n/a"

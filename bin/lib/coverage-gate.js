@@ -319,7 +319,8 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   const changedFiles = changedFilesForCoverage();
 
   if (changedFiles.length === 0) {
-    return skip("no diff visible against the base branch or the working tree");
+    // Nothing to judge is an answer, not a skipped check: say so plainly.
+    return skip("no change to evaluate (nothing differs from the base branch or in the working tree)");
   }
 
   // No story is not "no risk". The diff answers on its own, which is what makes
