@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
-const { log, toPortable } = require("./util");
+const { log, toPortable, relativePath, samePath } = require("./util");
 const { collectWorktrees, realDirtyLines, storyWorkElsewhere } = require("./worktree");
 const { inferStoryStatus } = require("./storage/local");
 const { latestVerifyByStoryDir, latestReviewByStoryDir, latestVerifyScopeByStoryDir, isStale, staleReason } = require("./audit");
@@ -41,7 +41,7 @@ function buildWorktreeIndex() {
       continue;
     }
     byBranch.set(entry.branch, {
-      path: toPortable(path.relative(cwd, entry.path)) || ".",
+      path: relativePath(cwd, entry.path),
       fullPath: entry.path,
     });
   }
@@ -208,7 +208,7 @@ function buildStatusModel(config) {
     ...epic,
     stories: epic.stories.map((listed) => {
       const wtEntry = wt.byBranch.get(listed.name) || null;
-      const inWorktree = wtEntry && wtEntry.fullPath !== cwd ? statusInWorktree(config, wtEntry.fullPath, listed, verifyByRoot) : null;
+      const inWorktree = wtEntry && !samePath(wtEntry.fullPath, cwd) ? statusInWorktree(config, wtEntry.fullPath, listed, verifyByRoot) : null;
       const story = inWorktree && inWorktree !== listed.status ? { ...listed, status: inWorktree, statusFrom: "worktree" } : listed;
 
       if (wtEntry) {
@@ -283,7 +283,7 @@ function buildStatusModel(config) {
     .filter((entry) => !entry.bare && entry.branch && !mappedBranches.has(entry.branch))
     .map((entry) => ({
       branch: entry.branch,
-      path: toPortable(path.relative(cwd, entry.path)) || ".",
+      path: relativePath(cwd, entry.path),
     }));
 
   const policy = evaluateBranchPolicy(cwd, config);

@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { hasStoryContent } = require("./story");
-const { readJson, writeJson, canonicalPath, samePath } = require("./util");
+const { readJson, writeJson, canonicalPath, relativePath, samePath } = require("./util");
 const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
@@ -1148,7 +1148,7 @@ function storyWorkElsewhere(cwd, storyPath) {
   const dirty = realDirtyLines(entry.path).length;
   if (ahead === 0 && dirty === 0) return null;
 
-  return { path: entry.path, relative: path.relative(cwd, entry.path) || ".", branch, ahead, dirty };
+  return { path: entry.path, relative: relativePath(cwd, entry.path), branch, ahead, dirty };
 }
 
 // A subcommand that writes and has no preview must refuse `--dry-run`, never

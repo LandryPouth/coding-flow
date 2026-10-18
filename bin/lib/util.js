@@ -465,6 +465,13 @@ function canonicalPath(p) {
   }
 }
 
+// `to` relative to `from`, both canonical and in forward slashes: a raw
+// path.relative between a short-name cwd and git's long-name worktree climbs to
+// the drive's users dir and back (`../../../../runneradmin/...`).
+function relativePath(from, to) {
+  return toPortable(path.relative(canonicalPath(from), canonicalPath(to))) || ".";
+}
+
 function samePath(a, b) {
   const [x, y] = [canonicalPath(a), canonicalPath(b)];
   return process.platform === "win32" ? x.toLowerCase() === y.toLowerCase() : x === y;
@@ -472,6 +479,7 @@ function samePath(a, b) {
 
 module.exports = {
   canonicalPath,
+  relativePath,
   samePath,
   log,
   fail,
