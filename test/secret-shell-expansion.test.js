@@ -71,3 +71,18 @@ test('nested expansions and a global-flag custom pattern behave the same', () =>
   assert.equal(findSecretsInContent('token="$(vault read secret/app/prod-token)"', custom).length, 0);
   assert.equal(findSecretsInContent('token="literal-literal-literal-lit"', custom).length, 1);
 });
+
+test('single-quoted values are not expanded, so they are still findings', () => {
+  assert.equal(scan("password='$(literal-literal-literal-lit)'").length, 1);
+  assert.equal(scan("password='$ecretPassw0rdLongEnough1'").length, 1);
+});
+
+test('a custom match holding several quoted values is not exempted by the first', () => {
+  const custom = [{ name: 'c', regex: /(k=)"[^"]+"\s+"[^"]{20,}"/, precision: 'heuristic' }];
+
+  assert.equal(findSecretsInContent('k="$(a)" "realliteralsecret1234567"', custom).length, 1);
+});
+
+test('a literal default inside ${VAR:-…} is the documented, accepted shape', () => {
+  assert.deepEqual(scan('password="${DB_PASSWORD:-changeme-placeholder-x}"'), []);
+});

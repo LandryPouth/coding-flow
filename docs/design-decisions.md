@@ -506,9 +506,14 @@ case it must allow:
 
 - a literal inside the expansion (`$(echo hunter2…)`): what a command receives
   as an argument is not inspected;
+- a literal default inside the expansion (`"${PW:-RealLiteral…}"`): the
+  criterion requires `"${DB_PASSWORD:-changeme-placeholder-x}"` to pass, and the
+  two are the same shape;
 - a bare variable-looking value (`"$realsecret1234567890"`) — identical in shape
   to `"$DB_PASSWORD_FROM_THE_VAULT_X"`.
 
-A literal around the expansion (`$2b$10$<hash>`, `${HOME}secret…`) is reported.
+A literal around the expansion (`$2b$10$<hash>`, `${HOME}secret…`) is reported,
+and so is a single-quoted value (`'$(…)'`, `'$secret…'`), which a shell, YAML and
+`.env` do not expand, and a custom pattern whose match holds several quoted values.
 The detector is a net for accidents, not a proof of absence; exact patterns are
 the guarantee.

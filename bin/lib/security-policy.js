@@ -113,7 +113,10 @@ function matchesLine(pattern, line) {
   const flags = pattern.regex.flags.includes("g") ? pattern.regex.flags : `${pattern.regex.flags}g`;
 
   return [...line.matchAll(new RegExp(pattern.regex.source, flags))].some((match) => {
-    const value = /[:=]\s*["']([^"']*)/.exec(match[0]);
+    // Exempt only a match holding exactly ONE double-quoted value: a shell does
+    // not expand inside single quotes, and a second quoted value in a custom
+    // pattern's match would otherwise hide behind the first.
+    const value = /^[^"']*[:=]\s*"([^"']*)"[^"']*$/.exec(match[0]);
 
     return !(value && isSingleExpansion(value[1]));
   });
