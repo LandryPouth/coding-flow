@@ -8,8 +8,9 @@ const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
-const { log, toPortable } = require("./util");
-const { collectWorktrees, realDirtyLines } = require("./worktree");
+const { log, toPortable, relativePath, samePath } = require("./util");
+const { collectWorktrees, realDirtyLines, storyWorkElsewhere } = require("./worktree");
+const { inferStoryStatus } = require("./storage/local");
 const { latestVerifyByStoryDir, latestReviewByStoryDir, latestVerifyScopeByStoryDir, isStale, staleReason } = require("./audit");
 const { currentTreeToken } = require("./identity");
 const { policyFingerprint } = require("./policy-fingerprint");
@@ -40,7 +41,7 @@ function buildWorktreeIndex() {
       continue;
     }
     byBranch.set(entry.branch, {
-      path: toPortable(path.relative(cwd, entry.path)) || ".",
+      path: relativePath(cwd, entry.path),
       fullPath: entry.path,
     });
   }
@@ -130,6 +131,32 @@ function computeReviewRequired(root, story, cache = new Map()) {
   return risk.level === "high";
 }
 
+// A story with a linked worktree is judged where its work is: the story files,
+// the verify evidence and the tree token of that worktree, not this checkout's
+// copy — which, before the work lands, is the story as planned. A worktree
+// holding commits this checkout lacks, or uncommitted changes, is at least
+// in progress even when its story files say nothing yet. Local storage only:
+// another backend's status does not live in the tree. `null` keeps the status
+// the storage already gave.
+function statusInWorktree(config, wtRoot, story, verifyByRoot) {
+  if (config.storage && config.storage !== "local") return null;
+  const storyDir = path.join(wtRoot, story.path);
+  if (!fs.existsSync(storyDir)) return null;
+
+  if (!verifyByRoot.has(wtRoot)) {
+    verifyByRoot.set(wtRoot, latestVerifyByStoryDir(wtRoot));
+  }
+  const entry = verifyByRoot.get(wtRoot).get(story.path);
+  const verify = entry ? (entry.ok ? "pass" : "fail") : null;
+  const fresh = !entry || !isStale(entry, currentTreeToken(wtRoot), policyFingerprint(wtRoot));
+  const status = inferStoryStatus(storyDir, { verify, fresh });
+
+  if (status === "planned" && storyWorkElsewhere(cwd, story.path)) {
+    return "in-progress";
+  }
+  return status;
+}
+
 const PLANS_DIR = "docs/plans";
 
 // A design doc under docs/plans/ that no epic's index.md references yet — a
@@ -179,8 +206,10 @@ function buildStatusModel(config) {
 
   const epics = storage.listEpics().map((epic) => ({
     ...epic,
-    stories: epic.stories.map((story) => {
-      const wtEntry = wt.byBranch.get(story.name) || null;
+    stories: epic.stories.map((listed) => {
+      const wtEntry = wt.byBranch.get(listed.name) || null;
+      const inWorktree = wtEntry && !samePath(wtEntry.fullPath, cwd) ? statusInWorktree(config, wtEntry.fullPath, listed, verifyByRoot) : null;
+      const story = inWorktree && inWorktree !== listed.status ? { ...listed, status: inWorktree, statusFrom: "worktree" } : listed;
 
       if (wtEntry) {
         mappedBranches.add(story.name);
@@ -214,6 +243,22 @@ function buildStatusModel(config) {
         );
       }
       const claimsDone = story.status === "done" || story.status === "verified";
+      // A written `done` stays the author's word, but status must not repeat it
+      // silently over a proof that says otherwise.
+      let contradicted = null;
+      if (story.status === "done") {
+        if (!verifyByRoot.has(storyRoot)) {
+          verifyByRoot.set(storyRoot, latestVerifyByStoryDir(storyRoot));
+        }
+        const entry = verifyByRoot.get(storyRoot).get(story.path);
+        if (entry && !entry.ok) {
+          contradicted = "written; last verify failed";
+        } else if (entry && isStale(entry, currentTreeToken(storyRoot), policyFingerprint(storyRoot))) {
+          contradicted = "written; proof is stale";
+        } else if (!entry) {
+          contradicted = "written; no verify captured";
+        }
+      }
       const reviewRequired = claimsDone ? computeReviewRequired(storyRoot, story, diffRiskCache) : undefined;
 
       return {
@@ -224,6 +269,7 @@ function buildStatusModel(config) {
         ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
         ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
         ...(staleWhy ? { staleReason: staleWhy } : {}),
+        ...(contradicted ? { contradicted } : {}),
         ...(review !== "none" && reviewEntry ? { reviewer: reviewEntry.reviewer } : {}),
         ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
@@ -237,7 +283,7 @@ function buildStatusModel(config) {
     .filter((entry) => !entry.bare && entry.branch && !mappedBranches.has(entry.branch))
     .map((entry) => ({
       branch: entry.branch,
-      path: toPortable(path.relative(cwd, entry.path)) || ".",
+      path: relativePath(cwd, entry.path),
     }));
 
   const policy = evaluateBranchPolicy(cwd, config);
@@ -299,7 +345,7 @@ function status({ json = false } = {}) {
             : story.review !== "none"
               ? `  review: ${story.review}${selfMarker}`
               : "";
-        const staleSuffix = story.staleReason ? `  (${story.staleReason})` : "";
+        const staleSuffix = story.staleReason ? `  (${story.staleReason})` : story.contradicted ? `  (${story.contradicted})` : "";
         const scopeSuffix = story.scope ? `  coverage ${story.coverage || "?"} (${story.scope} scope)` : "";
         const warningSuffix = story.warnings
           ? `  ⚠ ${[

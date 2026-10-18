@@ -1126,6 +1126,39 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
 // visible in the command text. Heuristic patterns are not applied to a command
 // line: `psql "password=…"` and `export TOKEN=$(…)` are normal, and a guard that
 // cries wolf on them is a guard people route around.
+// `verify` refuses a plan.md command list nobody is watching; the way past that is a
+// person's call. An agent that types `--allow-plan-commands` (or fakes a TTY) itself
+// turns the gate into a formality, so the guard refuses the grant. The person
+// grants it from their own terminal (`! ai-flow verify --allow-plan-commands`).
+const PLAN_COMMANDS_GRANT =
+  "granting `--allow-plan-commands` (or `AI_FLOW_FORCE_TTY`) is the user's decision, not the agent's. " +
+  "Move the commands to .coding-flow/config.json with the user's agreement, or ask the user to run the verify " +
+  "themselves from their own terminal";
+
+function grantsPlanCommands(command, depth = 0) {
+  for (const segment of splitSegments(command)) {
+    const tokens = tokenize(segment.text);
+
+    if (tokens.some((token) => /^AI_FLOW_FORCE_TTY=/.test(token))) {
+      return true;
+    }
+
+    if (tokens.includes("--allow-plan-commands") && tokens.includes("verify")) {
+      return true;
+    }
+
+    // `bash -c "ai-flow verify --allow-plan-commands"`: the program is one quoted word.
+    const shell = tokens.findIndex((token) => SHELLS.has(path.basename(token)));
+    const flag = shell >= 0 ? tokens.findIndex((token, index) => index > shell && /^-[A-Za-z]*c$/.test(token)) : -1;
+
+    if (depth < 3 && flag >= 0 && tokens[flag + 1] && grantsPlanCommands(tokens[flag + 1], depth + 1)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function decideBash(toolInput, hook, root, caseInsensitive) {
   // A missing or renamed `command` is not an empty one: only `""` has nothing to check.
   if (!toolInput || typeof toolInput !== "object" || typeof toolInput.command !== "string") {
@@ -1136,6 +1169,10 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
 
   if (!command.trim()) {
     return { decision: "allow", reason: "no command to inspect" };
+  }
+
+  if (grantsPlanCommands(command)) {
+    return { decision: "deny", reason: PLAN_COMMANDS_GRANT, path: null };
   }
 
   const ctx = context(hook, root);

@@ -136,6 +136,11 @@ The split earns itself once a story is worth a day's work:
   plan, `## Acceptance Traceability` (criterion → `file::test`), and a `## Commands`
   block with the validation commands: a fenced code block, one command per line,
   no bullets or labels (`verify` reads only that).
+
+In either shape, write each command as the project's own script when it has one
+(`npm test`, `pnpm run lint` — bare, no extra arguments). `verify` runs those when
+nobody is watching, which is every agent-driven run; any other command is refused
+there until the user declares it in `.coding-flow/config.json`.
 - **`tasks.md`** — the execution checklist starting with targeted discovery, plus an
   empty `## Result` section (with `### Rollback Notes`) the worker fills after running.
 

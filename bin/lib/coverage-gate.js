@@ -303,6 +303,10 @@ function scanTestWeakening(config) {
   return { findings, strengthened, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
 }
 
+function listFiles(files, max = 3) {
+  return files.slice(0, max).join(", ") + (files.length > max ? ` (+${files.length - max} more)` : "");
+}
+
 // `ctx.riskLevel` is null until the risk is scored: a result returned before that
 // point (coverage off, no diff) has no level, so no floor applies to it.
 function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }, ctx = { riskLevel: null }) {
@@ -338,18 +342,30 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   const testFiles = changedFiles.filter((file) =>
     config.testGlobs.some((pattern) => matchesPattern(file, pattern)),
   );
-  const behaviorFiles = changedFiles.filter(
-    (file) =>
-      !config.nonBehaviorGlobs.some((pattern) => matchesPattern(file, pattern)) &&
-      !testFiles.includes(file),
-  );
+  // A pattern listed in both `highRiskPaths` and `nonBehaviorGlobs` (the
+  // defaults overlap on `**/migrations/**` and `**/*.sql`) counts as behavior:
+  // letting non-behavior win made `DROP COLUMN` read as "docs only". Only that
+  // overlap changes. A file merely sitting under a high-risk directory
+  // (`packages/auth/tsconfig.json`, `docs/auth/setup.md`) stays excluded, and a
+  // project's own non-behavior glob that is not high-risk wins. Prose is never
+  // behavior, even inside `migrations/`.
+  const highRisk = new Set(Array.isArray(config.highRiskPaths) ? config.highRiskPaths : []);
+  const riskyNonBehavior = config.nonBehaviorGlobs.filter((pattern) => highRisk.has(pattern));
+  const isExcluded = (file) =>
+    config.nonBehaviorGlobs.some((pattern) => matchesPattern(file, pattern)) &&
+    (matchesPattern(file, "**/*.md") || !riskyNonBehavior.some((pattern) => matchesPattern(file, pattern)));
+  const excluded = changedFiles.filter((file) => !testFiles.includes(file) && isExcluded(file));
+  const behaviorFiles = changedFiles.filter((file) => !excluded.includes(file) && !testFiles.includes(file));
 
   if (behaviorFiles.length === 0) {
+    const parts = [];
+    if (excluded.length) parts.push(`${excluded.length} file(s) excluded by nonBehaviorGlobs: ${listFiles(excluded)}`);
+    if (testFiles.length) parts.push(`${testFiles.length} test file(s)`);
     return {
       required: true,
       ok: true,
       mode: "none",
-      reason: "no behavior file changed (docs, story, or lockfile only)",
+      reason: `no behavior file changed (${parts.join("; ")})`,
       changedFiles,
       testFiles,
     };
@@ -493,9 +509,9 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
     ok: false,
     mode: "test-file",
     reason: weakening.findings.length
-      ? `${behaviorFiles.length} behavior file(s) changed and every test file in the diff was ` +
+      ? `${behaviorFiles.length} behavior file(s) changed (${listFiles(behaviorFiles)}) and every test file in the diff was ` +
         "weakened. Touching a test is not the same as covering a change."
-      : `${behaviorFiles.length} behavior file(s) changed and no test file did. A green suite ` +
+      : `${behaviorFiles.length} behavior file(s) changed (${listFiles(behaviorFiles)}) and no test file did. A green suite ` +
         "that was already green proves nothing about this change.",
     riskSource: risk.source,
     riskPaths: risk.matchedPaths,

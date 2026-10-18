@@ -25,7 +25,9 @@ const { cwd } = require("./context");
 const { log } = require("./util");
 const { readConfig } = require("./config");
 const { buildStatusModel, computeReviewStatus } = require("./status");
-const { latestVerifyByStoryDir } = require("./audit");
+const { latestVerifyByStoryDir, isStale } = require("./audit");
+const { currentTreeToken } = require("./identity");
+const { policyFingerprint } = require("./policy-fingerprint");
 const { defaultBranch, currentBranch } = require("./policy");
 const { resolveDiffBase } = require("./diff-base");
 
@@ -50,12 +52,17 @@ function git(dir, args) {
 
 // A story's proof, independent of its written status: "green" (last captured
 // verify passed), "red" (last captured verify failed), or "none" (never captured).
-function storyProof(verifyByDir, story) {
+// "stale": green, but the code (or the policy) moved since; it no longer proves
+// what would be shipped.
+function storyProof(verifyByDir, story, root) {
   const entry = verifyByDir.get(story.path);
   if (!entry) {
     return "none";
   }
-  return entry.ok ? "green" : "red";
+  if (!entry.ok) {
+    return "red";
+  }
+  return isStale(entry, currentTreeToken(root), policyFingerprint(root)) ? "stale" : "green";
 }
 
 // Where this story's work actually lives on disk: its linked worktree, or the
@@ -117,7 +124,17 @@ function strictReviewGap(location, story) {
 function buildQueue() {
   const config = readConfig(cwd);
   const model = buildStatusModel(config);
-  const verifyByDir = latestVerifyByStoryDir(cwd);
+  // Proof is read where the story's work is: a story with a linked worktree
+  // keeps its verify evidence there, not here.
+  const verifyByRoot = new Map();
+  const proofOf = (story) => {
+    const root = story.worktree ? path.join(cwd, story.worktree) : cwd;
+    if (!verifyByRoot.has(root)) verifyByRoot.set(root, latestVerifyByStoryDir(root));
+    return storyProof(verifyByRoot.get(root), story, root);
+  };
+  // A command for a story whose work is in another checkout runs there.
+  const there = (story, command) =>
+    story.worktree && path.join(cwd, story.worktree) !== cwd ? `cd ${story.worktree} && ${command}` : command;
   const base = defaultBranch(cwd);
 
   const items = [];
@@ -125,7 +142,7 @@ function buildQueue() {
   for (const epic of model.epics) {
     for (const story of epic.stories) {
       const claimsDone = story.status === "done" || story.status === "verified";
-      const proof = storyProof(verifyByDir, story);
+      const proof = proofOf(story);
 
       if (story.status === "blocked") {
         items.push({
@@ -143,8 +160,10 @@ function buildQueue() {
           message:
             proof === "red"
               ? `"${story.name}" is marked ${story.status} but its last captured verify failed`
-              : `"${story.name}" is marked ${story.status} but has no captured verify — a written status is not proof`,
-          command: `ai-flow verify --story ${story.path}`,
+              : proof === "stale"
+                ? `"${story.name}" is marked ${story.status} but the code moved since its last green verify`
+                : `"${story.name}" is marked ${story.status} but has no captured verify — a written status is not proof`,
+          command: there(story, `ai-flow verify --story ${story.path}`),
         });
       } else if (story.status === "stale") {
         items.push({
@@ -152,7 +171,7 @@ function buildQueue() {
           epic: epic.name,
           story: story.name,
           message: `"${story.name}" verify is stale — the code moved since the last green run`,
-          command: `ai-flow verify --story ${story.path}`,
+          command: there(story, `ai-flow verify --story ${story.path}`),
         });
       } else if (claimsDone) {
         const location = storyLocation(story);

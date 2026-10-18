@@ -1,11 +1,45 @@
 # Uncle Bob's gauntlet, clean code and clean architecture — study
 
-**Status: study only. Not to be started before every epic listed in
-`docs/plans/hardening-roadmap.md` (epics 01–12) has landed.** Written
-2026-10-17. Every number below is either measured on this checkout (its
-`.coding-flow/runs/`, `docs/DOGFOODING.md`, `git log`) or comes from an
-experiment run in a throwaway worktree; re-measure before acting, because the
-epics in flight will move several of them.
+**Status: epics 01–12 have landed (0.13.0); re-measured 2026-10-18 — see the
+next section, which supersedes the numbers below it where they differ. Planned
+as epic 13 (this repository's own bar), story 14-07 (CRAP for users' projects,
+inside the recovery epic, `docs/plans/codebase-recovery.md`) and epic 15
+(everything else the study recommends).** Written 2026-10-17. Every number below
+is either measured on this checkout (its `.coding-flow/runs/`,
+`docs/DOGFOODING.md`, `git log`) or comes from an experiment run in a
+throwaway worktree.
+
+## Re-measured 2026-10-18, after epics 01–12
+
+| Measure | 2026-10-17 | 2026-10-18 | Reading |
+|---|---|---|---|
+| Verifies at `verified` | 0 / 158 | **0 / 206** (118 `evidence`, 38 `not-required`, 50 pre-rung) | Unchanged: the strongest rung is still never reached here. |
+| Full suite under native lcov (`--experimental-test-coverage --test-reporter=lcov`) | tried on one file | **whole suite: 1 118 tests, 161 s vs 145 s plain (+11 %)**; 96.3 % lines, 85.0 % branches on `bin/` | `verified` is a config change away. |
+| Code run in spawned CLI subprocesses counted? | unknown | **yes** — `bin/ai-flow.js`, only ever run as a subprocess by the tests, reports 97 % lines | The open question of experiment 2 is closed. |
+| Reviews | 56 / 59 `self` | 62 / 65 `self`, 3 `subagent`; 31 P1 found by review, 0 P0 | Unchanged. |
+| Stories recommended STRICT (13 `-evidence` runs carry a mode) | 0 | **1** — story 11-01, `high`, because the file it created, `security-policy.js`, happens to match the default `**/*policy.*`. The three epic-05 guard stories scored `medium`/`standard`: `bin/lib/guard.js` matches no default high-risk path | STRICT reached the security core by a naming accident, never by intent; wave 0 still applies. |
+| guard → harness | yes | **no** — `guard` requires `harness-config`, `security-policy`, `util` only | Fixed by 11-01. |
+| core → optional layer | yes | **no** — enforced by `test/layering.test.js` (12-03) | Fixed. |
+| Require cycles in `bin/lib` | `harness` ↔ `policy-fingerprint` | **none** | Fixed. |
+| `harness.js` | 3 233 lines | **563** | Split by 11-01 into `harness-config`, `security-policy`, `diff-scope`, `risk`, `validation-run`, `coverage-gate`, `evidence`, `harness-report`. |
+| `shellWrites` (`guard.js:434`) | 322 lines | **331 lines, ~110 decision points, 99 % covered** | Covered but enormous: a CRAP score of ≈ its complexity says "complex", and the epic-05 history says its risk is missing cases, not weak tests. Wave 2's split still stands. |
+| Functions over 100 lines (lcov `FN` ranges, nested counted) | 12 top-level | 20 (method differs; not comparable) | Largest: `shellWrites` and its three inner helpers, `worktreeLand` 238, `collectDoctorReport` 221, `evaluateCoverageResult` 199. |
+| CRAP-like > 30 | — | 5, all in `guard.js` (shell reading) plus `buildReport` | Coverage is high everywhere; complexity is the signal. |
+
+**New holes, found while re-measuring and in the recovery field test:**
+
+- **A migration-only diff verifies green.** `**/migrations/**` and `**/*.sql`
+  are in both `highRiskPaths` and `nonBehaviorGlobs`; the second wins in
+  `coverage-gate.js` (~343). Replayed in a throwaway repository: a branch
+  adding `ALTER TABLE users DROP COLUMN email;` → `verify` ok, coverage
+  `not-required`, reason *"no behavior file changed (docs, story, or lockfile
+  only)"* — which is also untrue. Story 13-01.
+- **The "Long assigned credential" heuristic matches command substitution**:
+  `password="$(aws secretsmanager get-random-password …)"` is reported. Story
+  13-02.
+- **Two `high` rows of `docs/DOGFOODING.md` are still open** (`worktree land
+  --dry-run` writes; story worktrees invisible to `flow-review`/`status`).
+  The log's own rule puts them ahead of any roadmap, this one included.
 
 ## Sources, and what they actually say
 
@@ -181,6 +215,32 @@ the textual operator table skips strings and comments heuristically.
 - **A native multi-language import-graph analyser, or native CRAP from a
   parser.** One parser per language breaks zero-dependency; lcov and existing
   tools cover it.
+
+## Programme as planned, 2026-10-18
+
+The waves above, re-cut against the re-measurement. Wave 2's split along the
+Dependency Rule is done (guard decoupled, layering test, no cycle); what is
+left of it is the size ratchet and `shellWrites`.
+
+| Where | Content | Wave |
+|---|---|---|
+| epic 13, s1–s2 | migrations are behavior; secret heuristic false positive | bugs, ahead of everything |
+| epic 13, s3 | lcov in this repo's validation, its security core in `highRiskPaths`, `.coding-flow/runs/**` blocked by default | 0 |
+| epic 13, s4 | the bar does not move: policy-weakening signal, config-like `nonBehaviorGlobs` | 3 |
+| epic 13, s5 | spec first: corpus-first rule in `/flow-plan`, criteria-drift signal | 1 |
+| epic 13, s6 | size ratchet on touched functions | 2 (ratchet) |
+| epic 14, s7 | CRAP and size from lcov for users' diffs and hotspots | 4 |
+| epic 15, s1 | Experiment 1's two survivors pinned by tests (`cp X existing-dir`, sed targets) | 5 (findings) |
+| epic 15, s2 | `shellWrites` as a pure module, proven by `--claim refactor` | 2 (split) |
+| epic 15, s3 | users' projects: `## Boundaries` in `/flow-plan`, per-stack boundary and complexity recipes | users, items 2–3 |
+| epic 15, s4–s5 | mutation probe: offline replay on bethl, then opt-in only on a go | 5 |
+| epic 15, s6 | re-take *How to tell it worked* | — |
+
+Wave 4 moved into the recovery epic because its first consumer is the
+recovery scan's hotspot ranking. Epic 15 holds everything else the study
+recommended: the split and the mutation probe both wait for 14-04
+(`--claim refactor`), the place they pay most; s5 is built only if s4's
+replay on bethl finds a real gap.
 
 ## Open question
 

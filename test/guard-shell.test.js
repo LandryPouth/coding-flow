@@ -9,6 +9,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
 const { decide, shellWriteTargets, isShellLimit } = require('../bin/lib/guard');
 
@@ -377,4 +379,45 @@ test('sh -s, |& and a process substitution feed a shell its program: unchecked, 
     assert.ok(isShellLimit(result.reason), result.reason);
   }
   expectAll(t, 'allow', ['bash script.sh -s x', 'make 2>&1 |& tee log.txt', 'diff <(sort a) <(sort b)', 'sh < script.sh']);
+});
+
+// `verify` refuses an unwatched plan.md command list; an agent that grants itself
+// the way past that makes the gate a formality, so the guard refuses the grant.
+test('guard refuses an agent granting itself --allow-plan-commands, in every spelling', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-grant-'));
+
+  try {
+    for (const command of [
+      'ai-flow verify --story epics/e/s --allow-plan-commands',
+      'cd x && npx @landry_pouth/coding-flow verify --allow-plan-commands',
+      'AI_FLOW_FORCE_TTY=1 ai-flow verify --story epics/e/s',
+      'export AI_FLOW_FORCE_TTY=1; ai-flow verify',
+      'bash -c "ai-flow verify --allow-plan-commands"',
+      "sh -c 'bash -c \"ai-flow verify --story s --allow-plan-commands\"'",
+    ]) {
+      const res = spawnSync(process.execPath, [CLI, 'guard'], {
+        cwd: dir,
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
+        encoding: 'utf8',
+      });
+      assert.equal(res.status, 2, `must deny: ${command}`);
+      assert.match(res.stdout + res.stderr, /user's decision/);
+    }
+
+    // Talking about the flag is not granting it.
+    for (const command of [
+      'ai-flow verify --story epics/e/s',
+      'grep -rn allow-plan-commands docs',
+      'git commit -m "docs: explain --allow-plan-commands"',
+    ]) {
+      const res = spawnSync(process.execPath, [CLI, 'guard'], {
+        cwd: dir,
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
+        encoding: 'utf8',
+      });
+      assert.equal(res.status, 0, `must allow: ${command}`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

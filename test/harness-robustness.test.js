@@ -188,6 +188,60 @@ test('a new untracked file invalidates the cached proof', (t) => {
   assert.doesNotMatch(output, /already proved/);
 });
 
+test('editing an already-untracked file invalidates the cached proof', (t) => {
+  const { dir, story } = makeProject(t, 'cache-untracked-edit');
+
+  fs.writeFileSync(path.join(dir, 'new-source.js'), 'module.exports = 1;\n');
+  run(dir, ['verify', '--story', story]);
+
+  // Same name, same listing, different bytes: a story's own new file, edited
+  // again before it was ever committed.
+  fs.writeFileSync(path.join(dir, 'new-source.js'), 'module.exports = 2;\n');
+  const edited = run(dir, ['verify', '--story', story]);
+  assert.doesNotMatch(edited.output, /already proved/);
+
+  // An untouched untracked file must not defeat the cache.
+  const again = run(dir, ['verify', '--story', story]);
+  assert.match(again.output, /already proved/);
+});
+
+test('a proof survives committing the new files it proved, and goes stale when one is edited', (t) => {
+  const { dir, story } = makeProject(t, 'proof-untracked');
+  const status = () => run(dir, ['status', '--json']).stdout;
+  const storyState = () => {
+    const found = JSON.stringify(JSON.parse(status())).match(/"status":"(verified|stale|blocked|planned)"/);
+    return found && found[1];
+  };
+
+  fs.writeFileSync(path.join(dir, 'new-source.js'), 'module.exports = 1;\n');
+  assert.equal(run(dir, ['verify', '--story', story]).code, 0);
+  assert.equal(storyState(), 'verified');
+
+  // Same bytes, now tracked: nothing about the code changed.
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-qm', 'feat: new source']);
+  assert.equal(storyState(), 'verified', 'committing exactly what was verified must not stale the proof');
+
+  fs.writeFileSync(path.join(dir, 'another.js'), 'module.exports = 2;\n');
+  assert.equal(storyState(), 'stale', 'a new untracked file is a code change');
+});
+
+test("writing the story's Result and Status after verify keeps the proof fresh, but not cached", (t) => {
+  const { dir, story } = makeProject(t, 'proof-story-text');
+  const state = () => JSON.stringify(JSON.parse(run(dir, ['status', '--json']).stdout)).match(/"status":"(\w[\w-]*)"/)[1];
+
+  assert.equal(run(dir, ['verify', '--story', story]).code, 0);
+  assert.equal(state(), 'verified');
+
+  // What /flow-run does right after its green verify.
+  fs.appendFileSync(path.join(dir, story, 'tasks.md'), '\n## Result\n\nDone, tests pass.\n');
+  assert.equal(state(), 'verified', 'story prose is not the code the proof proved');
+
+  // The verdict reads the story text, so a replay must not answer for new text.
+  assert.doesNotMatch(run(dir, ['verify', '--story', story]).output, /already proved/);
+  assert.match(run(dir, ['verify', '--story', story]).output, /already proved/);
+});
+
 test('changing the declared commands invalidates the cached proof', (t) => {
   const { dir, story } = makeProject(t, 'cache-commands');
 

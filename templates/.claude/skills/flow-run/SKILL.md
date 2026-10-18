@@ -29,6 +29,11 @@ below are that pipeline, inlined.
 
 When `ai-flow` is available, use the harness automatically.
 
+**Work where the story lives.** If `ai-flow status` shows the story with `→ wt: <path>`,
+its work is in that worktree: `cd <path>` before reading, editing or verifying.
+`verify --story` refuses from another checkout while that worktree holds work, and
+says where to go.
+
 > If bare `ai-flow` is not on `PATH` (common when the plugin is installed but the
 > package was never linked globally), run the same commands via
 > `npx @landry_pouth/coding-flow <args>`.
@@ -51,7 +56,8 @@ leaving out `[~]` (or list it under `## Deferred Criteria`) — never tick a cri
 you did not meet. Likewise a deleted test file needs a `## Test Exemption` naming it.
 
 **Commands written in `plan.md` are refused when nobody is watching** (no TTY, `CI=true`,
-an agent-driven run): `verify` reports `REFUSED` and executes nothing. Do not add
+an agent-driven run): `verify` reports `REFUSED` and executes nothing. A bare call to
+one of the project's own scripts (`npm test`, `pnpm run lint`) is the exception: it runs. Do not add
 `--allow-plan-commands` (or `AI_FLOW_FORCE_TTY`/`NODE_ENV=test`) on your own — move the commands to `.coding-flow/config.json`
 with the user's agreement, or ask them to allow it. `--clean-env` runs any command
 without credential-looking environment variables.

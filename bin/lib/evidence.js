@@ -49,6 +49,7 @@ const {
 } = require("./coverage-gate");
 const {
   isUnattended,
+  isProjectScriptInvocation,
   resolveStoryDir,
   resolveValidationCommands,
   cleanEnvironment,
@@ -203,19 +204,57 @@ function commandsFingerprint(commands, timeouts = {}) {
 // The tree token deliberately ignores untracked files (see identity.js), which is
 // fine for flagging staleness but not for skipping a run: a brand-new, untracked
 // source file is exactly the case where re-running matters. Folding the untracked
-// listing into the cache key closes that hole without touching what `stale` means.
+// listing and contents into the cache key closes that hole without touching what `stale` means.
 // Only ever called once currentTreeToken() has confirmed a git repository, so an
 // empty listing here means "no untracked files", not "git unavailable".
 //
 // `.coding-flow/` is excluded for the same reason the tree token excludes it: it
 // is where proofs are written, so counting it would mean every verify invalidates
 // the proof it just recorded.
+const UNTRACKED_CONTENT_MAX_BYTES = 5 * 1024 * 1024;
+
 function untrackedDigest() {
   const listing = runGitList(["ls-files", "--others", "--exclude-standard"]).filter(
     (file) => file !== ".coding-flow" && !file.startsWith(".coding-flow/"),
   );
 
-  return crypto.createHash("sha256").update(listing.join("\n")).digest("hex").slice(0, 40);
+  // Names alone miss the common case: a file this story created, edited again
+  // after its first verify. Fold each file's content in; a file too big to read
+  // cheaply (or unreadable) falls back to size + mtime, which can only over-invalidate.
+  const hash = crypto.createHash("sha256");
+
+  for (const file of listing) {
+    hash.update(`${file}\0`);
+
+    try {
+      const absolute = path.resolve(cwd, file);
+      const stat = fs.statSync(absolute);
+
+      if (stat.isFile() && stat.size <= UNTRACKED_CONTENT_MAX_BYTES) {
+        hash.update(fs.readFileSync(absolute));
+      } else {
+        hash.update(`${stat.size}:${stat.mtimeMs}`);
+      }
+    } catch {
+      hash.update("unreadable");
+    }
+
+    hash.update("\0");
+  }
+
+  return hash.digest("hex").slice(0, 40);
+}
+
+// The story's own text. It is outside the tree token (prose is not code), yet the
+// verdict reads it — ticked criteria, a `## Test Exemption`, the risk words — so a
+// proof is only replayed for the story text it was judged on.
+function storyDigest(storyDir) {
+  if (!storyDir) {
+    return null;
+  }
+
+  const bundle = readStoryBundle(storyDir);
+  return crypto.createHash("sha256").update(JSON.stringify(bundle)).digest("hex").slice(0, 40);
 }
 
 // Looks for a green verify that already proves this exact story, at this exact
@@ -224,7 +263,7 @@ function untrackedDigest() {
 //
 // Conservative by construction: outside git, or when anything cannot be
 // determined, this returns null and the commands run for real.
-function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
+function findReusableVerify({ storyRelativePath, storyDir = null, commands, timeouts = {} }) {
   const token = currentTreeToken(cwd);
   const mergeBase = currentDiffBase(cwd).mergeBase;
 
@@ -233,6 +272,7 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
   }
 
   const untracked = untrackedDigest();
+  const storyText = storyDigest(storyDir);
   const fingerprint = commandsFingerprint(commands, timeouts);
   const harnessConfig = readHarnessConfig().config;
   const floor = JSON.stringify(resolveCoverageFloor(harnessConfig));
@@ -283,7 +323,8 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
       evidence.policyFingerprint === policy &&
       // A proof made against another base is a different proof.
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
-      evidence.untrackedDigest === untracked
+      evidence.untrackedDigest === untracked &&
+      evidence.storyDigest === storyText
     ) {
       return { evidence, path: fullPath };
     }
@@ -307,7 +348,7 @@ function writeVerifyEvidence(evidence) {
 // runner's) secrets, so it needs a human watching — or an explicit say-so.
 const PLAN_COMMANDS_REFUSAL =
   "commands from plan.md are not run unattended; declare them in .coding-flow/config.json " +
-  "(with the user's agreement) or pass --allow-plan-commands";
+  "(with the user's agreement), use the project's own scripts (`npm test`), or pass --allow-plan-commands";
 
 function verifyStoryOnce({
   story = null,
@@ -324,7 +365,10 @@ function verifyStoryOnce({
   const { config } = readHarnessConfig();
   const freshRequired = freshTestsRequired({ storyDir, config });
   const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
-  const refused = resolution.source === "plan.md" && unattended && !allowPlanCommands ? PLAN_COMMANDS_REFUSAL : null;
+  const refused =
+    resolution.source === "plan.md" && unattended && !allowPlanCommands && !resolution.commands.every(isProjectScriptInvocation)
+      ? PLAN_COMMANDS_REFUSAL
+      : null;
   const cleaned = cleanEnv ? cleanEnvironment() : null;
 
   if (announce && !refused && resolution.source === "plan.md") {
@@ -390,6 +434,7 @@ function verifyStoryOnce({
     // The rules this verdict was computed under; a different value is a different proof.
     policyFingerprint: policyFingerprint(cwd),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
+    storyDigest: storyDigest(storyDir),
     environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
     unattended,
     ...(refused ? { refused } : {}),

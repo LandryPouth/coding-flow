@@ -263,11 +263,10 @@ test('the human output names the path that raised the risk', (t) => {
   assert.match(res.output, /charge\.js/);
 });
 
-// The gate's credibility depends on never blocking on something a test suite
-// cannot answer. A migration is genuinely high-risk — and genuinely not unit
-// testable. Blocking it teaches the developer to reach for --test-exemption on
-// reflex, which is how a gate stops meaning anything.
-test('a migration raises the risk but is not asked for a unit test', (t) => {
+// A migration used to be exempt here ("not unit testable"), which let a
+// `DROP COLUMN` verify green at not-required (story 13-01). It now needs a test
+// or a declared exemption, like any other high-risk change.
+test('a migration raises the risk and is asked for proof', (t) => {
   const dir = repo(t, 'cov-migration');
   const rel = story(dir, { risk: 'low' });
   commit(dir, { 'db/migrations/003_add_role.sql': 'ALTER TABLE users ADD role text;\n' }, 'migration');
@@ -275,9 +274,65 @@ test('a migration raises the risk but is not asked for a unit test', (t) => {
   const res = run(dir, ['verify', '--story', rel, '--json']);
   const { coverage } = JSON.parse(res.output);
 
+  assert.equal(res.code, 1, res.output);
+  assert.equal(coverage.ok, false);
+  assert.deepEqual(coverage.behaviorFiles, ['db/migrations/003_add_role.sql']);
+});
+
+test('prose under a high-risk directory is still not behavior', (t) => {
+  const dir = repo(t, 'cov-auth-docs');
+  const rel = story(dir, { risk: 'high' });
+  commit(dir, { 'docs/auth/setup.md': '# Auth setup\n', 'src/auth/README.md': 'notes\n' }, 'auth docs');
+
+  const res = run(dir, ['verify', '--story', rel, '--json']);
+  const { coverage } = JSON.parse(res.output);
+
   assert.equal(res.code, 0, res.output);
-  assert.equal(coverage.ok, true);
-  assert.equal(coverage.mode, 'none', 'nothing executable changed');
+  assert.equal(coverage.mode, 'none');
+  assert.equal(coverage.behaviorFiles, undefined);
+  assert.match(coverage.reason, /docs\/auth\/setup\.md/);
+  assert.match(coverage.reason, /excluded by nonBehaviorGlobs/);
+});
+
+// Only a pattern listed in both lists is overridden. Config, lockfiles and
+// generated code under a high-risk directory are still not behavior: a gate
+// that asks for a test no suite can give is a gate people switch off.
+test('config, lockfiles and generated code under a high-risk directory stay excluded', (t) => {
+  const dir = repo(t, 'cov-auth-config');
+  const rel = story(dir, { risk: 'high' });
+  commit(
+    dir,
+    {
+      'packages/auth/tsconfig.json': '{}\n',
+      'packages/billing/.eslintrc.json': '{}\n',
+      'src/auth/auth.config.ts': 'export default {};\n',
+      'src/payments/generated/client.ts': 'export const c = 1;\n',
+      'packages/payments/yarn.lock': '# lock\n',
+    },
+    'config under risky dirs',
+  );
+
+  const res = run(dir, ['verify', '--story', rel, '--json']);
+  const { coverage } = JSON.parse(res.output);
+
+  assert.equal(res.code, 0, res.output);
+  assert.equal(coverage.mode, 'none');
+});
+
+test('a migration is behavior wherever it sits, its README is not', (t) => {
+  const dir = repo(t, 'cov-docs-sql');
+  const rel = story(dir, { risk: 'low' });
+  commit(
+    dir,
+    { 'docs/migrations/002.sql': 'ALTER TABLE users DROP COLUMN email;\n', 'migrations/README.md': 'how to run\n' },
+    'sql under docs',
+  );
+
+  const res = run(dir, ['verify', '--story', rel, '--json']);
+  const { coverage } = JSON.parse(res.output);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(coverage.behaviorFiles, ['docs/migrations/002.sql']);
 });
 
 test('type declarations and build config never demand coverage', (t) => {

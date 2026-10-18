@@ -98,7 +98,24 @@ const { reviewCommand } = require("./lib/review");
 const { traceCommand } = require("./lib/trace");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
-const { worktreeCommand } = require("./lib/worktree");
+const { worktreeCommand, storyWorkElsewhere } = require("./lib/worktree");
+
+// `verify --story` run from a checkout that is not where the story's work is
+// would prove this checkout's copy — green on the wrong tree, recorded as
+// proof. Refuse and point at the worktree instead.
+function refuseVerifyAwayFromStoryWork(story) {
+  const elsewhere = storyWorkElsewhere(cwd, story);
+  if (!elsewhere) return;
+  const what = [
+    elsewhere.ahead ? `${elsewhere.ahead} commit(s) not in this checkout` : null,
+    elsewhere.dirty ? `${elsewhere.dirty} uncommitted change(s)` : null,
+  ].filter(Boolean).join(", ");
+  fail(
+    `the work for story "${story}" is in its worktree ${elsewhere.relative} (${what}). ` +
+      "Verifying here would prove this checkout's copy, not the story's work. Run it there:\n" +
+      `  cd ${elsewhere.relative} && ai-flow verify --story ${story}`,
+  );
+}
 const { decidePlacement, autoLandIfChainFinished } = require("./lib/worktree-plan");
 const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
@@ -851,11 +868,13 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     force: flags.has("--force"),
   });
 } else if (command === "harness") {
+  if (commandArgs[0] === "verify") refuseVerifyAwayFromStoryWork(getFlagValue("--story", null));
   harnessCommand({ commandArgs, getFlagValue, flags });
 } else if (command === "verify") {
   // Top-level alias of `harness verify`. The harness namespace earns itself for
   // preflight/check/evidence, which nobody types by hand; verify is the one a
   // user reaches for — re-proving a story that went `stale` after a small edit.
+  refuseVerifyAwayFromStoryWork(getFlagValue("--story", null));
   harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
 } else if (command === "report") {
   reportCommand({ getFlagValue, flags });
@@ -876,6 +895,11 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   // circular require between the two.
   const epic = getFlagValue("--epic", null);
   const story = getFlagValue("--story", null);
+
+  if (flags.has("--dry-run")) {
+    // place can create a worktree and has no preview: refuse rather than act.
+    fail("worktree place does not support --dry-run; nothing was done.");
+  }
 
   if (!epic || !story) {
     fail("worktree place requires --epic <dir> and --story <dir>.");
@@ -910,6 +934,11 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   // worktree.js's worktreeLand.
   const epic = getFlagValue("--epic", null);
   const story = getFlagValue("--story", null);
+
+  if (flags.has("--dry-run")) {
+    // autoland merges and has no preview: `worktree land <name> --dry-run` is the preview.
+    fail("worktree autoland does not support --dry-run; nothing was done. Preview a land with `ai-flow worktree land <name> --dry-run`.");
+  }
 
   if (!epic || !story) {
     fail("worktree autoland requires --epic <dir> and --story <dir>.");

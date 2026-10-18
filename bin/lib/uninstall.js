@@ -92,6 +92,7 @@ function collectUninstallPlan({ force = false } = {}) {
     ".coding-flow/config.json",
     ".coding-flow/denials.jsonl",
     ".coding-flow/guard-unchecked.jsonl",
+    ".coding-flow/active-story.json",
   ]) {
     const target = path.join(cwd, generated);
 

@@ -44,6 +44,8 @@ separately-invoked path when that extra parallel coverage is worth its cost.
   `## Test Exemption`; `verify` fails on both.
 - Run the suite yourself when in doubt — never trust a reported result. When `ai-flow`
   is present, run `ai-flow verify --story <dir>` and read the captured evidence.
+  If it reports `REFUSED` (commands from `plan.md`, nobody watching), stop and tell the user: never add
+  `--allow-plan-commands` yourself — the guard refuses it, and the grant is theirs to give.
 
 ## Reviewing Your Own Diff
 
@@ -88,7 +90,11 @@ fresh, and the ordinary workflow below is enough.
 
 ## Workflow
 
-1. Read `RULES.md`, project docs, and the active story files.
+1. Find where the work is before judging it: in `ai-flow status`, a story shown with
+   `→ wt: <path>` has its own worktree — read, diff and verify it there (`cd <path>`).
+   Never conclude a story is unimplemented from this checkout's copy; `verify --story`
+   refuses from the wrong checkout and names the worktree. Then read `RULES.md`,
+   project docs, and the story files there.
 2. Inspect the changed files and the relevant surrounding code.
 3. Check behavior against acceptance criteria.
 4. Cover each dimension below at the depth the change's risk warrants.

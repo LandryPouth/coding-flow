@@ -171,7 +171,20 @@ function buildManifestFromCurrentTargets(previous = null) {
 }
 
 function writeManifest(previous = null) {
-  writeJson(manifestPath(), buildManifestFromCurrentTargets(previous));
+  const next = buildManifestFromCurrentTargets(previous);
+
+  // A re-run that changed nothing must leave nothing to commit: keep the old
+  // timestamp rather than dirtying a tracked file with a new one.
+  if (previous && previous.updatedAt) {
+    const { updatedAt: _next, ...nextRest } = next;
+    const { updatedAt: _previous, ...previousRest } = previous;
+
+    if (JSON.stringify(nextRest) === JSON.stringify(previousRest)) {
+      return;
+    }
+  }
+
+  writeJson(manifestPath(), next);
 }
 
 function markGeneratedPackageJson() {

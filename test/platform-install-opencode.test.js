@@ -150,3 +150,12 @@ test('a second init for another agent does not call our own files the user\'s', 
   const out = execFileSync(process.execPath, [CLI, 'init', '--target', 'claude', '--with-skills'], { cwd: dir, env, encoding: 'utf8' });
   assert.match(out, /Kept 1 existing file \(yours, not overwritten\):\n- RULES\.md\n/);
 });
+
+test('re-running init changes nothing, not even the manifest timestamp', (t) => {
+  const { dir } = initOpenCode(t, []);
+  const manifest = path.join(dir, '.coding-flow', 'manifest.json');
+  const before = fs.readFileSync(manifest, 'utf8');
+
+  execFileSync(process.execPath, [CLI, 'init', '--target', 'opencode'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(fs.readFileSync(manifest, 'utf8'), before);
+});

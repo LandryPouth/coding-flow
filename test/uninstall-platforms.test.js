@@ -87,3 +87,12 @@ test('an edited rendered skill blocks uninstall like an edited template does', (
   assert.match(res.stdout, /\.opencode\/skills\/flow-run\/SKILL\.md/);
   assert.ok(fs.existsSync(path.join(dir, '.opencode', 'plugins', 'coding-flow-guard.js')), 'a blocked uninstall unwires nothing');
 });
+
+test('uninstall also takes back the lock a running story left behind', (t) => {
+  const { dir, run } = project(t);
+  run(['init', '--target', 'opencode']);
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'active-story.json'), '{}\n');
+
+  run(['uninstall']);
+  assert.deepEqual(files(dir), ['epics/.gitkeep']);
+});

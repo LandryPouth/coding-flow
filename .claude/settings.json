@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "R=\"$CLAUDE_PROJECT_DIR/bin/ai-flow.js\"; if [ -f \"$R\" ]; then node \"$R\" guard; else npx --yes @landry_pouth/coding-flow@0.13.0 guard; fi",
+            "command": "R=\"$CLAUDE_PROJECT_DIR/bin/ai-flow.js\"; if [ -f \"$R\" ]; then node \"$R\" guard; else npx --yes @landry_pouth/coding-flow@0.14.0 guard; fi",
             "timeout": 60
           }
         ]

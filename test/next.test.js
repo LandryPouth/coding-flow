@@ -226,3 +226,35 @@ test('next --json emits only the top item by default, all with --all', (t) => {
   const all = JSON.parse(run(repo, ['next', '--all', '--json']).output);
   assert.equal(all.items.length, 2);
 });
+
+// A written `done` over a green proof the code has since moved past is not
+// ready to ship: next must ask for a re-verify, and status must say why.
+test('a done story whose green proof went stale is sent back to verify, not to ship', (t) => {
+  const { repo } = initRepo(t);
+  run(repo, ['init']);
+  const configPath = path.join(repo, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = { commands: ['node -e "process.exit(0)"'] };
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\n## Status: done\n');
+  fs.writeFileSync(path.join(repo, 'lib.js'), 'module.exports = 1;\n');
+  commitAll(repo, 'init');
+  sh(repo, 'git', ['checkout', '-b', 'story-01-01-a']);
+
+  assert.equal(run(repo, ['verify', '--story', storyPath]).code, 0);
+  fs.writeFileSync(path.join(repo, 'lib.js'), 'module.exports = 2;\n');
+
+  const next = run(repo, ['next']).output;
+  assert.match(next, /\[unproven\].*code moved since its last green verify/);
+  assert.doesNotMatch(next, /ai-flow ship/);
+  assert.match(run(repo, ['status']).output, /story-01-01-a\s+done\s+\(written; proof is stale\)/);
+});
+
+test('status names a written done that its last verify contradicts', (t) => {
+  const { repo } = initRepo(t);
+  const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\n## Status: done\n');
+  writeVerify(repo, storyPath, { ok: false });
+  commitAll(repo, 'init');
+
+  assert.match(run(repo, ['status']).output, /story-01-01-a\s+done\s+\(written; last verify failed\)/);
+});

@@ -146,10 +146,11 @@ function defaultHighRiskPaths() {
 // clear by lying (a fake test) or by turning the tool off. Every entry below is
 // a case where "not covered" carries no information.
 //
-// Note the asymmetry with `highRiskPaths`: a migration is still high-risk, and
-// still shows up in the risk reason and in the ship evidence. It is only exempt
-// from "prove a unit test executes these lines", which no coverage tool can
-// answer for a DDL file.
+// An entry that is also listed, as the same pattern, in `highRiskPaths`
+// (`**/migrations/**`, `**/*.sql`) is overridden by it: the coverage gate
+// treats those files as behavior, so a migration needs a test or a declared
+// exemption. The entries stay here so that a project which removes them from
+// `highRiskPaths` keeps them out of the gate.
 function defaultNonBehaviorGlobs() {
   return [
     "docs/**",
@@ -178,7 +179,7 @@ function defaultNonBehaviorGlobs() {
     "**/tsconfig*.json",
     "**/.eslintrc*",
     "**/.prettierrc*",
-    // Schema and migration files: the risk is real, the unit test is not.
+    // Schema and migration files: overridden by highRiskPaths (see above).
     "**/migrations/**",
     "**/*.sql",
     // Generated code is proven by whatever generated it.

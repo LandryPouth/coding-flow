@@ -91,7 +91,7 @@ test('a passing review made stale by a later commit reports review: "stale"', (t
   assert.equal(run(repo, ['review', 'capture', '--story', storyRel, '--verdict', 'pass']).code, 0);
   assert.equal(storyOf(repo, storyRel).review, 'pass');
 
-  fs.writeFileSync(path.join(repo, storyRel, 'story.md'), '# Story 01.01\n\nchanged after review\n');
+  fs.writeFileSync(path.join(repo, 'lib.js'), 'module.exports = "changed after review";\n');
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'edit after review']);
 

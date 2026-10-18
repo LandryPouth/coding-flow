@@ -400,6 +400,7 @@ function harnessVerify({
     const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
     const reusable = findReusableVerify({
       storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
+      storyDir: resolveStoryDir(story),
       commands: resolution.commands,
       timeouts: resolution.timeouts,
     });
