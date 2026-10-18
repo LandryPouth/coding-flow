@@ -67,6 +67,25 @@ function isHeuristicAllowlisted(relativePath, config) {
   return allowlist.some((pattern) => matchesPattern(relativePath, pattern));
 }
 
+// A heuristic match whose quoted value starts with `$` or a backtick is a shell
+// expansion (`$(aws secretsmanager …)`, `${VAR:-x}`, `$VAR`): the secret is
+// fetched at run time, it is not written here. Exact formats never get this
+// exemption, so a real key inside a `$(…)` line is still found.
+function isShellExpansion(line, regex) {
+  const match = regex.exec(line);
+  const value = match && /[:=]\s*["']([^"']*)/.exec(match[0]);
+
+  return Boolean(value && /^[$`]/.test(value[1]));
+}
+
+function matchesLine(pattern, line) {
+  if (!pattern.regex.test(line)) {
+    return false;
+  }
+
+  return pattern.precision === "exact" || !isShellExpansion(line, pattern.regex);
+}
+
 // The single scanning primitive, shared by the after-the-fact scan (`harness
 // check`) and the at-the-boundary one (`guard`). One implementation means the
 // hook and the report can never disagree about what counts as a secret.
@@ -81,7 +100,7 @@ function findSecretsInContent(content, patterns, { skipHeuristics = false, first
   const lines = content.split(/\r?\n/);
 
   for (let index = 0; index < lines.length; index += 1) {
-    const match = active.find((pattern) => pattern.regex.test(lines[index]));
+    const match = active.find((pattern) => matchesLine(pattern, lines[index]));
 
     if (match) {
       found.push({ name: match.name, precision: match.precision, line: index + 1 });
