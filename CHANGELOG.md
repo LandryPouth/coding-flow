@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-18
+
+OpenCode parity and honest proof state, found by driving the whole loop live in OpenCode (greenfield and brownfield, two models). A story finished by `/flow-run` is now `verified`, not silently stale behind a written `done`; `init` installs the guard when OpenCode runs inside a Claude Code terminal; `verify` runs a plan that only names the project's own scripts (`npm test`) without asking, so an agent-driven `/flow-run` reaches a proof on its own; and an agent can no longer grant itself `--allow-plan-commands`. Also: `worktree land --dry-run` touches nothing, a story is judged in the worktree that holds its work, and a migration counts as behavior.
+
+**Behaviour changes:** a `plan.md` whose commands are bare calls to `package.json` scripts now runs unattended (anything else is still refused). Story directories (`epics/`, `specs/`, `.specify/`) are outside the freshness token, so a proof captured before this release may read `stale` once — re-verify it.
+
 ### Fixed
 
 - **`worktree land --dry-run` is a dry run.** It used to start the real rebase and could leave the story worktree mid-rebase. It now runs land's checks, predicts a conflict without touching anything, and prints the steps it would take. `worktree lock`, `unlock`, `place` and `autoland` refuse `--dry-run` instead of ignoring it and acting.
