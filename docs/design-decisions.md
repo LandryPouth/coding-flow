@@ -454,3 +454,41 @@ default to minimal?**
 
 Revisit with the maintainer's decision; until then `init` keeps installing the
 full workflow.
+
+## 13. Codebase recovery — the third freeze exception
+
+**Decided 2026-10-18 by the maintainer.** Designed in
+[`docs/plans/codebase-recovery.md`](plans/codebase-recovery.md), planned as
+epic 14, after epic 13.
+
+The standing test is entry 6's: a freeze exception requires the premise of a
+refusal to have changed, stated out loud. The premise here is not a feature
+request. It is an assumption under **every** gate the tool has: *risk arrives
+in a diff*. The guard judges a write, `verify` a branch, the coverage gate the
+added lines, the review the change before merge. For the developer the
+maintainer names as the target — an MVP built with an agent in two weeks,
+picked up months later — the risk is in code no future diff will touch, and
+the tool has nothing to say about it.
+
+That was checked, not argued. A read-only hour on such an MVP (162 commits in
+five weeks, untouched for four months, deployed on AWS) found an IDOR and an
+SSRF confirmed by reading, neither reachable by any diff-scoped check; and,
+replayed on a throwaway repository, Coding Flow's own gate verifying a
+`DROP COLUMN` migration green at `not-required`.
+
+**What keeps it narrow.** One skill (`/flow-recover`), no new test engine,
+scanner or orchestrator. Fixes go through story-less `verify` (12-01), so
+recovery needs no epics; a finding too large for one change is handed to
+`/flow-plan`. The core gains only checks the skill's claims cannot be trusted
+without: migrations counted as behavior (13-01), a scan (14-01), findings read
+by `status` with cited locations resolved (14-02), red-at-base for fixes
+(14-03), a behavior-preserving claim for refactors (14-04), declared security
+tools captured as evidence (14-06). The tool never states "production-ready".
+
+**Refused in the same decision**: a "production-ready" verdict, exploits run
+against deployed systems, a whole-codebase rewrite, severity without a trace,
+bundled scanners, scoring the developer, persona prompts.
+
+Entry 6's precedent is reaffirmed, not loosened: three exceptions in two
+months, each on a premise named and measured, not a pattern of arguments
+accumulating.
