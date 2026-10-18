@@ -24,19 +24,35 @@ verify` gets the coverage gate and the diff risk, not just exit codes.
 
 ## Acceptance Criteria
 
-- [ ] Repo with only `.coding-flow/config.json` (no `epics/`), a feature
+- [x] Repo with only `.coding-flow/config.json` (no `epics/`), a feature
       branch adding `src/auth/login.js` without a test → verify fails the
       coverage gate (risk high from the `auth` path), reason names the file.
-- [ ] Same with a test file added → passes at `evidence`; with a fresh lcov
+- [x] Same with a test file added → passes at `evidence`; with a fresh lcov
       covering the lines → `verified`.
-- [ ] On the default branch with a clean tree → `not-required`, "no change
+- [x] On the default branch with a clean tree → `not-required`, "no change
       to evaluate".
-- [ ] A repo with stories still attributes to the story when `--story` is
+- [x] A repo with stories still attributes to the story when `--story` is
       given (unchanged).
-- [ ] `findReusableVerify` handles `story: null` (reuse keyed on base and
+- [x] `findReusableVerify` handles `story: null` (reuse keyed on base and
       policy as for stories).
 
 ## Edge Cases
 
 - Several stories touched on the branch and no `--story`: still branch
   scope (the evidence never guesses a story).
+
+## Status: done
+
+## Result
+
+All five criteria pinned by `test/storyless-verify.test.js` on throwaway repos
+with only `.coding-flow/config.json`. Changed: the empty-diff coverage reason
+(`coverage-gate.js`) and `report`'s story / story-less run counts
+(`report.js`), and a story-less verify no longer replays a
+proof whose coverage gate was skipped (land's re-verify; `evidence.js`). See plan.md Decisions for why the rest needed no code.
+
+### Rollback Notes
+
+`git revert` of the story commit. No migration, no config. Additive fields only:
+`report` gains two, a skipped-coverage evidence gains `coverage.skipped: true`,
+and old evidence is read unchanged.

@@ -258,6 +258,16 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
       continue;
     }
 
+    // Story-less runs share `story: null` with land's re-verify, which skipped
+    // the coverage gate: replaying it would be a green with no gate behind it.
+    // Evidence from before `skipped` existed is recognised by its reason.
+    if (
+      evidence.coverage &&
+      (evidence.coverage.skipped === true || evidence.coverage.reason === COVERAGE_SKIPPED_REASON)
+    ) {
+      continue;
+    }
+
     const provenanceToken = evidence.provenance && evidence.provenance.git
       ? evidence.provenance.git.treeToken
       : null;
@@ -281,6 +291,10 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
 
   return null;
 }
+
+// Why `skipCoverage` callers (land's re-verify) record no coverage verdict. Such
+// a proof ran the commands only, so it is never replayed as a full verify.
+const COVERAGE_SKIPPED_REASON = "not evaluated (no single story to attribute this run to)";
 
 // Persists a verify evidence under .coding-flow/runs and returns its path. The
 // name always ends in -verify.json (so the ledger/audit ingest it) and stays
@@ -352,7 +366,7 @@ function verifyStoryOnce({
   const coverage = !commandsOk
     ? { required: false, ok: true, reason: "not evaluated (commands did not pass)", changedFiles: [], testFiles: [] }
     : skipCoverage
-      ? { required: false, ok: true, reason: "not evaluated (no single story to attribute this run to)", changedFiles: [], testFiles: [] }
+      ? { required: false, ok: true, skipped: true, reason: COVERAGE_SKIPPED_REASON, changedFiles: [], testFiles: [] }
       : evaluateCoverage({ storyDir, config, exemption, startedAt });
 
   const acceptanceCriteria = readAcceptanceCriteria(storyDir);
