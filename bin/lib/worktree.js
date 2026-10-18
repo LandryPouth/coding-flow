@@ -504,8 +504,12 @@ function ensureLockIgnored(root) {
     return;
   }
 
+  // A .gitignore this creates from nothing also ignores .env: otherwise the lock
+  // brings the file into being and the next `harness check` warns it lets .env in.
+  // An existing one is only ever appended the lock line.
+  const created = fs.existsSync(gitignorePath) ? "" : ".env\n.env.*\n";
   const withNewline = content.length && !content.endsWith("\n") ? `${content}\n` : content;
-  fs.writeFileSync(gitignorePath, `${withNewline}${LOCK_GITIGNORE_LINE}\n`);
+  fs.writeFileSync(gitignorePath, `${created}${withNewline}${LOCK_GITIGNORE_LINE}\n`);
 }
 
 function worktreeLock(story, { cwd }) {

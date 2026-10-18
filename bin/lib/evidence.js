@@ -49,6 +49,7 @@ const {
 } = require("./coverage-gate");
 const {
   isUnattended,
+  isProjectScriptInvocation,
   resolveStoryDir,
   resolveValidationCommands,
   cleanEnvironment,
@@ -244,13 +245,25 @@ function untrackedDigest() {
   return hash.digest("hex").slice(0, 40);
 }
 
+// The story's own text. It is outside the tree token (prose is not code), yet the
+// verdict reads it — ticked criteria, a `## Test Exemption`, the risk words — so a
+// proof is only replayed for the story text it was judged on.
+function storyDigest(storyDir) {
+  if (!storyDir) {
+    return null;
+  }
+
+  const bundle = readStoryBundle(storyDir);
+  return crypto.createHash("sha256").update(JSON.stringify(bundle)).digest("hex").slice(0, 40);
+}
+
 // Looks for a green verify that already proves this exact story, at this exact
 // working-tree content, for this exact command set. Re-running `tsc && test &&
 // lint` to reconfirm a result nothing has invalidated is pure latency.
 //
 // Conservative by construction: outside git, or when anything cannot be
 // determined, this returns null and the commands run for real.
-function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
+function findReusableVerify({ storyRelativePath, storyDir = null, commands, timeouts = {} }) {
   const token = currentTreeToken(cwd);
   const mergeBase = currentDiffBase(cwd).mergeBase;
 
@@ -259,6 +272,7 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
   }
 
   const untracked = untrackedDigest();
+  const storyText = storyDigest(storyDir);
   const fingerprint = commandsFingerprint(commands, timeouts);
   const harnessConfig = readHarnessConfig().config;
   const floor = JSON.stringify(resolveCoverageFloor(harnessConfig));
@@ -309,7 +323,8 @@ function findReusableVerify({ storyRelativePath, commands, timeouts = {} }) {
       evidence.policyFingerprint === policy &&
       // A proof made against another base is a different proof.
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
-      evidence.untrackedDigest === untracked
+      evidence.untrackedDigest === untracked &&
+      evidence.storyDigest === storyText
     ) {
       return { evidence, path: fullPath };
     }
@@ -333,7 +348,7 @@ function writeVerifyEvidence(evidence) {
 // runner's) secrets, so it needs a human watching — or an explicit say-so.
 const PLAN_COMMANDS_REFUSAL =
   "commands from plan.md are not run unattended; declare them in .coding-flow/config.json " +
-  "(with the user's agreement) or pass --allow-plan-commands";
+  "(with the user's agreement), use the project's own scripts (`npm test`), or pass --allow-plan-commands";
 
 function verifyStoryOnce({
   story = null,
@@ -350,7 +365,10 @@ function verifyStoryOnce({
   const { config } = readHarnessConfig();
   const freshRequired = freshTestsRequired({ storyDir, config });
   const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
-  const refused = resolution.source === "plan.md" && unattended && !allowPlanCommands ? PLAN_COMMANDS_REFUSAL : null;
+  const refused =
+    resolution.source === "plan.md" && unattended && !allowPlanCommands && !resolution.commands.every(isProjectScriptInvocation)
+      ? PLAN_COMMANDS_REFUSAL
+      : null;
   const cleaned = cleanEnv ? cleanEnvironment() : null;
 
   if (announce && !refused && resolution.source === "plan.md") {
@@ -416,6 +434,7 @@ function verifyStoryOnce({
     // The rules this verdict was computed under; a different value is a different proof.
     policyFingerprint: policyFingerprint(cwd),
     untrackedDigest: currentTreeToken(cwd) ? untrackedDigest() : null,
+    storyDigest: storyDigest(storyDir),
     environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
     unattended,
     ...(refused ? { refused } : {}),

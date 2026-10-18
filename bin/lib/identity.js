@@ -82,6 +82,13 @@ function capturePr(cwd) {
 // (not ignored, outside `.coding-flow/`) are part of the snapshot, so creating or
 // editing one moves the token and committing it does not. Outside git -> null.
 const EVIDENCE_DIR = ".coding-flow";
+// Where stories live (local storage, Spec Kit). Their prose is not the code a
+// proof proves: `/flow-run` writes the story's Result and `## Status: done` right
+// after its green verify, and counting that edit made every finished story stale.
+// The verify cache keys on the story text itself instead (evidence.js).
+const STORY_DIRS = ["epics", "specs", ".specify"];
+const OUTSIDE_TOKEN = new Set([EVIDENCE_DIR, ...STORY_DIRS]);
+const EXCLUDE_PATHSPECS = [...OUTSIDE_TOKEN].map((dir) => `:(exclude)${dir}`);
 
 // The tree of the working tree's tracked content, or null. `stash create` comes
 // first so existing tokens keep their value. It refuses a tree holding an
@@ -92,7 +99,7 @@ function workingTreeTree(cwd, head) {
   // New files this work created are part of what was proven. Left out, the proof
   // went stale the moment they were committed (the tree grew), though nothing
   // had changed. Snapshotting them needs the throwaway index below.
-  const untracked = tryExec("git", ["ls-files", "--others", "--exclude-standard", "--", ".", `:(exclude)${EVIDENCE_DIR}`], cwd);
+  const untracked = tryExec("git", ["ls-files", "--others", "--exclude-standard", "--", ".", ...EXCLUDE_PATHSPECS], cwd);
   const stash = untracked ? null : tryExec("git", ["stash", "create"], cwd);
 
   if (stash !== null) {
@@ -113,7 +120,7 @@ function workingTreeTree(cwd, head) {
     fs.copyFileSync(path.resolve(cwd, index), tempIndex);
     const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
 
-    const stage = untracked ? ["add", "-A", "--", ".", `:(exclude)${EVIDENCE_DIR}`] : ["add", "-u"];
+    const stage = untracked ? ["add", "-A", "--", ".", ...EXCLUDE_PATHSPECS] : ["add", "-u"];
 
     if (tryExec("git", stage, cwd, env) === null) {
       return null;
@@ -149,11 +156,11 @@ function computeTreeToken(cwd) {
     return null;
   }
 
-  // Each line: "<mode> <type> <objectid>\t<name>". Drop the evidence dir, then
+  // Each line: "<mode> <type> <objectid>\t<name>". Drop the evidence and story dirs, then
   // hash the rest: any source change flips a subtree object id and the token.
   const source = listing
     .split(/\r?\n/)
-    .filter((line) => line && line.split("\t")[1] !== EVIDENCE_DIR)
+    .filter((line) => line && !OUTSIDE_TOKEN.has(line.split("\t")[1]))
     .join("\n");
 
   return crypto.createHash("sha256").update(source).digest("hex").slice(0, 40);

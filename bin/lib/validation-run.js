@@ -225,6 +225,25 @@ function cleanEnvironment(source = process.env) {
 // Nobody is watching: no terminal on both ends, or a CI runner. Agents run with
 // no TTY, which is the point. AI_FLOW_FORCE_TTY=1 exists for tests only, so it is
 // honoured under NODE_ENV=test alone: an agent cannot use it to skip the refusal.
+// A plan.md line that only names one of the project's own package.json scripts
+// (`npm test`, `pnpm run lint`) carries no agent-written code: the script body is
+// the project's, and is exactly what the package.json fallback already runs when
+// no plan declares anything. Anything more (arguments, `&&`, a raw command) is not.
+const SCRIPT_INVOCATION = /^(?:npm|pnpm|yarn|bun)\s+(?:(?:run|run-script)\s+)?([\w:.@/-]+)$/;
+
+function isProjectScriptInvocation(command) {
+  const match = String(command).trim().match(SCRIPT_INVOCATION);
+
+  if (!match) {
+    return false;
+  }
+
+  const pkg = readJson(path.join(cwd, "package.json"), null);
+  const scripts = pkg && pkg.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {};
+  const name = match[1] === "t" ? "test" : match[1];
+  return Object.prototype.hasOwnProperty.call(scripts, name) && typeof scripts[name] === "string";
+}
+
 function isUnattended() {
   const ci = (process.env.CI || "").toLowerCase();
 
@@ -368,6 +387,7 @@ module.exports = {
   resolveValidationCommands,
   cleanEnvironment,
   isUnattended,
+  isProjectScriptInvocation,
   runValidationCommand,
   commandTimeout,
   resultStatus,

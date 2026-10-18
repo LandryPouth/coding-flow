@@ -226,6 +226,22 @@ test('a proof survives committing the new files it proved, and goes stale when o
   assert.equal(storyState(), 'stale', 'a new untracked file is a code change');
 });
 
+test("writing the story's Result and Status after verify keeps the proof fresh, but not cached", (t) => {
+  const { dir, story } = makeProject(t, 'proof-story-text');
+  const state = () => JSON.stringify(JSON.parse(run(dir, ['status', '--json']).stdout)).match(/"status":"(\w[\w-]*)"/)[1];
+
+  assert.equal(run(dir, ['verify', '--story', story]).code, 0);
+  assert.equal(state(), 'verified');
+
+  // What /flow-run does right after its green verify.
+  fs.appendFileSync(path.join(dir, story, 'tasks.md'), '\n## Result\n\nDone, tests pass.\n');
+  assert.equal(state(), 'verified', 'story prose is not the code the proof proved');
+
+  // The verdict reads the story text, so a replay must not answer for new text.
+  assert.doesNotMatch(run(dir, ['verify', '--story', story]).output, /already proved/);
+  assert.match(run(dir, ['verify', '--story', story]).output, /already proved/);
+});
+
 test('changing the declared commands invalidates the cached proof', (t) => {
   const { dir, story } = makeProject(t, 'cache-commands');
 

@@ -25,7 +25,9 @@ const { cwd } = require("./context");
 const { log } = require("./util");
 const { readConfig } = require("./config");
 const { buildStatusModel, computeReviewStatus } = require("./status");
-const { latestVerifyByStoryDir } = require("./audit");
+const { latestVerifyByStoryDir, isStale } = require("./audit");
+const { currentTreeToken } = require("./identity");
+const { policyFingerprint } = require("./policy-fingerprint");
 const { defaultBranch, currentBranch } = require("./policy");
 const { resolveDiffBase } = require("./diff-base");
 
@@ -50,12 +52,17 @@ function git(dir, args) {
 
 // A story's proof, independent of its written status: "green" (last captured
 // verify passed), "red" (last captured verify failed), or "none" (never captured).
-function storyProof(verifyByDir, story) {
+// "stale": green, but the code (or the policy) moved since; it no longer proves
+// what would be shipped.
+function storyProof(verifyByDir, story, root) {
   const entry = verifyByDir.get(story.path);
   if (!entry) {
     return "none";
   }
-  return entry.ok ? "green" : "red";
+  if (!entry.ok) {
+    return "red";
+  }
+  return isStale(entry, currentTreeToken(root), policyFingerprint(root)) ? "stale" : "green";
 }
 
 // Where this story's work actually lives on disk: its linked worktree, or the
@@ -123,7 +130,7 @@ function buildQueue() {
   const proofOf = (story) => {
     const root = story.worktree ? path.join(cwd, story.worktree) : cwd;
     if (!verifyByRoot.has(root)) verifyByRoot.set(root, latestVerifyByStoryDir(root));
-    return storyProof(verifyByRoot.get(root), story);
+    return storyProof(verifyByRoot.get(root), story, root);
   };
   // A command for a story whose work is in another checkout runs there.
   const there = (story, command) =>
@@ -153,7 +160,9 @@ function buildQueue() {
           message:
             proof === "red"
               ? `"${story.name}" is marked ${story.status} but its last captured verify failed`
-              : `"${story.name}" is marked ${story.status} but has no captured verify — a written status is not proof`,
+              : proof === "stale"
+                ? `"${story.name}" is marked ${story.status} but the code moved since its last green verify`
+                : `"${story.name}" is marked ${story.status} but has no captured verify — a written status is not proof`,
           command: there(story, `ai-flow verify --story ${story.path}`),
         });
       } else if (story.status === "stale") {

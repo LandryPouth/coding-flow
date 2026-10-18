@@ -157,7 +157,7 @@ test('a stale verify (code changed since) is "unverified", not "landable"', (t) 
 
   // Commit a further change in the worktree: clean tree, but the proof no
   // longer describes this content.
-  fs.writeFileSync(path.join(wt, storyRel, 'story.md'), '# Story 01.01\n\nchanged after verify\n');
+  fs.writeFileSync(path.join(wt, 'lib.js'), 'module.exports = "changed after verify";\n');
   git(wt, ['add', '-A']);
   git(wt, ['commit', '-q', '-m', 'edit after verify']);
 

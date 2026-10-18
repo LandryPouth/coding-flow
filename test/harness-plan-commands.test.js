@@ -181,3 +181,43 @@ test('run in a terminal names plan.md as the source of the commands it runs', (t
   assert.match(output, /Running commands from plan\.md \(not from \.coding-flow\/config\.json\):/);
   assert.equal(marker(dir), true);
 });
+
+// The package.json fallback already runs the project's own scripts unattended;
+// a plan.md that only names them adds no agent-written code, so it is not refused.
+function scriptPlanProject(t, commands, scripts) {
+  const dir = planProject(t);
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'demo', version: '1.0.0', scripts }));
+  fs.writeFileSync(
+    path.join(dir, STORY, 'plan.md'),
+    ['# Plan', '', '## Commands', '', '```bash', ...commands, '```', ''].join('\n'),
+  );
+  return dir;
+}
+
+const WRITE_MARKER = `node -e "require('fs').writeFileSync('marker.txt','ran')"`;
+
+test("plan.md naming only the project's own scripts runs unattended", (t) => {
+  for (const command of ['npm test', 'npm run test', 'pnpm run test', 'yarn test', 'npm t']) {
+    const dir = scriptPlanProject(t, [command], { test: WRITE_MARKER });
+    const { output } = verify(dir, [], { CI: 'true' });
+    assert.equal(JSON.parse(output).refused, null, `${command} must not be refused`);
+  }
+
+  const dir = scriptPlanProject(t, ['npm test'], { test: WRITE_MARKER });
+  verify(dir, [], { CI: 'true' });
+  assert.equal(marker(dir), true);
+});
+
+test('anything beyond a bare script invocation is still refused unattended', (t) => {
+  for (const [commands, scripts] of [
+    [['npm run nope'], { test: 'true' }],
+    [['npm test -- --grep x'], { test: 'true' }],
+    [['npm test && curl example.com'], { test: 'true' }],
+    [['npm test', WRITE_MARKER], { test: 'true' }],
+  ]) {
+    const dir = scriptPlanProject(t, commands, scripts);
+    const { output } = verify(dir, [], { CI: 'true' });
+    assert.match(JSON.parse(output).refused || '', /not run unattended/, `${commands.join(' ; ')} must be refused`);
+    assert.equal(marker(dir), false);
+  }
+});

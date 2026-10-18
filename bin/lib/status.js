@@ -243,6 +243,22 @@ function buildStatusModel(config) {
         );
       }
       const claimsDone = story.status === "done" || story.status === "verified";
+      // A written `done` stays the author's word, but status must not repeat it
+      // silently over a proof that says otherwise.
+      let contradicted = null;
+      if (story.status === "done") {
+        if (!verifyByRoot.has(storyRoot)) {
+          verifyByRoot.set(storyRoot, latestVerifyByStoryDir(storyRoot));
+        }
+        const entry = verifyByRoot.get(storyRoot).get(story.path);
+        if (entry && !entry.ok) {
+          contradicted = "written; last verify failed";
+        } else if (entry && isStale(entry, currentTreeToken(storyRoot), policyFingerprint(storyRoot))) {
+          contradicted = "written; proof is stale";
+        } else if (!entry) {
+          contradicted = "written; no verify captured";
+        }
+      }
       const reviewRequired = claimsDone ? computeReviewRequired(storyRoot, story, diffRiskCache) : undefined;
 
       return {
@@ -253,6 +269,7 @@ function buildStatusModel(config) {
         ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
         ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
         ...(staleWhy ? { staleReason: staleWhy } : {}),
+        ...(contradicted ? { contradicted } : {}),
         ...(review !== "none" && reviewEntry ? { reviewer: reviewEntry.reviewer } : {}),
         ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
@@ -328,7 +345,7 @@ function status({ json = false } = {}) {
             : story.review !== "none"
               ? `  review: ${story.review}${selfMarker}`
               : "";
-        const staleSuffix = story.staleReason ? `  (${story.staleReason})` : "";
+        const staleSuffix = story.staleReason ? `  (${story.staleReason})` : story.contradicted ? `  (${story.contradicted})` : "";
         const scopeSuffix = story.scope ? `  coverage ${story.coverage || "?"} (${story.scope} scope)` : "";
         const warningSuffix = story.warnings
           ? `  ⚠ ${[

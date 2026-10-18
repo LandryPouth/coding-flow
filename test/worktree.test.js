@@ -247,6 +247,9 @@ test('worktree lock adds the lock file to .gitignore when it is missing entirely
   run(repo, ['lock', '--story', 'epics/epic-01/story-01-01']);
   const gitignore = fs.readFileSync(path.join(repo, '.gitignore'), 'utf8');
   assert.match(gitignore, /^\.coding-flow\/active-story\.json$/m);
+  // A .gitignore the tool brings into being must not be one its own check flags.
+  assert.match(gitignore, /^\.env$/m);
+  assert.match(gitignore, /^\.env\.\*$/m);
 
   const status = sh(repo, 'git', ['status', '--porcelain']);
   assert.doesNotMatch(status, /active-story\.json/, 'the lock file must never show as untracked');

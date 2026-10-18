@@ -66,3 +66,34 @@ test('both CLAUDECODE=1 and OPENCODE=1 trust neither: one agent was launched fro
   fs.mkdirSync(path.join(cwd, '.claude'));
   assert.equal(resolveTarget({ flags: {}, env: { CLAUDECODE: '1', OPENCODE: '1' }, cwd }).source, 'dir:.claude');
 });
+
+test('both set: the agent nearer up the parent chain is the one that ran the command', (t) => {
+  const cwd = project(t);
+  const env = { CLAUDECODE: '1', OPENCODE: '1', CLAUDE_PID: '100', OPENCODE_PID: '200' };
+
+  // OpenCode launched from Claude Code's terminal: OpenCode is the nearer parent.
+  assert.deepEqual(resolveTarget({ env, cwd, ancestors: () => [300, 200, 150, 100] }), {
+    target: 'opencode',
+    source: 'env:OPENCODE (innermost of both)',
+  });
+  // The other way round.
+  assert.equal(resolveTarget({ env, cwd, ancestors: () => [300, 100, 200] }).target, 'claude');
+  // Neither id up the chain, or an id missing: still no guess.
+  assert.equal(resolveTarget({ env, cwd, ancestors: () => [300, 400] }).target, 'unrecognized');
+  assert.equal(resolveTarget({ env: { CLAUDECODE: '1', OPENCODE: '1', OPENCODE_PID: '200' }, cwd, ancestors: () => [200] }).target, 'unrecognized');
+});
+
+test('both set: init reads the real process chain', (t) => {
+  const { spawnSync } = require('node:child_process');
+  const cwd = project(t);
+  const init = (env) =>
+    spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'ai-flow.js'), 'init', '--dry-run'], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDECODE: '1', OPENCODE: '1', ...env },
+    }).stdout;
+
+  // This test process is the child's parent, its own parent the grandparent.
+  assert.match(init({ OPENCODE_PID: String(process.pid), CLAUDE_PID: String(process.ppid) }), /Skills \(opencode\)/);
+  assert.doesNotMatch(init({ CLAUDE_PID: String(process.pid), OPENCODE_PID: String(process.ppid) }), /Skills \(opencode\)|Platform not recognized/);
+});

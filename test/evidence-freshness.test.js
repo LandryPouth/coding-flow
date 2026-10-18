@@ -121,7 +121,7 @@ test('status flips a story to "stale" when the code changes after a green verify
   assert.equal(statusOf(dir, storyRel), 'verified', 'a fresh green verify is verified');
 
   // Change tracked code after the proof.
-  fs.writeFileSync(path.join(dir, storyRel, 'story.md'), '# Story 01.01\n\nchanged after verify\n');
+  fs.writeFileSync(path.join(dir, 'lib.js'), 'module.exports = "changed after verify";\n');
   assert.equal(statusOf(dir, storyRel), 'stale', 'the proof no longer matches the code');
 
   // Re-verify on the new state.
@@ -133,7 +133,7 @@ test('committing exactly the verified state keeps a story "verified" (no false s
   const { dir, storyRel } = gitProjectWithStory(t, 'fresh-commit');
 
   // Make an uncommitted change, verify it, then commit that exact state.
-  fs.writeFileSync(path.join(dir, storyRel, 'story.md'), '# Story 01.01\n\nimplemented\n');
+  fs.writeFileSync(path.join(dir, 'lib.js'), 'module.exports = "implemented";\n');
   assert.equal(run(dir, ['harness', 'verify', '--story', storyRel]).code, 0);
   assert.equal(statusOf(dir, storyRel), 'verified');
 
@@ -150,7 +150,7 @@ test('audit --check fails on a stale proof and passes again after re-verify', (t
   run(dir, ['harness', 'verify', '--story', storyRel]);
   assert.equal(run(dir, ['audit', '--check']).code, 0, 'a fresh green proof passes the gate');
 
-  fs.writeFileSync(path.join(dir, storyRel, 'story.md'), '# Story 01.01\n\nedited after proof\n');
+  fs.writeFileSync(path.join(dir, 'lib.js'), 'module.exports = "edited after proof";\n');
   const stale = run(dir, ['audit', '--check']);
   assert.equal(stale.code, 1, 'a stale proof fails the gate');
   assert.match(stale.output, /stale/i);

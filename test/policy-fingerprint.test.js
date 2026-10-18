@@ -126,7 +126,7 @@ test('status says "policy changed" when the rules moved, and not when the code d
 test('a code change is stale for "code changed"', (t) => {
   const dir = project(t);
   run(dir, ['verify', '--story', STORY]);
-  fs.appendFileSync(path.join(dir, STORY, 'spec.md'), 'more\n');
+  fs.appendFileSync(path.join(dir, 'lib.js'), '// more\n');
   git(dir, ['add', '-A']);
 
   const story = storyStatus(dir);
