@@ -1105,7 +1105,7 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   if (secret) {
     return {
       decision: "deny",
-      reason: `Potential secret detected in written content (${secret.name}). Refused before it can reach the disk.`,
+      reason: `Potential secret detected in written content (${secret.name}). Refused before it can reach the disk. A fixture that needs a key-shaped string builds it at run time ('AKIA' + '…'), so no literal is written.`,
       path: relative,
     };
   }
@@ -1208,7 +1208,7 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   if (secret) {
     return {
       decision: "deny",
-      reason: `Potential secret detected in the command itself (${secret.name}). Refused before it can reach the disk.`,
+      reason: `Potential secret detected in the command itself (${secret.name}). Refused before it can reach the disk. A fixture that needs a key-shaped string builds it at run time ('AKIA' + '…'), so no literal is written.`,
       path: null,
     };
   }

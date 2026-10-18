@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **A command substitution is not a credential.** The "Long assigned credential" heuristic no longer reports `password="$(aws secretsmanager get-random-password …)"`, `"${DB_PASSWORD:-…}"`, `"$VAR"` or a backtick substitution: the secret is fetched at run time, it is not written in the file. Heuristic matches only; an exact key format (AWS, GitHub, Stripe…) in the same line is still refused.
+- **The guard's secret refusal says what to do with a fixture.** A test that needs a key-shaped string builds it at run time (`"AKIA" + "…"`), the convention the suite already follows, instead of leaving the agent to guess.
+
 ## [0.14.0] - 2026-10-18
 
 OpenCode parity and honest proof state, found by driving the whole loop live in OpenCode (greenfield and brownfield, two models). A story finished by `/flow-run` is now `verified`, not silently stale behind a written `done`; `init` installs the guard when OpenCode runs inside a Claude Code terminal; `verify` runs a plan that only names the project's own scripts (`npm test`) without asking, so an agent-driven `/flow-run` reaches a proof on its own; and an agent can no longer grant itself `--allow-plan-commands`. Also: `worktree land --dry-run` touches nothing, a story is judged in the worktree that holds its work, and a migration counts as behavior.
