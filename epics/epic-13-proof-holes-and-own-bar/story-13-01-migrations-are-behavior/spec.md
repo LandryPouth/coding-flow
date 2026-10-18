@@ -1,5 +1,7 @@
 # Story 13-01 — A migration is behavior
 
+## Status: done
+
 ## User Value
 
 A developer whose branch drops a column, rewrites a table or adds a
@@ -25,18 +27,18 @@ constraint gets the same demand for proof as one whose branch touches
 
 ## Acceptance Criteria
 
-- [ ] Given a throwaway repo with `.coding-flow/config.json` only, when a
+- [x] Given a throwaway repo with `.coding-flow/config.json` only, when a
       branch adds `migrations/002.sql` (`ALTER TABLE users DROP COLUMN
       email;`) and nothing else, then `ai-flow verify` fails the coverage
       gate and the reason names `migrations/002.sql`.
-- [ ] Given the same branch plus a changed test file, then verify passes at
+- [x] Given the same branch plus a changed test file, then verify passes at
       `evidence`.
-- [ ] Given the same branch and a `--test-exemption "schema-only, checked by
+- [x] Given the same branch and a `--test-exemption "schema-only, checked by
       db:migrate on a scratch db"`, then verify passes and the evidence
       records the exemption text.
-- [ ] Given a branch changing only `docs/a.md` and `src/generated/x.gen.ts`,
+- [x] Given a branch changing only `docs/a.md` and `src/generated/x.gen.ts`,
       then `mode: "none"` and the reason lists both files as excluded.
-- [ ] Given a user `harness.json` that lists `**/*.sql` in
+- [x] Given a user `harness.json` that lists `**/*.sql` in
       `nonBehaviorGlobs` and not in `highRiskPaths`, then `.sql` files stay
       non-behavior (the user's explicit choice wins; only the overlap changes).
 
@@ -53,3 +55,12 @@ constraint gets the same demand for proof as one whose branch touches
   reason".
 
 ## Result
+
+A file matching a pattern listed in both `highRiskPaths` and
+`nonBehaviorGlobs` (by default migrations and `.sql`), other than `*.md`, is
+behavior in the coverage gate. Config, lockfiles and generated code under a
+high-risk directory stay excluded. The `not-required` reason lists the
+excluded files; a failing gate names the behavior files. Tests: 5 for the
+criteria (red on the old code), 3 boundary tests in `coverage-gate.test.js`;
+the old "a migration is not asked for a unit test" is reversed. Each rule was
+mutated both ways (too broad, absent) and the suite went red.

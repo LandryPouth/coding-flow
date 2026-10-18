@@ -36,7 +36,7 @@ different command, or report a result it did not obtain. So the split is:
 
 ```
 Agent:        "Tests passed."
-Coding Flow:  Coverage: missing — 3 behavior file(s) changed and no test file did.
+Coding Flow:  Coverage: missing — 3 behavior file(s) changed (src/a.js, src/b.js, src/c.js) and no test file did.
               NOT PROVEN.
 ```
 
