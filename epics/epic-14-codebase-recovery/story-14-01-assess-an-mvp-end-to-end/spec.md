@@ -131,7 +131,7 @@ and `--help`, unavailable history, skipped binaries/large files and the commit
 limit. The blind replay reached every expected state in three iterations (the
 first two found skill-text gaps: fallback misread, Data/Reliability over-claimed
 and the IDOR downgraded); the final run took 131 s and 42,958 context tokens
-(4,731 output). `ai-flow verify` passed (coverage 96% of 551 added lines); skill evals 8/8, rank-1 85.2%.
+(4,731 output). `ai-flow verify` passed (coverage 93.9% of 588 added lines); skill evals 8/8, rank-1 85.2%.
 
 Pre-merge review fixes: the fixture tests were moved to `spec/*.spec.js` so
 `node --test` no longer executes them; `collectChurn` collapses git's rename
