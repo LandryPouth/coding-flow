@@ -137,3 +137,26 @@ test('a renamed story is compared with its content before the rename', (t) => {
   assert.equal(json.contrary.warnings.specInDiff, false);
   assert.deepEqual(json.contrary.warnings.criteriaChanged, []);
 });
+
+test('a removed criterion is listed as removed', (t) => {
+  const dir = repo(t, 'cd-removed', { criteria: [DENY, '- [ ] Given Y then allow'] });
+  write(dir, `${STORY}/spec.md`, spec([DENY]));
+
+  const res = verify(dir);
+  assert.equal(res.code, 0, res.output);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, ['Given Y then allow → (removed)']);
+});
+
+test('strict: spec-in-diff fails, and a Spec Change section lets it pass', (t) => {
+  const dir = repo(t, 'cd-born-strict', { strict: true, storyOnMain: false });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given X then deny']));
+
+  const failed = verify(dir);
+  assert.equal(failed.code, 1, failed.output);
+  assert.ok(failed.json.contrary.failures.some((f) => f.signal === 'spec-in-diff'));
+
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given X then deny'], '\n## Spec Change\n\nPlanned and coded in one sitting.\n'));
+  const passed = verify(dir);
+  assert.equal(passed.code, 0, passed.output);
+  assert.match(passed.json.contrary.specChange, /one sitting/);
+});

@@ -48,11 +48,11 @@ function specTextAtBase(mergeBase, relPath) {
     return direct;
   }
 
-  const log = gitText(["log", "--follow", "--name-status", "--format=", `${mergeBase}..HEAD`, "--", relPath]);
+  const log = gitText(["log", "--follow", "--relative", "--name-status", "--format=", `${mergeBase}..HEAD`, "--", relPath]);
   const renames = (log || "").split(/\r?\n/).filter((line) => /^R\d*\t/.test(line));
   const oldest = renames.length > 0 ? renames[renames.length - 1].split("\t")[1] : null;
 
-  return oldest ? gitText(["show", `${mergeBase}:${oldest}`]) : null;
+  return oldest ? gitText(["show", `${mergeBase}:./${oldest}`]) : null;
 }
 
 const normalize = (text) => text.replace(/\s+/g, " ").trim();
