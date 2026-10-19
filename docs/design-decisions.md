@@ -512,6 +512,10 @@ case it must allow:
 - a bare variable-looking value (`"$realsecret1234567890"`) — identical in shape
   to `"$DB_PASSWORD_FROM_THE_VAULT_X"`.
 
+A quoted argument inside the expansion (`$(aws ssm get --name 'x' …)`) is still
+reported: a single quote in the value fails the whole-expansion test. That is a
+false positive, the safe direction.
+
 A literal around the expansion (`$2b$10$<hash>`, `${HOME}secret…`) is reported,
 and so is a single-quoted value (`'$(…)'`, `'$secret…'`), which a shell, YAML and
 `.env` do not expand, and a custom pattern whose match holds several quoted values.
