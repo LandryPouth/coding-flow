@@ -53,7 +53,9 @@ function parseHunks(diff) {
     const file = /^\+\+\+ b\/(.+)$/.exec(line);
     const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
 
-    if (file) {
+    if (line === "+++ /dev/null") {
+      current = null;
+    } else if (file) {
       current = file[1];
       byFile.set(current, []);
     } else if (hunk && current) {
@@ -78,7 +80,7 @@ function addUntracked(byFile) {
 }
 
 function diffHunks(base) {
-  const byFile = parseHunks(git(["diff", "-U0", "--no-color", base]));
+  const byFile = parseHunks(git(["-c", "core.quotepath=false", "diff", "-U0", "--no-color", base]));
 
   addUntracked(byFile);
 
@@ -203,16 +205,26 @@ function* codeChars(text, from) {
 function bodyStart(text, from) {
   let parens = 0;
   let last = "";
+  let word = "";
   let afterArrow = false;
 
   for (const [ch, index] of codeChars(text, from)) {
+    word = /[\w$]/.test(ch) ? word + ch : "";
+
     if (/\s/.test(ch)) {
       continue;
     }
 
-    if (afterArrow && ch !== "{") {
+    if (afterArrow && ch === "{") {
+      return index;
+    }
+
+    if (afterArrow && parens === 0) {
       return null;
     }
+
+    // An inline callback starts mid-line: what came before it is not its parameters.
+    parens = word === "function" ? 0 : parens;
 
     if (ch === "{" && parens === 0) {
       return index;
@@ -222,7 +234,7 @@ function bodyStart(text, from) {
       return null;
     }
 
-    afterArrow = ch === ">" && last === "=" && parens === 0;
+    afterArrow = ch === ">" && last === "=";
     parens += ch === "(" ? 1 : ch === ")" ? -1 : 0;
     last = ch;
   }
@@ -330,6 +342,12 @@ function main() {
   }
 
   const functions = parseFunctions(fs.readFileSync(lcovPath, "utf8"));
+
+  if ([...functions.values()].every((fns) => fns.length === 0)) {
+    console.error(`check-function-size: ${lcovPath} lists no function — run the lcov validation first.`);
+    process.exit(1);
+  }
+
   const hunks = diffHunks(resolveBase());
   const lcovTime = fs.statSync(lcovPath).mtimeMs;
   const problems = [];

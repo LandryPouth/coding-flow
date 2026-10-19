@@ -108,6 +108,28 @@ test('without a coverage/lcov.info it fails and says to run the lcov validation 
   assert.match(res.output, /run the lcov validation first/);
 });
 
+test('an empty lcov is refused, not read as "nothing to report"', (t) => {
+  const dir = repo(t, fn('build', 10));
+  write(dir, 'src/fn.js', fn('build', 12));
+  write(dir, 'coverage/lcov.info', '');
+
+  const res = check(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /lists no function.*run the lcov validation first/);
+});
+
+test('an inline callback that starts mid-line is measured whole', (t) => {
+  const body = (n) => Array.from({ length: n }, (_, i) => `  const v${i} = ${i};`).join('\n');
+  const callback = (n) => `test('x', (t) => {\n${body(n)}\n});\n`;
+  const dir = repo(t, callback(90));
+  write(dir, 'src/fn.js', callback(91));
+  lcov(dir, [[1, '(anonymous_0)']]);
+
+  const res = check(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /\(anonymous_0\) 92→93/);
+});
+
 test('an lcov older than the source is refused, not trusted', (t) => {
   const dir = repo(t, fn('build', 10));
   lcov(dir, [[1, 'build']]);

@@ -28,8 +28,11 @@
   `coverage/lcov.info` was written would have its functions attributed to the
   wrong lines. A changed file that the lcov does not list is skipped (it was not
   measured).
-- **Test files count too.** No exemption was written into the spec, and the
-  check found none of the repository's test functions over the line growing.
+- **Test files count too.** No exemption was written into the spec. Inline
+  callbacks (`test('x', () => {`) start mid-line: the body is the `{` right after
+  `=>`, or after the parameters of an inline `function`.
+- **An empty lcov is refused** like a missing one (review of 13-06): a timed-out
+  lcov validation leaves a 0-byte file, and that must not read as "ok".
 - **A ratchet, not a mandate** (study, wave 2): the existing 331-line
   function is not a failure until someone grows it.
 
