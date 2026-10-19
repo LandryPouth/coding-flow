@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
-const { defaultSecretPatterns, defaultSecretScanAllowlist } = require("./harness-config");
+const { defaultSecretPatterns, defaultSecretScanAllowlist, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
 const {
   normalizePortable,
   addIssue,
@@ -158,7 +158,10 @@ function checkSensitivePaths(files, config, report) {
       continue;
     }
 
-    if (config.blockedPaths.some((pattern) => matchesPattern(relativePath, pattern))) {
+    // The evidence entries bar an agent's write, not a commit: `ship` commits the
+    // run files on purpose.
+    const refusedInCommit = config.blockedPaths.filter((pattern) => !EVIDENCE_BLOCKED_PATHS.includes(pattern));
+    if (refusedInCommit.some((pattern) => matchesPattern(relativePath, pattern))) {
       addIssue(
         report.errors,
         "blocked_path_present",

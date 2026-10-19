@@ -82,7 +82,19 @@
     "**/*credential*",
     "**/*secret*",
     "**/webhooks/**",
-    "**/*webhook*"
+    "**/*webhook*",
+    "bin/lib/guard.js",
+    "bin/lib/harness.js",
+    "bin/lib/security-policy.js",
+    "bin/lib/policy.js",
+    "bin/lib/coverage-gate.js",
+    "bin/lib/evidence.js",
+    "bin/lib/identity.js",
+    "bin/lib/policy-fingerprint.js",
+    "templates/.opencode/**",
+    "bin/lib/opencode.js",
+    "bin/lib/codex-settings.js",
+    "bin/lib/codex-probe.js"
   ],
   "testGlobs": [
     "**/*.test.*",
@@ -136,7 +148,9 @@
     "**/id_ed25519",
     "**/*.pem",
     "**/*.key",
-    "node_modules/**"
+    "node_modules/**",
+    ".coding-flow/runs/**",
+    ".coding-flow/ledger.jsonl"
   ],
   "sensitiveGlobs": [
     "**/.env*",

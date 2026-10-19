@@ -8,7 +8,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const { cwd, packageJson } = require("./context");
-const { log, toPortable, parseFrontmatter, readJson, hashFile, isCommandAvailable, binaryPathNote } = require("./util");
+const { matchesPattern, log, toPortable, parseFrontmatter, readJson, hashFile, isCommandAvailable, binaryPathNote } = require("./util");
 const {
   ensureTemplatesExist,
   listTemplateSkillNames,
@@ -23,6 +23,7 @@ const {
   ensureConvenienceFiles,
 } = require("./templates");
 const { collectHarnessReport } = require("./harness");
+const { harnessConfigPath, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
 const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
 const { COMMAND_PLATFORMS } = require("./platforms/registry");
@@ -118,6 +119,28 @@ function checkOversizedEpics(warnings) {
       });
     }
   }
+}
+
+// An explicit `blockedPaths` replaces the defaults, so an install written before
+// the evidence entries existed never gets them. Told, not rewritten: the list is
+// the user's.
+function checkEvidenceBlocked(warnings) {
+  const config = readJson(harnessConfigPath(cwd), null);
+  if (!config || !Array.isArray(config.blockedPaths)) return;
+
+  // An equivalent glob of the user's own (`.coding-flow/**`) already covers it.
+  const missing = EVIDENCE_BLOCKED_PATHS.filter(
+    (entry) => !config.blockedPaths.some((pattern) => typeof pattern === "string" && matchesPattern(entry.replace("**", "x-verify.json"), pattern)),
+  );
+  if (missing.length === 0) return;
+
+  warnings.push({
+    code: "evidence_writable",
+    file: ".coding-flow/harness.json",
+    message:
+      `blockedPaths does not list ${missing.join(", ")} — an agent's Write or shell redirect can edit the proof; ` +
+      "add them to blockedPaths",
+  });
 }
 
 const GENERATED_DIR_NAMES = new Set(["generated", "__generated__", "gen"]);
@@ -607,6 +630,7 @@ function collectMinimalReport({ strict = false } = {}) {
     }
   }
 
+  checkEvidenceBlocked(warnings);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
@@ -839,6 +863,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
   checkDuplicateNumbering(warnings);
+  checkEvidenceBlocked(warnings);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);

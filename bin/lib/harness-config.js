@@ -190,6 +190,10 @@ function defaultNonBehaviorGlobs() {
   ];
 }
 
+// Evidence is written by the CLI through `fs`, which the guard never judges; an
+// agent's own Write/Edit or shell redirect into it is what these entries refuse.
+const EVIDENCE_BLOCKED_PATHS = [".coding-flow/runs/**", ".coding-flow/ledger.jsonl"];
+
 function defaultHarnessConfig() {
   return {
     version: 1,
@@ -225,6 +229,7 @@ function defaultHarnessConfig() {
       "**/*.pem",
       "**/*.key",
       "node_modules/**",
+      ...EVIDENCE_BLOCKED_PATHS,
     ],
     sensitiveGlobs: [
       "**/.env*",
@@ -331,6 +336,7 @@ module.exports = {
   defaultHighRiskPaths,
   defaultNonBehaviorGlobs,
   defaultHarnessConfig,
+  EVIDENCE_BLOCKED_PATHS,
   readHarnessConfig,
   ensureHarnessConfig,
 };
