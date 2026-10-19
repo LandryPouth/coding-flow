@@ -62,7 +62,7 @@ Everything else is a layer you add when it pays for itself. A plain `init` (with
 
 | Layer | What it adds | What it costs | Enable |
 | --- | --- | --- | --- |
-| **Skills** | `/flow-plan`, `/flow-run`, `/flow-review`, `/flow-ship`, `/flow-status`, `/flow-next` — structured prompts that call the harness for you | A prompt-driven workflow the agent can still misread; skills guide, only the CLI proves | Claude Code: `/plugin install coding-flow` then `/flow-setup`; others: `init --target <agent>` |
+| **Skills** | `/flow-plan`, `/flow-run`, `/flow-review`, `/flow-ship`, `/flow-status`, `/flow-next`, `/flow-recover` — structured prompts that call the harness for you | A prompt-driven workflow the agent can still misread; skills guide, only the CLI proves | Claude Code: `/plugin install coding-flow` then `/flow-setup`; others: `init --target <agent>` |
 | **Stories and epics** | `epics/` with vertical stories whose acceptance criteria and risk feed `verify` | A story format and scaffolding (`RULES.md`, `docs/`) to maintain | `ai-flow init`, then `/flow-plan` |
 | **Worktrees and placement** | One Git worktree per parallel chain of stories, placed and landed automatically | More checkouts on disk, and the rules that go with them | `ai-flow worktree add`; `/flow-run` places stories itself |
 | **Review evidence** | A findings-first pre-merge review attached to the proof | An extra pass over the diff; independent (a fresh agent) at STRICT | `/flow-review` or `ai-flow review` |
@@ -74,7 +74,7 @@ Coding Flow rests on four blocks:
 
 1. **The `ai-flow` CLI** — installs, updates, and checks the workflow files; scans existing projects; runs the security harness.
 2. **The context files** — `RULES.md` and `docs/` give the agent the rules and a durable map of the project.
-3. **The skills** — a small, flat set of reusable workflows, one per stage: `/flow-setup`, `/flow-plan`, `/flow-run`, `/flow-review`, `/flow-ship` — plus two read-only lookups you can reach for any time, `/flow-status` and `/flow-next`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/flow-run` and `/flow-review`, not as separate skills. There is no orchestration at runtime. **A skill guides; it never guarantees.** A skill that says "run the tests before finishing" can be forgotten, misread, or interrupted — only the CLI can say `NOT PROVEN` and mean it. Skills are agent-specific guidance and are **not** part of the enforcement guarantees; they change more freely than the CLI does. They are, however, tested: a skill nobody triggers is a skill that does not exist, so `evals/` checks that each one still wins the prompts it owns, loses the ones it does not, and states its exit criteria — deterministic, zero-dependency, inside the same `npm test`. See [`evals/README.md`](evals/README.md).
+3. **The skills** — a small, flat set of reusable workflows, one per stage: `/flow-setup`, `/flow-plan`, `/flow-run`, `/flow-review`, `/flow-ship` — plus three read-only skills you can reach for any time, `/flow-status`, `/flow-next` and `/flow-recover`. They are **structured prompts Claude Code reads and follows** — depth (STRICT mode, deep validators, context scout) lives as opt-in sections inside `/flow-run` and `/flow-review`, not as separate skills. There is no orchestration at runtime. **A skill guides; it never guarantees.** A skill that says "run the tests before finishing" can be forgotten, misread, or interrupted — only the CLI can say `NOT PROVEN` and mean it. Skills are agent-specific guidance and are **not** part of the enforcement guarantees; they change more freely than the CLI does. They are, however, tested: a skill nobody triggers is a skill that does not exist, so `evals/` checks that each one still wins the prompts it owns, loses the ones it does not, and states its exit criteria — deterministic, zero-dependency, inside the same `npm test`. See [`evals/README.md`](evals/README.md).
 4. **The security harness** — a set of **CLI checks over your repo and story files** (not a sandbox): secrets, sensitive files, a story's risk level, rollback notes, and JSON evidence in `.coding-flow/runs/`.
 
 The daily loop:
@@ -116,7 +116,7 @@ npx @landry_pouth/coding-flow init --target antigravity
 | **Gemini CLI** | `init --target gemini` | `.gemini/commands/coding-flow/` | `/coding-flow:flow-run` | no |
 | **Antigravity** | `init --target antigravity` | `.agent/skills/` | by name, e.g. `flow-run` | no |
 
-**OpenCode gets skills, like Claude Code, plus a `/` menu entry for each.** The model picks a `flow-*` skill up on its own from its description. OpenCode's TUI does not list skills in its `/` autocomplete (only under `/skills`), so each skill also gets a short command of the same name in `.opencode/commands/` that hands over to it: type `/flow-` and the seven appear. The guard is a plugin on `tool.execute.before` that runs inside OpenCode's own process (no `node` needed on `PATH`) and covers `write`, `edit`, `apply_patch` and `bash`, subagents included.
+**OpenCode gets skills, like Claude Code, plus a `/` menu entry for each.** The model picks a `flow-*` skill up on its own from its description. OpenCode's TUI does not list skills in its `/` autocomplete (only under `/skills`), so each skill also gets a short command of the same name in `.opencode/commands/` that hands over to it: type `/flow-` and they all appear. The guard is a plugin on `tool.execute.before` that runs inside OpenCode's own process (no `node` needed on `PATH`) and covers `write`, `edit`, `apply_patch` and `bash`, subagents included.
 
 **Claude Code and OpenCode in the same repo.** OpenCode also reads `.claude/skills/`, so when the Claude skills are in the project it uses them and Coding Flow writes no second copy into `.opencode/skills/` (two copies of one skill make OpenCode warn and keep one). Each agent keeps its own guard: the hook for Claude Code, the plugin for OpenCode. Run `init --target …` once per agent; `init` and `upgrade` keep every recorded agent in step. With a global OpenCode install as well, OpenCode prefers the global copy of a skill over the project's `.claude/skills/` one, so keep it current with `ai-flow upgrade --global`.
 
@@ -231,18 +231,19 @@ A small, flat set. You pick any of them directly; there is no macro/atomic hiera
 | `/flow-review` | Findings-first pre-merge review. Each dimension (architecture, tests, security, quality, E2E) has an opt-in deep section for high-risk work. |
 | `/flow-ship` | Commit a dirty tree, push the branch, and open/update one PR, with the latest verify evidence attached. |
 
-The five above follow the workflow stage by stage. Two more are read-only lookups,
+The five above follow the workflow stage by stage. Three more are read-only,
 not tied to any stage — reach for them any time, in parallel with everything else:
 
 | Skill | Use |
 | --- | --- |
 | `/flow-status` | Where every epic and story actually stands — proof-derived state, worktree links, branch policy. |
 | `/flow-next` | The one command worth running right now, ranked from that same state. |
+| `/flow-recover` | Assess an existing codebase into `docs/recovery/map.md` and `findings.md`: hotspots, test gaps, secrets in the tree and history, then per-dimension inventories with every finding traced, refuted, mitigated or accepted. Read-only on application code. |
 
 The depth that used to live in separate `agent-*` and `*-check` skills — the deep
 validators, the multi-agent worker roles, the context scout, TDD — is **not gone**;
 it moved into opt-in sections of `/flow-run` and `/flow-review`, so nothing capable was lost
-while the front door shrank from thirty skills to seven.
+while the front door shrank from thirty skills to eight.
 
 **Why no `verify` skill?** Because verification is not a decision you make — it is
 something the machine owes you. `/flow-run` runs it on every story, `ai-flow status`
@@ -364,6 +365,7 @@ current machine.
 | `ai-flow next` | Rank that state and print the one command worth running now (`--all` for the whole queue). |
 | `ai-flow run [--epic\|--story <path>]` | Verify a batch of stories and emit one aggregated proof report. `--driver` is a reserved executor seam (only `none` today); `--dry-run` shows the plan. |
 | `ai-flow bootstrap --scan` | Scan an existing codebase into `docs/bootstrap-scan.md`. |
+| `ai-flow recover scan [--json]` | Read-only recovery scan: hotspots, test map, secrets in the tree and history (never the matched value), tracked sensitive and large files. `--history-limit N` bounds the history scan (default 2 000 commits). |
 | `ai-flow harness preflight\|check\|verify\|evidence --story <path>` | Estimate risk / scan secrets / run + capture validation / write evidence. |
 | `ai-flow guard` | PreToolUse hook: refuses (exit 2) writing a blocked path or secret, before the disk. Every refusal is recorded in `.coding-flow/denials.jsonl`. |
 | `ai-flow report` | Collect what went wrong into one file you can send: guard denials, verify failures, risk/coverage distribution, install health. Redacted by default (`--raw` keeps absolute paths, `--json`, `--out FILE`). |

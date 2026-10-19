@@ -351,7 +351,7 @@ test('a closed pipe ends the command instead of crashing it', (t) => {
   assert.doesNotMatch(output, /node:internal/);
 });
 
-test('list-skills reports the seven remaining skills', (t) => {
+test('list-skills reports the eight remaining skills', (t) => {
   const dir = initProject(t, 'verify-skills');
 
   const { code, output } = run(dir, ['list-skills', '--json']);
@@ -365,6 +365,7 @@ test('list-skills reports the seven remaining skills', (t) => {
     'flow-review',
     'flow-ship',
     'flow-next',
+    'flow-recover',
     'flow-status',
   ]);
 });

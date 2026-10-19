@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
-const SKILLS = ['flow-next', 'flow-plan', 'flow-review', 'flow-run', 'flow-setup', 'flow-ship', 'flow-status'];
+const SKILLS = ['flow-next', 'flow-plan', 'flow-recover', 'flow-review', 'flow-run', 'flow-setup', 'flow-ship', 'flow-status'];
 
 function project(t, dirs = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-platform-'));
@@ -113,7 +113,7 @@ test('init --target codex records platform evidence with the sandbox-profile tie
   const [record] = platformRecords(dir);
   assert.equal(record.target, 'codex');
   assert.equal(record.detectionSource, 'flag');
-  assert.equal(record.commandsInstalled, 7);
+  assert.equal(record.commandsInstalled, 8);
   assert.equal(record.enforcementTier, 'sandbox-profile');
 });
 

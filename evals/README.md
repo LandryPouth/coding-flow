@@ -1,6 +1,6 @@
 # Skill evals
 
-The CLI has hundreds of tests. Until these, the seven skills had none — nothing
+The CLI has hundreds of tests. Until these, the skills had none — nothing
 proved that `flow-status` wins *"show me every epic"* and loses *"what should I do
 next"* to `flow-next`. That gap sits on this tool's stated first risk: **a skill
 nobody triggers is a skill that does not exist**, however good its prose is.

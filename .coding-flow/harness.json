@@ -120,6 +120,7 @@
     "coverage/**",
     "**/coverage/**",
     "**/*.md",
+    "evals/recovery/fixture/**",
     ".gitignore",
     "**/*.lock",
     "**/package-lock.json",

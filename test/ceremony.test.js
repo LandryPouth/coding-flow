@@ -152,7 +152,7 @@ test('flow-plan records story dependencies as a tree so parallelism is visible',
   assert.doesNotMatch(plan, /Parallel-safe/);
 });
 
-// Two shipped copies of the same seven skills: skills/ is what the Claude Code
+// Two shipped copies of the same skills: skills/ is what the Claude Code
 // plugin serves, templates/.claude/skills/ is what `ai-flow init` copies into a
 // project. Nothing compared them, so a one-sided edit shipped a plugin that
 // disagreed with the scaffold and no test noticed. They are identical today;

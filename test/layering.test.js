@@ -25,8 +25,8 @@ const CORE = [
 // checks with install diagnostics (templates, storage, platforms) that need
 // splitting out before it can be called core.
 const LAYER = [
-  'doctor', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'review', 'run',
-  'ship', 'skills', 'speckit', 'status', 'templates', 'worktree',
+  'doctor', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'recover',
+  'review', 'run', 'ship', 'skills', 'speckit', 'status', 'templates', 'worktree',
   'worktree-plan',
   // install, platform wiring and CLI plumbing: not needed to guard or prove
   'bootstrap', 'ci', 'codex-probe', 'codex-settings', 'commands', 'hook',

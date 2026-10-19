@@ -1,5 +1,7 @@
 # Story 14-01 — Assess an MVP end to end
 
+## Status: done
+
 ## User Value
 
 A developer types `/flow-recover` in a repository they built fast and left,
@@ -75,23 +77,23 @@ what was not. Nothing in the application is modified.
 
 ## Acceptance Criteria
 
-- [ ] Given the fixture committed in a throwaway repo, when `ai-flow recover
+- [x] Given the fixture committed in a throwaway repo, when `ai-flow recover
       scan --json` runs, then it lists the largest/churned file as a hotspot
       with no test, the code directories without tests, the `$(…)` line as
       **not** a secret, and exits 0.
-- [ ] Given a throwaway repo where a commit added an AWS key and a later
+- [x] Given a throwaway repo where a commit added an AWS key and a later
       commit removed it, then the history section reports the pattern name,
       path and commit, and neither the text nor the JSON output contains the
       key.
-- [ ] Given any repository, then `recover scan` writes no file (tree token
+- [x] Given any repository, then `recover scan` writes no file (tree token
       identical before and after) and `--help` acts on nothing.
-- [ ] `test/layering.test.js` classifies `recover` as a layer and stays green.
-- [ ] `evals/cases/flow-recover.json` has ≥ 3 positive prompts and negatives
+- [x] `test/layering.test.js` classifies `recover` as a layer and stays green.
+- [x] `evals/cases/flow-recover.json` has ≥ 3 positive prompts and negatives
       owned by `flow-review` ("is this diff safe to merge") and `flow-plan`
       ("document this repo's architecture before we plan the next feature");
       `node bin/ai-flow.js plugin check` and `test/skill-evals.test.js`
       green.
-- [ ] A blind `/flow-recover` assess on the fixture (fresh session, no hint)
+- [x] A blind `/flow-recover` assess on the fixture (fresh session, no hint)
       reaches every state in `evals/recovery/expected.md`; the transcript's
       result (states reached, time, tokens) is recorded in this story's
       Result. Anything missed is fixed in the skill text before done.
@@ -108,4 +110,33 @@ what was not. Nothing in the application is modified.
 - `status` reading the dossier (s2); proof semantics for fixes and refactors
   (s3, s4); learn mode (s5); scanners (s6); CRAP (s7).
 
+## Policy Change
+
+`evals/recovery/fixture/**` joins `nonBehaviorGlobs`: the fixture is synthetic
+input for `recover scan` and the blind assess, never executed by the suite, so
+it must not be judged as product code by the coverage gate. No shipped default
+changes.
+
+The fixture's test files are `spec/*.spec.js`, not `test/*.test.js`:
+`testGlobs` matches both, but `node --test`'s default discovery (`**/*.test.js`,
+`**/test/**`) matches only the latter, so the synthetic app stays out of the
+project suite and cannot fail it.
+
 ## Result
+
+`ai-flow recover scan` and `/flow-recover` shipped as described. Tests:
+`test/recover-scan.test.js` pins the fixture hotspot and test gap, the command
+substitution not being a secret, history without the matched value, read-only
+and `--help`, unavailable history, skipped binaries/large files and the commit
+limit. The blind replay reached every expected state in three iterations (the
+first two found skill-text gaps: fallback misread, Data/Reliability over-claimed
+and the IDOR downgraded); the final run took 131 s and 42,958 context tokens
+(4,731 output). `ai-flow verify` passed (coverage 96% of 551 added lines); skill evals 8/8, rank-1 85.2%.
+
+Pre-merge review fixes: the fixture tests were moved to `spec/*.spec.js` so
+`node --test` no longer executes them; `collectChurn` collapses git's rename
+notation (`old => new`, `dir/{old => new}.js`) so churn lands on the current
+path; a tracked file deleted from the working tree is no longer counted as a
+skipped binary; and `collectRecoveryScan` no longer exposes a `root` option it
+did not honour. `test/recover-scan.test.js` gained a regression test for the
+rename and the deleted file (13 tests).

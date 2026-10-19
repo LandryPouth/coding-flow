@@ -13,6 +13,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow verify --story path [--json] [--dry-run] [--test-exemption "reason"] [--policy-change "reason"]
                [--allow-plan-commands] [--clean-env]
   ai-flow bootstrap --scan [--force] [--dry-run] [--json]
+  ai-flow recover scan [--history-limit N] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
   ai-flow audit [--export] [--check] [--since iso] [--decisions] [--json] [--dry-run]
