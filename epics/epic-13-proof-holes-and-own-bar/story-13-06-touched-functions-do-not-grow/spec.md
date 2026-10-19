@@ -21,15 +21,15 @@ unless it already was, and an already-long function may not get longer.
 
 ## Acceptance Criteria
 
-- [ ] Given a diff that adds 5 lines to a 78-line function, then the check
+- [x] Given a diff that adds 5 lines to a 78-line function, then the check
       fails naming it (78→83).
-- [ ] Given a diff that adds 2 lines to the 331-line `shellWrites`, then it
+- [x] Given a diff that adds 2 lines to the 331-line `shellWrites`, then it
       fails (331→333); removing lines from it passes.
-- [ ] Given a diff that does not touch any long function, then it passes,
+- [x] Given a diff that does not touch any long function, then it passes,
       whatever the repository's long functions.
-- [ ] Given no `coverage/lcov.info`, then it fails with "run the lcov
+- [x] Given no `coverage/lcov.info`, then it fails with "run the lcov
       validation first" (never a silent pass).
-- [ ] Wired into `.coding-flow/config.json` `validation.quality`; `ai-flow
+- [x] Wired into `.coding-flow/config.json` `validation.quality`; `ai-flow
       verify` runs it.
 
 ## Out of Scope
@@ -38,3 +38,5 @@ unless it already was, and an already-long function may not get longer.
   lcov, any language that emits `FN`).
 
 ## Result
+
+## Status: done
