@@ -1,8 +1,8 @@
 # Story 13-06 — Tasks
 
-- [ ] Script + tests first (four cases).
-- [ ] Wire into `validation.quality`; verify here.
-- [ ] CHANGELOG not needed (repository-internal) — confirm no user-visible change.
+- [x] Script + tests first (four cases).
+- [x] Wire into `validation.quality`; verify here.
+- [x] CHANGELOG not needed (repository-internal) — confirm no user-visible change.
 
 ## Result
 
