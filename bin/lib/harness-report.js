@@ -313,6 +313,10 @@ function describeContraryWarnings(contrary) {
     parts.push("spec born in this diff");
   }
 
+  if (w && w.policyChanged && w.policyChanged.length > 0) {
+    parts.push(`policy changed: ${w.policyChanged.slice(0, 3).join(", ")}`);
+  }
+
   return parts.join(", ");
 }
 

@@ -20,6 +20,7 @@ const {
 const { readStoryPart, readStoryBundle, extractSection } = require("./story");
 const { matchesPattern } = require("./util");
 const { criterionItems, readSpecDrift } = require("./spec-drift");
+const { readPolicyChanged } = require("./policy-drift");
 const { defaultHighRiskPaths, defaultNonBehaviorGlobs } = require("./harness-config");
 
 // The default non-behavior entries that are also default high-risk paths: the
@@ -614,6 +615,7 @@ const NO_CONTRARY = Object.freeze({
     assertionsRemoved: Object.freeze([]),
     criteriaChanged: Object.freeze([]),
     specInDiff: false,
+    policyChanged: Object.freeze([]),
   }),
 });
 
@@ -626,6 +628,7 @@ function contraryPolicy(config) {
     failOnContrarySignals: config.failOnContrarySignals === true,
     riskTerms: config.highRiskTerms || null,
     riskPaths: config.highRiskPaths || null,
+    policyGlobs: config.policyGlobs || null,
   };
 }
 
@@ -637,7 +640,7 @@ function mentionsPath(text, target) {
   return new RegExp(`(^|[^\\w./-])${escaped}($|[^\\w-]|\\.(?!\\w))`).test(text);
 }
 
-function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null }) {
+function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null, policyChange = null }) {
   const policy = contraryPolicy(config);
   const weakening = currentTreeToken(cwd) ? scanTestWeakening(config) : { findings: [] };
   const declared = [readTestExemption(storyDir), exemption && exemption.trim()].filter(Boolean).join("\n");
@@ -657,9 +660,16 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
   const openCriteria = criteria ? criteria.unchecked : [];
 
   const { criteriaChanged, specInDiff } = readSpecDrift(storyDir, currentDiffBase(cwd).mergeBase);
-  const specChange = extractSection(Object.values(readStoryBundle(storyDir || "")).join("\n\n"), "Spec Change");
+  const storySection = (title) => extractSection(Object.values(readStoryBundle(storyDir || "")).join("\n\n"), title);
+  const specChange = storySection("Spec Change");
+
+  const policyChanged = currentTreeToken(cwd) ? readPolicyChanged(config) : [];
+  const declaredPolicy = [storySection("Policy Change").trim(), policyChange && policyChange.trim()]
+    .filter(Boolean)
+    .join("\n");
 
   if (
+    policyChanged.length === 0 &&
     deletedTests.length === 0 &&
     openCriteria.length === 0 &&
     assertionsRemoved.length === 0 &&
@@ -705,12 +715,23 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     });
   }
 
+  if (enforced && policyChanged.length > 0 && !declaredPolicy) {
+    failures.push({
+      signal: "policy-changed",
+      detail:
+        `${policyChanged.length} policy file(s) changed: ${policyChanged.slice(0, 5).join(", ")}. ` +
+        "Say why in a '## Policy Change' section (or --policy-change \"reason\")",
+      items: policyChanged,
+    });
+  }
+
   return {
     enforced,
     ok: failures.length === 0,
     failures,
-    warnings: { deletedTests, openCriteria, assertionsRemoved, criteriaChanged, specInDiff },
+    warnings: { deletedTests, openCriteria, assertionsRemoved, criteriaChanged, specInDiff, policyChanged },
     ...(drift && specChange ? { specChange } : {}),
+    ...(policyChanged.length > 0 && declaredPolicy ? { policyChange: declaredPolicy } : {}),
   };
 }
 

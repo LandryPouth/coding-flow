@@ -194,6 +194,28 @@ function defaultNonBehaviorGlobs() {
 // agent's own Write/Edit or shell redirect into it is what these entries refuse.
 const EVIDENCE_BLOCKED_PATHS = [".coding-flow/runs/**", ".coding-flow/ledger.jsonl"];
 
+// Config that decides what passes: a diff touching one is the `policy-changed`
+// contrary signal (policy-drift.js). `package.json` is left out on purpose: every
+// dependency bump touches it.
+function defaultPolicyGlobs() {
+  return [
+    "**/.eslintrc*",
+    "**/eslint.config.*",
+    "**/.prettierrc*",
+    "**/tsconfig*.json",
+    "**/jest.config.*",
+    "**/vitest.config.*",
+    "**/.c8rc*",
+    "**/.nycrc*",
+    "**/.dependency-cruiser.*",
+    "**/importlinter*",
+    "**/pyproject.toml",
+    "**/setup.cfg",
+    ".coding-flow/harness.json",
+    ".coding-flow/config.json",
+  ];
+}
+
 function defaultHarnessConfig() {
   return {
     version: 1,
@@ -216,6 +238,7 @@ function defaultHarnessConfig() {
     highRiskPaths: defaultHighRiskPaths(),
     testGlobs: defaultTestGlobs(),
     nonBehaviorGlobs: defaultNonBehaviorGlobs(),
+    policyGlobs: defaultPolicyGlobs(),
     // Paths that are output, not authorship (a regenerated client, an OpenAPI
     // dump): left out of coverage, risk, weakening and deleted-test signals.
     // Never consulted by the guard (`blockedPaths`) or by secret scanning.
@@ -294,6 +317,7 @@ function readHarnessConfig(root = cwd) {
       highRiskPaths: Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaults.highRiskPaths,
       testGlobs: Array.isArray(config.testGlobs) ? config.testGlobs : defaults.testGlobs,
       ignoredPaths: Array.isArray(config.ignoredPaths) ? config.ignoredPaths : defaults.ignoredPaths,
+      policyGlobs: Array.isArray(config.policyGlobs) ? config.policyGlobs : defaults.policyGlobs,
       nonBehaviorGlobs: Array.isArray(config.nonBehaviorGlobs)
         ? config.nonBehaviorGlobs
         : defaults.nonBehaviorGlobs,
@@ -335,6 +359,7 @@ module.exports = {
   defaultTestGlobs,
   defaultHighRiskPaths,
   defaultNonBehaviorGlobs,
+  defaultPolicyGlobs,
   defaultHarnessConfig,
   EVIDENCE_BLOCKED_PATHS,
   readHarnessConfig,

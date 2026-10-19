@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **The bar does not move silently.** A diff touching a `policyGlobs` file (lint, tsconfig, test-runner and coverage config, dependency rules, `.coding-flow/harness.json`) is the `policy-changed` contrary signal, listing the files. Warning by default; strict fails unless the story carries a `## Policy Change` section or `verify` gets `--policy-change "reason"`, recorded verbatim in the evidence. Direction is not judged: a tightening is reported too. Those files stay non-behavior for the coverage gate.
 - **Criteria drift.** `verify --story` compares the story's acceptance criteria with the diff base: ticking `[ ]` to `[x]`/`[~]` is silent, a removed or reworded criterion is `criteria-changed` (old → new), and a story born in the same diff as its code is `spec-in-diff`. Warnings by default; strict fails unless the story carries a `## Spec Change` section, whose reason is kept in the evidence.
 - **`/flow-plan`: corpus first.** For a parser- or policy-shaped epic the case corpus is story 01, not the last story.
 

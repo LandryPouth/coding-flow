@@ -328,6 +328,7 @@ function harnessVerify({
   story = null,
   noCache = false,
   exemption = null,
+  policyChange = null,
   base = null,
   allowPlanCommands = false,
   cleanEnv = false,
@@ -419,7 +420,7 @@ function harnessVerify({
     }
   }
 
-  const evidence = verifyStoryOnce({ story, exemption, allowPlanCommands, cleanEnv, announce: !json });
+  const evidence = verifyStoryOnce({ story, exemption, policyChange, allowPlanCommands, cleanEnv, announce: !json });
 
   // A refusal executed nothing: it says who may run these commands, not whether the
   // code passes. Recording it would overwrite an earlier green proof and turn a
@@ -512,12 +513,19 @@ function harnessCommandInner({ commandArgs, getFlagValue, flags }) {
       fail('--test-exemption requires a reason, e.g. --test-exemption "vendor SDK bump, no behavior change".');
     }
 
+    const policyChange = getFlagValue("--policy-change", null);
+
+    if (flags.has("--policy-change") && !policyChange) {
+      fail('--policy-change requires a reason, e.g. --policy-change "raised the lint level".');
+    }
+
     harnessVerify({
       json: flags.has("--json"),
       dryRun: flags.has("--dry-run"),
       story,
       noCache: flags.has("--no-cache"),
       exemption,
+      policyChange,
       base,
       allowPlanCommands: flags.has("--allow-plan-commands"),
       cleanEnv: flags.has("--clean-env"),

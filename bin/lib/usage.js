@@ -10,7 +10,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow status [--json]
   ai-flow next [--all] [--json]
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
-  ai-flow verify --story path [--json] [--dry-run] [--test-exemption "reason"]
+  ai-flow verify --story path [--json] [--dry-run] [--test-exemption "reason"] [--policy-change "reason"]
                [--allow-plan-commands] [--clean-env]
   ai-flow bootstrap --scan [--force] [--dry-run] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]

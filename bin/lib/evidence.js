@@ -353,6 +353,7 @@ const PLAN_COMMANDS_REFUSAL =
 function verifyStoryOnce({
   story = null,
   exemption = null,
+  policyChange = null,
   skipCoverage = false,
   unattended = isUnattended(),
   allowPlanCommands = false,
@@ -416,7 +417,7 @@ function verifyStoryOnce({
   const acceptanceCriteria = readAcceptanceCriteria(storyDir);
   // Like coverage, only judged on a green suite for a single story.
   const contrary = commandsOk && !skipCoverage
-    ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria })
+    ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria, policyChange })
     : NO_CONTRARY;
 
   return {
