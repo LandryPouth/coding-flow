@@ -242,7 +242,9 @@ test('a done story whose green proof went stale is sent back to verify, not to s
   sh(repo, 'git', ['checkout', '-b', 'story-01-01-a']);
 
   assert.equal(run(repo, ['verify', '--story', storyPath]).code, 0);
-  fs.writeFileSync(path.join(repo, 'lib.js'), 'module.exports = 2;\n');
+  // A different length: a same-size edit within the index's timestamp is not
+  // always seen by git under load, which made this test flaky.
+  fs.writeFileSync(path.join(repo, 'lib.js'), 'module.exports = 22;\n');
 
   const next = run(repo, ['next']).output;
   assert.match(next, /\[unproven\].*code moved since its last green verify/);
