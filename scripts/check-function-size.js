@@ -40,7 +40,13 @@ function resolveBase() {
     return explicit;
   }
 
-  return require("../bin/lib/diff-scope").currentDiffBase(process.cwd()).mergeBase || "HEAD";
+  const mergeBase = require("../bin/lib/diff-scope").currentDiffBase(process.cwd()).mergeBase;
+
+  if (!mergeBase) {
+    console.error("check-function-size: no merge base found — only uncommitted changes are checked.");
+  }
+
+  return mergeBase || "HEAD";
 }
 
 // --- the diff: file -> hunks `{ oldCount, newStart, newCount }` ---------------
@@ -50,7 +56,7 @@ function parseHunks(diff) {
   let current = null;
 
   for (const line of diff.split(/\r?\n/)) {
-    const file = /^\+\+\+ b\/(.+)$/.exec(line);
+    const file = /^\+\+\+ b\/([^\t]+)/.exec(line);
     const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
 
     if (line === "+++ /dev/null") {

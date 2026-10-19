@@ -170,6 +170,16 @@ test('braces inside strings, templates, comments and regexes do not end a functi
   assert.match(res.output, /tricky 90→91/);
 });
 
+test('a path with a space is measured, not skipped', (t) => {
+  const dir = repo(t, fn('build', 78), 'src/my file.js');
+  write(dir, 'src/my file.js', fn('build', 83));
+  lcov(dir, [[1, 'build']], 'src/my file.js');
+
+  const res = check(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /src\/my file\.js:1 build 78→83/);
+});
+
 test('it is declared in this repository\'s validation.quality, next to the other check', () => {
   const config = JSON.parse(fs.readFileSync(path.join(ROOT, '.coding-flow', 'config.json'), 'utf8'));
 
