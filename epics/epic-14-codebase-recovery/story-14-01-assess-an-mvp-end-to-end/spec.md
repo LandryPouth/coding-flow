@@ -1,6 +1,6 @@
 # Story 14-01 — Assess an MVP end to end
 
-## Status: done
+## Status: blocked
 
 ## User Value
 
@@ -140,3 +140,30 @@ path; a tracked file deleted from the working tree is no longer counted as a
 skipped binary; and `collectRecoveryScan` no longer exposes a `root` option it
 did not honour. `test/recover-scan.test.js` gained a regression test for the
 rename and the deleted file (13 tests).
+
+### 2026-10-27 re-verification (this checkout)
+
+The story's green verify was captured where it ran on 2026-10-19; this
+checkout has no tagged proof (status: in-progress), so `/flow-run` replayed
+it. Two attempts, both red, with the failure decomposed — the story's own
+work is not what failed:
+
+- **Suite (environment leak).** With this OpenCode session's env inherited,
+  `test/guard.test.js`'s five init/upgrade settings tests fail with
+  `ENOENT …/claude/settings.json` — `init` resolves its platform from the
+  environment and wires OpenCode instead. Under the documented spell
+  (`env -u OPENCODE -u OPENCODE_PID`, tasks.md) the suite passes:
+  1209/1209, coverage run 197 s. Logged in docs/DOGFOODING.md.
+- **`check-function-size.js` (branch debt, not this story's diff).** The
+  gate (13-06, landed after this story's proof) flags six functions grown
+  since `main` by 13-03 (`f86b52c`) and 13-04 (`2489e3b`) — coverage-gate,
+  doctor, evidence, harness, commands — none of which 14-01's two commits
+  (`da3c7f1`, `bc36df3`) touch; `recover.js`'s own functions stay ≤ 80.
+  Root cause sits outside story scope, so `/flow-run` stopped rather than
+  refactoring five proof files inside this story.
+
+Verify evidence from the clean-env replay: `.coding-flow/runs/
+2026-10-27T14-01-09-313Z-verify.json` — `Status: blocked` reflects a branch
+that cannot pass its current bar until the six-function debt is paid (its
+own refactor, belongs with 13-03/13-04's replay or 13-06's story), after
+which this story's verify should replay cheap and land.
