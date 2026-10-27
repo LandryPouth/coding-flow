@@ -112,8 +112,22 @@ function normalizeNumstatPath(rawPath) {
   return value;
 }
 
+function isShallowClone(root) {
+  const marker = git(root, ["rev-parse", "--is-shallow-repository"]);
+
+  // An old git without this flag answers null: behave as a full clone.
+  return marker !== null && marker.trim() === "true";
+}
+
 function collectChurn(root) {
   if (git(root, ["rev-parse", "--verify", "HEAD"]) === null) {
+    return { available: false, byPath: new Map() };
+  }
+
+  // A shallow clone carries one snapshot; its numstat lists every file at its
+  // full size, so "churn" would rank every file by lines². Churn is a
+  // property of history this clone does not have: report it as unavailable.
+  if (isShallowClone(root)) {
     return { available: false, byPath: new Map() };
   }
 

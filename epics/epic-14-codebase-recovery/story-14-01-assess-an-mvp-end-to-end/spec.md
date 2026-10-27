@@ -167,3 +167,16 @@ Verify evidence from the clean-env replay: `.coding-flow/runs/
 that cannot pass its current bar until the six-function debt is paid (its
 own refactor, belongs with 13-03/13-04's replay or 13-06's story), after
 which this story's verify should replay cheap and land.
+
+### 2026-10-27 review fixes
+
+The re-review's one P2: a shallow clone (`--depth 1`) reported churn as
+**available** — the one commit's numstat ranks every file by its full size
+(lines²), where the edge case above and the skill text promised
+"unavailable, never zero". `collectChurn` now returns unavailable when
+`git rev-parse --is-shallow-repository` says the clone is shallow
+(unsupported gits fail open); the history section still covers the commits
+the clone has. Pinned red-first by a regression test in
+`test/recover-scan.test.js` (14 tests), and the review pass itself is
+captured in `.coding-flow/runs/2026-10-27T14-18-47-730Z-review.json`
+(verdict pass, 1 P2, 2 P3).

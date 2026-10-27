@@ -49,8 +49,9 @@ Run the scan and read all of it, not only the first section. It gives:
   first commit and count. The matched value is never printed or stored;
 - **tracked sensitive files** and **large files**.
 
-Treat a missing history (`git` unavailable, shallow clone) as **unavailable**,
-never as zero churn.
+A shallow clone's churn is **unavailable** — one snapshot is size, not
+churn, never zero. Its history section still covers the commits the clone
+has; `commitsScanned` shows how many.
 
 ### 2. Decide where the dossier can live
 

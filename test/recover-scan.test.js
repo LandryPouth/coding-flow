@@ -276,6 +276,26 @@ test("churn follows a renamed file to its new path, not the old one", (t) => {
   );
 });
 
+test("a shallow clone reports churn as unavailable: one snapshot is size, not churn", (t) => {
+  const { base, repo } = initRepo(t, "recover-shallow", FIXTURE);
+  commitAll(repo, "fixture");
+
+  assert.equal(scan(repo).git.churnAvailable, true, "the full clone has churn");
+
+  const shallowDir = path.join(base, "shallow");
+  sh(base, "git", ["clone", "--depth", "1", `file://${repo}`, shallowDir]);
+
+  const result = scan(shallowDir);
+
+  assert.equal(result.git.available, true);
+  assert.equal(result.git.churnAvailable, false, "a one-commit log is not churn");
+  assert.ok(result.hotspots.length > 0);
+  assert.equal(result.hotspots[0].churn, null, "churn is unavailable, never size masquerading as churn");
+  assert.equal(result.hotspots[0].score, null);
+  assert.equal(result.secrets.history.available, true, "history covers the commit the clone has");
+  assert.equal(result.secrets.history.commitsScanned, 1);
+});
+
 test("a tracked file deleted from the working tree is not counted as a skipped binary", (t) => {
   const { repo } = initRepo(t, "recover-deleted");
   fs.writeFileSync(path.join(repo, "kept.js"), "module.exports = 1;\n");
