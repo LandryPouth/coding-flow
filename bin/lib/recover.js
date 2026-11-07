@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
@@ -24,6 +25,12 @@ const {
 const DEFAULT_HISTORY_LIMIT = 2000;
 const HOTSPOT_LIMIT = 15;
 const LARGE_FILE_LINES = 500;
+// A history patch line can be arbitrarily long (a committed minified bundle).
+// Cap what is held in memory, but keep a tail wider than any credential format
+// so a pattern spanning the seam is still matched when the line is scanned in
+// pieces.
+const HISTORY_LINE_BYTES = 1024 * 1024;
+const HISTORY_LINE_OVERLAP_BYTES = 64 * 1024;
 
 const CODE_EXTENSIONS = new Set([
   "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts",
@@ -68,20 +75,51 @@ function listTrackedFiles(root) {
   };
 }
 
+// Count lines by streaming the file in chunks: the 1 MB text cap that guards
+// the secret scan must not hide a big tracked code file from the size reports.
+// Nothing is carried between chunks — a newline is a byte, so only the trailing
+// byte matters for the "no final newline" line — which keeps memory constant
+// however long a single line is.
 function countLines(filePath) {
   try {
-    const content = readTextFileSafely(filePath);
+    const stat = fs.statSync(filePath);
 
-    if (content === null) {
-      return null;
-    }
-
-    if (content.length === 0) {
+    if (stat.size === 0) {
       return 0;
     }
 
-    const trimmed = content.endsWith("\n") ? content.slice(0, -1) : content;
-    return trimmed.split("\n").length;
+    const descriptor = fs.openSync(filePath, "r");
+    const buffer = Buffer.alloc(64 * 1024);
+    let lines = 0;
+    let lastByte = null;
+
+    try {
+      let bytesRead;
+
+      do {
+        bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+
+        if (bytesRead === 0) {
+          break;
+        }
+
+        lastByte = buffer[bytesRead - 1];
+
+        for (let index = 0; index < bytesRead; index += 1) {
+          if (buffer[index] === 0x0a) {
+            lines += 1;
+          }
+        }
+      } while (bytesRead === buffer.length);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+
+    if (lastByte !== null && lastByte !== 0x0a) {
+      lines += 1;
+    }
+
+    return lines;
   } catch {
     return null;
   }
@@ -322,64 +360,142 @@ function unavailableHistory(startedAt, limit) {
   };
 }
 
-function parseHistoryDiff(output, exactPatterns) {
-  let commit = null;
-  let currentPath = null;
-  let inHunk = false;
-  const commits = new Set();
-  const entries = new Map();
+function scanAddedPatterns(exactPatterns, text, matched) {
+  for (const pattern of exactPatterns) {
+    // `test` is stateful when the regex carries `g`; every piece is a fresh
+    // window, so a leftover lastIndex would skip its start.
+    pattern.regex.lastIndex = 0;
 
-  for (const line of output.split(/\r?\n/)) {
-    if (/^[0-9a-f]{40}$/.test(line)) {
-      commit = line;
-      commits.add(line);
-      currentPath = null;
-      inHunk = false;
-      continue;
+    if (pattern.regex.test(text)) {
+      matched.add(pattern.name);
     }
+  }
+}
 
-    if (line.startsWith("diff --git ")) {
-      currentPath = null;
-      inHunk = false;
-      continue;
-    }
-
-    if (line.startsWith("+++ ")) {
-      currentPath = normalizeDiffPath(line.slice(4));
-      continue;
-    }
-
-    if (line.startsWith("@@")) {
-      inHunk = true;
-      continue;
-    }
-
-    if (!inHunk || !currentPath || !commit || !line.startsWith("+") || line.startsWith("+++")) {
-      continue;
-    }
-
-    const added = line.slice(1);
-
-    for (const pattern of exactPatterns) {
-      if (!pattern.regex.test(added)) {
-        continue;
-      }
-
-      const key = `${pattern.name}\0${currentPath}`;
+function recordLineMatches(entries, commit, currentPath, matched) {
+  if (commit && currentPath) {
+    for (const name of matched) {
+      const key = `${name}\0${currentPath}`;
       const entry = entries.get(key) || {
-        name: pattern.name,
+        name,
         path: currentPath,
         commit,
         count: 0,
       };
 
+      // `git log` walks newest-first, so overwriting down the walk lands on
+      // the chronologically first commit that introduced the line.
       entry.commit = commit;
       entry.count += 1;
       entries.set(key, entry);
     }
   }
 
-  return { commits, entries };
+  matched.clear();
+}
+
+// Consumes a diff line, or a piece of one when the line outgrew the stream
+// window. `continuation` means the text is part of the line already classified;
+// `complete` means this piece ends the line (a newline followed it).
+function createHistoryParser(exactPatterns) {
+  let commit = null;
+  let currentPath = null;
+  let inHunk = false;
+  const commits = new Set();
+  const entries = new Map();
+
+  let lineAdded = false;
+  const lineMatches = new Set();
+
+  return {
+    line(rawLine, { continuation = false, complete = true } = {}) {
+      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+
+      if (continuation) {
+        if (lineAdded) {
+          scanAddedPatterns(exactPatterns, line, lineMatches);
+        }
+      } else {
+        lineMatches.clear();
+        lineAdded = false;
+
+        if (/^[0-9a-f]{40}$/.test(line)) {
+          commit = line;
+          commits.add(line);
+          currentPath = null;
+          inHunk = false;
+        } else if (line.startsWith("diff --git ")) {
+          currentPath = null;
+          inHunk = false;
+        } else if (line.startsWith("+++ ")) {
+          currentPath = normalizeDiffPath(line.slice(4));
+        } else if (line.startsWith("@@")) {
+          inHunk = true;
+        } else if (inHunk && currentPath && commit && line.startsWith("+") && !line.startsWith("+++")) {
+          lineAdded = true;
+          scanAddedPatterns(exactPatterns, line.slice(1), lineMatches);
+        }
+      }
+
+      if (complete && lineAdded) {
+        recordLineMatches(entries, commit, currentPath, lineMatches);
+        lineAdded = false;
+      }
+    },
+    result() {
+      return { commits, entries };
+    },
+  };
+}
+
+// Feed one file to `onLine` without loading it whole. Chunks are copied off the
+// reused read buffer before they are carried, and a line longer than the window
+// is emitted in pieces with an overlapping tail, so memory stays bounded (at
+// HISTORY_LINE_BYTES plus overlap) without hiding a secret past the seam.
+function streamLines(filePath, onLine) {
+  const descriptor = fs.openSync(filePath, "r");
+  const buffer = Buffer.alloc(256 * 1024);
+  let pending = Buffer.alloc(0);
+  let continuing = false;
+
+  try {
+    let bytesRead;
+
+    do {
+      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+
+      if (bytesRead === 0) {
+        break;
+      }
+
+      // Copy: `buffer` is overwritten by the next read, and `pending` must
+      // never alias it.
+      pending = pending.length === 0
+        ? Buffer.from(buffer.subarray(0, bytesRead))
+        : Buffer.concat([pending, buffer.subarray(0, bytesRead)]);
+
+      let newline = pending.indexOf(0x0a);
+
+      while (newline !== -1) {
+        onLine(pending.subarray(0, newline).toString("utf8"), { continuation: continuing, complete: true });
+        pending = pending.subarray(newline + 1);
+        continuing = false;
+        newline = pending.indexOf(0x0a);
+      }
+
+      if (pending.length >= HISTORY_LINE_BYTES) {
+        onLine(pending.toString("utf8"), { continuation: continuing, complete: false });
+        continuing = true;
+        pending = pending.subarray(pending.length - HISTORY_LINE_OVERLAP_BYTES);
+      }
+    } while (bytesRead === buffer.length);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+
+  if (pending.length > 0) {
+    onLine(pending.toString("utf8"), { continuation: continuing, complete: true });
+  }
 }
 
 function scanHistorySecrets(root, exactPatterns, limit) {
@@ -389,23 +505,49 @@ function scanHistorySecrets(root, exactPatterns, limit) {
     return unavailableHistory(startedAt, limit);
   }
 
-  const output = git(root, [
-    "log", "-p", "--all", "-U0", "--no-color", `-n${limit}`, "--format=%H",
-  ]);
-
-  if (output === null) {
-    return unavailableHistory(startedAt, limit);
-  }
-
-  const { commits, entries } = parseHistoryDiff(output, exactPatterns);
-
-  return {
-    available: true,
-    commitsScanned: commits.size,
-    limit,
-    durationMs: Date.now() - startedAt,
-    findings: [...entries.values()].sort((a, b) => a.path.localeCompare(b.path) || a.name.localeCompare(b.name)),
+  const parser = createHistoryParser(exactPatterns);
+  // A private directory (mkdtemp is 0700 on POSIX) removes both the predictable
+  // name in a shared temp dir and the risk of adopting a leftover file.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-flow-recover-"));
+  const output = path.join(directory, "history.log");
+  const cleanup = () => {
+    try {
+      fs.rmSync(directory, { recursive: true, force: true });
+    } catch {
+      // A temp directory that cannot be removed is not worth failing the scan.
+    }
   };
+
+  // `finally` covers return and throw; an abrupt exit is covered here so a
+  // crashed scan does not leave the patch text behind.
+  process.once("exit", cleanup);
+
+  try {
+    // `--output` keeps the patch text off the pipe: git writes it to a
+    // temporary file the parser then reads chunk by chunk, so memory stays
+    // bounded however large the window is. A git too old to know `--output`
+    // fails the invocation and history is reported unavailable, not partial.
+    if (git(root, [
+      "log", "-p", "--all", "-U0", "--no-color", `-n${limit}`, "--format=%H", `--output=${output}`,
+    ]) === null) {
+      return unavailableHistory(startedAt, limit);
+    }
+
+    streamLines(output, (line, options) => parser.line(line, options));
+
+    const { commits, entries } = parser.result();
+
+    return {
+      available: true,
+      commitsScanned: commits.size,
+      limit,
+      durationMs: Date.now() - startedAt,
+      findings: [...entries.values()].sort((a, b) => a.path.localeCompare(b.path) || a.name.localeCompare(b.name)),
+    };
+  } finally {
+    process.removeListener("exit", cleanup);
+    cleanup();
+  }
 }
 
 function scanSensitiveFiles(trackedFiles, config) {

@@ -1,6 +1,6 @@
 # Story 14-01 — Assess an MVP end to end
 
-## Status: blocked
+## Status: done
 
 ## User Value
 
@@ -180,3 +180,53 @@ the clone has. Pinned red-first by a regression test in
 `test/recover-scan.test.js` (14 tests), and the review pass itself is
 captured in `.coding-flow/runs/2026-10-27T14-18-47-730Z-review.json`
 (verdict pass, 1 P2, 2 P3).
+
+A second review pass the same day (full suite re-run at HEAD, 1210/1210
+under the clean env — the first run to include the shallow-clone fix)
+closed its two P3s: the history scan streams its patch text through a
+temporary file read chunk by chunk, so a 2 000-commit window can no longer
+overflow one buffer and memory stays bounded; and `countLines` counts by
+streaming, so a tracked code file over 1 MB — skipped only by the secret
+scan — is still a hotspot and still reported as large. Regression tests
+pin the size report past the cap and the first-commit semantics when a key
+is added twice (15 tests).
+
+### 2026-11-07 re-verification (story scope)
+
+The 2026-10-27 replay was red because the gate judged all of `develop`
+against `main`, so `check-function-size` flagged six functions grown by
+stories 13-03/13-04 — none of them touched by 14-01. This story forked from
+`develop` at `4c7280c`, so verify now runs against that fork point (the
+diff-base mechanism's story scope), not the whole unreleased branch:
+
+- `env -u OPENCODE -u OPENCODE_PID -u CLAUDE_CODE_SSE_PORT`
+  `ai-flow verify --story <this story>` — **passed**: 4 commands, coverage
+  95.4% of 695 added lines, scope story against `4c7280c` (38 files).
+- Evidence: `.coding-flow/runs/2026-11-07T01-38-20-969Z-verify.json`.
+
+The six-function debt stays with 13-03/13-04/13-06 and is not paid here; it
+would otherwise block every verify run on `develop` against `main`.
+
+### 2026-11-07 review fixes (streaming correctness)
+
+The pre-merge review of the streaming change found two aliasing bugs with one
+root cause: `streamLines` and `countLines` carried `pending` as a `subarray`
+of the reused read buffer, so the next `readSync` overwrote the bytes before
+`Buffer.concat` copied them. `streamLines` lost the start of a line spanning a
+chunk boundary (a >256 KiB added line hid its AWS key from the history scan);
+`countLines` double-counted newlines after a long line (a 70 000-char first
+line turned 1 001 real lines into 2 002).
+
+- Both readers now copy the chunk off the reused buffer before carrying it.
+  `countLines` carries nothing between chunks at all — it counts newline bytes
+  and remembers the last byte — so its memory is constant however long a line.
+- A history line longer than the 1 MiB window is emitted in pieces with a
+  64 KiB overlapping tail (wider than any credential format), so memory is
+  bounded without losing a secret past the seam. The parser records matches
+  per line and finalizes at the newline.
+- The history temp file moved into `fs.mkdtempSync` (0700 on POSIX) and is
+  removed on return, on throw and on process exit: no predictable name in a
+  shared temp dir, no patch text left behind by a crash.
+- Regression tests: exact line count with a chunk boundary inside a line, and
+  a secret on a 1.3 MB history line that exercises the partial/overlap path
+  (`test/recover-scan.test.js`, 17 tests).

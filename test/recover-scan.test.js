@@ -167,6 +167,28 @@ test("no git history is reported as unavailable, not as zero churn", (t) => {
   assert.equal(result.hotspots[0].score, null);
 });
 
+test("history reports the first commit that introduced a key, even when it is added twice", (t) => {
+  const { repo } = initRepo(t, "recover-history-first");
+  const key = "AKIA" + "IOSFODNN7EXAMPLE";
+
+  fs.writeFileSync(path.join(repo, "app.js"), `const key = "${key}";\n`);
+  commitAll(repo, "add the key");
+  const first = sh(repo, "git", ["rev-parse", "HEAD"]).trim();
+
+  fs.writeFileSync(path.join(repo, "app.js"), "const key = null;\n");
+  commitAll(repo, "remove the key");
+
+  fs.writeFileSync(path.join(repo, "app.js"), `const key = "${key}";\n`);
+  commitAll(repo, "add the key again");
+
+  const result = scan(repo);
+  const finding = result.secrets.history.findings.find((entry) => entry.name === "AWS access key");
+
+  assert.ok(finding, "the AWS pattern is reported");
+  assert.equal(finding.commit, first, "the commit is the first introduction, not the last walk entry");
+  assert.equal(finding.count, 2, "both introductions are counted");
+});
+
 test("binary and > 1 MB files are skipped by the secret scan and counted", (t) => {
   const { repo } = initRepo(t, "recover-skipped");
 
@@ -177,6 +199,43 @@ test("binary and > 1 MB files are skipped by the secret scan and counted", (t) =
   const result = scan(repo);
 
   assert.ok(result.secrets.tree.skipped >= 2, `skipped ${result.secrets.tree.skipped}, expected at least 2`);
+
+  const large = result.largeFiles.find((row) => row.path === "large.js");
+
+  assert.ok(large, "the size report sees past the 1 MB secret-scan cap");
+  assert.equal(large.lines, 90000, `large.js has ${large.lines} lines`);
+});
+
+test("line counts stay exact when a chunk boundary falls inside a line", (t) => {
+  const { repo } = initRepo(t, "recover-line-boundary");
+  const body = `${"a".repeat(70000)}\n${"x\n".repeat(1000)}`;
+  fs.writeFileSync(path.join(repo, "mixed.js"), body);
+  commitAll(repo, "a long line followed by short ones");
+
+  const result = scan(repo);
+  const large = result.largeFiles.find((row) => row.path === "mixed.js");
+  const hotspot = result.hotspots.find((row) => row.path === "mixed.js");
+
+  assert.ok(large, "mixed.js is reported as large");
+  assert.equal(large.lines, 1001, "the first line and the 1000 short lines are each counted once");
+  assert.equal(hotspot.lines, 1001, "the hotspot uses the same exact count");
+});
+
+test("a secret on a history line longer than the stream window is still found", (t) => {
+  const { repo } = initRepo(t, "recover-long-history");
+  const key = "AKIA" + "IOSFODNN7EXAMPLE";
+  fs.writeFileSync(
+    path.join(repo, "bundle.js"),
+    `const value = "${"a".repeat(1024 * 1024 + 300000)}:${key}";\n`,
+  );
+  commitAll(repo, "one very long added line");
+
+  const result = scan(repo);
+  const finding = result.secrets.history.findings.find((entry) => entry.name === "AWS access key");
+
+  assert.ok(finding, "the secret past the window is reported");
+  assert.equal(finding.path, "bundle.js");
+  assert.equal(finding.count, 1, "the pieces of one line count as one occurrence");
 });
 
 test("--history-limit bounds the commit window", (t) => {
