@@ -46,7 +46,10 @@ Run the scan and read all of it, not only the first section. It gives:
 - **secrets in the tree** — heuristic allowlist applied; command substitutions
   and environment references are not credentials;
 - **secrets in history** — exact key formats only, with pattern name, path,
-  first commit and count. The matched value is never printed or stored;
+  first commit and count. The matched value never appears in the scan output or
+  the dossier: the patch text is streamed from a private temp file that is
+  removed on return, throw and exit, and the next scan clears one a hard kill
+  left behind;
 - **tracked sensitive files** and **large files**.
 
 A shallow clone's churn is **unavailable** — one snapshot is size, not

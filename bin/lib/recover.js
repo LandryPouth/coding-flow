@@ -31,6 +31,11 @@ const LARGE_FILE_LINES = 500;
 // pieces.
 const HISTORY_LINE_BYTES = 1024 * 1024;
 const HISTORY_LINE_OVERLAP_BYTES = 64 * 1024;
+const HISTORY_TEMP_PREFIX = "ai-flow-recover-";
+// A scan's temp directory is removed on return, on throw and on exit. A hard
+// kill (SIGKILL) can still leave one behind, so the next scan clears leftovers
+// old enough that no live scan can own them.
+const STALE_HISTORY_TEMP_MS = 24 * 60 * 60 * 1000;
 
 const CODE_EXTENSIONS = new Set([
   "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts",
@@ -110,7 +115,9 @@ function countLines(filePath) {
             lines += 1;
           }
         }
-      } while (bytesRead === buffer.length);
+        // A short read is not EOF: only 0 is. Continuing on any positive count
+        // keeps a truncated read from silently dropping the rest of the file.
+      } while (bytesRead > 0);
     } finally {
       fs.closeSync(descriptor);
     }
@@ -230,8 +237,11 @@ function hasNearbyOrImportingTest(relativePath, testFiles, tests) {
   return tests.some((test) => reference.test(test.content));
 }
 
-function buildHotspots(root, trackedFiles, churn, testFiles, tests) {
-  const rows = [];
+// Read each tracked code file once and keep its line count: hotspots and the
+// large-file report both need it, and a second pass would double the I/O on the
+// large repositories this scan is aimed at.
+function measureCodeLines(root, trackedFiles) {
+  const byPath = new Map();
 
   for (const relativePath of trackedFiles) {
     if (!isCodeFile(relativePath)) {
@@ -240,10 +250,18 @@ function buildHotspots(root, trackedFiles, churn, testFiles, tests) {
 
     const lines = countLines(path.join(root, relativePath));
 
-    if (lines === null) {
-      continue;
+    if (lines !== null) {
+      byPath.set(relativePath, lines);
     }
+  }
 
+  return byPath;
+}
+
+function buildHotspots(lineCounts, churn, testFiles, tests) {
+  const rows = [];
+
+  for (const [relativePath, lines] of lineCounts) {
     const changed = churn.available ? churn.byPath.get(relativePath) || 0 : null;
 
     rows.push({
@@ -427,11 +445,13 @@ function createHistoryParser(exactPatterns) {
         } else if (line.startsWith("diff --git ")) {
           currentPath = null;
           inHunk = false;
-        } else if (line.startsWith("+++ ")) {
+        } else if (!inHunk && line.startsWith("+++ ")) {
+          // A file header only appears before the first hunk. Inside one, `+++`
+          // is an added line whose content begins `++ ` — content, not a path.
           currentPath = normalizeDiffPath(line.slice(4));
         } else if (line.startsWith("@@")) {
           inHunk = true;
-        } else if (inHunk && currentPath && commit && line.startsWith("+") && !line.startsWith("+++")) {
+        } else if (inHunk && currentPath && commit && line.startsWith("+")) {
           lineAdded = true;
           scanAddedPatterns(exactPatterns, line.slice(1), lineMatches);
         }
@@ -488,13 +508,47 @@ function streamLines(filePath, onLine) {
         continuing = true;
         pending = pending.subarray(pending.length - HISTORY_LINE_OVERLAP_BYTES);
       }
-    } while (bytesRead === buffer.length);
+    } while (bytesRead > 0);
   } finally {
     fs.closeSync(descriptor);
   }
 
   if (pending.length > 0) {
     onLine(pending.toString("utf8"), { continuation: continuing, complete: true });
+  }
+}
+
+// Best-effort cleanup of a patch directory a hard-killed scan left behind. Only
+// this process's prefix and only directories old enough that no running scan
+// can still be writing to them; anything that vanished or refuses removal is
+// not a scan failure.
+function removeStaleHistoryDirectories() {
+  let entries;
+
+  try {
+    entries = fs.readdirSync(os.tmpdir());
+  } catch {
+    return;
+  }
+
+  const cutoff = Date.now() - STALE_HISTORY_TEMP_MS;
+
+  for (const name of entries) {
+    if (!name.startsWith(HISTORY_TEMP_PREFIX)) {
+      continue;
+    }
+
+    const directory = path.join(os.tmpdir(), name);
+
+    try {
+      if (fs.statSync(directory).mtimeMs > cutoff) {
+        continue;
+      }
+
+      fs.rmSync(directory, { recursive: true, force: true });
+    } catch {
+      // Left for a later scan, or already gone.
+    }
   }
 }
 
@@ -505,10 +559,12 @@ function scanHistorySecrets(root, exactPatterns, limit) {
     return unavailableHistory(startedAt, limit);
   }
 
+  removeStaleHistoryDirectories();
+
   const parser = createHistoryParser(exactPatterns);
   // A private directory (mkdtemp is 0700 on POSIX) removes both the predictable
   // name in a shared temp dir and the risk of adopting a leftover file.
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-flow-recover-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), HISTORY_TEMP_PREFIX));
   const output = path.join(directory, "history.log");
   const cleanup = () => {
     try {
@@ -577,17 +633,11 @@ function scanSensitiveFiles(trackedFiles, config) {
   return findings;
 }
 
-function buildLargeFiles(root, trackedFiles) {
+function buildLargeFiles(lineCounts) {
   const rows = [];
 
-  for (const relativePath of trackedFiles) {
-    if (!isCodeFile(relativePath)) {
-      continue;
-    }
-
-    const lines = countLines(path.join(root, relativePath));
-
-    if (lines !== null && lines > LARGE_FILE_LINES) {
+  for (const [relativePath, lines] of lineCounts) {
+    if (lines > LARGE_FILE_LINES) {
       rows.push({ path: relativePath, lines });
     }
   }
@@ -609,6 +659,7 @@ function collectRecoveryScan({ historyLimit = DEFAULT_HISTORY_LIMIT } = {}) {
   const tests = testContents(root, testFiles);
   const patterns = getSecretPatterns(config);
   const exactPatterns = patterns.filter((pattern) => pattern.precision === "exact");
+  const lineCounts = measureCodeLines(root, tracked.files);
 
   return {
     schemaVersion: 1,
@@ -620,14 +671,14 @@ function collectRecoveryScan({ historyLimit = DEFAULT_HISTORY_LIMIT } = {}) {
       churnAvailable: churn.available,
     },
     stack,
-    hotspots: buildHotspots(root, tracked.files, churn, testFiles, tests),
+    hotspots: buildHotspots(lineCounts, churn, testFiles, tests),
     testMap: buildTestMap(stack.codeDirectories, tracked.files, testFiles),
     secrets: {
       tree: scanTreeSecrets(root, tracked.files, config),
       history: scanHistorySecrets(root, exactPatterns, historyLimit),
     },
     sensitiveFiles: scanSensitiveFiles(tracked.files, config),
-    largeFiles: buildLargeFiles(root, tracked.files),
+    largeFiles: buildLargeFiles(lineCounts),
   };
 }
 

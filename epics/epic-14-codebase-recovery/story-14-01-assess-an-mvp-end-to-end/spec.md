@@ -230,3 +230,26 @@ line turned 1 001 real lines into 2 002).
 - Regression tests: exact line count with a chunk boundary inside a line, and
   a secret on a 1.3 MB history line that exercises the partial/overlap path
   (`test/recover-scan.test.js`, 17 tests).
+
+### 2026-11-07 review fixes (history parser and scan cost)
+
+A second pre-merge pass on the streaming change found that the history parser
+read any line starting `+++ ` as a file header, even inside a hunk. An added
+line whose content begins `++ ` (git renders it `+++ …`) was therefore
+misclassified: a secret on it was never scanned and every later finding in the
+hunk was attributed to a bogus path. Reproduced by committing `++ query`
+followed by an AWS key — the finding landed under `path: "query"`.
+
+- A `+++ …` line is a header only before the first hunk (`!inHunk`); inside a
+  hunk it is an added line and is scanned as content. Regression test: the key
+  on the plain line and on the `++ `-prefixed line is reported under the real
+  path (`test/recover-scan.test.js`, 20 tests).
+- `countLines` and `streamLines` continue on any positive read, so a short read
+  can no longer truncate a file's count or the history stream.
+- Hotspots and the large-file report read each tracked code file once
+  (`measureCodeLines`) instead of twice.
+- A temp patch directory left by a hard kill is removed by the next scan (24 h
+  threshold, so a live scan's directory is never touched); the skill no longer
+  claims the value is "never stored" — it states where the transient file lives.
+- A monorepo test pins bootstrap's member detection and that every member's
+  code is scanned.

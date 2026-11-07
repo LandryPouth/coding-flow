@@ -367,3 +367,74 @@ test("a tracked file deleted from the working tree is not counted as a skipped b
 
   assert.equal(result.secrets.tree.skipped, 0, "a deleted tracked file is not a skipped binary or oversize file");
 });
+
+test("a hunk line starting with ++ is content, not a file header", (t) => {
+  const { repo } = initRepo(t, "recover-plus-prefix");
+  const key = "AKIA" + "IOSFODNN7EXAMPLE";
+
+  fs.writeFileSync(
+    path.join(repo, "app.js"),
+    `++ query\nconst key = "${key}";\n++ const other = "${key}";\n`,
+  );
+  commitAll(repo, "a line that looks like a diff header");
+
+  const result = scan(repo);
+  const finding = result.secrets.history.findings.find((entry) => entry.name === "AWS access key");
+
+  assert.ok(finding, "the key in the hunk is reported");
+  assert.equal(finding.path, "app.js", "the hunk line is content, not a new path");
+  assert.equal(finding.count, 2, "the plain line and the ++-prefixed line are both scanned");
+});
+
+test("a temp patch directory left by a hard kill is cleared by the next scan", (t) => {
+  const { repo } = initRepo(t, "recover-stale-temp", FIXTURE);
+  commitAll(repo, "fixture");
+
+  const stale = fs.mkdtempSync(path.join(os.tmpdir(), "ai-flow-recover-stale-"));
+  const fresh = fs.mkdtempSync(path.join(os.tmpdir(), "ai-flow-recover-fresh-"));
+  const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+  fs.writeFileSync(path.join(stale, "history.log"), "patch text\n");
+  fs.utimesSync(stale, old, old);
+
+  t.after(() => {
+    fs.rmSync(fresh, { recursive: true, force: true });
+    fs.rmSync(stale, { recursive: true, force: true });
+  });
+
+  scan(repo);
+
+  assert.equal(fs.existsSync(stale), false, "a crash's leftover patch directory is removed");
+  assert.equal(fs.existsSync(fresh), true, "a directory a live scan could still own is left alone");
+});
+
+test("a monorepo's members are detected and every member's code is scanned", (t) => {
+  const { repo } = initRepo(t, "recover-monorepo");
+  const root = { name: "root", private: true, workspaces: ["packages/*"] };
+
+  fs.writeFileSync(path.join(repo, "package.json"), `${JSON.stringify(root, null, 2)}\n`);
+
+  for (const member of ["api", "web"]) {
+    const directory = path.join(repo, "packages", member);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, "package.json"),
+      `${JSON.stringify({ name: member, version: "1.0.0", dependencies: { [member === "api" ? "express" : "react"]: "1.0.0" } }, null, 2)}\n`,
+    );
+    fs.writeFileSync(path.join(directory, "index.js"), "module.exports = 1;\n");
+  }
+
+  commitAll(repo, "two workspace members");
+
+  const result = scan(repo);
+
+  assert.equal(result.stack.workspace.memberCount, 2, "bootstrap detects both members");
+  const paths = result.hotspots.map((row) => row.path);
+  assert.ok(paths.includes("packages/api/index.js"), "the api member is scanned");
+  assert.ok(paths.includes("packages/web/index.js"), "the web member is scanned");
+  assert.ok(
+    result.testMap.directories.some((entry) => entry.directory === "packages" && entry.codeFiles === 2),
+    "the shared parent is measured",
+  );
+});
+
