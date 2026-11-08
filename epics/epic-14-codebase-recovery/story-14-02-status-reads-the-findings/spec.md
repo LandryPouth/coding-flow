@@ -1,5 +1,7 @@
 # Story 14-02 — `status` reads the findings, and "fixed" is derived
 
+## Status: done
+
 ## User Value
 
 `ai-flow status` and `/flow-next` show where recovery stands — open findings
