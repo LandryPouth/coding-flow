@@ -17,7 +17,7 @@ const {
 const { scanProject } = require("./bootstrap");
 const { readHarnessConfig, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
 const {
-  getSecretPatterns,
+  compileSecretPatterns,
   findSecretsInContent,
   isHeuristicAllowlisted,
 } = require("./security-policy");
@@ -132,29 +132,72 @@ function countLines(filePath) {
   }
 }
 
-// `git log --numstat` renders a rename as `old => new` or `dir/{old => new}.js`.
-// The churn belongs to the file that exists now, so collapse both forms to the
-// new path instead of recording a name nothing on disk matches.
-function normalizeNumstatPath(rawPath) {
-  let value = rawPath.trim();
-
-  if (value.startsWith('"') && value.endsWith('"')) {
-    value = value.slice(1, -1);
+// `git` quotes a path whose bytes are not plain printable ASCII (the default
+// core.quotePath), so `café.js` arrives as `"caf\303\251.js"`. Octal escapes are
+// UTF-8 bytes, not Latin-1 code points: decode the bytes, don't map per char,
+// or the path stops matching the file on disk.
+function unquoteGitPath(value) {
+  if (!(value.startsWith('"') && value.endsWith('"'))) {
+    return value;
   }
 
-  const braced = /^(.*)\{(.*) => (.*)\}(.*)$/.exec(value);
+  const inner = value.slice(1, -1);
+  const bytes = [];
+  const escapes = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11, "\\": 92, '"': 34 };
+
+  for (let index = 0; index < inner.length; ) {
+    if (inner[index] !== "\\") {
+      let end = index + 1;
+
+      while (end < inner.length && inner[end] !== "\\") {
+        end += 1;
+      }
+
+      bytes.push(...Buffer.from(inner.slice(index, end), "utf8"));
+      index = end;
+      continue;
+    }
+
+    const next = inner[index + 1];
+
+    if (next === undefined) {
+      bytes.push(92);
+      break;
+    }
+
+    if (/[0-7]/.test(next)) {
+      const octal = /^[0-7]{1,3}/.exec(inner.slice(index + 1))[0];
+
+      bytes.push(parseInt(octal, 8));
+      index += 1 + octal.length;
+      continue;
+    }
+
+    bytes.push(escapes[next] !== undefined ? escapes[next] : next.charCodeAt(0));
+    index += 2;
+  }
+
+  return Buffer.from(bytes).toString("utf8");
+}
+
+// `git log --numstat` renders a rename as `old => new`, `dir/{old => new}.js`,
+// or (when a name must be quoted) `"old" => "new"`. The churn belongs to the
+// file that exists now, so collapse every form to the new path instead of
+// recording a name nothing on disk matches.
+function normalizeNumstatPath(rawPath) {
+  const braced = /^(.*)\{(.*) => (.*)\}(.*)$/.exec(rawPath);
 
   if (braced) {
-    return `${braced[1]}${braced[3]}${braced[4]}`;
+    return unquoteGitPath(`${braced[1]}${braced[3]}${braced[4]}`);
   }
 
-  const arrow = value.indexOf(" => ");
+  const arrow = rawPath.indexOf(" => ");
 
   if (arrow !== -1) {
-    return value.slice(arrow + 4).replace(/^"|"$/g, "");
+    return unquoteGitPath(rawPath.slice(arrow + 4));
   }
 
-  return value;
+  return unquoteGitPath(rawPath);
 }
 
 function isShallowClone(root) {
@@ -303,8 +346,7 @@ function buildTestMap(codeDirectories, trackedFiles, testFiles) {
   };
 }
 
-function scanTreeSecrets(root, trackedFiles, config) {
-  const patterns = getSecretPatterns(config);
+function scanTreeSecrets(root, trackedFiles, config, patterns) {
   const findings = [];
   let skipped = 0;
 
@@ -349,7 +391,7 @@ function scanTreeSecrets(root, trackedFiles, config) {
 }
 
 function normalizeDiffPath(header) {
-  let value = header.trim();
+  let value = header;
 
   if (value === "/dev/null") {
     return null;
@@ -361,9 +403,7 @@ function normalizeDiffPath(header) {
     value = value.slice(0, tab);
   }
 
-  if (value.startsWith('"') && value.endsWith('"')) {
-    value = value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-  }
+  value = unquoteGitPath(value);
 
   return value.startsWith("b/") ? value.slice(2) : value;
 }
@@ -657,7 +697,7 @@ function collectRecoveryScan({ historyLimit = DEFAULT_HISTORY_LIMIT } = {}) {
   const testGlobs = config.testGlobs;
   const testFiles = tracked.files.filter((relativePath) => isTestFile(relativePath, testGlobs));
   const tests = testContents(root, testFiles);
-  const patterns = getSecretPatterns(config);
+  const { patterns, invalid } = compileSecretPatterns(config);
   const exactPatterns = patterns.filter((pattern) => pattern.precision === "exact");
   const lineCounts = measureCodeLines(root, tracked.files);
 
@@ -674,8 +714,12 @@ function collectRecoveryScan({ historyLimit = DEFAULT_HISTORY_LIMIT } = {}) {
     hotspots: buildHotspots(lineCounts, churn, testFiles, tests),
     testMap: buildTestMap(stack.codeDirectories, tracked.files, testFiles),
     secrets: {
-      tree: scanTreeSecrets(root, tracked.files, config),
+      tree: {
+        available: tracked.available,
+        ...scanTreeSecrets(root, tracked.files, config, patterns),
+      },
       history: scanHistorySecrets(root, exactPatterns, historyLimit),
+      invalid,
     },
     sensitiveFiles: scanSensitiveFiles(tracked.files, config),
     largeFiles: buildLargeFiles(lineCounts),
@@ -691,8 +735,16 @@ function printRecoveryScan(scan) {
   );
   log("");
 
+  if (!scan.git.available) {
+    log("Git: unavailable — tracked files could not be listed. Hotspots, the test map,");
+    log("tree secrets, tracked sensitive files and large files were not examined.");
+    log("");
+  }
+
   log("Hotspots (size × churn)");
-  if (scan.hotspots.length === 0) {
+  if (!scan.git.available) {
+    log("- unavailable — no tracked files");
+  } else if (scan.hotspots.length === 0) {
     log("- none");
   }
   for (const hotspot of scan.hotspots) {
@@ -702,7 +754,9 @@ function printRecoveryScan(scan) {
   log("");
 
   log("Code directories without tests");
-  if (scan.testMap.withoutTests.length === 0) {
+  if (!scan.git.available) {
+    log("- unavailable — no tracked files");
+  } else if (scan.testMap.withoutTests.length === 0) {
     log("- none");
   }
   for (const directory of scan.testMap.withoutTests) {
@@ -711,20 +765,32 @@ function printRecoveryScan(scan) {
   log("");
 
   log("Secrets in the tree");
-  if (scan.secrets.tree.findings.length === 0) {
+  if (scan.secrets.invalid.length > 0) {
+    log("- invalid secret pattern(s) — these detectors scanned nothing:");
+    for (const entry of scan.secrets.invalid) {
+      log(`  - ${entry.name}: ${entry.reason}`);
+    }
+  }
+  if (!scan.secrets.tree.available) {
+    log("- unavailable — no tracked files");
+  } else if (scan.secrets.tree.findings.length === 0) {
     log("- none");
   }
   for (const finding of scan.secrets.tree.findings) {
     log(`- ${finding.name} at ${finding.path}:${finding.line}`);
   }
-  log(`- skipped: ${scan.secrets.tree.skipped} binary or > 1 MB file(s)`);
+  if (scan.secrets.tree.available) {
+    log(`- skipped: ${scan.secrets.tree.skipped} binary or > 1 MB file(s)`);
+  }
   log("");
 
   const history = scan.secrets.history;
   log(
     `Secrets in history (${history.available ? `${history.commitsScanned} commit(s), ${history.durationMs}ms` : "unavailable"})`,
   );
-  if (history.findings.length === 0) {
+  if (!history.available) {
+    log("- not examined");
+  } else if (history.findings.length === 0) {
     log("- none");
   }
   for (const finding of history.findings) {
@@ -732,8 +798,14 @@ function printRecoveryScan(scan) {
   }
   log("");
 
+  printTrackedInventory(scan);
+}
+
+function printTrackedInventory(scan) {
   log("Tracked sensitive files");
-  if (scan.sensitiveFiles.length === 0) {
+  if (!scan.git.available) {
+    log("- unavailable — no tracked files");
+  } else if (scan.sensitiveFiles.length === 0) {
     log("- none");
   }
   for (const finding of scan.sensitiveFiles) {
@@ -742,7 +814,9 @@ function printRecoveryScan(scan) {
   log("");
 
   log(`Large files (over ${LARGE_FILE_LINES} lines)`);
-  if (scan.largeFiles.length === 0) {
+  if (!scan.git.available) {
+    log("- unavailable — no tracked files");
+  } else if (scan.largeFiles.length === 0) {
     log("- none");
   }
   for (const file of scan.largeFiles) {

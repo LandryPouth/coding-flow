@@ -6,6 +6,7 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const CLI = path.join(__dirname, "..", "bin", "ai-flow.js");
 const FIXTURE = path.join(__dirname, "..", "evals", "recovery", "fixture");
@@ -189,6 +190,22 @@ test("history reports the first commit that introduced a key, even when it is ad
   assert.equal(finding.count, 2, "both introductions are counted");
 });
 
+test("a non-ASCII path keeps its churn and its history trace", (t) => {
+  const { repo } = initRepo(t, "recover-unicode");
+  const key = "AKIA" + "IOSFODNN7EXAMPLE";
+
+  fs.writeFileSync(path.join(repo, "café.js"), `const key = "${key}";\n`);
+  commitAll(repo, "add the key");
+
+  const result = scan(repo);
+  const hotspot = result.hotspots.find((row) => row.path === "café.js");
+  const finding = result.secrets.history.findings.find((entry) => entry.path === "café.js");
+
+  assert.ok(hotspot, "the file is a hotspot under its real name, not a C-quoted one");
+  assert.equal(hotspot.churn, 1, "churn lands on the real path");
+  assert.ok(finding, "the history finding uses the real path");
+});
+
 test("binary and > 1 MB files are skipped by the secret scan and counted", (t) => {
   const { repo } = initRepo(t, "recover-skipped");
 
@@ -238,6 +255,46 @@ test("a secret on a history line longer than the stream window is still found", 
   assert.equal(finding.count, 1, "the pieces of one line count as one occurrence");
 });
 
+test("a secret straddling a stream piece boundary is still found", (t) => {
+  const { repo } = initRepo(t, "recover-seam");
+  const key = "AKIA" + "IOSFODNN7EXAMPLE";
+
+  fs.writeFileSync(path.join(repo, "seam.js"), "seed\n");
+  commitAll(repo, "seed");
+  fs.writeFileSync(path.join(repo, "seam.js"), "small edit\n");
+  commitAll(repo, "small edit");
+
+  // The stream emits a piece at the first 256 KiB read boundary whose pending
+  // text reaches 1 MiB, so the seam that matters is that piece boundary (not
+  // the line boundary). It depends on where the line starts in the patch; the
+  // small edit has the same header length as the huge edit below.
+  const patch = sh(repo, "git", ["log", "-p", "-U0", "--no-color", "-n1", "--format=%H", "HEAD"]);
+  const hunk = patch.indexOf("\n@@");
+  const lineStart = patch.indexOf("\n+", hunk) + 1;
+  const chunk = 256 * 1024;
+  let boundary = chunk - lineStart;
+
+  while (boundary < 1024 * 1024) {
+    boundary += chunk;
+  }
+
+  // Raw offset of the key is 1 ("+") + content. Put its start 10 bytes before
+  // the piece boundary: the piece holds only its first 10 bytes, so only the
+  // 64 KiB overlap can carry its start into the continuation piece. Spaces keep
+  // the key's word boundaries so the pattern can match.
+  const contentOffset = boundary - 11;
+  const before = `${"a".repeat(contentOffset - 1)} `;
+
+  fs.writeFileSync(path.join(repo, "seam.js"), `${before}${key} ${"z".repeat(1024)}\n`);
+  commitAll(repo, "a key across the piece boundary");
+
+  const result = scan(repo);
+  const finding = result.secrets.history.findings.find((entry) => entry.path === "seam.js");
+
+  assert.ok(finding, "the key crossing the piece boundary is reported");
+  assert.equal(finding.count, 1);
+});
+
 test("--history-limit bounds the commit window", (t) => {
   const { repo } = initRepo(t, "recover-limit", FIXTURE);
   commitAll(repo, "fixture");
@@ -269,8 +326,23 @@ test("a missing git binary is reported as unavailable", (t) => {
   assert.equal(result.code, 0, result.output);
   const scan = JSON.parse(result.output);
   assert.equal(scan.git.available, false);
+  assert.equal(scan.secrets.tree.available, false, "the tree scan says it did not run, not that it found nothing");
   assert.equal(scan.secrets.history.available, false);
   assert.deepEqual(scan.hotspots, []);
+});
+
+test("with git unavailable the text report says unavailable, not none", (t) => {
+  const { repo } = initRepo(t, "recover-no-git-text", FIXTURE);
+
+  const result = run(repo, ["recover", "scan"], { PATH: "/nonexistent" });
+
+  assert.equal(result.code, 0, result.output);
+  assert.match(result.output, /Git: unavailable/);
+  assert.match(result.output, /Hotspots \(size × churn\)\n- unavailable/);
+  assert.match(result.output, /Secrets in the tree\n- unavailable/);
+  assert.match(result.output, /Tracked sensitive files\n- unavailable/);
+  assert.match(result.output, /Large files \(over \d+ lines\)\n- unavailable/);
+  assert.doesNotMatch(result.output, /Secrets in the tree\n- none/);
 });
 
 test("empty files and short basenames are handled by the hotspot pass", (t) => {
@@ -298,6 +370,30 @@ test("a committed tree secret is reported with its path", (t) => {
 
   assert.ok(finding, "the tree scan reports the key");
   assert.equal(finding.name, "AWS access key");
+});
+
+test("an invalid configured secret pattern is reported instead of scanning nothing silently", (t) => {
+  const { repo } = initRepo(t, "recover-invalid-pattern");
+
+  fs.mkdirSync(path.join(repo, ".coding-flow"));
+  fs.writeFileSync(
+    path.join(repo, ".coding-flow", "harness.json"),
+    `${JSON.stringify({ secretPatterns: [{ name: "broken", pattern: "[" }] }, null, 2)}\n`,
+  );
+  commitAll(repo, "a detector that does not compile");
+
+  const json = run(repo, ["recover", "scan", "--json"]);
+  const text = run(repo, ["recover", "scan"]);
+
+  assert.equal(json.code, 0, json.output);
+  const scan = JSON.parse(json.output);
+  assert.deepEqual(
+    scan.secrets.invalid.map((entry) => entry.name),
+    ["broken"],
+    "the JSON names the detector that did not compile",
+  );
+  assert.match(text.output, /invalid secret pattern/i);
+  assert.match(text.output, /broken/);
 });
 
 test("a staged file with no commit history keeps zero churn beside committed files", (t) => {
@@ -335,6 +431,27 @@ test("churn follows a renamed file to its new path, not the old one", (t) => {
   );
 });
 
+test("a rename inside a directory (braced numstat form) also follows to the new path", (t) => {
+  const { repo } = initRepo(t, "recover-braced-rename");
+  fs.mkdirSync(path.join(repo, "dir"));
+  fs.writeFileSync(path.join(repo, "dir", "old.js"), "module.exports = 1;\n");
+  commitAll(repo, "add");
+  sh(repo, "git", ["mv", "dir/old.js", "dir/new.js"]);
+  fs.appendFileSync(path.join(repo, "dir", "new.js"), "module.exports = 2;\n");
+  commitAll(repo, "rename and edit");
+
+  const result = scan(repo);
+  const renamed = result.hotspots.find((row) => row.path === "dir/new.js");
+
+  assert.ok(renamed, "the file is a hotspot under its new name");
+  assert.ok(renamed.churn >= 1, `churn lands on the new path, got ${renamed.churn}`);
+  assert.equal(
+    result.hotspots.some((row) => row.path.includes("{")),
+    false,
+    "no braced rename template leaks into a path",
+  );
+});
+
 test("a shallow clone reports churn as unavailable: one snapshot is size, not churn", (t) => {
   const { base, repo } = initRepo(t, "recover-shallow", FIXTURE);
   commitAll(repo, "fixture");
@@ -342,7 +459,7 @@ test("a shallow clone reports churn as unavailable: one snapshot is size, not ch
   assert.equal(scan(repo).git.churnAvailable, true, "the full clone has churn");
 
   const shallowDir = path.join(base, "shallow");
-  sh(base, "git", ["clone", "--depth", "1", `file://${repo}`, shallowDir]);
+  sh(base, "git", ["clone", "--depth", "1", pathToFileURL(repo).href, shallowDir]);
 
   const result = scan(shallowDir);
 

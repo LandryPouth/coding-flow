@@ -253,3 +253,27 @@ followed by an AWS key — the finding landed under `path: "query"`.
   claims the value is "never stored" — it states where the transient file lives.
 - A monorepo test pins bootstrap's member detection and that every member's
   code is scanned.
+
+### 2026-11-07 review fixes (honest scope and quoted paths)
+
+A third pre-merge pass found that a scan which could not see the tree still
+read as clean, and that git's C-quoting hid non-ASCII paths from churn and
+history.
+
+- When git is unavailable, the text report says `unavailable — no tracked
+  files` for hotspots, the test map, tree secrets, tracked sensitive files and
+  large files instead of `none`; `secrets.tree.available` carries the same fact
+  in JSON and the history section says `not examined`. The skill now writes
+  those dimensions `not examined`, never `clean`.
+- Git C-quoted paths are decoded as UTF-8 bytes (`caf\303\251.js` →
+  `café.js`), so churn lands on the real path and a history finding names a
+  path that exists. Renames keep both the arrow (`"old" => "new"`) and braced
+  (`dir/{old => new}.js`) forms.
+- `compileSecretPatterns` runs once and its invalid entries are surfaced as
+  `secrets.invalid` (named in the text): a detector that does not compile now
+  reports the defect instead of scanning nothing silently.
+- Regression tests: non-ASCII churn and history trace, braced rename, a key
+  straddling a stream piece boundary (verified to fail with a zero overlap),
+  text-mode git-unavailable, and an invalid detector. The shallow-clone test
+  builds its URL with `pathToFileURL` so it is valid on Windows.
+  `test/recover-scan.test.js` is now 25 tests.

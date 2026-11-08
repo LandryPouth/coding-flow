@@ -56,6 +56,17 @@ A shallow clone's churn is **unavailable** — one snapshot is size, not
 churn, never zero. Its history section still covers the commits the clone
 has; `commitsScanned` shows how many.
 
+When `git.available` is false (no git, or the directory is not a repository),
+the scan could not list tracked files: hotspots, the test map, tree secrets,
+tracked sensitive files and large files were **not examined**. Write those
+dimensions `not examined` — never as "none" or "clean". The text report and
+`secrets.tree.available` say so; `secrets.history` says `not examined` too.
+
+If `secrets.invalid` is non-empty (the text names each one), a configured
+detector did not compile and scanned **nothing**. Treat it as a tool defect,
+not as an empty result: report the detector and do not count that dimension as
+examined by the broken pattern.
+
 ### 2. Decide where the dossier can live
 
 Check repository visibility:
