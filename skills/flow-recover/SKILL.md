@@ -122,7 +122,9 @@ documentation of every file.
 ```
 
 Field lines are fixed: `- State:`, `- Dimension:`, `- Severity:`,
-`- Location:`, `- Trace:`, `- Next:`. Group order is severity × reachability:
+`- Location:`, `- Trace:`, `- Next:`. An accepted finding also carries
+`- Revisit:` (`YYYY-MM-DD`); a fixed one carries `- Fixed by:` naming the green
+verify run. Group order is severity × reachability:
 exploitable security and data loss first, then what blocks the next feature,
 then the rest.
 
@@ -171,9 +173,13 @@ The status is one of **examined**, **tool-checked** or **not examined**.
 
 Fix one finding per branch, never several. Write the test that demonstrates the
 finding first and run it to see it fail; then fix; then run a story-less
-`ai-flow verify`. A security finding gets `/flow-review` with Security Deep before
-ship. Red-at-base proof and refactor claims arrive with later stories; until
-then this is a claim, not stronger than one.
+`ai-flow verify`. When that verify is green, set the block to `State: fixed` and
+add `- Fixed by: <the run file name>` (the `2026-…-verify.json` under
+`.coding-flow/runs/`). `status` follows that link and calls the fix **proven**;
+a `State: fixed` without it stays **claimed**. A red verify leaves the block
+open. A security finding gets `/flow-review` with Security Deep before ship.
+Red-at-base proof and refactor claims arrive with later stories; until then this
+is a claim, not stronger than one.
 
 A finding too large for one change is handed to `/flow-plan` as an epic. Recovery
 does not grow a planner.

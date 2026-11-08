@@ -9,12 +9,15 @@
 //
 // Tiers, highest priority first:
 //   1. blocked      — a story's own status says blocked. Needs a human, not a command.
-//   2. unproven      — status claims done/verified but no matching green verify was
+//   2. recovery     — an open high security finding from the dossier, outranking
+//                       new work until it is fixed.
+//   3. unproven      — status claims done/verified but no matching green verify was
 //                       captured (or the last one failed). A written label is not proof.
-//   3. stale         — a green verify exists but the code moved on since.
-//   4. ready-to-ship — proven green, and its branch has commits or a dirty tree
+//   4. stale         — a green verify exists but the code moved on since.
+//   5. needs-review  — a STRICT story missing a fresh, passing review.
+//   6. ready-to-ship — proven green, and its branch has commits or a dirty tree
 //                       ship would push.
-//   5. planned       — nothing started yet, no worktree.
+//   7. planned       — nothing started yet, no worktree.
 // "in-progress" stories are not surfaced: they are not blocked on a command, they
 // are blocked on the work itself.
 
@@ -33,13 +36,14 @@ const { resolveDiffBase } = require("./diff-base");
 
 const TIER_LABELS = {
   1: "blocked",
-  2: "unproven",
-  3: "stale",
+  2: "recovery",
+  3: "unproven",
+  4: "stale",
   // story-04-02: a distinct tier, never folded into "ready-to-ship" — a
   // STRICT story missing a fresh, passing review is not ready to ship.
-  4: "needs-review",
-  5: "ready-to-ship",
-  6: "planned",
+  5: "needs-review",
+  6: "ready-to-ship",
+  7: "planned",
 };
 
 function git(dir, args) {
@@ -121,6 +125,27 @@ function strictReviewGap(location, story) {
   return null;
 }
 
+// An open high security finding outranks new work: fixing a known IDOR before
+// starting the next planned story is the whole point of recovery.
+function recoveryItems(model) {
+  if (!model.recovery || !model.recovery.present) return [];
+
+  const items = [];
+
+  for (const finding of model.recovery.open) {
+    if (finding.dimension !== "security" || finding.severity < 3) continue;
+    items.push({
+      tier: 2,
+      epic: null,
+      story: null,
+      message: `open high security finding ${finding.id} — ${finding.title}`,
+      command: `/flow-recover fix ${finding.id}`,
+    });
+  }
+
+  return items;
+}
+
 function buildQueue() {
   const config = readConfig(cwd);
   const model = buildStatusModel(config);
@@ -137,7 +162,7 @@ function buildQueue() {
     story.worktree && path.join(cwd, story.worktree) !== cwd ? `cd ${story.worktree} && ${command}` : command;
   const base = defaultBranch(cwd);
 
-  const items = [];
+  const items = recoveryItems(model);
 
   for (const epic of model.epics) {
     for (const story of epic.stories) {
@@ -154,7 +179,7 @@ function buildQueue() {
         });
       } else if (claimsDone && proof !== "green") {
         items.push({
-          tier: 2,
+          tier: 3,
           epic: epic.name,
           story: story.name,
           message:
@@ -167,7 +192,7 @@ function buildQueue() {
         });
       } else if (story.status === "stale") {
         items.push({
-          tier: 3,
+          tier: 4,
           epic: epic.name,
           story: story.name,
           message: `"${story.name}" verify is stale — the code moved since the last green run`,
@@ -179,7 +204,7 @@ function buildQueue() {
 
         if (reviewGap) {
           items.push({
-            tier: 4,
+            tier: 5,
             epic: epic.name,
             story: story.name,
             message: `"${story.name}" is STRICT-tier and ${reviewGap} — run /flow-review before landing/shipping`,
@@ -188,7 +213,7 @@ function buildQueue() {
         } else if (hasUnshippedWork(location, base, story.path)) {
           const here = location === cwd;
           items.push({
-            tier: 5,
+            tier: 6,
             epic: epic.name,
             story: story.name,
             message: `"${story.name}" is proven and has unshipped work`,
@@ -197,7 +222,7 @@ function buildQueue() {
         }
       } else if (story.status === "planned" && !story.worktree) {
         items.push({
-          tier: 6,
+          tier: 7,
           epic: epic.name,
           story: story.name,
           message: `"${story.name}" is planned and has no worktree yet`,

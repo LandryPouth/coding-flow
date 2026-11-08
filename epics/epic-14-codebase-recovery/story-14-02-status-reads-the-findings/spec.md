@@ -31,20 +31,20 @@ report that rots.
 
 ## Acceptance Criteria
 
-- [ ] Given a findings file with confirmed, refuted, mitigated, accepted and
+- [x] Given a findings file with confirmed, refuted, mitigated, accepted and
       fixed blocks, then `status` prints the counts and the open ones by
       severity.
-- [ ] Given `State: fixed` with no `Fixed by:`, then it reads "fixed
+- [x] Given `State: fixed` with no `Fixed by:`, then it reads "fixed
       (claimed)"; with `Fixed by:` naming an ok verify run, "fixed (proven)".
-- [ ] Given `Location: src/a.ts:400` and a 120-line `src/a.ts`, then
+- [x] Given `Location: src/a.ts:400` and a 120-line `src/a.ts`, then
       "unresolved location" for that finding.
-- [ ] Given `State: accepted` without `Revisit:`, or with a past date, then
+- [x] Given `State: accepted` without `Revisit:`, or with a past date, then
       the matching flag.
-- [ ] Given an open high security finding and a planned story, then `next`
+- [x] Given an open high security finding and a planned story, then `next`
       names the finding first.
-- [ ] Given a fake `gh` reporting `PUBLIC` and a tracked findings file with an
+- [x] Given a fake `gh` reporting `PUBLIC` and a tracked findings file with an
       open security trace, then `doctor` warns; with `PRIVATE`, no warning.
-- [ ] Given no `docs/recovery/`, then `status` output is byte-identical to
+- [x] Given no `docs/recovery/`, then `status` output is byte-identical to
       today's.
 
 ## Result

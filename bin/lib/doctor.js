@@ -24,6 +24,7 @@ const {
 } = require("./templates");
 const { collectHarnessReport } = require("./harness");
 const { harnessConfigPath, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
+const { trackedOpenSecurityFindings } = require("./recover");
 const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
 const { COMMAND_PLATFORMS } = require("./platforms/registry");
@@ -141,6 +142,57 @@ function checkEvidenceBlocked(warnings) {
       `blockedPaths does not list ${missing.join(", ")} — an agent's Write or shell redirect can edit the proof; ` +
       "add them to blockedPaths",
   });
+}
+
+// A public repository that ships a trace to an open security hole is publishing
+// the exploit. Visibility needs `gh`: when it cannot answer, stay quiet rather
+// than guess, but say the check could not be made. Only the tracked dossier
+// counts — `.coding-flow/recovery/findings.local.md` is the git-ignored place the
+// trace belongs.
+function checkRecoveryExposure(warnings, notes) {
+  const exposed = trackedOpenSecurityFindings(cwd);
+
+  if (exposed.length === 0) return;
+
+  const ids = exposed.map((finding) => finding.id).join(", ");
+  let visibility;
+
+  try {
+    const output = execFileSync("gh", ["repo", "view", "--json", "visibility"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const parsed = JSON.parse(output);
+    visibility = typeof parsed.visibility === "string" ? parsed.visibility.toLowerCase() : null;
+  } catch {
+    visibility = null;
+  }
+
+  if (visibility === null) {
+    notes.push({
+      code: "recovery_visibility_unknown",
+      message:
+        "`gh` could not report this repository's visibility, so the open security trace in " +
+        `docs/recovery/findings.md (${ids}) was not checked; keep it in .coding-flow/recovery/findings.local.md`,
+    });
+    return;
+  }
+
+  if (visibility === "public") {
+    warnings.push({
+      code: "recovery_public_trace",
+      file: "docs/recovery/findings.md",
+      message:
+        `public repository: docs/recovery/findings.md publishes an open security trace (${ids}) — ` +
+        "move the trace to the git-ignored .coding-flow/recovery/findings.local.md",
+    });
+  }
+}
+
+function checkEvidenceAndRecovery(warnings, notes) {
+  checkEvidenceBlocked(warnings);
+  checkRecoveryExposure(warnings, notes);
 }
 
 const GENERATED_DIR_NAMES = new Set(["generated", "__generated__", "gen"]);
@@ -630,7 +682,7 @@ function collectMinimalReport({ strict = false } = {}) {
     }
   }
 
-  checkEvidenceBlocked(warnings);
+  checkEvidenceAndRecovery(warnings, notes);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
@@ -863,7 +915,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
   checkDuplicateNumbering(warnings);
-  checkEvidenceBlocked(warnings);
+  checkEvidenceAndRecovery(warnings, notes);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);

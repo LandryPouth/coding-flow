@@ -37,6 +37,23 @@ const HISTORY_TEMP_PREFIX = "ai-flow-recover-";
 // old enough that no live scan can own them.
 const STALE_HISTORY_TEMP_MS = 24 * 60 * 60 * 1000;
 
+const RECOVERY_DIR = path.join("docs", "recovery");
+const RECOVERY_LOCAL_DIR = path.join(".coding-flow", "recovery");
+const FINDINGS_FILE = "findings.md";
+const FINDINGS_HEADING = /^###\s+(R-[0-9]+)\s*(?:[—–-]\s*)?(.*)$/;
+const OPEN_STATES = new Set(["suspected", "confirmed", "reproduced"]);
+const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
+const FINDING_FIELDS = new Set([
+  "state",
+  "dimension",
+  "severity",
+  "location",
+  "trace",
+  "next",
+  "fixed by",
+  "revisit",
+]);
+
 const CODE_EXTENSIONS = new Set([
   "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts",
   "py", "rb", "go", "rs", "java", "kt", "kts", "cs", "php",
@@ -845,8 +862,273 @@ function recoverScan({ json = false, historyLimit = null } = {}) {
   printRecoveryScan(scan);
 }
 
+// One findings file (the tracked dossier or the git-ignored local override) into
+// blocks. Field lines are fixed for `status` to read, so a block without a
+// `State:` is unreadable rather than a finding with a guessed state — and it is
+// reported, never dropped. Unknown field lines are ignored on purpose: a human
+// may annotate a block without breaking the parse.
+function parseFindings(content) {
+  const blocks = [];
+  const unreadable = [];
+  const lines = content.split(/\r?\n/);
+  let current = null;
+
+  const close = () => {
+    if (!current) {
+      return;
+    }
+
+    if (!current.state) {
+      unreadable.push({ id: current.id, title: current.title, reason: "missing State" });
+    } else {
+      blocks.push(current);
+    }
+
+    current = null;
+  };
+
+  for (const line of lines) {
+    const heading = FINDINGS_HEADING.exec(line.trim());
+
+    if (heading) {
+      close();
+      current = { id: heading[1], title: heading[2].trim(), state: null, locations: [] };
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+
+    const field = /^-\s*([A-Za-z][A-Za-z ]*?):\s*(.*)$/.exec(line.trim());
+
+    if (!field) {
+      continue;
+    }
+
+    const name = field[1].trim().toLowerCase();
+    const value = field[2].trim();
+
+    if (!FINDING_FIELDS.has(name)) {
+      continue;
+    }
+
+    if (name === "location") {
+      current.locations.push(...value.split(",").map((part) => part.trim()).filter(Boolean));
+    } else {
+      current[name] = value;
+    }
+  }
+
+  close();
+  return { blocks, unreadable };
+}
+
+function readFindingsFile(file) {
+  if (!fs.existsSync(file)) {
+    return { present: false, blocks: [], unreadable: [] };
+  }
+
+  const content = readTextFileSafely(file);
+
+  if (content === null) {
+    return { present: true, blocks: [], unreadable: [{ id: null, title: null, reason: "unreadable file" }] };
+  }
+
+  return { present: true, ...parseFindings(content) };
+}
+
+// Both files, the local one winning for a given id: a public repository keeps an
+// open security finding's trace out of the tracked file, and the tool must read
+// the fuller local block once it is there.
+function readFindings(root) {
+  const tracked = readFindingsFile(path.join(root, RECOVERY_DIR, FINDINGS_FILE));
+  const local = readFindingsFile(path.join(root, RECOVERY_LOCAL_DIR, FINDINGS_FILE));
+  const byId = new Map();
+
+  for (const block of tracked.blocks) {
+    byId.set(block.id, { ...block, source: "tracked" });
+  }
+  for (const block of local.blocks) {
+    byId.set(block.id, { ...block, source: "local" });
+  }
+
+  return {
+    present: tracked.present || local.present,
+    files: { tracked: tracked.present, local: local.present },
+    findings: [...byId.values()],
+    unreadable: [
+      ...tracked.unreadable.map((entry) => ({ ...entry, source: "tracked" })),
+      ...local.unreadable.map((entry) => ({ ...entry, source: "local" })),
+    ],
+  };
+}
+
+function severityRank(severity) {
+  const first = String(severity || "").trim().toLowerCase().split(/\s+/)[0];
+  return SEVERITY_RANK[first] || 0;
+}
+
+function isOpen(finding) {
+  return OPEN_STATES.has(String(finding.state || "").toLowerCase());
+}
+
+// A `Location:` whose file is missing, or whose line is past the end of the file
+// as it is now, is a trace that no longer resolves — reported, because a finding
+// citing code that moved is exactly the rot `status` exists to catch.
+function isUnresolvedLocation(root, location) {
+  const match = /^(.*):(\d+)$/.exec(location);
+  const relativePath = (match ? match[1] : location).replace(/\\/g, "/");
+  const absolute = path.join(root, relativePath);
+
+  if (!fs.existsSync(absolute)) {
+    return true;
+  }
+
+  if (!match) {
+    return false;
+  }
+
+  const content = readTextFileSafely(absolute);
+
+  if (content === null) {
+    return false;
+  }
+
+  const line = Number(match[2]);
+  const total = content.length === 0 ? 0 : content.replace(/\n$/, "").split("\n").length;
+  return line > total;
+}
+
+// The named verify run's evidence, `ok` and (once story 14-03 lands) red-at-base
+// included. Only the tool may call a fix proven: the agent writes `State: fixed`,
+// a green, red-at-base verify linked by `Fixed by:` is what makes it true.
+function isFixedProven(root, finding) {
+  const name = finding["fixed by"];
+
+  if (!name) {
+    return false;
+  }
+
+  const file = path.join(root, ".coding-flow", "runs", name);
+
+  if (!fs.existsSync(file)) {
+    return false;
+  }
+
+  const data = readTextFileSafely(file);
+
+  if (data === null) {
+    return false;
+  }
+
+  let evidence;
+  try {
+    evidence = JSON.parse(data);
+  } catch {
+    return false;
+  }
+
+  if (evidence.ok !== true) {
+    return false;
+  }
+
+  return !evidence.redAtBase || evidence.redAtBase.ok === true;
+}
+
+function revisitOverdue(revisit, today) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(revisit || ""))) {
+    return false;
+  }
+
+  return revisit < today;
+}
+
+// The read model `status`, `next` and `doctor` share. Pure read: no file is
+// written and no repository is touched.
+function collectRecovery(root = cwd, { today = new Date().toISOString().slice(0, 10) } = {}) {
+  const read = readFindings(root);
+
+  if (!read.present) {
+    return { present: false };
+  }
+
+  const counts = {};
+  const open = [];
+  const fixedProven = [];
+  const fixedClaimed = [];
+  const unresolvedLocations = [];
+  const acceptedNoRevisit = [];
+  const overdue = [];
+
+  for (const finding of read.findings) {
+    const state = String(finding.state || "").toLowerCase();
+    counts[state] = (counts[state] || 0) + 1;
+
+    if (state === "fixed") {
+      (isFixedProven(root, finding) ? fixedProven : fixedClaimed).push(finding.id);
+    }
+
+    if (isOpen(finding)) {
+      open.push({
+        id: finding.id,
+        title: finding.title,
+        state,
+        dimension: finding.dimension ? finding.dimension.toLowerCase() : null,
+        severity: severityRank(finding.severity),
+        location: finding.locations[0] || null,
+      });
+    }
+
+    for (const location of finding.locations) {
+      if (isUnresolvedLocation(root, location)) {
+        unresolvedLocations.push({ id: finding.id, location });
+      }
+    }
+
+    if (state === "accepted") {
+      if (!finding.revisit) {
+        acceptedNoRevisit.push(finding.id);
+      } else if (revisitOverdue(finding.revisit, today)) {
+        overdue.push({ id: finding.id, revisit: finding.revisit });
+      }
+    }
+  }
+
+  open.sort((a, b) => b.severity - a.severity || a.id.localeCompare(b.id));
+
+  return {
+    present: true,
+    files: read.files,
+    counts,
+    open,
+    fixedProven,
+    fixedClaimed,
+    unresolvedLocations,
+    acceptedNoRevisit,
+    revisitOverdue: overdue,
+    unreadable: read.unreadable,
+  };
+}
+
+// Only the tracked dossier counts for the public-repository check: the local
+// override exists precisely so an open trace stays out of the tracked file.
+function trackedOpenSecurityFindings(root = cwd) {
+  const tracked = readFindingsFile(path.join(root, RECOVERY_DIR, FINDINGS_FILE));
+
+  return tracked.blocks.filter(
+    (finding) =>
+      isOpen(finding) &&
+      String(finding.dimension || "").toLowerCase() === "security" &&
+      Boolean(finding.trace),
+  );
+}
+
 module.exports = {
   recoverScan,
   collectRecoveryScan,
+  collectRecovery,
+  readFindings,
+  trackedOpenSecurityFindings,
   DEFAULT_HISTORY_LIMIT,
 };

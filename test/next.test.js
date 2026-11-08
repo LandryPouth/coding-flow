@@ -84,6 +84,38 @@ test('next surfaces a blocked story first, even with other stories waiting', (t)
   assert.match(output, /story-01-01-blocked/);
 });
 
+test('next ranks an open high security finding above planned work, below a blocked story', (t) => {
+  const { repo } = initRepo(t);
+  writeStory(repo, 'epic-01-x', 'story-01-01-blocked', '# blocked\n\n## Status: blocked\nfailed\n');
+  writeStory(repo, 'epic-01-x', 'story-01-02-planned', '# planned\n\nnothing yet\n');
+  fs.mkdirSync(path.join(repo, 'docs', 'recovery'), { recursive: true });
+  fs.writeFileSync(
+    path.join(repo, 'docs', 'recovery', 'findings.md'),
+    `### R-07 — IDOR on the invoice route
+
+- State: confirmed
+- Dimension: security
+- Severity: high impact × reachable
+- Location: server.js:1
+- Trace: server.js:1
+`,
+  );
+  commitAll(repo, 'init');
+
+  const { code, output } = run(repo, ['next', '--all']);
+  assert.equal(code, 0);
+  assert.match(output, /\[recovery\]/);
+  assert.match(output, /R-07/);
+  assert.match(output, /\/flow-recover fix R-07/);
+
+  const blockedIndex = output.indexOf('[blocked]');
+  const recoveryIndex = output.indexOf('[recovery]');
+  const plannedIndex = output.indexOf('[planned]');
+  assert.ok(blockedIndex >= 0 && recoveryIndex >= 0 && plannedIndex >= 0);
+  assert.ok(blockedIndex < recoveryIndex, 'a blocked story still comes first');
+  assert.ok(recoveryIndex < plannedIndex, 'the finding outranks new planned work');
+});
+
 test('next flags a story marked done with no captured verify as unproven', (t) => {
   const { repo } = initRepo(t);
   writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\n## Status: done\n');
