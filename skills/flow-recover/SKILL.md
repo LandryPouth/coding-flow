@@ -1,6 +1,6 @@
 ---
 name: flow-recover
-description: Assess an existing codebase you built fast (often with an agent) and left for months — before launch, tell me what is wrong, insecure or risky. Runs a read-only scan (hotspots, test gaps, secrets in the tree and history, sensitive files), then completes per-dimension inventories into docs/recovery/map.md and findings.md, with every finding suspected, confirmed by a path:line trace, refuted, mitigated, accepted or a tool false-positive. Use when the request is about the whole repository's current risk, not a change to review and not planning the next feature.
+description: Assess an existing codebase you built fast (often with an agent) and left for months — before launch, tell me what is wrong, insecure or risky. Runs a read-only scan (hotspots, test gaps, secrets in the tree and history, sensitive files), then completes per-dimension inventories into docs/recovery/map.md and findings.md, with every finding suspected, confirmed by a path:line trace, refuted, mitigated, accepted or a tool false-positive. Also the learn mode: walk me through a flow in code I didn't write, help me understand how it works, and own it by pinning that flow with a characterization test. Use when the request is about the whole repository's current risk or owning its existing flows, not a change to review and not planning the next feature.
 ---
 
 # Recover
@@ -169,6 +169,61 @@ The status is one of **examined**, **tool-checked** or **not examined**.
 - Invent a false-positive the scan did not report. If the pattern is absent from
   the raw output, say the check was run and clean, and move on.
 
+## Learn
+
+The ownership mode: the developer comes back to a flow they did not write (or no
+longer remember) and leaves owning it. One flow per session; stop when it is
+pinned. No score, no quiz loop.
+
+1. **Pick.** The developer picks one critical flow from `docs/recovery/map.md`
+   (no map yet: run assess first, or name the entry point by `path:line`).
+2. **Predict.** Before any trace, the developer writes down what they think the
+   flow does: its inputs, its effects (writes, calls, responses) and its failure
+   cases. Do not trace first — a prediction made after reading the answer
+   teaches nothing.
+3. **Trace.** Follow the actual path from the entry point, every step a
+   `path:line`, to each effect and each failure exit.
+4. **Compare.** Put prediction and trace side by side; discuss each gap — an
+   effect they did not expect, a failure case that does not exist, a branch
+   nobody reaches. A gap that is a defect becomes a finding in `findings.md`
+   (`suspected` or `confirmed` by the trace), not a fix in this session.
+5. **Pin.** A characterization test of what the flow does **today**, through its
+   entry point or the narrowest seam the trace showed, in the project's own test
+   runner. **The developer writes or approves every assertion; the agent never
+   invents an expected value it did not observe in the trace** (or in a run of
+   the code). A pinned bug is pinned as it is, with a comment naming its
+   finding. Run it through the project's test command and check it is among
+   the tests that ran — a file the runner's pattern skips pins nothing. Then
+   `ai-flow verify`: a test file matching `testGlobs` is not a behavior file,
+   so a pin-only branch passes the gate at any risk. Keep its helpers and
+   fixtures inside `testGlobs` too (outside, they count as behavior), and add
+   no `.skip` / `.only` — those read as weakening.
+6. **Record** the flow in `docs/recovery/ownership.md`.
+
+A pinned flow is what makes a later refactor of it provable (Refactor mode,
+step 1): land the pin on its own branch first.
+
+**`ownership.md`** — one block per flow, then the flows nobody owns yet:
+
+```md
+### Test a function from the editor
+
+- Pinned by: spec/test-function.spec.js
+- Entry: server.js:25
+- Unknown: what the runtime does with a valid run UUID (no caller sends one)
+
+## Unknown flows
+
+- Webhook test (`server.js:20`) — not traced yet
+```
+
+Field lines are fixed: `- Pinned by:` (a test path that exists), `- Entry:`
+(`path:line`), and zero or more `- Unknown:` lines for what the trace could not
+settle. A flow in `map.md` with no block is listed under `## Unknown flows`.
+A flow without `- Pinned by:` is not owned, however well it was explained.
+No command reads `ownership.md`: check by eye that each `- Pinned by:` path
+exists and each `- Entry:` resolves.
+
 ## Fix mode (minimal for now)
 
 Fix one finding per branch, never several. Write the test that demonstrates the
@@ -249,6 +304,8 @@ move code. No new abstraction with one use.
 - [ ] No application file changed, and no request reached a deployed system.
 - [ ] A refactor ran under `--claim refactor` (or `## Claim: refactor`), and
       no existing test file was among its changes.
+- [ ] A learned flow has a `- Pinned by:` test that ran green, and every
+      expected value in it was observed in the trace or a run, not invented.
 - [ ] The output contains no "secure", "production-ready" or "no issues".
 
 ## Output
