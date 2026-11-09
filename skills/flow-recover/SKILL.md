@@ -179,11 +179,56 @@ add `- Fixed by: <the run file name>` (the `2026-…-verify.json` under
 the fix **proven**; a `State: fixed` without it, or whose run another finding
 also names, stays **claimed**. A red verify leaves the block
 open. A security finding gets `/flow-review` with Security Deep before ship.
-Red-at-base proof and refactor claims arrive with later stories; until then this
-is a claim, not stronger than one.
+Red-at-base proof arrives with a later story; until then this is a claim, not
+stronger than one.
 
 A finding too large for one change is handed to `/flow-plan` as an epic. Recovery
 does not grow a planner.
+
+## Refactor mode — behavior preserved, and checked
+
+One structural change per branch, and no behavior change. A bug found while
+refactoring becomes its own finding and its own fix; mixing the two is how a
+refactor silently changes behavior.
+
+1. **Pin first, and land it first.** If the flow has no characterization test,
+   add one and see it green — on its own branch, merged before the refactor
+   branch starts. The claim reads the diff from the branch's fork point, so a
+   test edit in an earlier commit of the same branch is still in it.
+2. **Refactor with the tests untouched.** Do not edit an existing test, not even
+   to rename a variable or fix a typo — put that in the test-only branch first.
+   New test files (characterization) are allowed. Leave configuration alone too:
+   a policy file (`.coding-flow/*.json`, lint or coverage config), a test-runner
+   or build config, a lockfile or generated output in the same diff fails the
+   claim — each can skip a test without touching it. Only code, prose and
+   type declarations may move — a runner or setup file (`.mocharc.js`,
+   `karma.conf.js`, `conftest.py`, `setupTests.js`) counts as configuration, and the plan's `## Commands` keep every command
+   they had at the base.
+3. **Prove the claim.** Story-less:
+   `ai-flow verify --claim refactor`. With a story, declare `## Claim: refactor`
+   once and run `ai-flow verify --story <path>`. The claim holds only when no
+   existing test file changed, no weakening signal fired, the validation
+   commands passed, and a fresh coverage report shows the added lines executed
+   at `minPatchCoverage` (default 80%). Without a fresh report it is **NOT
+   PROVEN** — a refactor cannot be shown to be exercised without one. The
+   coverage is the whole suite's, new characterization tests included. Known
+   limits, read by eye: a test helper outside `testGlobs` and the runner list
+   counts as code; tests inside a code file (Rust `mod tests`, doctests,
+   in-source tests) count as code; a `.md` fixture outside the test tree counts
+   as prose (so is a `.md` that is the product, such as a prompt); a
+   git-ignored new test file is not seen; a code file whose lines were only
+   deleted is not measured. A new test with a conditional skip (`skipif`,
+   `t.skip(...)`) reads as weakening: land such tests on the test-only branch.
+   A pure removal of dead code has no added line to execute — prove it with a
+   plain `ai-flow verify`, not the claim. The claim needs a branch: on the
+   default branch, pass `--base <ref>`.
+4. **A violated claim is split, not argued with.** Move the test or
+   configuration change to its own branch, land it, then rerun the claim.
+   Editing the test that would have caught the change is exactly what the
+   claim refuses.
+
+An extraction must name what it removes (duplication, a cycle, a size), not just
+move code. No new abstraction with one use.
 
 ## Verification
 
@@ -198,6 +243,8 @@ does not grow a planner.
       or unknown-visibility repository, no open security trace is in the
       tracked file.
 - [ ] No application file changed, and no request reached a deployed system.
+- [ ] A refactor ran under `--claim refactor` (or `## Claim: refactor`), and
+      no existing test file was among its changes.
 - [ ] The output contains no "secure", "production-ready" or "no issues".
 
 ## Output

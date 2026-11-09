@@ -235,6 +235,7 @@ const ASSERTION_MARKERS = [
 
 const countMatching = (lines, patterns) =>
   lines.filter((line) => patterns.some((pattern) => pattern.test(line))).length;
+const countSkipMarkers = (lines) => countMatching(lines, SKIP_MARKERS);
 
 // Per test file: did this diff make it stronger, weaker, or neither?
 function scanTestWeakening(config) {
@@ -308,6 +309,39 @@ function listFiles(files, max = 3) {
   return files.slice(0, max).join(", ") + (files.length > max ? ` (+${files.length - max} more)` : "");
 }
 
+// What the diff changed, split the way every gate reads it: test files (proof),
+// behavior files (what proof is owed for), and excluded files (prose,
+// generated output). Shared with `claim.js` so a refactor claim and the coverage
+// gate never disagree about which file is which.
+function classifyChangedFiles(config) {
+  const changedFiles = changedFilesForCoverage();
+  const testFiles = changedFiles.filter((file) =>
+    config.testGlobs.some((pattern) => matchesPattern(file, pattern)),
+  );
+  // A migration is behavior: letting non-behavior win made `DROP COLUMN` read as
+  // "docs only". The non-behavior patterns that yield are the ones listed in
+  // `highRiskPaths` too, plus the default overlap (`**/migrations/**`,
+  // `**/*.sql`) so that a project's own `highRiskPaths` (`db/migrations/**`)
+  // still catches them. A file matching a yielding pattern is behavior when it
+  // also matches a high-risk path. A file merely sitting under a high-risk
+  // directory (`packages/auth/tsconfig.json`, `docs/auth/setup.md`) stays
+  // excluded, a `.sql` matching no high-risk path stays excluded, and prose is
+  // never behavior, even inside `migrations/`.
+  const riskPatterns = Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaultHighRiskPaths();
+  const yielding = new Set([...riskPatterns, ...DEFAULT_MIGRATION_GLOBS]);
+  const yieldingNonBehavior = config.nonBehaviorGlobs.filter((pattern) => yielding.has(pattern));
+  const isMigration = (file) =>
+    yieldingNonBehavior.some((pattern) => matchesPattern(file, pattern)) &&
+    riskPatterns.some((pattern) => matchesPattern(file, pattern));
+  const isExcluded = (file) =>
+    config.nonBehaviorGlobs.some((pattern) => matchesPattern(file, pattern)) &&
+    (matchesPattern(file, "**/*.md") || !isMigration(file));
+  const excluded = changedFiles.filter((file) => !testFiles.includes(file) && isExcluded(file));
+  const behaviorFiles = changedFiles.filter((file) => !excluded.includes(file) && !testFiles.includes(file));
+
+  return { changedFiles, testFiles, excluded, behaviorFiles };
+}
+
 // `ctx.riskLevel` is null until the risk is scored: a result returned before that
 // point (coverage off, no diff) has no level, so no floor applies to it.
 function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }, ctx = { riskLevel: null }) {
@@ -340,29 +374,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
     return skip(`risk is low (${risk.reason})`);
   }
 
-  const testFiles = changedFiles.filter((file) =>
-    config.testGlobs.some((pattern) => matchesPattern(file, pattern)),
-  );
-  // A migration is behavior: letting non-behavior win made `DROP COLUMN` read as
-  // "docs only". The non-behavior patterns that yield are the ones listed in
-  // `highRiskPaths` too, plus the default overlap (`**/migrations/**`,
-  // `**/*.sql`) so that a project's own `highRiskPaths` (`db/migrations/**`)
-  // still catches them. A file matching a yielding pattern is behavior when it
-  // also matches a high-risk path. A file merely sitting under a high-risk
-  // directory (`packages/auth/tsconfig.json`, `docs/auth/setup.md`) stays
-  // excluded, a `.sql` matching no high-risk path stays excluded, and prose is
-  // never behavior, even inside `migrations/`.
-  const riskPatterns = Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaultHighRiskPaths();
-  const yielding = new Set([...riskPatterns, ...DEFAULT_MIGRATION_GLOBS]);
-  const yieldingNonBehavior = config.nonBehaviorGlobs.filter((pattern) => yielding.has(pattern));
-  const isMigration = (file) =>
-    yieldingNonBehavior.some((pattern) => matchesPattern(file, pattern)) &&
-    riskPatterns.some((pattern) => matchesPattern(file, pattern));
-  const isExcluded = (file) =>
-    config.nonBehaviorGlobs.some((pattern) => matchesPattern(file, pattern)) &&
-    (matchesPattern(file, "**/*.md") || !isMigration(file));
-  const excluded = changedFiles.filter((file) => !testFiles.includes(file) && isExcluded(file));
-  const behaviorFiles = changedFiles.filter((file) => !excluded.includes(file) && !testFiles.includes(file));
+  const { testFiles, excluded, behaviorFiles } = classifyChangedFiles(config);
 
   if (behaviorFiles.length === 0) {
     const parts = [];
@@ -737,6 +749,9 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
 
 module.exports = {
   readAcceptanceCriteria,
+  classifyChangedFiles,
+  scanTestWeakening,
+  countSkipMarkers,
   evaluateCoverage,
   freshTestsRequired,
   NO_CONTRARY,

@@ -68,6 +68,7 @@ function printVerify(evidence, outputPath) {
   const coverageBlocked = evidence.commandsOk && !coverage.ok;
   const contrary = evidence.contrary || NO_CONTRARY;
   const contraryBlocked = evidence.commandsOk && coverage.ok && !contrary.ok;
+  const claimBlocked = evidence.commandsOk && coverage.ok && evidence.claim && !evidence.claim.ok;
 
   if (evidence.refused) {
     log(`Harness verify REFUSED — ${evidence.refused}.`);
@@ -76,45 +77,18 @@ function printVerify(evidence, outputPath) {
     log("Harness verify: no validation commands found.");
     log("Declare them in plan.md under '## Commands' as a fenced code block, one command per line,");
     log("or in config.validation.commands.");
+    printClaimFailures(evidence.claim);
   } else if (coverageBlocked) {
     // Every command passed. The proof still does not hold, and saying "FAILED"
     // here would send someone hunting a broken test that does not exist.
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, coverage gate blocked.`);
-    log(`  ${coverage.reason}`);
-
-    // Naming WHY this counted as risky matters: "the diff touches src/auth.js"
-    // is checkable, "the story mentioned auth" is arguable.
-    if (coverage.riskSource === "diff" && coverage.riskPaths && coverage.riskPaths.length > 0) {
-      log(`  Risk read from the diff, not the story: ${coverage.riskPaths.slice(0, 3).join(", ")}`);
-    }
-
-    // Line-level: name the lines. "80% of the diff is uncovered" sends someone
-    // reading the whole change; "src/auth.js:41-46" sends them to the code.
-    if (coverage.patch) {
-      const reports = coverage.patch.report.reports || [];
-      log(reports.length > 1
-        ? `  Measured from ${reports.length} reports: ${reports.map((r) => r.path).join(", ")}.`
-        : `  Measured from ${coverage.patch.report.path} (${coverage.patch.report.format}).`);
-
-      for (const entry of coverage.patch.uncovered.slice(0, 5)) {
-        const detail = entry.absentFromReport
-          ? "not executed at all (absent from the report)"
-          : formatLineRanges(entry.lines);
-        log(`  - ${entry.file}: ${detail}`);
-      }
-    } else if (coverage.behaviorFiles) {
-      log(`  Changed without a test: ${coverage.behaviorFiles.slice(0, 5).join(", ")}` +
-        (coverage.behaviorFiles.length > 5 ? ` (+${coverage.behaviorFiles.length - 5} more)` : ""));
-    }
-
-    printWeakenedTests(coverage);
-    if (coverage.floor) {
-      log("  Emit a coverage report (lcov.info / coverage-final.json) so the added lines are measured,");
-      log("  or declare a '## Test Exemption' section (or --test-exemption) to ship on a written reason.");
-    } else {
-      log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
-      log('  or re-run with --test-exemption "<reason>" if there is no story.');
-    }
+    printCoverageBlocked(coverage);
+    printClaimFailures(evidence.claim);
+  } else if (claimBlocked) {
+    log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the ${evidence.claim.kind} claim does not hold.`);
+    printClaimFailures(evidence.claim);
+    printContraryFailures(contrary);
+    printOpenCriteria(evidence);
   } else if (evidence.ok) {
     const warnings = describeContraryWarnings(contrary);
     log(warnings
@@ -150,6 +124,7 @@ function printVerify(evidence, outputPath) {
     printWeakenedTests(coverage);
     printOpenCriteria(evidence);
     printContraryFailures(contrary);
+    printClaimHeld(evidence.claim);
   } else if (contraryBlocked) {
     // The commands passed and the coverage gate held. What stops this is the
     // project's own strictness reading the story and the diff against the verdict.
@@ -157,9 +132,11 @@ function printVerify(evidence, outputPath) {
     printContraryFailures(contrary);
     printWeakenedTests(coverage);
     printOpenCriteria(evidence);
+    printClaimFailures(evidence.claim);
   } else {
     log("Harness verify FAILED.");
     printWeakenedTests(coverage);
+    printClaimFailures(evidence.claim);
   }
 
   // Which commands ran, and why those. The silent fallback from a config that was
@@ -220,6 +197,80 @@ function printVerify(evidence, outputPath) {
 
   if (outputPath) {
     log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+  }
+}
+
+// Why the coverage gate blocked a suite that passed: where the number came from,
+// which lines are missing, and the two ways forward — measure it or declare it.
+function printCoverageBlocked(coverage) {
+  log(`  ${coverage.reason}`);
+
+  // Naming WHY this counted as risky matters: "the diff touches src/auth.js"
+  // is checkable, "the story mentioned auth" is arguable.
+  if (coverage.riskSource === "diff" && coverage.riskPaths && coverage.riskPaths.length > 0) {
+    log(`  Risk read from the diff, not the story: ${coverage.riskPaths.slice(0, 3).join(", ")}`);
+  }
+
+  // Line-level: name the lines. "80% of the diff is uncovered" sends someone
+  // reading the whole change; "src/auth.js:41-46" sends them to the code.
+  if (coverage.patch) {
+    const reports = coverage.patch.report.reports || [];
+    log(reports.length > 1
+      ? `  Measured from ${reports.length} reports: ${reports.map((r) => r.path).join(", ")}.`
+      : `  Measured from ${coverage.patch.report.path} (${coverage.patch.report.format}).`);
+
+    for (const entry of coverage.patch.uncovered.slice(0, 5)) {
+      const detail = entry.absentFromReport
+        ? "not executed at all (absent from the report)"
+        : formatLineRanges(entry.lines);
+      log(`  - ${entry.file}: ${detail}`);
+    }
+  } else if (coverage.behaviorFiles) {
+    log(`  Changed without a test: ${coverage.behaviorFiles.slice(0, 5).join(", ")}` +
+      (coverage.behaviorFiles.length > 5 ? ` (+${coverage.behaviorFiles.length - 5} more)` : ""));
+  }
+
+  printWeakenedTests(coverage);
+
+  if (coverage.floor) {
+    log("  Emit a coverage report (lcov.info / coverage-final.json) so the added lines are measured,");
+    log("  or declare a '## Test Exemption' section (or --test-exemption) to ship on a written reason.");
+  } else {
+    log("  Add a test that covers this change, declare a '## Test Exemption' section in the story,");
+    log('  or re-run with --test-exemption "<reason>" if there is no story.');
+  }
+}
+
+// A held claim is the sentence the run was asked to prove: behavior did not
+// move, and the tests that say so did not move either. The coverage is the whole
+// suite's, new characterization tests included — said, so the sentence does not
+// read as "the unchanged tests alone reach every moved line".
+function printClaimHeld(claim) {
+  if (!claim || !claim.ok) {
+    return;
+  }
+
+  const files = claim.unchangedTestFiles === 1 ? "test file" : "test files";
+  log(`  Claim held — ${claim.kind}: ${claim.unchangedTestFiles} ${files} from the base untouched, none skipped or weakened.`);
+
+  if (claim.patch) {
+    log(`    ${claim.patch.percent}% of the ${claim.patch.totalLines} added line(s) ran under the whole suite, new tests included.`);
+  }
+}
+
+function printClaimFailures(claim) {
+  if (!claim || claim.ok) {
+    return;
+  }
+
+  log(`  Claim: ${claim.kind} does NOT hold:`);
+
+  for (const failure of claim.failures.slice(0, 5)) {
+    log(`    - ${failure.detail}`);
+  }
+
+  if (claim.failures.length > 5) {
+    log(`    - … and ${claim.failures.length - 5} more`);
   }
 }
 

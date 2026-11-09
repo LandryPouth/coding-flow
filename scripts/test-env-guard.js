@@ -30,8 +30,16 @@ for (const name of [
 // `init` resolves its platform from the environment (CLAUDECODE=1 means Claude
 // Code). Most of the suite exercises the Claude install, and the answer must not
 // depend on whether the developer happens to run `npm test` from inside Claude
-// Code or from a plain terminal / CI. Pinned here, once; the detection tests
-// that need a bare environment delete it from the env they hand the CLI.
+// Code, inside OpenCode, or from a plain terminal / CI. OpenCode's own markers
+// are removed first: with both agents' variables set, detection trusts the one
+// nearer up the parent chain, so leaving OPENCODE_PID would still resolve to
+// OpenCode whenever the suite runs from an OpenCode shell. Pinned here, once;
+// the detection tests that need a bare environment delete it from the env they
+// hand the CLI.
+for (const name of ["OPENCODE", "OPENCODE_PID"]) {
+  delete process.env[name];
+}
+
 process.env.CLAUDECODE = "1";
 
 // OpenCode's install for every project lives in $XDG_CONFIG_HOME/opencode (or

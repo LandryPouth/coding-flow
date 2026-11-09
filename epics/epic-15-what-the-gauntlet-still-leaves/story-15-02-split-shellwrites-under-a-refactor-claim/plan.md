@@ -13,9 +13,11 @@
 
 ## Decisions
 
-- **Two commits, two proofs**: tests (strengthening) then code (claim). The
-  claim forbids modifying a test, so the layering classification lands in
-  the first commit, ahead of the module it names (`listed but not found`
+- **Two branches, two proofs**: tests (strengthening) land first, then code
+  (claim) on a branch started after them — the claim diffs from the fork
+  point, so a test edit in an earlier commit of the same branch still fails
+  it. The claim forbids modifying a test, so the layering classification lands
+  with the tests, ahead of the module it names (`listed but not found`
   must tolerate it, or the module stub lands with it).
 - **Cut along forms, not along line count**: the module's table of contents
   should read like the 05-05 corpus's sections.

@@ -606,6 +606,7 @@ module.exports = {
   reportCandidates,
   packageOfFile,
   measurePatchCoverage,
+  coveredExtensions,
   COVERAGE_TIERS,
   coverageTier,
 };

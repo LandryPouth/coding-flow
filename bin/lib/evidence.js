@@ -57,6 +57,7 @@ const {
   commandTimeout,
   captureEnvironment,
 } = require("./validation-run");
+const { evaluateClaim } = require("./claim");
 
 function buildHarnessPreflight({ story = null } = {}) {
   const { config, exists } = readHarnessConfig();
@@ -263,7 +264,7 @@ function storyDigest(storyDir) {
 //
 // Conservative by construction: outside git, or when anything cannot be
 // determined, this returns null and the commands run for real.
-function findReusableVerify({ storyRelativePath, storyDir = null, commands, timeouts = {} }) {
+function findReusableVerify({ storyRelativePath, storyDir = null, commands, timeouts = {}, claimKind = null }) {
   const token = currentTreeToken(cwd);
   const mergeBase = currentDiffBase(cwd).mergeBase;
 
@@ -323,6 +324,7 @@ function findReusableVerify({ storyRelativePath, storyDir = null, commands, time
       evidence.policyFingerprint === policy &&
       // A proof made against another base is a different proof.
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
+      (evidence.claim ? evidence.claim.kind : null) === claimKind &&
       evidence.untrackedDigest === untracked &&
       evidence.storyDigest === storyText
     ) {
@@ -350,10 +352,50 @@ const PLAN_COMMANDS_REFUSAL =
   "commands from plan.md are not run unattended; declare them in .coding-flow/config.json " +
   "(with the user's agreement), use the project's own scripts (`npm test`), or pass --allow-plan-commands";
 
+// Runs the resolved commands and applies the one post-run rule that can turn a
+// green into a non-proof: a fully replayed suite where this risk level asked for
+// tests that actually ran. Quality commands are exempt from that rule.
+function executeValidationCommands({ resolution, freshRequired, cleaned, refused }) {
+  return (refused ? [] : resolution.commands).map((command) => {
+    const item = runValidationCommand(command, {
+      ...commandTimeout(resolution, command),
+      ...(cleaned ? { env: cleaned.env } : {}),
+    });
+
+    if (freshRequired && item.ok && item.cache === "full" && !(resolution.quality || []).includes(command)) {
+      return {
+        ...item,
+        ok: false,
+        freshRequired:
+          "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
+          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands " +
+          "(`verify --no-cache` only skips the reuse of an earlier proof, not the build tool's cache).",
+      };
+    }
+
+    return item;
+  });
+}
+
+function evaluateClaimFor({ refused, storyDir, config, claim, resolution, commandsOk, startedAt }) {
+  return refused
+    ? null
+    : evaluateClaim({
+      storyDir,
+      config,
+      flagClaim: claim,
+      commandSource: resolution.source,
+      commands: resolution.commands,
+      commandsOk,
+      startedAt,
+    });
+}
+
 function verifyStoryOnce({
   story = null,
   exemption = null,
   policyChange = null,
+  claim = null,
   skipCoverage = false,
   unattended = isUnattended(),
   allowPlanCommands = false,
@@ -383,28 +425,7 @@ function verifyStoryOnce({
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const results = (refused ? [] : resolution.commands).map((command) => {
-    const item = runValidationCommand(command, {
-      ...commandTimeout(resolution, command),
-      ...(cleaned ? { env: cleaned.env } : {}),
-    });
-
-    // A full replay is not wrong, but at this risk level it is not proof that the
-    // tests ran against this code either.
-    // Quality commands (lint, format) are exempt: `freshCommands` cannot replace them.
-    if (freshRequired && item.ok && item.cache === "full" && !(resolution.quality || []).includes(command)) {
-      return {
-        ...item,
-        ok: false,
-        freshRequired:
-          "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
-          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands " +
-          "(`verify --no-cache` only skips the reuse of an earlier proof, not the build tool's cache).",
-      };
-    }
-
-    return item;
-  });
+  const results = executeValidationCommands({ resolution, freshRequired, cleaned, refused });
   const commandsOk = results.length > 0 && results.every((item) => item.ok);
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.
@@ -419,6 +440,11 @@ function verifyStoryOnce({
   const contrary = commandsOk && !skipCoverage
     ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria, policyChange })
     : NO_CONTRARY;
+
+  // A claim narrows the green: the commands passing is not yet "behavior held".
+  // Evaluated even on a red suite so the evidence says which promise failed;
+  // a refused run executed nothing and makes no claim.
+  const claimResult = evaluateClaimFor({ refused, storyDir, config, claim, resolution, commandsOk, startedAt });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -449,7 +475,8 @@ function verifyStoryOnce({
     // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
     contraryPolicy: contraryPolicy(config),
     contrary,
-    ok: commandsOk && coverage.ok && contrary.ok,
+    ...(claimResult ? { claim: claimResult } : {}),
+    ok: commandsOk && coverage.ok && contrary.ok && (!claimResult || claimResult.ok),
     results,
   };
 }

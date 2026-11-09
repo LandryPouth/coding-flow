@@ -37,7 +37,7 @@ function addedLinesByFile(root, files) {
   const mergeBase = currentDiffBase(root).mergeBase;
 
   try {
-    const diffArgs = mergeBase ? ["diff", "-U0", mergeBase] : ["diff", "-U0"];
+    const diffArgs = ["-c", "core.quotePath=false", "diff", "-U0", ...(mergeBase ? [mergeBase] : [])];
     const output = require("child_process").execFileSync("git", diffArgs, {
       cwd: root,
       encoding: "utf8",
@@ -129,11 +129,18 @@ function currentDiffBase(root = cwd) {
   return diffBaseCache.get(key);
 }
 
+// `core.quotePath=false`: git otherwise prints a non-ASCII path as
+// `"test/\303\251.test.js"`, a name no glob, no `existedAt` and no `+++ b/` header
+// match recognizes — an edited test with such a name read as untouched.
 function runGitList(argsForGit, root = cwd) {
   try {
     const childProcess = require("child_process");
     return childProcess
-      .execFileSync("git", argsForGit, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .execFileSync("git", ["-c", "core.quotePath=false", ...argsForGit], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
@@ -204,7 +211,7 @@ function parseAddedLines(diffText) {
   let nextLine = 0;
 
   for (const line of diffText.split(/\r?\n/)) {
-    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
+    const fileMatch = line.match(/^\+\+\+ b\/([^\t]+)/);
 
     if (fileMatch) {
       current = fileMatch[1] === "dev/null" ? null : normalizePortable(fileMatch[1]);
@@ -236,7 +243,7 @@ function parseAddedLines(diffText) {
 function runGitText(argsForGit) {
   try {
     const childProcess = require("child_process");
-    return childProcess.execFileSync("git", argsForGit, {
+    return childProcess.execFileSync("git", ["-c", "core.quotePath=false", ...argsForGit], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -290,7 +297,7 @@ function parseChangedText(diffText) {
   let current = null;
 
   for (const line of diffText.split(/\r?\n/)) {
-    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
+    const fileMatch = line.match(/^\+\+\+ b\/([^\t]+)/);
 
     if (fileMatch) {
       current = fileMatch[1] === "dev/null" ? null : normalizePortable(fileMatch[1]);
@@ -314,6 +321,43 @@ function parseChangedText(diffText) {
   }
 
   return byFile;
+}
+
+function renamedFilesInDiff() {
+  const pairs = [];
+  const seen = new Set();
+  const { mergeBase } = currentDiffBase(cwd);
+  const sources = [
+    ["diff", "--find-renames", "--name-status"],
+    ["diff", "--find-renames", "--cached", "--name-status"],
+  ];
+
+  if (mergeBase) {
+    sources.push(["diff", "--find-renames", "--name-status", mergeBase]);
+  }
+
+  for (const argsForGit of sources) {
+    for (const line of runGitText(argsForGit).split(/\r?\n/)) {
+      const match = line.match(/^R\d+\t(.+)\t(.+)$/);
+
+      if (!match) {
+        continue;
+      }
+
+      const from = normalizePortable(match[1].trim());
+      const to = normalizePortable(match[2].trim());
+      const key = `${from}\0${to}`;
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        pairs.push({ from, to });
+      }
+    }
+  }
+
+  const config = readHarnessConfig(cwd).config;
+
+  return pairs.filter((pair) => !isScopedOut(pair.from, config));
 }
 
 function deletedFilesInDiff() {
@@ -354,6 +398,7 @@ module.exports = {
   changedFilesForCoverage,
   runGitText,
   changedLinesForCoverage,
+  renamedFilesInDiff,
   parseChangedText,
   deletedFilesInDiff,
   addedLinesByFile,

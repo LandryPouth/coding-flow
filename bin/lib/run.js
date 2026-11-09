@@ -137,7 +137,8 @@ function printReport(report, reportPath) {
     // calling that "FAIL" would send someone looking for a broken test.
     const coverageBlocked = entry.commandsOk && entry.coverage && !entry.coverage.ok;
     const contraryBlocked = entry.commandsOk && !coverageBlocked && entry.contrary && !entry.contrary.ok;
-    const label = entry.ok ? "pass" : coverageBlocked || contraryBlocked ? "no proof" : "FAIL";
+    const claimBlocked = entry.commandsOk && !coverageBlocked && !contraryBlocked && entry.claim && !entry.claim.ok;
+    const label = entry.ok ? "pass" : coverageBlocked || contraryBlocked || claimBlocked ? "no proof" : "FAIL";
     // Ten stories that all say "pass" hide which of them were measured and which
     // merely moved a test file. Over a batch that difference is the whole report.
     const tier = entry.coverage ? entry.coverage.tier || coverageTier(entry.coverage) : "not-required";
@@ -152,6 +153,14 @@ function printReport(report, reportPath) {
     if (contraryBlocked) {
       for (const failure of entry.contrary.failures) {
         log(`    ${failure.detail}`);
+      }
+
+      continue;
+    }
+
+    if (claimBlocked) {
+      for (const failure of entry.claim.failures) {
+        log(`    ${entry.claim.kind} claim: ${failure.detail}`);
       }
 
       continue;
@@ -185,6 +194,32 @@ function printReport(report, reportPath) {
   }
 }
 
+// One story's line in the run report, its evidence written only when something
+// actually ran: recording a not-yet-ready story as a failed verify would wrongly
+// mark it blocked.
+function verifyStoryEntry(entry, json) {
+  const evidence = verifyStoryOnce({ story: entry.path, announce: !json });
+  const executed = evidence.commandsFound > 0 && !evidence.refused;
+  const evidencePath = executed ? writeVerifyEvidence(evidence) : null;
+
+  return {
+    story: entry.path,
+    title: entry.title,
+    implemented: false,
+    commandSource: evidence.commandSource,
+    commandsFound: evidence.commandsFound,
+    executed,
+    commandsOk: evidence.commandsOk,
+    ...(evidence.refused ? { refused: evidence.refused } : {}),
+    coverage: evidence.coverage,
+    contrary: evidence.contrary,
+    ...(evidence.claim ? { claim: evidence.claim } : {}),
+    ok: evidence.ok,
+    results: evidence.results,
+    evidencePath: evidencePath ? normalizePortable(path.relative(cwd, evidencePath)) : null,
+  };
+}
+
 function run({ story = null, epic = null, driver = "none", json = false, dryRun = false } = {}) {
   if (!RUN_DRIVERS.includes(driver)) {
     fail(
@@ -211,27 +246,7 @@ function run({ story = null, epic = null, driver = "none", json = false, dryRun 
   for (const entry of target.stories) {
     // Driver "none" implements nothing — it verifies work already done. A future
     // driver would implement the story here, before it is verified.
-    const evidence = verifyStoryOnce({ story: entry.path, announce: !json });
-    const executed = evidence.commandsFound > 0 && !evidence.refused;
-    // Only persist an auditable verify when something actually ran: recording a
-    // not-yet-ready story as a failed verify would wrongly mark it blocked.
-    const evidencePath = executed ? writeVerifyEvidence(evidence) : null;
-
-    stories.push({
-      story: entry.path,
-      title: entry.title,
-      implemented: false,
-      commandSource: evidence.commandSource,
-      commandsFound: evidence.commandsFound,
-      executed,
-      commandsOk: evidence.commandsOk,
-      ...(evidence.refused ? { refused: evidence.refused } : {}),
-      coverage: evidence.coverage,
-      contrary: evidence.contrary,
-      ok: evidence.ok,
-      results: evidence.results,
-      evidencePath: evidencePath ? normalizePortable(path.relative(cwd, evidencePath)) : null,
-    });
+    stories.push(verifyStoryEntry(entry, json));
   }
 
   const executed = stories.filter((entry) => entry.executed);

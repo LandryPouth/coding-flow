@@ -15,11 +15,13 @@ refactor the tool proves with its own `--claim refactor`.
   functions along the forms they read (redirections, in-place editors,
   copy/move/link destinations, interpreters and `-c`, scripts followed).
 - `guard.js` keeps path resolution and policy; it calls the module.
-- **Proof**: characterization tests first, in their own commit, if any form
-  is not yet pinned by `test/guard-shell.test.js`,
+- **Proof**: characterization tests first, on their own branch landed before
+  the split, if any form is not yet pinned by `test/guard-shell.test.js`,
   `test/guard-adversarial.test.js` (the 05-05 corpus) or 15-01; then the
-  split in a second commit verified with `ai-flow verify --claim refactor`
-  — no existing test modified, suite green, moved lines executed.
+  split on a branch started after them, verified with
+  `ai-flow verify --claim refactor` — no existing test modified, suite green,
+  moved lines executed. (The claim diffs from the fork point, and refuses a
+  base that only this branch holds.)
 - Every function in the new module ≤ 80 lines (13-06's ratchet passes on
   the diff); none of the CRAP > 30 entries remains in the module.
 
