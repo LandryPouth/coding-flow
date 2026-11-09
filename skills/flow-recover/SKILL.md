@@ -194,7 +194,8 @@ refactor silently changes behavior.
 1. **Pin first, and land it first.** If the flow has no characterization test,
    add one and see it green — on its own branch, merged before the refactor
    branch starts. The claim reads the diff from the branch's fork point, so a
-   test edit in an earlier commit of the same branch is still in it.
+   test edit in an earlier commit of the same branch is still in it — and a
+   `--base` or recorded fork point that narrows past such a commit fails.
 2. **Refactor with the tests untouched.** Do not edit an existing test, not even
    to rename a variable or fix a typo — put that in the test-only branch first.
    New test files (characterization) are allowed. Leave configuration alone too:
@@ -217,7 +218,10 @@ refactor silently changes behavior.
    in-source tests) count as code; a `.md` fixture outside the test tree counts
    as prose (so is a `.md` that is the product, such as a prompt); a
    git-ignored new test file is not seen; a code file whose lines were only
-   deleted is not measured. A new test with a conditional skip (`skipif`,
+   deleted is not measured; a new test that stubs the moved module for the
+   others (one shared-process runner) is not detected. A new test that names
+   the coverage report (`lcov.info`) fails the claim — it could write the
+   witness. A new test with a conditional skip (`skipif`,
    `t.skip(...)`) reads as weakening: land such tests on the test-only branch.
    A pure removal of dead code has no added line to execute — prove it with a
    plain `ai-flow verify`, not the claim. The claim needs a branch: on the

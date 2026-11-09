@@ -93,7 +93,10 @@ function classifyScope({ cwd, branch, source, story }) {
   return "branch";
 }
 
-function resolveDiffBase(cwd, { story = null, flagBase = null } = {}) {
+// `ignoreForkPoint` answers "where would this branch start without its recorded
+// fork point?" — the refactor claim compares the two, since that fork point is a
+// local git setting, not part of the diff it would narrow.
+function resolveDiffBase(cwd, { story = null, flagBase = null, ignoreForkPoint = false } = {}) {
   const branch = currentBranch(cwd);
   const found = (source, hit, extra = {}) => ({
     ref: hit.ref,
@@ -124,7 +127,7 @@ function resolveDiffBase(cwd, { story = null, flagBase = null } = {}) {
 
   let forkPointMissing = null;
 
-  if (branch) {
+  if (branch && !ignoreForkPoint) {
     const recorded = git(cwd, ["config", "--get", `branch.${branch}.codingFlowBase`]);
 
     if (recorded) {

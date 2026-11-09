@@ -63,8 +63,10 @@ const TEST_RUNNER_GLOBS = [
 const REFACTOR_PROSE_GLOBS = ["**/*.md", "**/*.mdx", "**/*.txt", "**/*.d.ts", ".gitignore"];
 
 // The claim the story declares, either as an inline heading (`## Claim: refactor`)
-// or as a section with the kind on its first line. A story without one declares
-// nothing; the flag is the story-less path.
+// or as a section whose first line opens with the kind. A `## Claim` section
+// that opens with prose ("We claim that…") declares nothing, rather than a claim
+// named after its first word. A story without one declares nothing; the flag is
+// the story-less path.
 function readClaim(storyDir) {
   if (!storyDir) {
     return null;
@@ -77,9 +79,18 @@ function readClaim(storyDir) {
     return inline[1].toLowerCase();
   }
 
-  const section = extractSection(text, "Claim").trim().split(/\r?\n/)[0].trim().split(/[\s(]/)[0].toLowerCase();
+  const firstLine = extractSection(text, "Claim").trim().split(/\r?\n/)[0].trim();
+  const firstWord = firstLine.replace(/`/g, "").split(/[\s(—:.,]/)[0].toLowerCase();
 
-  return section || null;
+  if (CLAIMS.has(firstWord)) {
+    return firstWord;
+  }
+
+  // Not a known kind: a line that is a single word is a claim to refuse (a typo
+  // must not drop it), a sentence is prose.
+  const single = firstLine.match(/^`?([a-z-]+)`?\s*(?:\(.*\))?\.?$/i);
+
+  return single ? single[1].toLowerCase() : null;
 }
 
 function resolveClaim({ storyDir, flagClaim = null }) {
@@ -116,6 +127,14 @@ function existedAt(base, file) {
   } catch {
     return false;
   }
+}
+
+// The file names a coverage report is read from, globs reduced to their last
+// literal segment: `packages/*/coverage/lcov.info` is still `lcov.info`.
+function reportFileNames(config) {
+  return [...new Set(reportCandidates(cwd, config.coverageReports)
+    .map((candidate) => path.posix.basename(normalizePortable(candidate)))
+    .filter((name) => name && !/[*?[\]{}]/.test(name)))];
 }
 
 function listFiles(files, max = 3) {
@@ -273,38 +292,41 @@ function unchangedTestFiles(config, base, changedTests) {
 // commit of this one. `--base HEAD~1` or a `codingFlowBase` set past a test edit
 // would otherwise drop that edit from the diff the claim reads.
 //
-// A `--base` may widen the diff, never narrow it: a flagged base strictly after
-// the one the branch would use without the flag drops this branch's earlier
-// commits, whatever ref happens to hold it (an upstream pushed at that point, a
-// backup branch).
-function narrowedBase(mergeBase) {
-  if (!diffBaseFlag()) {
-    return false;
+// A `--base` or a recorded fork point may widen the diff, never narrow it: a base
+// strictly after the one the branch would use without either drops this branch's
+// earlier commits, whatever ref happens to hold it (an upstream pushed at that
+// point, a backup branch). The fork point is a local git setting, outside the
+// diff, so it is held to the same rule as the flag.
+function narrowedBase(diffBase, story) {
+  if (!diffBaseFlag() && diffBase.source !== "fork-point") {
+    return null;
   }
 
-  let unflagged = null;
+  let wider = null;
   try {
-    unflagged = resolveDiffBase(cwd, { flagBase: null }).mergeBase;
+    wider = resolveDiffBase(cwd, { story, flagBase: null, ignoreForkPoint: true });
   } catch {
-    return false;
+    return null;
   }
 
-  if (!unflagged || unflagged === mergeBase) {
-    return false;
+  if (!wider.mergeBase || wider.mergeBase === diffBase.mergeBase) {
+    return null;
   }
 
   try {
-    require("child_process").execFileSync("git", ["merge-base", "--is-ancestor", unflagged, mergeBase], {
+    require("child_process").execFileSync("git", ["merge-base", "--is-ancestor", wider.mergeBase, diffBase.mergeBase], {
       cwd,
       stdio: ["ignore", "ignore", "ignore"],
     });
-    return true;
+    return wider;
   } catch {
-    return false;
+    return null;
   }
 }
 
-function baseFailures(mergeBase) {
+function baseFailures(diffBase, story) {
+  const { mergeBase } = diffBase;
+
   if (!mergeBase) {
     return [{
       signal: "no-base",
@@ -324,11 +346,15 @@ function baseFailures(mergeBase) {
   const holders = runGitList(["for-each-ref", "--contains", mergeBase, "--format=%(refname)", "refs/heads", "refs/remotes"])
     .filter((ref) => ref !== current && !own.has(ref));
 
-  if (narrowedBase(mergeBase)) {
+  const wider = narrowedBase(diffBase, story);
+
+  if (wider) {
+    const how = diffBaseFlag() ? "--base" : `the recorded fork point (${diffBase.ref})`;
+
     return [{
       signal: "base-not-shared",
-      detail: `--base narrows the diff past ${mergeBase.slice(0, 12)}: earlier commits of this branch are left ` +
-        "out of the claim; diff from the branch it started from",
+      detail: `${how} narrows the diff past ${mergeBase.slice(0, 12)}: earlier commits of this branch are left ` +
+        `out of the claim; diff from the branch it started from (--base ${wider.ref})`,
       files: [],
     }];
   }
@@ -341,6 +367,45 @@ function baseFailures(mergeBase) {
         "branch are left out of the claim; diff from the branch it started from",
       files: [],
     }];
+}
+
+// The tests this branch adds, tracked or not. The claim allows them, so they are
+// read for the two ways a new test can hollow out the old ones: a skip marker
+// (the diff scan never sees an untracked file) and the coverage report's name.
+function scanNewTests({ config, base, prefix, changedFiles, isTest }) {
+  const untracked = runGitList(["ls-files", "--others", "--exclude-standard"])
+    .map(normalizePortable)
+    .filter((file) => isTest(file) && !isScopedOut(file, config));
+  const newTests = [...new Set([
+    ...toProjectFrame(changedFiles, prefix).filter((file) => isTest(file) && !existedAt(base, file)),
+    ...untracked,
+  ])];
+  const skipped = [];
+  const reportNames = reportFileNames(config);
+  const writesReport = [];
+
+  for (const file of newTests) {
+    let content = "";
+    try {
+      content = require("fs").readFileSync(path.join(cwd, file), "utf8");
+    } catch {
+      continue;
+    }
+
+    // The scan reads `git diff`, which never shows an untracked file — and a new
+    // test file is exactly what the claim allows. A root-level `.only` in one
+    // skips every existing test in a shared-process runner.
+    const skips = untracked.includes(file) ? countSkipMarkers(content.split(/\r?\n/)) : 0;
+    if (skips > 0) {
+      skipped.push({ file, signal: "skipped", detail: `${skips} skip/only marker(s) in a new test file` });
+    }
+
+    if (reportNames.some((name) => content.includes(name))) {
+      writesReport.push(file);
+    }
+  }
+
+  return { skipped, writesReport };
 }
 
 function testIntegrityFailures(config, mergeBase, prefix, changedFiles) {
@@ -373,25 +438,19 @@ function testIntegrityFailures(config, mergeBase, prefix, changedFiles) {
   }
 
   const weakening = scanTestWeakening(config);
-  // The scan reads `git diff`, which never shows an untracked file — and a new
-  // test file is exactly what the claim allows. A root-level `.only` in one skips
-  // every existing test in a shared-process runner.
-  for (const file of runGitList(["ls-files", "--others", "--exclude-standard"]).map(normalizePortable)) {
-    if (!isTest(file) || isScopedOut(file, config)) {
-      continue;
-    }
+  const { skipped, writesReport } = scanNewTests({ config, base, prefix, changedFiles, isTest });
+  weakening.findings.push(...skipped);
 
-    let content = "";
-    try {
-      content = require("fs").readFileSync(path.join(cwd, file), "utf8");
-    } catch {
-      continue;
-    }
-
-    const skips = countSkipMarkers(content.split(/\r?\n/));
-    if (skips > 0) {
-      weakening.findings.push({ file, signal: "skipped", detail: `${skips} skip/only marker(s) in a new test file` });
-    }
+  // The report is the claim's only witness that the moved lines ran. A new test
+  // naming it can write it, so it is read as a test that may forge the witness.
+  // A name scan, not a proof: it catches the plain case, not an obfuscated one.
+  if (writesReport.length > 0) {
+    failures.push({
+      signal: "test-names-report",
+      detail: `${writesReport.length} new test file(s) name the coverage report the claim reads: ` +
+        `${listFiles(writesReport)}; land them on their own change first`,
+      files: writesReport,
+    });
   }
 
   if (weakening.findings.length > 0) {
@@ -514,10 +573,12 @@ function evaluateRefactor({ config, storyDir = null, commandSource = null, comma
   }
 
   const { changedFiles, behaviorFiles, excluded } = classifyChangedFiles(config);
-  const { mergeBase } = currentDiffBase(cwd);
+  const diffBase = currentDiffBase(cwd);
+  const { mergeBase } = diffBase;
   const prefix = gitPrefix();
+  const story = storyDir ? normalizePortable(path.relative(cwd, storyDir)) : null;
   const failures = [
-    ...baseFailures(mergeBase),
+    ...baseFailures(diffBase, story),
     ...testIntegrityFailures(config, mergeBase, prefix, changedFiles),
     ...scopeFailures(config, { behaviorFiles, excluded }),
     ...commandFailures({ storyDir, commandSource, commands, mergeBase }),

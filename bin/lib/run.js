@@ -137,7 +137,7 @@ function printReport(report, reportPath) {
     // calling that "FAIL" would send someone looking for a broken test.
     const coverageBlocked = entry.commandsOk && entry.coverage && !entry.coverage.ok;
     const contraryBlocked = entry.commandsOk && !coverageBlocked && entry.contrary && !entry.contrary.ok;
-    const claimBlocked = entry.commandsOk && !coverageBlocked && !contraryBlocked && entry.claim && !entry.claim.ok;
+    const claimBlocked = entry.commandsOk && entry.claim && !entry.claim.ok;
     const label = entry.ok ? "pass" : coverageBlocked || contraryBlocked || claimBlocked ? "no proof" : "FAIL";
     // Ten stories that all say "pass" hide which of them were measured and which
     // merely moved a test file. Over a batch that difference is the whole report.
@@ -145,24 +145,25 @@ function printReport(report, reportPath) {
     const proof = entry.ok && tier !== "not-required" ? ` — coverage: ${tier}` : "";
     log(`- [${label}] ${entry.story} (${entry.commandsFound} cmd(s), ${duration}ms)${proof}`);
 
+    // Every reason at once: naming only the first sends someone to fix it and
+    // run again just to meet the next one.
     if (coverageBlocked) {
       log(`    ${entry.coverage.reason}`);
-      continue;
     }
 
     if (contraryBlocked) {
       for (const failure of entry.contrary.failures) {
         log(`    ${failure.detail}`);
       }
-
-      continue;
     }
 
     if (claimBlocked) {
       for (const failure of entry.claim.failures) {
         log(`    ${entry.claim.kind} claim: ${failure.detail}`);
       }
+    }
 
+    if (coverageBlocked || contraryBlocked || claimBlocked) {
       continue;
     }
 

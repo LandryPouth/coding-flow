@@ -784,3 +784,99 @@ test('a --base that widens the diff is accepted', (t) => {
   assert.equal(res.code, 0, res.output);
   assert.equal(latestVerify(dir).claim.ok, true);
 });
+
+// Review of 2026-11-09 (after the fifth round): the residual risks it named.
+
+test('a recorded fork point past a test edit breaks the claim like a narrowing --base', (t) => {
+  const dir = repo(t, 'claim-fork-point');
+  write(dir, 'test/lib.test.js', "require('../src/lib');\n// expectation updated\n");
+  commit(dir, 'tests: update expectation');
+  git(dir, ['branch', 'backup']);
+  git(dir, ['config', 'branch.feature.codingFlowBase', 'backup']);
+  refactor(dir);
+
+  const res = run(dir, ['verify', '--claim', 'refactor']);
+
+  assert.notEqual(res.code, 0, res.output);
+  const failure = latestVerify(dir).claim.failures.find((f) => f.signal === 'base-not-shared');
+  assert.ok(failure, JSON.stringify(latestVerify(dir).claim.failures));
+  assert.match(failure.detail, /fork point \(backup\)/);
+  assert.match(failure.detail, /--base main/);
+});
+
+test('a fork point at the branch the story started from still holds the claim', (t) => {
+  const dir = repo(t, 'claim-fork-point-ok');
+  git(dir, ['config', 'branch.feature.codingFlowBase', 'main']);
+  refactor(dir);
+
+  const res = run(dir, ['verify', '--claim', 'refactor']);
+
+  assert.equal(res.code, 0, res.output);
+  assert.equal(latestVerify(dir).claim.ok, true);
+});
+
+test('a Claim section that opens with prose declares no claim', (t) => {
+  const story = 'epics/epic-01-x/story-01-01-prose';
+  const dir = repo(t, 'claim-prose-section', { story, claim: '## Claim\n\nWe claim this keeps the API stable.' });
+  refactor(dir);
+
+  const res = run(dir, ['verify', '--story', story]);
+
+  assert.equal(res.code, 0, res.output);
+  assert.equal(latestVerify(dir).claim, undefined);
+});
+
+test('a Claim section opening with the kind and a note is read', (t) => {
+  const story = 'epics/epic-01-x/story-01-01-noted';
+  const dir = repo(t, 'claim-noted-section', { story, claim: '## Claim\n\nrefactor — extract sum from add.' });
+  write(dir, 'test/lib.test.js', "require('../src/lib');\n// expectation updated\n");
+  refactor(dir);
+
+  const res = run(dir, ['verify', '--story', story]);
+
+  assert.notEqual(res.code, 0, res.output);
+  assert.equal(latestVerify(dir).claim.kind, 'refactor');
+});
+
+test('a Claim section with a misspelt kind alone is refused, not dropped', (t) => {
+  const story = 'epics/epic-01-x/story-01-01-typo';
+  const dir = repo(t, 'claim-typo-section', { story, claim: '## Claim\n\nrefactr' });
+  refactor(dir);
+
+  const res = run(dir, ['verify', '--story', story]);
+
+  assert.notEqual(res.code, 0, res.output);
+  assert.equal(latestVerify(dir).claim.failures[0].signal, 'unknown-claim');
+});
+
+test('a new test that names the coverage report breaks the claim', (t) => {
+  for (const tracked of [true, false]) {
+    const dir = repo(t, `claim-forged-report-${tracked}`);
+    write(dir, 'test/sum.test.js', "require('fs').writeFileSync('coverage/lcov.info', '');\n");
+    if (tracked) {
+      refactor(dir);
+    } else {
+      write(dir, 'src/lib.js', AFTER);
+    }
+
+    const res = run(dir, ['verify', '--claim', 'refactor']);
+
+    assert.notEqual(res.code, 0, `${tracked}: ${res.output}`);
+    const failure = latestVerify(dir).claim.failures.find((f) => f.signal === 'test-names-report');
+    assert.ok(failure, `${tracked}: ${JSON.stringify(latestVerify(dir).claim.failures)}`);
+    assert.deepEqual(failure.files, ['test/sum.test.js']);
+  }
+});
+
+test('run names a failed claim even when the coverage gate also blocks', (t) => {
+  const story = 'epics/epic-01-x/story-01-01-both';
+  const dir = repo(t, 'claim-run-both', { story, source: 'src/auth/session.js', coverage: { hit: 0 } });
+  write(dir, 'test/lib.test.js', "require('../src/auth/session');\n// expectation updated\n");
+  refactor(dir, {}, { source: 'src/auth/session.js' });
+
+  const res = run(dir, ['run', '--story', story]);
+
+  assert.notEqual(res.code, 0, res.output);
+  assert.match(res.output, /\[no proof\]/);
+  assert.match(res.output, /refactor claim: 1 existing test file\(s\) changed: test\/lib\.test\.js/);
+});

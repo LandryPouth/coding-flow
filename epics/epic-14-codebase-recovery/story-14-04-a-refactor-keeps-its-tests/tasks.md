@@ -127,7 +127,31 @@ that adds lines elsewhere, is not measured (that needs a coverage run at the
 base); the coverage report's paths in a subdirectory install follow the shared
 coverage gate, so an honest refactor there can fail on a path mismatch (fails
 closed); `## Claim:` inside a fenced block is still read (fails closed); a new
-test can still write a forged `lcov.info` during the run.
+test can still write a forged report under a name it does not spell out, or
+stub the moved module for the existing tests in a shared-process runner.
+
+### Review after landing (2026-11-09)
+
+A `/flow-review` of the landed commit passed (no P0–P2, three P3s, verify run
+fresh, eleven mutants of the claim checks all killed). Its P3s and residual
+risks, fixed, each with a test that fails on the landed code:
+
+- a recorded fork point (`codingFlowBase`) narrowing the diff past this
+  branch's own commits is refused like a narrowing `--base`: both are compared
+  with the base the branch would use without either (`resolveDiffBase`
+  `ignoreForkPoint`), and the failure names that wider base;
+- a new test file, tracked or not, that names the coverage report the claim
+  reads (`lcov.info`, `coverage-final.json`, configured `coverageReports`)
+  fails the claim (`test-names-report`) — a name scan, not a proof;
+- a `## Claim` section opening with prose declares no claim; a known kind
+  followed by a note is still read, a lone misspelt kind still fails;
+- `run` prints every reason a story is not proven (coverage, contrary, claim)
+  instead of the first;
+- the CHANGELOG entry is cut to the promise and what breaks it.
+
+Still a known limit: a new test stubbing the moved module for the existing
+tests in a shared-process runner — catching it means running the base tests
+without the new ones, a design change rather than a fix.
 
 ### Rollback Notes
 
