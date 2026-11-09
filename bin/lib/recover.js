@@ -933,7 +933,20 @@ function parseFindings(content) {
   }
 
   close();
-  return { blocks, unreadable };
+
+  // Two blocks with one id in the same file: neither is read, as with a run named
+  // by two findings. Keeping either would let a refuted copy hide an open one.
+  const seen = new Map();
+  for (const block of blocks) {
+    seen.set(block.id, (seen.get(block.id) || 0) + 1);
+  }
+  for (const block of blocks) {
+    if (seen.get(block.id) > 1) {
+      unreadable.push({ id: block.id, title: block.title, reason: "duplicate id" });
+    }
+  }
+
+  return { blocks: blocks.filter((block) => seen.get(block.id) === 1), unreadable };
 }
 
 function readFindingsFile(file) {
@@ -987,13 +1000,17 @@ function isOpen(finding) {
 
 // A `Location:` whose file is missing, or whose line is past the end of the file
 // as it is now, is a trace that no longer resolves — reported, because a finding
-// citing code that moved is exactly the rot `status` exists to catch.
+// citing code that moved is exactly the rot `status` exists to catch. A location
+// outside the repository is unresolved too: `status` never reads past its root.
 function isUnresolvedLocation(root, location) {
   const match = LOCATION_LINE.exec(location);
   const relativePath = (match ? match[1] : location).replace(/\\/g, "/");
   const absolute = path.join(root, relativePath);
+  const inside = path.relative(root, absolute);
 
-  if (!fs.existsSync(absolute)) {
+  const outside = inside === ".." || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside);
+
+  if (outside || !fs.existsSync(absolute)) {
     return true;
   }
 
@@ -1050,12 +1067,17 @@ function isFixedProven(root, finding) {
   return !evidence.redAtBase || evidence.redAtBase.ok === true;
 }
 
-function revisitOverdue(revisit, today) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(revisit || ""))) {
+// A real `YYYY-MM-DD` day. `Revisit: Q3` or `2026-02-30` is no date at all, and an
+// acceptance without a date is forgotten, not accepted.
+function isRevisitDate(revisit) {
+  const value = String(revisit || "");
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
   }
 
-  return revisit < today;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 // The read model `status`, `next` and `doctor` share. Pure read: no file is
@@ -1111,9 +1133,9 @@ function collectRecovery(root = cwd, { today = new Date().toISOString().slice(0,
     }
 
     if (state === "accepted") {
-      if (!finding.revisit) {
+      if (!isRevisitDate(finding.revisit)) {
         acceptedNoRevisit.push(finding.id);
-      } else if (revisitOverdue(finding.revisit, today)) {
+      } else if (finding.revisit < today) {
         overdue.push({ id: finding.id, revisit: finding.revisit });
       }
     }

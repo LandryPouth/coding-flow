@@ -425,3 +425,105 @@ test("without docs/recovery the status output has no Recovery section", (t) => {
   assert.doesNotMatch(output, /Recovery/);
   assert.equal("recovery" in data, false, "a project that never ran recovery gets byte-identical JSON");
 });
+
+test("two blocks with one id in the same file are both reported, neither is read", (t) => {
+  const repo = initRepo(t, "recover-status-duplicate");
+
+  writeFindings(
+    repo,
+    `### R-01 — Open IDOR
+
+- State: confirmed
+- Dimension: security
+- Severity: high
+
+### R-01 — Same id, refuted
+
+- State: refuted
+
+### R-02 — Unrelated
+
+- State: refuted
+`,
+  );
+
+  const data = statusJson(repo);
+
+  assert.deepEqual(data.recovery.counts, { refuted: 1 }, "only R-02 is read");
+  assert.deepEqual(
+    data.recovery.unreadable.map((entry) => [entry.id, entry.reason]),
+    [
+      ["R-01", "duplicate id"],
+      ["R-01", "duplicate id"],
+    ],
+  );
+  assert.match(statusText(repo), /unreadable block: R-01 \(duplicate id\)/);
+});
+
+test("a location outside the repository is unresolved, even when the file exists", (t) => {
+  const repo = initRepo(t, "recover-status-outside");
+  const elsewhere = tmp(t, "recover-status-elsewhere");
+
+  writeLines(elsewhere, "a.js", 50);
+  writeLines(repo, "src/a.js", 50);
+  const outside = path.relative(repo, path.join(elsewhere, "a.js")).replace(/\\/g, "/");
+
+  writeFindings(
+    repo,
+    `### R-01 — Points outside
+
+- State: confirmed
+- Location: ${outside}:10
+
+### R-02 — Points inside
+
+- State: confirmed
+- Location: src/a.js:10
+`,
+  );
+
+  const data = statusJson(repo);
+
+  assert.deepEqual(data.recovery.unresolvedLocations, [{ id: "R-01", location: `${outside}:10` }]);
+});
+
+test("an accepted finding whose Revisit is not a real date has no revisit date", (t) => {
+  const repo = initRepo(t, "recover-status-bad-revisit");
+
+  writeFindings(
+    repo,
+    `### R-01 — A quarter is not a date
+
+- State: accepted
+- Revisit: Q3
+
+### R-02 — No such day
+
+- State: accepted
+- Revisit: 2999-02-30
+
+### R-03 — A real future date
+
+- State: accepted
+- Revisit: 2999-02-28
+`,
+  );
+
+  const data = statusJson(repo);
+
+  assert.deepEqual(data.recovery.acceptedNoRevisit, ["R-01", "R-02"]);
+  assert.deepEqual(data.recovery.revisitOverdue, []);
+});
+
+test("a docs/recovery without findings leaves the status output byte-identical", (t) => {
+  const repo = initRepo(t, "recover-status-map-only");
+
+  const textBefore = statusText(repo);
+  const jsonBefore = run(repo, ["status", "--json"]).output;
+
+  fs.mkdirSync(path.join(repo, "docs", "recovery"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "docs", "recovery", "map.md"), "# Map\n");
+
+  assert.equal(statusText(repo), textBefore);
+  assert.equal(run(repo, ["status", "--json"]).output, jsonBefore);
+});
