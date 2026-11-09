@@ -52,7 +52,7 @@ function writeFindings(repo, content, { local = false } = {}) {
     : path.join(repo, "docs", "recovery");
 
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "findings.md"), content);
+  fs.writeFileSync(path.join(dir, local ? "findings.local.md" : "findings.md"), content);
 }
 
 function writeVerify(repo, name, evidence) {
@@ -149,8 +149,8 @@ test('a fixed finding is "proven" only when Fixed by names an ok verify run', (t
 
   writeVerify(repo, "green-verify.json", { ok: true });
   writeVerify(repo, "failed-verify.json", { ok: false });
-  writeVerify(repo, "red-at-base.json", { ok: true, redAtBase: { ok: false } });
-  writeVerify(repo, "red-at-base-ok.json", { ok: true, redAtBase: { ok: true } });
+  writeVerify(repo, "red-at-base-verify.json", { ok: true, redAtBase: { ok: false } });
+  writeVerify(repo, "red-at-base-ok-verify.json", { ok: true, redAtBase: { ok: true } });
 
   writeFindings(
     repo,
@@ -179,14 +179,14 @@ test('a fixed finding is "proven" only when Fixed by names an ok verify run', (t
 - State: fixed
 - Dimension: security
 - Severity: high
-- Fixed by: red-at-base.json
+- Fixed by: red-at-base-verify.json
 
 ### R-05 — Green and red at base
 
 - State: fixed
 - Dimension: security
 - Severity: high
-- Fixed by: red-at-base-ok.json
+- Fixed by: red-at-base-ok-verify.json
 `,
   );
 
@@ -234,18 +234,36 @@ test("a location whose file is gone or whose line is past the end is unresolved"
 - Dimension: security
 - Severity: low
 - Location: src/a.ts
+
+### R-05 — A range and a column inside the file
+
+- State: confirmed
+- Dimension: security
+- Severity: low
+- Location: src/a.ts:10-20, src/a.ts:12:5
+
+### R-06 — A range starting past the end
+
+- State: confirmed
+- Dimension: security
+- Severity: low
+- Location: src/a.ts:400-410
 `,
   );
 
   const output = statusText(repo);
 
-  assert.match(output, /unresolved location: R-01 \(src\/a\.ts:400\), R-03 \(src\/missing\.ts:1\)/);
+  assert.match(
+    output,
+    /unresolved location: R-01 \(src\/a\.ts:400\), R-03 \(src\/missing\.ts:1\), R-06 \(src\/a\.ts:400-410\)/,
+  );
 
   const data = statusJson(repo);
 
   assert.deepEqual(data.recovery.unresolvedLocations, [
     { id: "R-01", location: "src/a.ts:400" },
     { id: "R-03", location: "src/missing.ts:1" },
+    { id: "R-06", location: "src/a.ts:400-410" },
   ]);
 });
 
@@ -304,6 +322,12 @@ test("the local findings file wins for an id and a malformed block is reported",
 
 - Dimension: security
 - Severity: high
+
+### R03 — Id without its dash
+
+- State: confirmed
+- Dimension: security
+- Severity: high
 `,
   );
   writeFindings(
@@ -326,9 +350,70 @@ test("the local findings file wins for an id and a malformed block is reported",
   assert.equal(data.recovery.open.length, 0);
   assert.deepEqual(
     data.recovery.unreadable.map((entry) => entry.id),
-    ["R-02"],
-    "a block without a State is reported, never silently dropped",
+    ["R-02", null],
+    "a block without a State or an R-NN id is reported, never silently dropped",
   );
+  assert.match(data.recovery.unreadable[1].reason, /without an R-NN id/);
+
+  const output = statusText(repo);
+
+  assert.match(output, /Recovery — docs\/recovery\/findings\.md \+ \.coding-flow\/recovery\/findings\.local\.md/);
+});
+
+test("a findings.md under .coding-flow/recovery is not the local override", (t) => {
+  const repo = initRepo(t, "recover-status-local-name");
+  const dir = path.join(repo, ".coding-flow", "recovery");
+
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "findings.md"), "### R-01 — Wrong file\n\n- State: confirmed\n");
+
+  const data = statusJson(repo);
+
+  assert.equal("recovery" in data, false, "only findings.local.md is read as the local dossier");
+});
+
+test("Fixed by proves nothing outside the runs directory or when one run covers two findings", (t) => {
+  const repo = initRepo(t, "recover-status-forged");
+
+  writeVerify(repo, "green-verify.json", { ok: true });
+  writeVerify(repo, "shared-verify.json", { ok: true });
+  writeVerify(repo, "green-review.json", { ok: true });
+  fs.mkdirSync(path.join(repo, "docs"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "docs", "fake-verify.json"), '{"ok":true}\n');
+
+  writeFindings(
+    repo,
+    `### R-01 — Escapes the runs directory
+
+- State: fixed
+- Fixed by: ../../docs/fake-verify.json
+
+### R-02 — Not a verify run
+
+- State: fixed
+- Fixed by: green-review.json
+
+### R-03 — Shares a run
+
+- State: fixed
+- Fixed by: shared-verify.json
+
+### R-04 — Shares the same run
+
+- State: fixed
+- Fixed by: shared-verify.json
+
+### R-05 — Its own green run
+
+- State: fixed
+- Fixed by: green-verify.json
+`,
+  );
+
+  const data = statusJson(repo);
+
+  assert.deepEqual(data.recovery.fixedProven, ["R-05"]);
+  assert.deepEqual(data.recovery.fixedClaimed, ["R-01", "R-02", "R-03", "R-04"]);
 });
 
 test("without docs/recovery the status output has no Recovery section", (t) => {

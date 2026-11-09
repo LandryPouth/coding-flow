@@ -40,7 +40,13 @@ const STALE_HISTORY_TEMP_MS = 24 * 60 * 60 * 1000;
 const RECOVERY_DIR = path.join("docs", "recovery");
 const RECOVERY_LOCAL_DIR = path.join(".coding-flow", "recovery");
 const FINDINGS_FILE = "findings.md";
+const FINDINGS_LOCAL_FILE = "findings.local.md";
 const FINDINGS_HEADING = /^###\s+(R-[0-9]+)\s*(?:[—–-]\s*)?(.*)$/;
+// A level-3 heading that looks like a finding but has no `R-NN` id: reported as
+// unreadable, so a typo never makes a finding vanish from `status`.
+const FINDINGS_HEADING_LOOSE = /^###\s+R(?:-|\d)/i;
+// `path:line`, `path:line-line` or `path:line:column`; only the first line is checked.
+const LOCATION_LINE = /^(.*?):(\d+)(?:[-:]\d+)?$/;
 const OPEN_STATES = new Set(["suspected", "confirmed", "reproduced"]);
 const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
 const FINDING_FIELDS = new Set([
@@ -896,6 +902,12 @@ function parseFindings(content) {
       continue;
     }
 
+    if (FINDINGS_HEADING_LOOSE.test(line.trim())) {
+      close();
+      unreadable.push({ id: null, title: line.trim().replace(/^###\s+/, ""), reason: "heading without an R-NN id" });
+      continue;
+    }
+
     if (!current) {
       continue;
     }
@@ -943,7 +955,7 @@ function readFindingsFile(file) {
 // the fuller local block once it is there.
 function readFindings(root) {
   const tracked = readFindingsFile(path.join(root, RECOVERY_DIR, FINDINGS_FILE));
-  const local = readFindingsFile(path.join(root, RECOVERY_LOCAL_DIR, FINDINGS_FILE));
+  const local = readFindingsFile(path.join(root, RECOVERY_LOCAL_DIR, FINDINGS_LOCAL_FILE));
   const byId = new Map();
 
   for (const block of tracked.blocks) {
@@ -977,7 +989,7 @@ function isOpen(finding) {
 // as it is now, is a trace that no longer resolves — reported, because a finding
 // citing code that moved is exactly the rot `status` exists to catch.
 function isUnresolvedLocation(root, location) {
-  const match = /^(.*):(\d+)$/.exec(location);
+  const match = LOCATION_LINE.exec(location);
   const relativePath = (match ? match[1] : location).replace(/\\/g, "/");
   const absolute = path.join(root, relativePath);
 
@@ -1002,11 +1014,13 @@ function isUnresolvedLocation(root, location) {
 
 // The named verify run's evidence, `ok` and (once story 14-03 lands) red-at-base
 // included. Only the tool may call a fix proven: the agent writes `State: fixed`,
-// a green, red-at-base verify linked by `Fixed by:` is what makes it true.
+// a green, red-at-base verify linked by `Fixed by:` is what makes it true. The
+// name must be a bare verify file name: `../` would reach a file outside
+// `.coding-flow/runs/`, which the guard does not protect, and forge the proof.
 function isFixedProven(root, finding) {
   const name = finding["fixed by"];
 
-  if (!name) {
+  if (!name || path.basename(name) !== name || !name.endsWith("-verify.json")) {
     return false;
   }
 
@@ -1061,12 +1075,22 @@ function collectRecovery(root = cwd, { today = new Date().toISOString().slice(0,
   const acceptedNoRevisit = [];
   const overdue = [];
 
+  // One finding per fix branch: a run named by several fixed findings proves none
+  // of them, or one green run could be pasted under every block.
+  const runUses = new Map();
+  for (const finding of read.findings) {
+    if (String(finding.state || "").toLowerCase() === "fixed" && finding["fixed by"]) {
+      runUses.set(finding["fixed by"], (runUses.get(finding["fixed by"]) || 0) + 1);
+    }
+  }
+
   for (const finding of read.findings) {
     const state = String(finding.state || "").toLowerCase();
     counts[state] = (counts[state] || 0) + 1;
 
     if (state === "fixed") {
-      (isFixedProven(root, finding) ? fixedProven : fixedClaimed).push(finding.id);
+      const shared = runUses.get(finding["fixed by"]) > 1;
+      (!shared && isFixedProven(root, finding) ? fixedProven : fixedClaimed).push(finding.id);
     }
 
     if (isOpen(finding)) {

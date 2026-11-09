@@ -101,8 +101,8 @@ with the reason — never as "fine".
 
 ### 4. Write the dossier
 
-Create `docs/recovery/` with these two files (plus `findings.local.md` when the
-repository is public).
+Create `docs/recovery/` with these two files (plus
+`.coding-flow/recovery/findings.local.md` when the repository is public).
 
 **`map.md`** — entry points, trust boundaries, data stores, external calls and
 critical flows, each with a `path:line`. Short: a map to decide with, not
@@ -175,8 +175,9 @@ Fix one finding per branch, never several. Write the test that demonstrates the
 finding first and run it to see it fail; then fix; then run a story-less
 `ai-flow verify`. When that verify is green, set the block to `State: fixed` and
 add `- Fixed by: <the run file name>` (the `2026-…-verify.json` under
-`.coding-flow/runs/`). `status` follows that link and calls the fix **proven**;
-a `State: fixed` without it stays **claimed**. A red verify leaves the block
+`.coding-flow/runs/`, bare name, no path). `status` follows that link and calls
+the fix **proven**; a `State: fixed` without it, or whose run another finding
+also names, stays **claimed**. A red verify leaves the block
 open. A security finding gets `/flow-review` with Security Deep before ship.
 Red-at-base proof and refactor claims arrive with later stories; until then this
 is a claim, not stronger than one.

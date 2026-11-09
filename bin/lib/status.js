@@ -334,7 +334,11 @@ function recoveryCounts(counts) {
 }
 
 function printRecovery(recovery) {
-  log("Recovery — docs/recovery/findings.md");
+  const sources = [
+    recovery.files.tracked ? "docs/recovery/findings.md" : null,
+    recovery.files.local ? ".coding-flow/recovery/findings.local.md" : null,
+  ].filter(Boolean);
+  log(`Recovery — ${sources.join(" + ")}`);
 
   const counts = recoveryCounts(recovery.counts);
   const total = Object.values(recovery.counts).reduce((sum, count) => sum + count, 0);
