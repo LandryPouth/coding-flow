@@ -407,7 +407,9 @@ function findDirectories(dir, predicate, maxDepth = 3, depth = 0) {
 // "fail": `ok 395 - verify in an uninitialised directory fails cleanly` is a
 // pass, and a naive /fail/ filter promotes it to the top of a bug report while
 // burying the failure it was supposed to surface.
-const PASSING_LINE = /^\s*(?:ok\b|✓|√|PASS\b|# Subtest:|\d+\s*passing\b)/i;
+// `✔` is node:test's spec reporter, which was missing: its passes were read as
+// failures whenever their name said "fails".
+const PASSING_LINE = /^\s*(?:ok\b|✓|✔|√|PASS\b|# Subtest:|\d+\s*passing\b)/i;
 
 // Counters are not failures either, but `# fail 1` carries the only count in a
 // TAP summary, so it stays — unless it reports zero.
@@ -417,13 +419,20 @@ const ZERO_COUNTER = /^\s*#?\s*(?:fail|failing|failures?|errors?)\s*[:=]?\s*0\s*
 // the one line that names the broken test — `not ok 396 - the cart totals VAT`
 // — was dropped from every report while the assertion under it survived. It is
 // anchored, because "not ok" in the middle of a sentence is prose.
-const FAILURE_SIGNAL = /^\s*not ok\b|error|fail|✕|✗|✘|assert|expected|exception|cannot|not found/i;
+const FAILURE_SIGNAL = /^\s*not ok\b|error|fail|✕|✖|✗|✘|assert|expected|exception|cannot|not found/i;
+
+// The lines that say WHICH test failed and where: TAP's `not ok`, a runner's
+// cross (`✖` is node:test's spec reporter), the spec summary's `test at
+// file:line`. An assertion that dumps an object matches FAILURE_SIGNAL on every
+// other line, and once filled the budget alone — the incident left a red verify
+// that named no test. These are evicted last.
+const NAMING_LINE = /^\s*(?:not ok\b|[✕✖✗✘]\s|test at \S+:\d+)/;
 
 const MAX_FAILURE_LINES = 12;
 const MAX_FAILURE_LINE_CHARS = 500;
 
 function looksLikeFailure(line) {
-  return FAILURE_SIGNAL.test(line) && !PASSING_LINE.test(line) && !ZERO_COUNTER.test(line);
+  return NAMING_LINE.test(line) || (FAILURE_SIGNAL.test(line) && !PASSING_LINE.test(line) && !ZERO_COUNTER.test(line));
 }
 
 // Lines that name a failure, in order, bounded in both count and width.
@@ -441,13 +450,22 @@ function selectFailureLines(text, { limit = MAX_FAILURE_LINES } = {}) {
       continue;
     }
 
-    kept.push(line.trim().slice(0, MAX_FAILURE_LINE_CHARS));
+    const entry = line.trim().slice(0, MAX_FAILURE_LINE_CHARS);
+    // The spec reporter prints each failing test twice (inline, then in its
+    // summary): the second copy would only spend the budget.
+    if (NAMING_LINE.test(entry) && kept.includes(entry)) {
+      continue;
+    }
+    kept.push(entry);
 
     // Keep the LAST `limit` matches. A suite that fails 200 times usually has
     // one cause, and the closing failures sit nearest the summary a reader
-    // recognises — the opening ones are as likely to be collateral.
+    // recognises — the opening ones are as likely to be collateral. A line that
+    // names a test goes only after every older line that does not, and the
+    // line just read is never the one dropped.
     if (kept.length > limit) {
-      kept.shift();
+      const other = kept.findIndex((held, i) => i < kept.length - 1 && !NAMING_LINE.test(held));
+      kept.splice(other === -1 ? 0 : other, 1);
     }
   }
 
