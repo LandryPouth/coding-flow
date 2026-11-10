@@ -9,8 +9,18 @@ const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
-const { DEFAULT_REPORT_PATHS } = require("./coverage");
 const { readJson, writeJson } = require("./util");
+
+// Where coverage tools put their output, in the order we trust them. Not
+// configurable by accident: `coverageReports` in harness.json overrides it.
+const DEFAULT_REPORT_PATHS = [
+  "coverage/lcov.info",
+  "coverage/lcov/lcov.info",
+  "lcov.info",
+  "coverage/coverage-final.json",
+  "coverage/coverage.json",
+  ".coverage/lcov.info",
+];
 
 // `root` defaults to this module's own process-bound `cwd` (the overwhelming
 // majority of call sites — `verify`, `check`, `preflight` all run in-process
@@ -371,6 +381,7 @@ function ensureHarnessConfig({ dryRun = false } = {}) {
 }
 
 module.exports = {
+  DEFAULT_REPORT_PATHS,
   harnessConfigPath,
   harnessRunsDir,
   defaultSecretPatterns,

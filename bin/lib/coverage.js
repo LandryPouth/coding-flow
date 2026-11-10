@@ -19,17 +19,8 @@ const fs = require("fs");
 const path = require("path");
 
 const { normalizePortable, readJson } = require("./util");
-
-// Where coverage tools put their output, in the order we trust them. Not
-// configurable by accident: `coverageReports` in harness.json overrides it.
-const DEFAULT_REPORT_PATHS = [
-  "coverage/lcov.info",
-  "coverage/lcov/lcov.info",
-  "lcov.info",
-  "coverage/coverage-final.json",
-  "coverage/coverage.json",
-  ".coverage/lcov.info",
-];
+// Defined with the harness defaults, so the guard reads them without this module.
+const { DEFAULT_REPORT_PATHS } = require("./harness-config");
 
 // --- LCOV -----------------------------------------------------------------
 //
