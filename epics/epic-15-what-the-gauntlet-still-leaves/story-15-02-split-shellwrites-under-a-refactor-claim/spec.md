@@ -35,8 +35,9 @@ refactor the tool proves with its own `--claim refactor`.
       true }` and the coverage tier `verified`.
 - [x] `test/layering.test.js` lists `shell-writes` as core; it requires no
       module but `node:*` (pure).
-- [x] `scripts/check-function-size.js` passes on the diff; the largest
-      function in `shell-writes.js` is ≤ 80 lines.
+- [x] verify's `complexity-grew` check (13-06's ratchet, enforced: max 80
+      lines, CRAP 30) passes on the diff; the largest function in
+      `shell-writes.js` is ≤ 80 lines.
 - [x] Every DOGFOODING row and test about the guard behaves identically
       (no test file modified in the refactor commit — the claim checks it).
 - [x] The independent review (STRICT) finds no behavior change; its
@@ -74,9 +75,9 @@ refactor the tool proves with its own `--claim refactor`.
   `Coverage: verified`: 100 % of the 775 added lines executed. `complexity-grew`
   ran enforced with no item. Largest function in `shell-writes.js`:
   `splitSegments`, 80 lines, moved verbatim, CRAP 25. `shellWrites` went from
-  331 lines / CRAP 86 to 37 / 9. There is no `scripts/check-function-size.js`:
-  the 13-06 ratchet runs inside verify (`complexity-grew`), and that is the
-  check this criterion reads.
+  331 lines / CRAP 86 to 37 / 9. The criterion first named
+  `scripts/check-function-size.js`, which no longer exists: the 13-06 ratchet
+  runs inside verify (`complexity-grew`), and the criterion now names it.
 - **Independent review** (fresh agent, adversarial, handed the diff and this
   contract): no behavior change. A differential run of old vs new compared
   229,276 `shellWrites` calls and 75,423 `decide()` calls (≈80 verb forms ×
