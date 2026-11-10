@@ -55,3 +55,11 @@ with `git checkout`):
   `bin/lib/shell-writes.js` unlisted in the lcov. That stub came from 15-02's
   `fee15eb`, committed to `develop` mid-run; this story does not touch it.
   Left `in-progress` until that is settled.
+- 19:06 (review) — NOT PROVEN again, same cause. The story has no worktree,
+  so its scope is all of `develop` since the fork point `4c7280c` (26 commits,
+  96 files), not its own commit `948cf54`. That scope also carries the
+  "1 deleted test" warning: `test/check-function-size.test.js`, deleted by
+  14-07's `57fd789` and documented in its spec. Both mutants re-run on a
+  scratch copy: killed (tests 26 and 27), 48/48 green without them. Review
+  verdict: pass, no fix in the diff. Settles once 15-02 fills
+  `shell-writes.js`.
