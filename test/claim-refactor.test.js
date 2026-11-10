@@ -880,3 +880,58 @@ test('run names a failed claim even when the coverage gate also blocks', (t) => 
   assert.match(res.output, /\[no proof\]/);
   assert.match(res.output, /refactor claim: 1 existing test file\(s\) changed: test\/lib\.test\.js/);
 });
+
+// Both promises on one verify (14-03 with 14-04): each one alone can fail the
+// run, and a proof made without one cannot stand in for a run that asks for both.
+const RED_AT_BASE = { version: 1, redAtBase: { command: 'node --test --test-reporter=tap {files}' } };
+
+function runBoth(dir, args) {
+  const env = { ...process.env };
+  // The fixture's own `node --test` would skip its files inside the outer suite.
+  delete env.NODE_TEST_CONTEXT;
+
+  try {
+    return { code: 0, output: execFileSync(process.execPath, [CLI, ...args], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env }) };
+  } catch (err) {
+    return { code: err.status ?? 1, output: `${err.stdout || ''}${err.stderr || ''}` };
+  }
+}
+
+test('a held claim does not carry a fix that was never red at base', (t) => {
+  const dir = repo(t, 'claim-and-red', { harness: RED_AT_BASE });
+  refactor(dir);
+
+  const res = runBoth(dir, ['verify', '--claim', 'refactor', '--red-at-base']);
+
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /the fix is not proven/);
+
+  const evidence = latestVerify(dir);
+  assert.equal(evidence.claim.ok, true);
+  assert.equal(evidence.redAtBase.ok, false);
+  assert.equal(evidence.ok, false);
+});
+
+test('a red at base does not carry a refactor claim that fails, nor reuse a proof made without it', (t) => {
+  const buggy = 'function add(a, b) { return a - b; }\nmodule.exports = { add };\n';
+  const dir = repo(t, 'red-and-claim', { harness: RED_AT_BASE, before: buggy, commands: ['node -e "process.exit(0)"'] });
+  const addingTest = "const test = require('node:test');\nconst assert = require('node:assert');\n" +
+    "const { add } = require('../src/lib');\ntest('adds', () => assert.equal(add(2, 3), 5));\n";
+  refactor(dir, { 'test/add.test.js': addingTest }, { after: 'function add(a, b) { return a + b; }\nmodule.exports = { add };\n' });
+
+  const alone = runBoth(dir, ['verify', '--red-at-base', '--json']);
+  assert.equal(alone.code, 0, alone.output);
+  assert.equal(JSON.parse(alone.output).redAtBase.ok, true);
+
+  const res = runBoth(dir, ['verify', '--claim', 'refactor', '--red-at-base']);
+
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /the refactor claim does not hold/);
+  assert.doesNotMatch(res.output, /reused/i);
+
+  const evidence = latestVerify(dir);
+  assert.equal(evidence.reused, undefined);
+  assert.equal(evidence.redAtBase.ok, true);
+  assert.equal(evidence.claim.ok, false);
+  assert.equal(evidence.ok, false);
+});
