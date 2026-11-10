@@ -50,8 +50,7 @@ s3
 
 s4
 └── s5
-
-s6
+    └── s6
 ```
 
 External prerequisites: `s2` needs 13-06 (size ratchet) and 14-04
@@ -59,6 +58,14 @@ External prerequisites: `s2` needs 13-06 (size ratchet) and 14-04
 boundary rule is reported); `s5` needs 14-03 (throwaway-worktree runner) and
 14-04 (its first consumer is a refactor claim). `s6` runs last, after
 everything else in epics 13–15 has landed.
+
+The tree cannot draw that last rule. The real shape is a join: every other
+story feeds `s6`, and `backbone.js` rejects a story with more than one parent
+(`docs/DOGFOODING.md`, 2026-11-10). So `s6` hangs under `s5`, the last story
+still open when this was corrected. `s1`–`s3` were already on `develop` by
+then. If `s4` says no-go, `s5` closes as "not built", and that releases `s6`.
+Until 2026-11-10, `s6` was drawn as a root, which told the tool it could
+start at once.
 
 ## Stories
 
