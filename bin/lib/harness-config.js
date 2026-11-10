@@ -218,6 +218,7 @@ function defaultPolicyGlobs() {
     "**/.c8rc*",
     "**/.nycrc*",
     "**/.dependency-cruiser.*",
+    "**/.importlinter*",
     "**/importlinter*",
     "**/pyproject.toml",
     "**/setup.cfg",

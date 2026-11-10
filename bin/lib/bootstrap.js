@@ -15,6 +15,7 @@ const path = require("path");
 const { cwd } = require("./context");
 const { log, toPortable, readJson, findDirectories } = require("./util");
 const { detectSecurityRecipes } = require("./security-recipes");
+const { detectQualityRecipes } = require("./quality-recipes");
 
 // Directories Coding Flow itself installs, plus the usual noise. They say nothing
 // about whether the repo holds code — and `init` runs the scan *after* laying
@@ -770,13 +771,7 @@ function formatScanMarkdown(scan) {
           "(only node's test runner is read: `node --test --test-reporter=tap {files}`).",
         ]),
     "",
-    "## Security Recipes",
-    "",
-    "Candidates for `validation.security` in `.coding-flow/config.json` — not declared by this scan.",
-    "",
-    ...(scan.securityRecipes || []).map((recipe) => `- ${recipe.tool}: \`${recipe.command}\``),
-    ...((scan.securityRecipes || []).length === 0 ? ["- none detected"] : []),
-    "",
+    ...formatRecipeSections(scan),
     "## Recommended Next Prompt",
     "",
     "```txt",
@@ -784,6 +779,33 @@ function formatScanMarkdown(scan) {
     "```",
     "",
   ].join("\n");
+}
+
+function recipeSection(heading, intro, lines) {
+  return [heading, "", intro, "", ...(lines.length === 0 ? ["- none detected"] : lines), ""];
+}
+
+function formatRecipeSections(scan) {
+  return [
+    ...recipeSection(
+      "## Security Recipes",
+      "Candidates for `validation.security` in `.coding-flow/config.json` — not declared by this scan.",
+      (scan.securityRecipes || []).map((recipe) => `- ${recipe.tool}: \`${recipe.command}\``),
+    ),
+    ...recipeSection(
+      "## Quality Recipes",
+      "Boundary and complexity checks for `validation.quality` — not declared by this scan. Read from the root manifests only: a workspace package needs its own.",
+      (scan.qualityRecipes || []).map(formatQualityRecipe),
+    ),
+  ];
+}
+
+function formatQualityRecipe(recipe) {
+  // A present config is not a declared check: the command stays on the line.
+  const how = [recipe.command && `\`${recipe.command}\``, recipe.note].filter(Boolean).join(" ");
+  return recipe.present
+    ? `- ${recipe.tool} (${recipe.kind}): present (\`${recipe.present}\`) — ${how}`
+    : `- ${recipe.tool} (${recipe.kind}): ${how}`;
 }
 
 const ECOSYSTEM_LABELS = { go: "Go", rust: "Rust", python: "Python", java: "Java" };
@@ -898,17 +920,19 @@ function printProjectScanSummary(scan, { dryRun = false } = {}) {
   );
 }
 
-// Scanners worth declaring in validation.security: suggested by the explicit
-// scan, never written, and not computed on every `init`.
-function withSecurityRecipes(scan) {
+// Scanners worth declaring in validation.security, and boundary/complexity
+// checks for validation.quality: suggested by the explicit scan, never written,
+// and not computed on every `init`.
+function withRecipes(scan) {
   return {
     ...scan,
     securityRecipes: detectSecurityRecipes(cwd).map(({ tool, ecosystem, command }) => ({ tool, ecosystem, command })),
+    qualityRecipes: detectQualityRecipes(cwd),
   };
 }
 
 function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
-  const scan = withSecurityRecipes(scanProject());
+  const scan = withRecipes(scanProject());
 
   // --json is the machine path (skills, CI): it returns the data and writes
   // nothing. The document is for humans who explicitly asked for one.
@@ -969,6 +993,11 @@ function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
 
   if (scan.securityRecipes.length > 0) {
     log(`Security recipes for validation.security: ${scan.securityRecipes.map((recipe) => recipe.tool).join(", ")}.`);
+  }
+
+  if (scan.qualityRecipes.length > 0) {
+    const label = (recipe) => (recipe.present ? `${recipe.tool} (present)` : recipe.tool);
+    log(`Quality recipes for validation.quality: ${scan.qualityRecipes.map(label).join(", ")}.`);
   }
 
   log("");

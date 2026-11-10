@@ -113,6 +113,31 @@ dependency structure goes beyond story order — any branching or merging. For a
 plain chain the Backbone already carries the order; omit the tree rather than
 drawing a straight line.
 
+## Boundaries (when the epic adds a module)
+
+An epic that adds a module — a new top-level package, layer or bounded area —
+records the dependencies it creates in `index.md`, one line each, under the
+Backbone:
+
+```md
+## Boundaries
+
+- allowed: `billing` → `domain`
+- forbidden: `billing` → `ui`
+- forbidden: `domain` → the database client
+
+approved by: <human name>
+```
+
+A boundary is a decision, so a human makes it: write the lines, show them to the
+user, and record the name they give in `approved by:`. Never fill it in yourself —
+the tool cannot know who is human, so the name is the record. Then point at the
+check that enforces it in the project's own tool: `ai-flow bootstrap --scan
+--json` lists `qualityRecipes` (dependency-cruiser, import-linter, ArchUnit,
+ESLint `complexity`) and says which config is already present. A story that
+writes or edits that config carries the rule; loosening it later is reported as
+`policy-changed`. An epic that adds no module omits the section.
+
 ## Story File Contract
 
 The shape follows the story's size. Leave the `## Result` section empty for
@@ -210,6 +235,8 @@ implementation?*
   ask the highest-leverage follow-up, surface the missing decision to the user as
   a labeled question, or cut scope until it no longer matters. Record what is
   blocking.
+- An epic that adds a module is **`not ready`** while its `## Boundaries` section
+  is missing or has no `approved by:` name — whatever else is settled.
 
 Record the verdict — and the blocking item when `not ready` — in the epic
 `index.md`, so `/flow-run` starts from a plan explicitly judged ready, not from
@@ -264,6 +291,8 @@ Before reporting the plan as done:
       oversized epic.
 - [ ] Any story dependency tree written has its edges backed by real
       build-on relationships — checked, not assumed.
+- [ ] An epic that adds a module has a `## Boundaries` section carrying an
+      `approved by:` name the user gave.
 - [ ] No implementation happened. Planning writes story files; `/flow-run` writes
       code.
 

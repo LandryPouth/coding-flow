@@ -127,6 +127,28 @@ test('no policy file in the diff: no signal, and strict stays green', (t) => {
   assert.equal(res.json.contrary.failures.length, 0);
 });
 
+test('a boundary checker config is a policy file by default', (t) => {
+  // Loosening a dependency rule is how a boundary check passes by being moved.
+  const { defaultPolicyGlobs } = require('../bin/lib/harness-config');
+  for (const glob of ['**/.dependency-cruiser.*', '**/.importlinter*', '**/importlinter*', '**/eslint.config.*']) {
+    assert.ok(defaultPolicyGlobs().includes(glob), glob);
+  }
+
+  const dir = repo(t, 'pc-boundary');
+  write(dir, '.dependency-cruiser.cjs', 'module.exports = { forbidden: [] };\n');
+  write(dir, '.importlinter', '[importlinter]\nroot_package = app\n');
+  write(dir, 'importlinter.ini', '[importlinter]\nroot_package = app\n');
+  write(dir, 'eslint.config.js', 'module.exports = [];\n');
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.policyChanged, [
+    '.dependency-cruiser.cjs',
+    '.importlinter',
+    'eslint.config.js',
+    'importlinter.ini',
+  ]);
+});
+
 test('a policyGlobs override replaces the defaults', (t) => {
   const dir = repo(t, 'pc-glob');
   editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, policyGlobs: ['custom.rules'] }));

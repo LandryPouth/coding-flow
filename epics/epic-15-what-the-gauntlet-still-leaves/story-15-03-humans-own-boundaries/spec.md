@@ -27,16 +27,36 @@ in `RULES.md` that agents ignore.
 
 ## Acceptance Criteria
 
-- [ ] `/flow-plan` SKILL.md carries the section format and the readiness
+- [x] `/flow-plan` SKILL.md carries the section format and the readiness
       rule; its eval case gains a prompt ("plan the billing module; it must
       not depend on the UI"); `plugin check` green.
-- [ ] Given a throwaway Node project with `src/`, then `bootstrap --scan
+- [x] Given a throwaway Node project with `src/`, then `bootstrap --scan
       --json` lists the dependency-cruiser and ESLint recipes; given an
       existing `.dependency-cruiser.js`, it reports it as present instead.
-- [ ] Given a Python project, the import-linter recipe; given Java (Maven),
+- [x] Given a Python project, the import-linter recipe; given Java (Maven),
       ArchUnit.
-- [ ] `policyGlobs` defaults include `.dependency-cruiser.*`, `.importlinter`
+- [x] `policyGlobs` defaults include `.dependency-cruiser.*`, `.importlinter`
       / `importlinter.ini`, and an ESLint config (pinned by a test reading
       the defaults).
 
+## Status: done
+
 ## Result
+
+- `bin/lib/quality-recipes.js` (new, same contract as `security-recipes.js`):
+  per root manifest, Node → dependency-cruiser (`npx depcruise src --config`,
+  `.` without `src/`) and ESLint complexity; Python → import-linter
+  (`lint-imports`); Java → ArchUnit (no command: a test the suite runs). Each
+  recipe carries `present: <file>` when its config exists — a
+  `[tool.importlinter]` section in `pyproject.toml` / `[importlinter]` in
+  `setup.cfg`, or an ArchUnit dependency in `pom.xml` / `build.gradle*`, count; an ESLint config
+  only when it names both rules (`package.json` through `eslintConfig`) — a
+  bare ESLint config is not the complexity check (review P2).
+- `bootstrap --scan`: `qualityRecipes` in JSON, a `## Quality Recipes` section
+  in the document (the command kept on a `present` line; root manifests only,
+  said), one summary line. Never writes the config.
+- `policyGlobs`: `.dependency-cruiser.*`, `importlinter*` and ESLint were
+  already defaults; `**/.importlinter*` added (the dotfile was not matched).
+- `/flow-plan`: `## Boundaries` section format, the readiness rule, a
+  verification box; eval prompt added. `/flow-recover`: architecture inventory
+  reads the `## Boundaries` lines.

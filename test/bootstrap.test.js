@@ -748,3 +748,106 @@ test('no recipe for a tool that could only fail or is not really installed', (t)
 
   assert.deepEqual(scanJsonWithPath(dir, [bin]).securityRecipes, []);
 });
+
+test('a Node project with src/ gets the dependency-cruiser and ESLint recipes, never written', (t) => {
+  const dir = project(t, 'quality-recipes-node');
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'app' }));
+
+  const recipes = scanJsonWithPath(dir, []).qualityRecipes;
+  assert.deepEqual(
+    recipes.map(({ tool, kind, command, present }) => ({ tool, kind, command, present })),
+    [
+      { tool: 'dependency-cruiser', kind: 'boundary', command: 'npx depcruise src --config', present: null },
+      { tool: 'eslint', kind: 'complexity', command: 'npx eslint .', present: null },
+    ],
+  );
+  assert.match(recipes[1].note, /complexity.*max-lines-per-function/);
+  assert.ok(!fs.existsSync(path.join(dir, '.coding-flow', 'config.json')), 'the scan never writes the config');
+});
+
+test('an existing dependency-cruiser config is reported present instead of suggested', (t) => {
+  const dir = project(t, 'quality-recipes-present');
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'app' }));
+  fs.writeFileSync(path.join(dir, '.dependency-cruiser.js'), 'module.exports = {};\n');
+
+  const recipes = scanJsonWithPath(dir, []).qualityRecipes;
+  assert.equal(recipes.find((recipe) => recipe.tool === 'dependency-cruiser').present, '.dependency-cruiser.js');
+  assert.equal(recipes.find((recipe) => recipe.tool === 'eslint').present, null);
+
+  assert.equal(run(dir, ['bootstrap', '--scan']).code, 0);
+  const doc = fs.readFileSync(path.join(dir, SCAN_FILE), 'utf8');
+  assert.match(doc, /## Quality Recipes/);
+  assert.match(doc, /- dependency-cruiser \(boundary\): present \(`\.dependency-cruiser\.js`\) — `npx depcruise src --config`/);
+  assert.match(doc, /root manifests only/);
+  assert.match(doc, /- eslint \(complexity\): `npx eslint \.` with the `complexity`/);
+});
+
+test('a Python project gets import-linter, and a [tool.importlinter] section counts as present', (t) => {
+  const dir = pythonProject(t, 'quality-recipes-python');
+
+  const suggested = scanJsonWithPath(dir, []).qualityRecipes;
+  assert.deepEqual(
+    suggested.map(({ tool, ecosystem, command, present }) => ({ tool, ecosystem, command, present })),
+    [{ tool: 'import-linter', ecosystem: 'python', command: 'lint-imports', present: null }],
+  );
+
+  fs.appendFileSync(path.join(dir, 'pyproject.toml'), '\n[tool.importlinter]\nroot_package = "demo"\n');
+  assert.equal(scanJsonWithPath(dir, []).qualityRecipes[0].present, 'pyproject.toml');
+});
+
+test('a Maven project gets ArchUnit as a test the suite runs', (t) => {
+  const dir = project(t, 'quality-recipes-java');
+  fs.writeFileSync(path.join(dir, 'pom.xml'), '<project><artifactId>app</artifactId></project>\n');
+
+  const [recipe] = scanJsonWithPath(dir, []).qualityRecipes;
+  assert.equal(recipe.tool, 'archunit');
+  assert.equal(recipe.kind, 'boundary');
+  assert.equal(recipe.command, null);
+  assert.equal(recipe.present, null);
+
+  fs.writeFileSync(
+    path.join(dir, 'pom.xml'),
+    '<project><dependencies><dependency><groupId>com.tngtech.archunit</groupId></dependency></dependencies></project>\n',
+  );
+  assert.equal(scanJsonWithPath(dir, []).qualityRecipes[0].present, 'pom.xml');
+});
+
+test('an ESLint config counts as the complexity check only when it names both rules', (t) => {
+  const dir = project(t, 'quality-recipes-eslint');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'app' }));
+  const eslint = () => scanJsonWithPath(dir, []).qualityRecipes.find((recipe) => recipe.tool === 'eslint').present;
+
+  fs.writeFileSync(path.join(dir, 'eslint.config.mts'), 'export default [{ rules: { complexity: ["error", 10] } }];\n');
+  assert.equal(eslint(), null, 'a config without max-lines-per-function is not the check');
+
+  fs.writeFileSync(
+    path.join(dir, 'eslint.config.mts'),
+    'export default [{ rules: { complexity: ["error", 10], "max-lines-per-function": ["error", 80] } }];\n',
+  );
+  assert.equal(eslint(), 'eslint.config.mts');
+});
+
+test('package.json counts for ESLint only through its eslintConfig key', (t) => {
+  const dir = project(t, 'quality-recipes-eslint-pkg');
+  const pkg = (extra) => fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'app', ...extra }));
+  const eslint = () => scanJsonWithPath(dir, []).qualityRecipes.find((recipe) => recipe.tool === 'eslint').present;
+
+  pkg({ scripts: { complexity: 'node report.js --max-lines-per-function' } });
+  assert.equal(eslint(), null);
+
+  pkg({ eslintConfig: { rules: { complexity: ['error', 10], 'max-lines-per-function': ['error', 80] } } });
+  assert.equal(eslint(), 'package.json');
+});
+
+test('a Gradle build with an ArchUnit dependency counts as present', (t) => {
+  const dir = project(t, 'quality-recipes-gradle');
+  fs.writeFileSync(path.join(dir, 'build.gradle.kts'), 'plugins { java }\n');
+  assert.equal(scanJsonWithPath(dir, []).qualityRecipes[0].present, null);
+
+  fs.writeFileSync(path.join(dir, 'build.gradle.kts'), 'dependencies { testImplementation("com.tngtech.archunit:archunit:1.3.0") }\n');
+  const [recipe] = scanJsonWithPath(dir, []).qualityRecipes;
+  assert.equal(recipe.tool, 'archunit');
+  assert.equal(recipe.present, 'build.gradle.kts');
+});

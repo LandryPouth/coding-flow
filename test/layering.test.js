@@ -30,7 +30,7 @@ const PURE = ['shell-writes'];
 // splitting out before it can be called core.
 const LAYER = [
   'doctor', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'recover',
-  'review', 'run', 'security-recipes', 'ship', 'skills', 'speckit', 'status', 'templates', 'worktree',
+  'quality-recipes', 'review', 'run', 'security-recipes', 'ship', 'skills', 'speckit', 'status', 'templates', 'worktree',
   'worktree-plan',
   // install, platform wiring and CLI plumbing: not needed to guard or prove
   'bootstrap', 'ci', 'codex-probe', 'codex-settings', 'commands', 'hook',
