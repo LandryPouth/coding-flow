@@ -258,11 +258,14 @@ function isUnattended() {
   return !(process.stdin.isTTY && process.stdout.isTTY);
 }
 
-function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env } = {}) {
+function runValidationCommand(
+  command,
+  { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env, cwd: runCwd = cwd, keepOutput = false } = {},
+) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
   const result = spawnSync(command, [], {
-    cwd,
+    cwd: runCwd,
     shell: true,
     encoding: "utf8",
     timeout: timeoutMs,
@@ -305,6 +308,11 @@ function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
     // only on a failure — a green run has nothing to name, and the evidence
     // ledger is append-only.
     ...(ok ? {} : { failureLines: selectFailureLines(`${result.stdout || ""}\n${result.stderr || ""}`) }),
+    // A signal kill has no exit status; the 1 above is a stand-in, not a result.
+    ...(result.signal ? { signal: result.signal } : {}),
+    // Only for a caller that reads it right away (red-at-base); never written
+    // to the evidence, which keeps the tails above.
+    ...(keepOutput ? { output: `${result.stdout || ""}\n${result.stderr || ""}` } : {}),
   };
 }
 

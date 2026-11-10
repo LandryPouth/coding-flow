@@ -339,8 +339,7 @@ function harnessVerify({
   policyChange = null,
   claim = null,
   base = null,
-  allowPlanCommands = false,
-  cleanEnv = false,
+  allowPlanCommands = false, cleanEnv = false, redAtBase = false,
 } = {}) {
   if (story !== null) {
     requireStoryScope(story);
@@ -411,7 +410,7 @@ function harnessVerify({
       storyDir: resolveStoryDir(story),
       commands: resolution.commands,
       timeouts: resolution.timeouts,
-      claimKind: claimKindOf(story, claim),
+      claimKind: claimKindOf(story, claim), redAtBase,
     });
 
     if (reusable) {
@@ -428,7 +427,7 @@ function harnessVerify({
     }
   }
 
-  const evidence = verifyStoryOnce({ story, exemption, policyChange, claim, allowPlanCommands, cleanEnv, announce: !json });
+  const evidence = verifyStoryOnce({ story, exemption, policyChange, claim, allowPlanCommands, cleanEnv, redAtBase, announce: !json });
 
   // A refusal executed nothing: it says who may run these commands, not whether the
   // code passes. Recording it would overwrite an earlier green proof and turn a
@@ -551,6 +550,7 @@ function harnessCommandInner({ commandArgs, getFlagValue, flags }) {
       base,
       allowPlanCommands: flags.has("--allow-plan-commands"),
       cleanEnv: flags.has("--clean-env"),
+      redAtBase: flags.has("--red-at-base"),
     });
   } else {
     fail(`unknown harness command "${subcommand}". Use init, preflight, check, verify, or evidence.`);

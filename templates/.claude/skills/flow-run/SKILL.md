@@ -258,6 +258,18 @@ work. Everything in STANDARD, plus:
 5. Broaden the review to the deep sections of `/flow-review` (security, tests,
    architecture) rather than the quick checklist.
 
+**A bug fix carries negative evidence.** When the story fixes a bug, commit the
+test and the fix, then run `ai-flow verify --story <dir> --red-at-base` as well
+as the ordinary verify. It is green only when the diff's test fails at the merge
+base and passes at HEAD; a test that already passes at base is `NOT PROVEN`, and
+so is one that never reached its tests at base (a missing module, a
+syntax error, a failed hook) or whose runner output is not read. Declare
+`redAtBase.command` in `.coding-flow/harness.json` as `node --test
+--test-reporter=tap {files}` (`bootstrap --scan` suggests it): only node's test
+runner is read, so a Jest, Vitest, Go or pytest bug fix is proven by the
+ordinary verify and the review's negative evidence. Both sides must be
+committed: the base side is the merge base and the other is HEAD.
+
 ## Context Policy
 
 Use the lightest context path that still lets the story ship in one focused pass.

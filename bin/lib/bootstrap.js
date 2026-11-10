@@ -161,6 +161,19 @@ function detectProjectPackageJson() {
   return { pkg, unreadable: false };
 }
 
+// A starting `redAtBase.command` for a Node project. It is a suggestion, not a
+// written policy: `verify --red-at-base` still fails with the example until the
+// project declares one in `.coding-flow/harness.json`. Only node's own test
+// runner is read; a project on Jest, Vitest or Mocha gets none, since its
+// suite would always be refused.
+function suggestRedAtBase(scan) {
+  if (scan.foreignStack || ["Vitest", "Jest", "Mocha"].some((name) => scan.detectedFrameworks.includes(name))) {
+    return null;
+  }
+
+  return scan.hasProjectPackageJson ? "node --test --test-reporter=tap {files}" : null;
+}
+
 // `rich`/`thin`/`empty` is the answer to "did the scan understand this project?".
 // `looksLikeCode` is the fallback for a stack no detector below covers at all.
 function classifyScan(scan) {
@@ -690,7 +703,7 @@ function scanProject() {
     recommendedNextPrompt: RECOMMENDED_NEXT_PROMPT,
   };
 
-  scan.classification = classifyScan(scan);
+  scan.classification = classifyScan(scan); scan.redAtBaseSuggestion = suggestRedAtBase(scan);
 
   return scan;
 }
@@ -739,6 +752,22 @@ function formatScanMarkdown(scan) {
     "",
     ...scan.testDirectories.map((name) => `- ${name}/`),
     ...(scan.testDirectories.length === 0 ? ["- none detected"] : []),
+    "",
+    "## Red At Base",
+    "",
+    ...(scan.redAtBaseSuggestion
+      ? [
+          `- Suggested \`redAtBase.command\`: \`${scan.redAtBaseSuggestion}\``,
+          "",
+          "Declare it in `.coding-flow/harness.json` so `ai-flow verify --red-at-base`",
+          "can prove a fix with a test that failed before it.",
+        ]
+      : [
+          "- No command detected for this stack.",
+          "",
+          "Declare `redAtBase.command` in `.coding-flow/harness.json` yourself",
+          "(only node's test runner is read: `node --test --test-reporter=tap {files}`).",
+        ]),
     "",
     "## Recommended Next Prompt",
     "",
@@ -912,6 +941,13 @@ function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
   } else if (!hasAnyRecognizedSignal(scan) && scan.looksLikeCode) {
     log("No recognized signal found in a repository that holds code — the detectors");
     log("cover JavaScript, Go, Rust, Python, and Java. Expect to fill the docs by hand.");
+  }
+
+  if (scan.redAtBaseSuggestion) {
+    log("");
+    log(
+      `Red at base: declare redAtBase.command as \`${scan.redAtBaseSuggestion}\` in .coding-flow/harness.json`,
+    );
   }
 
   log("");

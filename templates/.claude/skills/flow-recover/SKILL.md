@@ -224,18 +224,22 @@ A flow without `- Pinned by:` is not owned, however well it was explained.
 No command reads `ownership.md`: check by eye that each `- Pinned by:` path
 exists and each `- Entry:` resolves.
 
-## Fix mode (minimal for now)
+## Fix mode
 
 Fix one finding per branch, never several. Write the test that demonstrates the
-finding first and run it to see it fail; then fix; then run a story-less
-`ai-flow verify`. When that verify is green, set the block to `State: fixed` and
-add `- Fixed by: <the run file name>` (the `2026-…-verify.json` under
-`.coding-flow/runs/`, bare name, no path). `status` follows that link and calls
-the fix **proven**; a `State: fixed` without it, or whose run another finding
-also names, stays **claimed**. A red verify leaves the block
-open. A security finding gets `/flow-review` with Security Deep before ship.
-Red-at-base proof arrives with a later story; until then this is a claim, not
-stronger than one.
+finding first and run it to see it fail; then fix. Commit the test and the fix,
+then run a story-less `ai-flow verify --red-at-base`. It runs the diff's test
+files against the merge base and HEAD in two throwaway worktrees, and is green
+only when the test failed before the fix and passes after. Declare the targeted
+command as `redAtBase.command` in `.coding-flow/harness.json` (`node --test
+--test-reporter=tap {files}`: only node's test runner is read); on another
+runner, a plain `ai-flow verify` proves the suite, not the red. When that verify
+is green, set the block to `State: fixed` and add `- Fixed by: <the run file
+name>` (the `2026-…-verify.json` under `.coding-flow/runs/`, bare name, no
+path). `status` follows that link and calls the fix **proven**; a `State: fixed`
+without it, or whose run another finding also names, stays **claimed**. A red
+verify leaves the block open. A security finding gets `/flow-review` with
+Security Deep before ship.
 
 A finding too large for one change is handed to `/flow-plan` as an epic. Recovery
 does not grow a planner.

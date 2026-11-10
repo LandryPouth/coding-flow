@@ -127,8 +127,11 @@ behavior under test; flaky or order-dependent tests.
 **Deep (critical flows, complex logic, release-sensitive, flaky suites):** run the
 suite yourself via `ai-flow verify` and read the evidence. For each critical
 criterion require demonstrated **negative evidence** — breaking the behavior makes the
-guarding test fail for the expected reason, restoring it makes it pass. Absent that,
-treat the coverage as unproven regardless of a green run. Block on: risky logic with
+guarding test fail for the expected reason, restoring it makes it pass. When the change
+fixes a bug and `verify --red-at-base` was run, read `redAtBase` in the evidence: `ok`
+with `baseExit ≠ 0` and `headExit = 0`. A test that passes at base, or one that fails
+there only because it never reached its tests (a missing module, a syntax or build
+error), is not negative evidence. Absent that, treat the coverage as unproven regardless of a green run. Block on: risky logic with
 no test; permission/security behavior with no test; a critical journey with no
 E2E/manual evidence; validation commands that failed without documented cause.
 

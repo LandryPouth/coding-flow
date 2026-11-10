@@ -63,12 +63,49 @@ function formatLineRanges(lines) {
   return `lines ${ranges.join(", ")} not executed`;
 }
 
+// Only when it failed: a held red-at-base is printed with the passing verdict.
+function printFailedRedAtBase(evidence) {
+  if (evidence.redAtBase && !evidence.redAtBase.ok) {
+    printRedAtBase(evidence.redAtBase);
+  }
+}
+
+// The fix-specific proof: what ran, where, and why it did or did not hold.
+// Printed on success too — the point of the flag is that the negative evidence
+// becomes a recorded fact, not a sentence the author wrote.
+function printRedAtBase(red) {
+  if (!red) {
+    return;
+  }
+
+  const files = Array.isArray(red.files) ? red.files : [];
+  const base = red.base ? red.base.slice(0, 7) : "the merge base";
+
+  if (red.ok) {
+    log(
+      `  Red at base: ok — ${files.length} test file${files.length === 1 ? "" : "s"} failed at ${base} ` +
+        `and passed at HEAD (${red.durationMs}ms).`,
+    );
+    return;
+  }
+
+  const first = String(red.reason || "the red-at-base check did not hold").split(/\r?\n/)[0];
+  log(`  Red at base: FAILED — ${first}`);
+
+  for (const line of String(red.reason || "").split(/\r?\n/).slice(1)) {
+    if (line.trim()) {
+      log(`    ${line}`);
+    }
+  }
+}
+
 function printVerify(evidence, outputPath) {
   const coverage = evidence.coverage || { required: false, ok: true };
   const coverageBlocked = evidence.commandsOk && !coverage.ok;
   const contrary = evidence.contrary || NO_CONTRARY;
   const contraryBlocked = evidence.commandsOk && coverage.ok && !contrary.ok;
   const claimBlocked = evidence.commandsOk && coverage.ok && evidence.claim && !evidence.claim.ok;
+  const redBlocked = evidence.commandsOk && coverage.ok && contrary.ok && evidence.redAtBase && !evidence.redAtBase.ok;
 
   if (evidence.refused) {
     log(`Harness verify REFUSED — ${evidence.refused}.`);
@@ -84,10 +121,12 @@ function printVerify(evidence, outputPath) {
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, coverage gate blocked.`);
     printCoverageBlocked(coverage);
     printClaimFailures(evidence.claim);
+    printFailedRedAtBase(evidence);
   } else if (claimBlocked) {
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the ${evidence.claim.kind} claim does not hold.`);
     printClaimFailures(evidence.claim);
     printContraryFailures(contrary);
+    printFailedRedAtBase(evidence);
     printOpenCriteria(evidence);
   } else if (evidence.ok) {
     const warnings = describeContraryWarnings(contrary);
@@ -122,21 +161,30 @@ function printVerify(evidence, outputPath) {
     // deleted tests is still three deleted tests, and the reader decides what that
     // means — this only refuses to let a good number hide it.
     printWeakenedTests(coverage);
+    printRedAtBase(evidence.redAtBase);
     printOpenCriteria(evidence);
     printContraryFailures(contrary);
     printClaimHeld(evidence.claim);
+  } else if (redBlocked) {
+    // The suite, the coverage gate and the contrary signals all held. What is
+    // missing is the fix-specific claim: the test does not demonstrate the bug.
+    log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the fix is not proven.`);
+    printRedAtBase(evidence.redAtBase);
+    printOpenCriteria(evidence);
   } else if (contraryBlocked) {
     // The commands passed and the coverage gate held. What stops this is the
     // project's own strictness reading the story and the diff against the verdict.
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the run contradicts itself.`);
     printContraryFailures(contrary);
     printWeakenedTests(coverage);
+    printFailedRedAtBase(evidence);
     printOpenCriteria(evidence);
     printClaimFailures(evidence.claim);
   } else {
     log("Harness verify FAILED.");
     printWeakenedTests(coverage);
     printClaimFailures(evidence.claim);
+    printFailedRedAtBase(evidence);
   }
 
   // Which commands ran, and why those. The silent fallback from a config that was

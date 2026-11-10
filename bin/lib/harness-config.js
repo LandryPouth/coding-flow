@@ -239,6 +239,14 @@ function defaultHarnessConfig() {
     testGlobs: defaultTestGlobs(),
     nonBehaviorGlobs: defaultNonBehaviorGlobs(),
     policyGlobs: defaultPolicyGlobs(),
+    // The targeted command `verify --red-at-base` runs in both throwaway
+    // worktrees, e.g. `node --test --test-reporter=tap {files}`. `{files}` is
+    // replaced by the diff's test paths. Empty means the flag fails with the
+    // example rather than guessing a runner.
+    redAtBase: {
+      command: null,
+      timeoutMs: null,
+    },
     // Paths that are output, not authorship (a regenerated client, an OpenAPI
     // dump): left out of coverage, risk, weakening and deleted-test signals.
     // Never consulted by the guard (`blockedPaths`) or by secret scanning.
@@ -318,6 +326,10 @@ function readHarnessConfig(root = cwd) {
       testGlobs: Array.isArray(config.testGlobs) ? config.testGlobs : defaults.testGlobs,
       ignoredPaths: Array.isArray(config.ignoredPaths) ? config.ignoredPaths : defaults.ignoredPaths,
       policyGlobs: Array.isArray(config.policyGlobs) ? config.policyGlobs : defaults.policyGlobs,
+      redAtBase:
+        config.redAtBase && typeof config.redAtBase === "object" && !Array.isArray(config.redAtBase)
+          ? { ...defaults.redAtBase, ...config.redAtBase }
+          : defaults.redAtBase,
       nonBehaviorGlobs: Array.isArray(config.nonBehaviorGlobs)
         ? config.nonBehaviorGlobs
         : defaults.nonBehaviorGlobs,

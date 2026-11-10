@@ -58,6 +58,7 @@ const {
   captureEnvironment,
 } = require("./validation-run");
 const { evaluateClaim } = require("./claim");
+const { runRedAtBase } = require("./red-at-base");
 
 function buildHarnessPreflight({ story = null } = {}) {
   const { config, exists } = readHarnessConfig();
@@ -264,7 +265,9 @@ function storyDigest(storyDir) {
 //
 // Conservative by construction: outside git, or when anything cannot be
 // determined, this returns null and the commands run for real.
-function findReusableVerify({ storyRelativePath, storyDir = null, commands, timeouts = {}, claimKind = null }) {
+function findReusableVerify({
+  storyRelativePath, storyDir = null, commands, timeouts = {}, claimKind = null, redAtBase = false,
+}) {
   const token = currentTreeToken(cwd);
   const mergeBase = currentDiffBase(cwd).mergeBase;
 
@@ -296,6 +299,13 @@ function findReusableVerify({ storyRelativePath, storyDir = null, commands, time
     const evidence = readJson(fullPath, null);
 
     if (!evidence || evidence.ok !== true || evidence.story !== storyRelativePath) {
+      continue;
+    }
+
+    // A proof made without the red-at-base check cannot stand in for one that
+    // asked for it: the two claims are different, and the stronger one is the
+    // question being asked now.
+    if (redAtBase && !(evidence.redAtBase && evidence.redAtBase.ok === true)) {
       continue;
     }
 
@@ -399,8 +409,7 @@ function verifyStoryOnce({
   skipCoverage = false,
   unattended = isUnattended(),
   allowPlanCommands = false,
-  cleanEnv = false,
-  announce = false,
+  cleanEnv = false, redAtBase = false, announce = false,
 } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
@@ -440,6 +449,7 @@ function verifyStoryOnce({
   const contrary = commandsOk && !skipCoverage
     ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria, policyChange })
     : NO_CONTRARY;
+  const red = redAtBase && !refused ? runRedAtBase({ config, ...(cleaned ? { env: cleaned.env } : {}) }) : null;
 
   // A claim narrows the green: the commands passing is not yet "behavior held".
   // Evaluated even on a red suite so the evidence says which promise failed;
@@ -476,7 +486,8 @@ function verifyStoryOnce({
     contraryPolicy: contraryPolicy(config),
     contrary,
     ...(claimResult ? { claim: claimResult } : {}),
-    ok: commandsOk && coverage.ok && contrary.ok && (!claimResult || claimResult.ok),
+    ...(red ? { redAtBase: red } : {}),
+    ok: commandsOk && coverage.ok && contrary.ok && (!claimResult || claimResult.ok) && (!red || red.ok),
     results,
   };
 }
