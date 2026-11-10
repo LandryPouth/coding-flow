@@ -693,3 +693,58 @@ test('init --force on a brownfield repo still writes no scan document', (t) => {
   assert.equal(forced.code, 0, forced.output);
   assert.equal(fs.existsSync(path.join(dir, SCAN_FILE)), false, '--force is not consent to new artifacts');
 });
+
+// --- security recipes --------------------------------------------------------
+
+function scanJsonWithPath(cwd, pathDirs) {
+  const output = execFileSync(process.execPath, [CLI, 'bootstrap', '--scan', '--json'], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PATH: pathDirs.join(path.delimiter) },
+  });
+  return JSON.parse(output);
+}
+
+test('a pnpm workspace gets the pnpm audit recipe, and gitleaks only when it is on PATH', (t) => {
+  const dir = project(t, 'security-recipes');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'mono', private: true }));
+  fs.writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n");
+  fs.writeFileSync(path.join(dir, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+  // A stale npm lockfile next to pnpm's must not add a second audit.
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), '{}');
+  const emptyBin = project(t, 'security-recipes-bin');
+
+  const without = scanJsonWithPath(dir, [emptyBin]);
+  const tools = without.securityRecipes.map((recipe) => recipe.tool);
+  assert.deepEqual(tools, ['pnpm-audit']);
+  assert.equal(without.securityRecipes[0].command, 'pnpm audit --prod --audit-level high');
+  assert.ok(!fs.existsSync(path.join(dir, '.coding-flow', 'config.json')), 'the scan never writes the config');
+
+  const gitleaks = path.join(emptyBin, 'gitleaks');
+  fs.writeFileSync(gitleaks, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(gitleaks, 0o755);
+
+  const withGitleaks = scanJsonWithPath(dir, [emptyBin]);
+  assert.deepEqual(withGitleaks.securityRecipes.map((recipe) => recipe.tool), ['pnpm-audit', 'gitleaks']);
+});
+
+test('the scan document lists the recipes as candidates', (t) => {
+  const dir = pythonProject(t, 'security-recipes-doc');
+  assert.equal(run(dir, ['bootstrap', '--scan']).code, 0);
+  const doc = fs.readFileSync(path.join(dir, SCAN_FILE), 'utf8');
+  assert.match(doc, /## Security Recipes/);
+  assert.match(doc, /- pip-audit: `pip-audit`/);
+});
+
+test('no recipe for a tool that could only fail or is not really installed', (t) => {
+  const dir = project(t, 'security-recipes-negative');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'mono', private: true }));
+  // pnpm audit needs pnpm-lock.yaml; the workspace file alone is not enough.
+  fs.writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n");
+  const bin = project(t, 'security-recipes-fake-bin');
+  fs.writeFileSync(path.join(bin, 'gitleaks'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });
+  fs.mkdirSync(path.join(bin, 'semgrep'));
+
+  assert.deepEqual(scanJsonWithPath(dir, [bin]).securityRecipes, []);
+});

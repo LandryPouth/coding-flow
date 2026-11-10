@@ -555,3 +555,37 @@ test("a monorepo's members are detected and every member's code is scanned", (t)
   );
 });
 
+
+test("the scan names the declared security commands and the recipes that apply but are not declared", (t) => {
+  const { repo } = initRepo(t, "recover-security-tools");
+  fs.writeFileSync(path.join(repo, "go.mod"), "module example.com/demo\n");
+  fs.writeFileSync(path.join(repo, "package.json"), JSON.stringify({ name: "demo" }));
+  fs.writeFileSync(path.join(repo, "package-lock.json"), "{}");
+  fs.mkdirSync(path.join(repo, ".coding-flow"));
+  fs.writeFileSync(
+    path.join(repo, ".coding-flow", "config.json"),
+    JSON.stringify({ validation: { commands: [], security: [{ command: "npm audit --omit=dev", timeoutMs: 60000 }] } }),
+  );
+  commitAll(repo, "init");
+
+  const result = run(repo, ["recover", "scan", "--json"]);
+  assert.equal(result.code, 0, result.output);
+  const tools = JSON.parse(result.output).securityTools;
+  assert.deepEqual(tools.declared, ["npm audit --omit=dev"]);
+  const undeclared = tools.undeclared.map((recipe) => recipe.tool);
+  assert.ok(undeclared.includes("govulncheck"), undeclared.join(", "));
+  assert.ok(!undeclared.includes("npm-audit"), undeclared.join(", "));
+
+  const text = run(repo, ["recover", "scan"]);
+  assert.match(text.output, /- declared: npm audit --omit=dev/);
+  assert.match(text.output, /- applies, not declared: govulncheck \(`govulncheck \.\/\.\.\.`\)/);
+});
+
+test("with no security command declared, the scan says no scanner runs in verify", (t) => {
+  const { repo } = initRepo(t, "recover-security-none");
+  fs.writeFileSync(path.join(repo, "app.js"), "module.exports = 1;\n");
+  commitAll(repo, "init");
+
+  const result = run(repo, ["recover", "scan"]);
+  assert.match(result.output, /- none declared — no scanner runs in verify/);
+});

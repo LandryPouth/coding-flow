@@ -145,6 +145,10 @@ function printReport(report, reportPath) {
     const proof = entry.ok && tier !== "not-required" ? ` — coverage: ${tier}` : "";
     log(`- [${label}] ${entry.story} (${entry.commandsFound} cmd(s), ${duration}ms)${proof}`);
 
+    for (const item of entry.results.filter((result) => result.outcome === "not-examined")) {
+      log(`    security not examined: ${item.command} — ${item.notExamined}`);
+    }
+
     // Every reason at once: naming only the first sends someone to fix it and
     // run again just to meet the next one.
     if (coverageBlocked) {
@@ -172,7 +176,9 @@ function printReport(report, reportPath) {
 
       if (firstFail) {
         // A command the harness could not observe is not a command that failed.
-        const why = firstFail.toolError
+        const why = firstFail.outcome === "not-examined"
+          ? `not examined (strict): ${firstFail.notExamined}`
+          : firstFail.toolError
           ? `tool error: ${firstFail.toolError}`
           : firstFail.timedOut
             ? "timeout"

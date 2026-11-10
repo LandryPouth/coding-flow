@@ -80,15 +80,17 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
   if (config.validation) {
     // Correctness (`commands`) and deterministic quality (`quality`) both flow
     // through the same executed-and-captured proof; a red quality command blocks
-    // exactly like a red test. Tests run first, then quality.
+    // exactly like a red test. Tests run first, then quality, then security.
     // `fresh`: the story's risk asks for tests that really ran, so the project's
     // cache-bypassing commands stand in for the usual ones when it declared any.
     const freshCommands = Array.isArray(config.validation.freshCommands) ? config.validation.freshCommands : [];
     const entries = (value) => (Array.isArray(value) ? value : []);
     const quality = entries(config.validation.quality);
+    const security = entries(config.validation.security);
     const declared = [
       ...(fresh && freshCommands.length > 0 ? freshCommands : entries(config.validation.commands)),
       ...quality,
+      ...security,
     ];
 
     if (declared.length > 0) {
@@ -108,11 +110,13 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
         return command;
       };
 
-      // `quality` is returned so a cached lint is not refused as stale tests.
+      // `quality` is returned so a cached lint is not refused as stale tests;
+      // `security` so a scanner that could not run is judged as not examined.
       return {
         source: "config",
         commands: declared.map(commandOf),
         quality: quality.map(commandOf),
+        security: security.map(commandOf),
         timeouts,
       };
     }
@@ -323,7 +327,73 @@ function commandTimeout(resolution, command) {
   return timeoutMs ? { timeoutMs } : {};
 }
 
+// A security scanner has three outcomes, not two. One that could not run — the
+// harness could not observe it, the binary is missing, it timed out, or it could
+// not reach its advisory database — found nothing because it looked at nothing:
+// that is "not examined", never a pass. Calling it a failure instead would teach
+// people to delete the command.
+//
+// The network test is the one a scanned codebase could game: findings echo the
+// flagged source line and advisory titles, so a token anywhere in the output
+// would let `err.code === "ENOTFOUND"` on a flagged line turn a red scan into a
+// warning. So each pattern is a whole line, anchored at its start, in the shape
+// the scanner's own HTTP client prints — npm and pnpm (Node fetch), pip-audit
+// (Python requests), govulncheck (Go) — read from the last lines of either
+// stream (pnpm prints its failure on stdout, npm on stderr), stack frames
+// skipped. An echoed source line starts with its line number, not with these.
+const NETWORK_FAILURES = [
+  // npm (`npm warn audit request to … failed`), pnpm (` ENOTFOUND  request to …`,
+  // `FetchError: request to …`) and a bare Node fetch error.
+  /^\s*(?:npm (?:warn|error|ERR!)\s+(?:audit\s+)?|(?:ENOTFOUND|EAI_AGAIN)\s+|FetchError:\s+)?request (?:to \S+ )?failed, reason: getaddrinfo (?:ENOTFOUND|EAI_AGAIN) \S+\s*$/,
+  // pip-audit, semgrep: `requests.exceptions.ConnectionError: … NameResolutionError …`
+  /^[\w.]*ConnectionError: .*(?:NameResolutionError|Temporary failure in name resolution|Name or service not known|nodename nor servname)/,
+  // govulncheck: `govulncheck: fetching vulnerabilities: … dial tcp: lookup vuln.go.dev: no such host`
+  /^govulncheck: .*\bdial tcp: lookup \S+.*: (?:no such host|server misbehaving|i\/o timeout)\s*$/,
+];
+const NETWORK_TAIL_LINES = 5;
+
+function streamEnd(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !/^\s+at\s/.test(line))
+    .slice(-NETWORK_TAIL_LINES);
+}
+
+function securityOutcome(item) {
+  if (item.ok) {
+    return { outcome: "pass" };
+  }
+
+  const notExamined = (reason) => ({ outcome: "not-examined", notExamined: reason });
+
+  if (item.toolError) {
+    return notExamined(item.toolError);
+  }
+
+  if (item.timedOut) {
+    return notExamined(`timed out after ${Number((item.timeoutMs / 1000).toFixed(1))} s`);
+  }
+
+  if (item.exitCode === 127) {
+    return notExamined("command not found (exit 127)");
+  }
+
+  if (item.exitCode === 126) {
+    return notExamined("command found but not executable (exit 126)");
+  }
+
+  const network = [...streamEnd(item.stdoutTail), ...streamEnd(item.stderrTail)].find((line) =>
+    NETWORK_FAILURES.some((pattern) => pattern.test(line)),
+  );
+
+  return network ? notExamined(`network unavailable (${network.trim()})`) : { outcome: "fail" };
+}
+
 function resultStatus(item) {
+  if (item.outcome === "not-examined") {
+    return "not examined";
+  }
+
   if (item.ok) {
     return "ok";
   }
@@ -398,6 +468,7 @@ module.exports = {
   isProjectScriptInvocation,
   runValidationCommand,
   commandTimeout,
+  securityOutcome,
   resultStatus,
   captureEnvironment,
 };

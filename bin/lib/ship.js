@@ -255,7 +255,10 @@ function buildEvidenceBlock(evidence) {
   if (results.length > 0) {
     lines.push("| Command | Result | Duration |", "| --- | --- | --- |");
     for (const item of results) {
-      const status = item.ok ? "✅ exit 0" : item.timedOut ? "⏱ timeout" : `❌ exit ${item.exitCode}`;
+      // A scanner that did not run is never a ✅, whatever its `ok` under the mode.
+      const status = item.outcome === "not-examined"
+        ? `⚠️ not examined (${item.notExamined})`
+        : item.ok ? "✅ exit 0" : item.timedOut ? "⏱ timeout" : `❌ exit ${item.exitCode}`;
       const replay = item.cache === "full" || item.cache === "partial" ? " (replayed from cache)" : "";
       lines.push(`| \`${item.command}\` | ${status}${replay} | ${item.durationMs}ms |`);
     }

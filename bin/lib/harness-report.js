@@ -102,7 +102,7 @@ function printRedAtBase(red) {
 // A verify that held: the coverage rung it reached, then everything that still
 // deserves a look (weakened tests, open criteria, warnings), and the claims.
 function printPassed(evidence, coverage, contrary) {
-  const warnings = describeContraryWarnings(contrary);
+  const warnings = [describeNotExamined(evidence.results), describeContraryWarnings(contrary)].filter(Boolean).join(", ");
   log(warnings
     ? `Harness verify passed, with warnings (${warnings}): ${evidence.results.length} command(s).`
     : `Harness verify passed (${evidence.results.length} command(s)).`);
@@ -213,11 +213,26 @@ function printVerify(evidence, outputPath) {
     log(scopeLine);
   }
 
-  for (const item of evidence.results) {
+  printResults(evidence.results);
+
+  if (outputPath) {
+    log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+  }
+}
+
+// One line per command, then what explains a non-green one.
+function printResults(results) {
+  for (const item of results) {
     const replay = item.cache === "full" || item.cache === "partial"
       ? `, replayed from cache${item.total ? `: ${item.cached}/${item.total} tasks` : ""}`
       : "";
-    log(`- [${resultStatus(item)}] ${item.command} (${item.durationMs}ms${replay})`);
+    const kind = item.kind === "security" ? "security: " : "";
+    log(`- [${resultStatus(item)}] ${kind}${item.command} (${item.durationMs}ms${replay})`);
+
+    if (item.outcome === "not-examined") {
+      log(`    ${item.notExamined} — a scanner that did not run found nothing because it looked at nothing`);
+      continue;
+    }
 
     if (item.freshRequired) {
       log(`    ${item.freshRequired}`);
@@ -247,10 +262,6 @@ function printVerify(evidence, outputPath) {
         log(`    ${line}`);
       }
     }
-  }
-
-  if (outputPath) {
-    log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
   }
 }
 
@@ -394,6 +405,13 @@ function printContraryFailures(contrary) {
 }
 
 // "3 deleted test files, 5 open criteria" — what a passing run still carries.
+// Only reached on a passing verdict, so these are the non-strict warnings.
+function describeNotExamined(results) {
+  const count = (results || []).filter((item) => item.outcome === "not-examined").length;
+
+  return count > 0 ? `${count} security command${count === 1 ? "" : "s"} not examined` : "";
+}
+
 function describeContraryWarnings(contrary) {
   const w = contrary && contrary.warnings;
   const parts = [];

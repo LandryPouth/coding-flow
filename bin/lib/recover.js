@@ -16,6 +16,8 @@ const {
 } = require("./util");
 const { scanProject } = require("./bootstrap");
 const { readHarnessConfig, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
+const { readConfig } = require("./config");
+const { detectSecurityRecipes, securityCoverage } = require("./security-recipes");
 const {
   compileSecretPatterns,
   findSecretsInContent,
@@ -746,7 +748,17 @@ function collectRecoveryScan({ historyLimit = DEFAULT_HISTORY_LIMIT } = {}) {
     },
     sensitiveFiles: scanSensitiveFiles(tracked.files, config),
     largeFiles: buildLargeFiles(lineCounts),
+    // Declarations only: whether a declared scanner actually ran is the
+    // `outcome` of its entry in the latest verify evidence, not something a
+    // read-only scan can know.
+    securityTools: securityTools(root),
   };
+}
+
+function securityTools(root) {
+  const { declared, undeclared } = securityCoverage(detectSecurityRecipes(root), readConfig(root).validation.security);
+
+  return { declared, undeclared: undeclared.map(({ tool, command }) => ({ tool, command })) };
 }
 
 function printRecoveryScan(scan) {
@@ -833,6 +845,18 @@ function printTrackedInventory(scan) {
   }
   for (const finding of scan.sensitiveFiles) {
     log(`- ${finding.path} (${finding.kind})`);
+  }
+  log("");
+
+  log("Security tools (validation.security)");
+  if (scan.securityTools.declared.length === 0) {
+    log("- none declared — no scanner runs in verify");
+  }
+  for (const command of scan.securityTools.declared) {
+    log(`- declared: ${command}`);
+  }
+  for (const recipe of scan.securityTools.undeclared) {
+    log(`- applies, not declared: ${recipe.tool} (\`${recipe.command}\`)`);
   }
   log("");
 

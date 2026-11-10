@@ -141,6 +141,16 @@ End `findings.md` with the dimension table:
 
 The status is one of **examined**, **tool-checked** or **not examined**.
 
+**tool-checked** is read, never asserted. The scan's `securityTools.declared`
+lists the scanners in `validation.security` — declarations only, not whether
+they ran. Whether one ran is its `outcome` in the latest verify evidence
+(`.coding-flow/runs/*-verify.json`, `results[]` with `kind: "security"`): only
+`pass` or `fail` checked anything. `not-examined` (missing binary, timeout, no
+network) checked nothing, and a declared scanner never run by verify is not
+examined either.
+A recipe under `securityTools.undeclared` applies but is not declared: say so
+in the Reason column, and suggest it — the scan never writes the config.
+
 ### States
 
 | State | Meaning |

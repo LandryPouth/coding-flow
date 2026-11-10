@@ -14,6 +14,7 @@ const path = require("path");
 
 const { cwd } = require("./context");
 const { log, toPortable, readJson, findDirectories } = require("./util");
+const { detectSecurityRecipes } = require("./security-recipes");
 
 // Directories Coding Flow itself installs, plus the usual noise. They say nothing
 // about whether the repo holds code — and `init` runs the scan *after* laying
@@ -769,6 +770,13 @@ function formatScanMarkdown(scan) {
           "(only node's test runner is read: `node --test --test-reporter=tap {files}`).",
         ]),
     "",
+    "## Security Recipes",
+    "",
+    "Candidates for `validation.security` in `.coding-flow/config.json` — not declared by this scan.",
+    "",
+    ...(scan.securityRecipes || []).map((recipe) => `- ${recipe.tool}: \`${recipe.command}\``),
+    ...((scan.securityRecipes || []).length === 0 ? ["- none detected"] : []),
+    "",
     "## Recommended Next Prompt",
     "",
     "```txt",
@@ -890,8 +898,17 @@ function printProjectScanSummary(scan, { dryRun = false } = {}) {
   );
 }
 
+// Scanners worth declaring in validation.security: suggested by the explicit
+// scan, never written, and not computed on every `init`.
+function withSecurityRecipes(scan) {
+  return {
+    ...scan,
+    securityRecipes: detectSecurityRecipes(cwd).map(({ tool, ecosystem, command }) => ({ tool, ecosystem, command })),
+  };
+}
+
 function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
-  const scan = scanProject();
+  const scan = withSecurityRecipes(scanProject());
 
   // --json is the machine path (skills, CI): it returns the data and writes
   // nothing. The document is for humans who explicitly asked for one.
@@ -948,6 +965,10 @@ function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
     log(
       `Red at base: declare redAtBase.command as \`${scan.redAtBaseSuggestion}\` in .coding-flow/harness.json`,
     );
+  }
+
+  if (scan.securityRecipes.length > 0) {
+    log(`Security recipes for validation.security: ${scan.securityRecipes.map((recipe) => recipe.tool).join(", ")}.`);
   }
 
   log("");
