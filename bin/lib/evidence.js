@@ -485,8 +485,7 @@ function verifyStoryOnce({
     // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
     contraryPolicy: contraryPolicy(config),
     contrary,
-    ...(claimResult ? { claim: claimResult } : {}),
-    ...(red ? { redAtBase: red } : {}),
+    ...(claimResult ? { claim: claimResult } : {}), ...(red ? { redAtBase: red } : {}),
     ok: commandsOk && coverage.ok && contrary.ok && (!claimResult || claimResult.ok) && (!red || red.ok),
     results,
   };

@@ -99,6 +99,47 @@ function printRedAtBase(red) {
   }
 }
 
+// A verify that held: the coverage rung it reached, then everything that still
+// deserves a look (weakened tests, open criteria, warnings), and the claims.
+function printPassed(evidence, coverage, contrary) {
+  const warnings = describeContraryWarnings(contrary);
+  log(warnings
+    ? `Harness verify passed, with warnings (${warnings}): ${evidence.results.length} command(s).`
+    : `Harness verify passed (${evidence.results.length} command(s)).`);
+
+  // Name the rung before the sentence. "Coverage: evidence — 1 test file(s)
+  // changed" and "Coverage: verified — 92% of the added lines ran" now read as
+  // the different claims they are; before this they read as one.
+  const tier = coverage.tier || coverageTier(coverage);
+
+  if (coverage.exemption) {
+    log(`  Coverage: exempted — "${coverage.exemption.split(/\r?\n/)[0]}"`);
+  } else if (coverage.required) {
+    const reportCount = coverage.patch ? (coverage.patch.report.reports || []).length : 0;
+    log(`  Coverage: ${tier} — ${coverage.reason}` +
+      (tier === "verified" && reportCount > 1 ? ` (${reportCount} reports)` : ""));
+
+    // The one rung worth explaining: it passed on a proxy, and the way to earn
+    // the stronger word is a coverage report this run actually produced.
+    if (tier === "evidence" && coverage.patch) {
+      log("  Some changed files lie outside every coverage report's package, so they are");
+      log("  unmeasured; emit a report in their package to get 'verified'.");
+    } else if (tier === "evidence") {
+      log("  A test file moved; no fresh coverage report was found, so nothing measured");
+      log("  this change. Emit lcov.info or coverage-final.json to get 'verified'.");
+    }
+  }
+
+  // Printed at every rung, including `verified`. A measured 92% next to three
+  // deleted tests is still three deleted tests, and the reader decides what that
+  // means — this only refuses to let a good number hide it.
+  printWeakenedTests(coverage);
+  printRedAtBase(evidence.redAtBase);
+  printOpenCriteria(evidence);
+  printContraryFailures(contrary);
+  printClaimHeld(evidence.claim);
+}
+
 function printVerify(evidence, outputPath) {
   const coverage = evidence.coverage || { required: false, ok: true };
   const coverageBlocked = evidence.commandsOk && !coverage.ok;
@@ -129,42 +170,7 @@ function printVerify(evidence, outputPath) {
     printFailedRedAtBase(evidence);
     printOpenCriteria(evidence);
   } else if (evidence.ok) {
-    const warnings = describeContraryWarnings(contrary);
-    log(warnings
-      ? `Harness verify passed, with warnings (${warnings}): ${evidence.results.length} command(s).`
-      : `Harness verify passed (${evidence.results.length} command(s)).`);
-
-    // Name the rung before the sentence. "Coverage: evidence — 1 test file(s)
-    // changed" and "Coverage: verified — 92% of the added lines ran" now read as
-    // the different claims they are; before this they read as one.
-    const tier = coverage.tier || coverageTier(coverage);
-
-    if (coverage.exemption) {
-      log(`  Coverage: exempted — "${coverage.exemption.split(/\r?\n/)[0]}"`);
-    } else if (coverage.required) {
-      const reportCount = coverage.patch ? (coverage.patch.report.reports || []).length : 0;
-      log(`  Coverage: ${tier} — ${coverage.reason}` +
-        (tier === "verified" && reportCount > 1 ? ` (${reportCount} reports)` : ""));
-
-      // The one rung worth explaining: it passed on a proxy, and the way to earn
-      // the stronger word is a coverage report this run actually produced.
-      if (tier === "evidence" && coverage.patch) {
-        log("  Some changed files lie outside every coverage report's package, so they are");
-        log("  unmeasured; emit a report in their package to get 'verified'.");
-      } else if (tier === "evidence") {
-        log("  A test file moved; no fresh coverage report was found, so nothing measured");
-        log("  this change. Emit lcov.info or coverage-final.json to get 'verified'.");
-      }
-    }
-
-    // Printed at every rung, including `verified`. A measured 92% next to three
-    // deleted tests is still three deleted tests, and the reader decides what that
-    // means — this only refuses to let a good number hide it.
-    printWeakenedTests(coverage);
-    printRedAtBase(evidence.redAtBase);
-    printOpenCriteria(evidence);
-    printContraryFailures(contrary);
-    printClaimHeld(evidence.claim);
+    printPassed(evidence, coverage, contrary);
   } else if (redBlocked) {
     // The suite, the coverage gate and the contrary signals all held. What is
     // missing is the fix-specific claim: the test does not demonstrate the bug.
