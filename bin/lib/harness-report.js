@@ -87,17 +87,30 @@ function notProvenBecause(evidence) {
     return "";
   }
 
-  return evidence.complexity.unavailable
-    ? "the complexity check did not run (functionSize.enforce)"
-    : "a touched function grew (functionSize.enforce)";
+  if (evidence.complexity.unavailable) {
+    return "the complexity check did not run (functionSize.enforce)";
+  }
+
+  return evidence.complexity.items.length > 0
+    ? "a touched function grew (functionSize.enforce)"
+    : "a touched file was not measured (functionSize.enforce)";
 }
 
 // `complexity-grew`: touched functions that got longer or riskier. Labelled a
 // heuristic every time, because the decisions and the end of a function are read
 // from lcov, not from a parser.
 function printComplexity(complexity) {
+  if (complexity && complexity.invalidMax !== undefined) {
+    log(`  Complexity: functionSize.max ${JSON.stringify(complexity.invalidMax)} is not a positive integer — ${complexity.max} lines used.`);
+  }
+
   if (complexity && complexity.unavailable) {
     log(`  Complexity: not checked — ${complexity.unavailable}.`);
+  }
+
+  if (complexity && complexity.unlisted && complexity.unlisted.length > 0) {
+    const verdict = complexity.enforced ? "FAILED (functionSize.enforce)" : "warning";
+    log(`  Complexity not measured: ${verdict} — the lcov does not list ${complexity.unlisted.join(", ")} (no test loaded it).`);
   }
 
   if (!complexity || complexity.items.length === 0) {
@@ -463,8 +476,13 @@ function describeNotExamined(results) {
 
 function describeGrew(complexity) {
   const count = complexity ? complexity.items.length : 0;
+  const unlisted = complexity && complexity.unlisted ? complexity.unlisted.length : 0;
 
-  return count > 0 ? `${count} function${count === 1 ? "" : "s"} grew (heuristic)` : "";
+  return [
+    count > 0 ? `${count} function${count === 1 ? "" : "s"} grew (heuristic)` : "",
+    unlisted > 0 ? `${unlisted} touched file${unlisted === 1 ? "" : "s"} not measured` : "",
+    complexity && complexity.invalidMax !== undefined ? "functionSize.max ignored" : "",
+  ].filter(Boolean).join(", ");
 }
 
 function describeContraryWarnings(contrary) {

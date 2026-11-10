@@ -122,6 +122,27 @@ emits lcov.
   edge, a TypeScript return type), plus V8 class initializers and entry BRDA,
   brace scanning outside JavaScript, and untested files ranked last. All fixed,
   each with a test that fails on the first version (12 tests).
+- `/flow-review` (2026-11-10) passed with one P2 and two P3, all fixed:
+  - under `enforce`, a touched file the lcov does not list was skipped silently.
+    It is now `unlisted` (a language the lcov covers, inside a package a report
+    speaks for — the coverage gate's containment rule — not a test or
+    `nonBehaviorGlobs`, lines added): a warning, a failure under `enforce`. A
+    loaded file with no function (a data module) is kept in the report, so it is
+    not mistaken for one no test loaded;
+  - `recover scan` weighted a file no test loaded by its line count against
+    CRAP for the rest, so any untested file outranked a 132-CRAP function. A
+    source the lcov could have listed now gets an estimated CRAP (decision-like
+    lines at 0 % coverage, the whole file as one function: an upper bound),
+    printed `CRAP ≈ N (estimated)`; a test file or another language gets none and
+    is listed after the scored files, so lines and CRAP never share a ranking;
+  - an unusable `functionSize.max` silently became 80; the report now names it,
+    and uses the stricter of 80 and what it meant.
+  - A second, independent review (fresh agent, artifact and contract only) of
+    these fixes found the package scope (another package's file failing verify
+    under `enforce`), test files estimated and ranked first, and the field name
+    clashing with `coverage.patch.unmeasured` (now `unlisted`); all fixed with a
+    test each. The verify of the fixes caught `printRecoveryScan` growing past 80
+    lines; the hotspot line moved to `describeHotspot`.
 - Verify: see the latest `-verify.json`.
 
 ### Rollback Notes

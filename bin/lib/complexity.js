@@ -19,7 +19,9 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const { loadCoverageReports, reportCandidates, toRepoRelative, packageRootOf } = require("./coverage");
+const { normalizePortable } = require("./util");
 const { currentDiffBase } = require("./diff-scope");
+const { matchesPattern } = require("./util");
 
 const CRAP_THRESHOLD = 30;
 const DEFAULT_MAX_LINES = 80;
@@ -100,20 +102,24 @@ function mergeFile(into, data) {
 }
 
 // The fresh lcov reports among the project's coverage candidates, re-read for the
-// records `parseLcov` drops on purpose. Null when none lists a function.
+// records `parseLcov` drops on purpose. Every listed file is kept, a module with no
+// function included (it was loaded, which is what tells it from a file no test
+// ran). Null when none lists a function.
 function loadFunctionReport(root, { config, since = null } = {}) {
   const found = loadCoverageReports(root, { candidates: reportCandidates(root, config.coverageReports), since });
   const files = new Map();
   const reports = [];
+  const packageRoots = new Set();
 
   for (const report of found ? found.reports.filter((item) => item.format === "lcov") : []) {
     const full = path.join(root, report.path);
     const base = packageRootOf(root, full);
+    packageRoots.add(normalizePortable(path.relative(root, base)));
 
     for (const [file, data] of parseLcovFunctions(fs.readFileSync(full, "utf8"))) {
       const relative = toRepoRelative(file, root, base);
 
-      if (relative && data.functions.length > 0) {
+      if (relative) {
         files.set(relative, mergeFile(files.get(relative) || emptyFile(), data));
       }
     }
@@ -121,7 +127,9 @@ function loadFunctionReport(root, { config, since = null } = {}) {
     reports.push(report.path);
   }
 
-  return files.size > 0 ? { reports, files, generatedAt: found.generatedAt } : null;
+  const listsAFunction = [...files.values()].some((data) => data.functions.length > 0);
+
+  return listsAFunction ? { reports, files, packageRoots: [...packageRoots], generatedAt: found.generatedAt } : null;
 }
 
 // --- brace matching: the code characters of a C-like source ---------------------
@@ -393,6 +401,21 @@ function riskOver(data, start, end, skip = new Set()) {
   return { decisions: branches + 1, coverage, crap: crapScore(branches + 1, coverage) };
 }
 
+// A loaded file that lists no function (a data module, top-level code) read as one.
+function fileRisk(data) {
+  return riskOver(data, 1, Infinity).crap;
+}
+
+// A file no test loaded: no coverage, so its decision-like lines at 0 % coverage,
+// the whole file read as one function. An upper bound, labelled an estimate: it
+// grows with the file, where a loaded file is scored by its worst function only.
+function estimateUnloaded(root, file) {
+  const decisions = fs.readFileSync(path.join(root, file), "utf8").split("\n")
+    .filter((line) => !/^\s*(\/\/|#|\*|\/\*)/.test(line) && DECISION_TEXT.test(line)).length;
+
+  return crapScore(decisions + 1, 0);
+}
+
 // Every function of one file, measured now: `[{ name, line, end, length, decisions, coverage, crap }]`.
 function measureFile(root, file, data) {
   const source = readSource(root, file);
@@ -587,26 +610,54 @@ function readBase(root, base, oldPath) {
   }
 }
 
+// An unusable `max` is not silently replaced: the report names it, and the limit
+// is the stricter of 80 and what it meant (`"40"`, `50.5`), never looser.
 function settings(config) {
   const size = config.functionSize || {};
+  const valid = Number.isInteger(size.max) && size.max > 0;
+  const meant = Math.floor(Number(size.max));
 
   return {
-    max: Number.isInteger(size.max) && size.max > 0 ? size.max : DEFAULT_MAX_LINES,
+    max: valid ? size.max : Math.min(DEFAULT_MAX_LINES, meant > 0 ? meant : DEFAULT_MAX_LINES),
     enforced: size.enforce === true,
+    ...(size.max === undefined || valid ? {} : { invalidMax: size.max }),
   };
+}
+
+// A touched file the lcov should list but does not: inside a package a report
+// speaks for (another package's absence is not this report's to judge, as in the
+// coverage gate), a language it covers, not a test, not generated output, and the
+// diff added lines to it. No test loaded it — under `enforce`, not a pass.
+function isUnlisted(file, hunks, report, config, extensions) {
+  const excluded = [...(config.testGlobs || []), ...(config.nonBehaviorGlobs || [])];
+  const insideAPackage = report.packageRoots.some((pkg) => pkg === "" || file.startsWith(`${pkg}/`));
+
+  return !report.files.has(file)
+    && insideAPackage
+    && extensions.has(path.extname(file))
+    && hunks.some((hunk) => hunk.newCount > 0)
+    && !excluded.some((pattern) => matchesPattern(file, pattern));
 }
 
 // The `complexity-grew` signal: functions overlapping the diff's added lines whose
 // CRAP crosses 30, or whose length crosses `functionSize.max` or grows while above
 // it. With no lcov from this run listing a function there is no signal — unless
 // `functionSize.enforce: true`, where a check that could not run is never a pass.
+// The same holds per file: a touched file the lcov does not list is `unlisted`.
 function evaluateComplexity({ root, config, since }) {
-  const { max, enforced } = settings(config);
+  const { max, enforced, invalidMax } = settings(config);
   const report = loadFunctionReport(root, { config, since });
-  const result = { signal: "complexity-grew", heuristic: true, enforced, max, crapThreshold: CRAP_THRESHOLD };
+  const result = {
+    signal: "complexity-grew", heuristic: true, enforced, max, crapThreshold: CRAP_THRESHOLD,
+    ...(invalidMax === undefined ? {} : { invalidMax }),
+  };
 
   if (!report) {
-    return enforced ? { ...result, reports: [], items: [], unavailable: "this run wrote no lcov that lists a function", ok: false } : null;
+    if (enforced) {
+      return { ...result, reports: [], items: [], unlisted: [], unavailable: "this run wrote no lcov that lists a function", ok: false };
+    }
+
+    return invalidMax === undefined ? null : { ...result, reports: [], items: [], unlisted: [], ok: true };
   }
 
   const mergeBase = currentDiffBase(root).mergeBase;
@@ -616,13 +667,20 @@ function evaluateComplexity({ root, config, since }) {
   try {
     files = diffFiles(root, base);
   } catch {
-    return { ...result, reports: report.reports, items: [], unavailable: `git could not diff against ${base}`, ok: !enforced };
+    return { ...result, reports: report.reports, items: [], unlisted: [], unavailable: `git could not diff against ${base}`, ok: !enforced };
   }
 
   const items = [];
+  const unlisted = [];
+  const extensions = new Set([...report.files.keys()].map((listed) => path.extname(listed)).filter(Boolean));
 
   for (const [file, { oldPath, hunks }] of files) {
-    if (!report.files.has(file) || !fs.existsSync(path.join(root, file))) {
+    if (!fs.existsSync(path.join(root, file))) {
+      continue;
+    }
+
+    if (!report.files.has(file)) {
+      if (isUnlisted(file, hunks, report, config, extensions)) unlisted.push(file);
       continue;
     }
 
@@ -639,7 +697,8 @@ function evaluateComplexity({ root, config, since }) {
     reports: report.reports,
     ...(mergeBase ? {} : { scope: "no merge base: only uncommitted changes were checked" }),
     items,
-    ok: !(enforced && items.length > 0),
+    unlisted: unlisted.sort(),
+    ok: !(enforced && (items.length > 0 || unlisted.length > 0)),
   };
 }
 
@@ -660,6 +719,8 @@ module.exports = {
   parseLcovFunctions,
   loadFunctionReport,
   measureFile,
+  fileRisk,
+  estimateUnloaded,
   evaluateComplexity,
   describeGrowth,
 };

@@ -185,7 +185,7 @@ const { evaluateComplexity } = require('../bin/lib/complexity');
 
 // A repository at `base` files, branched, then edited by `edit(dir)`; the lcov is
 // written last, listing `fns` with every line executed and `branches` as BRDA.
-function evaluate(t, files, edit, lcovFor) {
+function evaluate(t, files, edit, lcovFor, overrides = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-complexity-review-')));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   git(dir, ['init', '-q', '-b', 'main']);
@@ -204,7 +204,7 @@ function evaluate(t, files, edit, lcovFor) {
   });
   write(dir, 'coverage/lcov.info', [...records.flat(), ''].join('\n'));
 
-  return evaluateComplexity({ root: dir, config: { coverageReports: ['coverage/lcov.info'], functionSize: { max: 80, enforce: true } } });
+  return evaluateComplexity({ root: dir, config: { coverageReports: ['coverage/lcov.info'], functionSize: { max: 80, enforce: true }, ...overrides } });
 }
 
 const grown = (result) => result.items.map((item) => `${item.name} ${item.length.before}→${item.length.after} ${item.reasons}`);
@@ -272,4 +272,66 @@ test('this repository enforces functionSize, which replaced the 13-06 script', (
 
   assert.deepStrictEqual(harness.functionSize, { max: 80, enforce: true });
   assert.doesNotMatch(config, /check-function-size/);
+});
+
+test('under enforce, a touched file the lcov does not list is unlisted, and not a pass', (t) => {
+  const result = evaluate(t, { 'src/a.js': fn('build', 10), 'test/a.test.js': '// t\n', 'README.md': '# r\n' }, (dir) => {
+    write(dir, 'src/new.js', fn('huge', 200));
+    write(dir, 'test/a.test.js', '// t\n// more\n');
+    write(dir, 'README.md', '# r\nmore\n');
+  }, { 'src/a.js': { fns: [[1, 'build']] } }, { testGlobs: ['test/**'] });
+
+  assert.deepStrictEqual(result.unlisted, ['src/new.js']);
+  assert.equal(result.ok, false);
+});
+
+test('a loaded file that lists no function is not reported as unlisted', (t) => {
+  const result = evaluate(t, { 'src/a.js': fn('build', 10), 'src/data.js': 'module.exports = 1;\n' },
+    (dir) => write(dir, 'src/data.js', 'module.exports = 2;\nmodule.exports.b = 3;\n'),
+    { 'src/a.js': { fns: [[1, 'build']] }, 'src/data.js': { fns: [] } });
+
+  assert.deepStrictEqual(result.unlisted, []);
+  assert.equal(result.ok, true);
+});
+
+test('an unusable functionSize.max is named, and 80 lines is used', (t) => {
+  const result = evaluate(t, { 'src/a.js': fn('build', 85) }, (dir) => write(dir, 'src/a.js', fn('build', 90)),
+    { 'src/a.js': { fns: [[1, 'build']] } }, { functionSize: { max: '100', enforce: true } });
+
+  assert.equal(result.invalidMax, '100');
+  assert.equal(result.max, 80);
+  assert.deepStrictEqual(grown(result), ['build 85→90 length']);
+});
+
+test('an unusable functionSize.max never loosens what it meant: "40" is held at 40', (t) => {
+  const result = evaluate(t, { 'src/a.js': fn('build', 45) }, (dir) => write(dir, 'src/a.js', fn('build', 50)),
+    { 'src/a.js': { fns: [[1, 'build']] } }, { functionSize: { max: '40', enforce: true } });
+
+  assert.equal(result.invalidMax, '40');
+  assert.equal(result.max, 40);
+  assert.deepStrictEqual(grown(result), ['build 45→50 length']);
+});
+
+test('a touched file in a package no report speaks for is not unlisted (as in the coverage gate)', (t) => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-complexity-packages-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['config', 'user.email', 'test@example.com']);
+  git(dir, ['config', 'user.name', 'Test']);
+  write(dir, '.gitignore', 'coverage/\n');
+  write(dir, 'package.json', '{"workspaces":["packages/*"]}\n');
+  write(dir, 'packages/a/package.json', '{}\n');
+  write(dir, 'packages/b/package.json', '{}\n');
+  write(dir, 'packages/a/src/a.js', fn('build', 10));
+  write(dir, 'packages/b/src/b.js', fn('other', 10));
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-qm', 'base']);
+  git(dir, ['checkout', '-q', '-b', 'feat']);
+  write(dir, 'packages/a/src/new.js', fn('fresh', 10));
+  write(dir, 'packages/b/src/b.js', fn('other', 12));
+  write(dir, 'packages/a/coverage/lcov.info', ['SF:src/a.js', 'FN:1,build', 'DA:1,1', 'end_of_record', ''].join('\n'));
+
+  const result = evaluateComplexity({ root: dir, config: { coverageReports: ['packages/*/coverage/lcov.info'], functionSize: { enforce: true } } });
+
+  assert.deepStrictEqual(result.unlisted, ['packages/a/src/new.js']);
 });

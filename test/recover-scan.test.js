@@ -659,10 +659,10 @@ test("an lcov older than a source it lists is not ranked by", (t) => {
   assert.equal(result.hotspots[0].path, "src/big.js");
 });
 
-test("with a fresh lcov, a file no test loaded is still ranked, by its size", (t) => {
+test("with a fresh lcov, a file no test loaded gets an estimated CRAP and can still rank first", (t) => {
   const repo = crapRepo(t);
-  const lines = Array.from({ length: 300 }, (_, i) => `const u${i} = ${i};`);
-  fs.writeFileSync(path.join(repo, "src", "unloaded.js"), lines.join("\n") + "\n");
+  const ifs = Array.from({ length: 12 }, (_, i) => `  if (x === ${i}) return ${i};`);
+  fs.writeFileSync(path.join(repo, "src", "unloaded.js"), ["function pick(x) {", ...ifs, "  return -1;", "}", ""].join("\n"));
   commitAll(repo, "an untested file");
   writeLcov(repo);
 
@@ -670,8 +670,42 @@ test("with a fresh lcov, a file no test loaded is still ranked, by its size", (t
   const unloaded = result.hotspots.find((hotspot) => hotspot.path === "src/unloaded.js");
   assert.equal(result.hotspots[0].path, "src/unloaded.js");
   assert.equal(unloaded.loaded, false);
-  assert.equal(unloaded.crap, null);
+  assert.equal(unloaded.estimated, true);
+  assert.equal(unloaded.crap, 182);
 
   const text = run(repo, ["recover", "scan"]);
-  assert.match(text.output, /- src\/unloaded\.js: 300 lines, churn \d+, not loaded by any test/);
+  assert.match(text.output, /- src\/unloaded\.js: 15 lines, churn \d+, not loaded by any test, CRAP ≈ 182 \(estimated\)/);
+});
+
+test("with a fresh lcov, a test file or another language gets no estimate and is listed after the scored files", (t) => {
+  const repo = crapRepo(t);
+  const checks = Array.from({ length: 60 }, (_, i) => `  assert.ok(x === ${i} || y > ${i} ? a && b : c);`);
+  fs.mkdirSync(path.join(repo, "test"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "test", "route.test.js"), ["test('r', () => {", ...checks, "});", ""].join("\n"));
+  fs.writeFileSync(path.join(repo, "src", "tool.py"), Array.from({ length: 40 }, (_, i) => `if x == ${i}: pass`).join("\n") + "\n");
+  commitAll(repo, "a test and a script");
+  writeLcov(repo);
+
+  const result = scan(repo);
+  const scored = result.hotspots.filter((hotspot) => hotspot.score !== null).map((hotspot) => hotspot.path);
+  const testFile = result.hotspots.find((hotspot) => hotspot.path === "test/route.test.js");
+  const script = result.hotspots.find((hotspot) => hotspot.path === "src/tool.py");
+  assert.equal(result.hotspots[0].path, "src/route.js");
+  assert.deepStrictEqual(scored.sort(), ["src/big.js", "src/route.js"]);
+  assert.equal(testFile.crap, null);
+  assert.equal(testFile.estimated, undefined);
+  assert.equal(script.crap, null);
+});
+
+test("with a fresh lcov, a long untested file with no decisions is not ranked above real risk by its size", (t) => {
+  const repo = crapRepo(t);
+  const lines = Array.from({ length: 300 }, (_, i) => `const u${i} = ${i};`);
+  fs.writeFileSync(path.join(repo, "src", "unloaded.js"), lines.join("\n") + "\n");
+  commitAll(repo, "an untested data file");
+  writeLcov(repo);
+
+  const result = scan(repo);
+  const unloaded = result.hotspots.find((hotspot) => hotspot.path === "src/unloaded.js");
+  assert.equal(result.hotspots[0].path, "src/route.js");
+  assert.equal(unloaded.crap, 2);
 });

@@ -42,7 +42,9 @@ Run the scan and read all of it, not only the first section. It gives:
 - **hotspots** — top 15, each with whether a test sits next to it or imports
   its basename. Ranked by churn × CRAP (the file's worst function, a heuristic
   read from lcov) when a fresh coverage report exists, else by churn × size; the
-  heading says which. Run the test suite with lcov output first to get CRAP;
+  heading says which. A source file no test loaded gets an estimated CRAP (its
+  decision-like lines at 0 % coverage, an upper bound); tests and languages the
+  lcov does not cover get none and are listed after the scored files. Run the test suite with lcov output first to get CRAP;
 - **test map** — test files per top-level code directory and the directories
   with code and no test;
 - **secrets in the tree** — heuristic allowlist applied; command substitutions

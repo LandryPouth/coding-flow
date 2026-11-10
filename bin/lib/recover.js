@@ -17,7 +17,7 @@ const {
 const { scanProject } = require("./bootstrap");
 const { readHarnessConfig, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
 const { readConfig } = require("./config");
-const { loadFunctionReport, measureFile } = require("./complexity");
+const { loadFunctionReport, measureFile, fileRisk, estimateUnloaded } = require("./complexity");
 const { detectSecurityRecipes, securityCoverage } = require("./security-recipes");
 const {
   compileSecretPatterns,
@@ -364,25 +364,63 @@ function worstFunctions(root, relativePath, report) {
   }
 }
 
-// Churn × size, or churn × CRAP (the file's worst function) when a fresh lcov
-// lists the file. A file the report does not list was never loaded by a test —
-// the riskiest kind — and keeps its size as the weight, so it is not ranked out.
-// Without churn the second factor ranks alone.
-function buildHotspots(lineCounts, churn, testFiles, tests, { root = cwd, report = null } = {}) {
+// Whether the report could have listed this file: a language it covers, inside a
+// package it speaks for, and code rather than a test or generated output. Only
+// such a file, absent from it, was never loaded by a test.
+function reportCouldList(relativePath, report, { isTest, excluded, extensions }) {
+  return !isTest
+    && extensions.has(path.extname(relativePath))
+    && report.packageRoots.some((pkg) => pkg === "" || relativePath.startsWith(`${pkg}/`))
+    && !excluded.some((pattern) => matchesPattern(relativePath, pattern));
+}
+
+// A file's CRAP for the ranking, in CRAP units: its worst function; a loaded file
+// with no function read whole; a file no test loaded estimated at 0 % coverage
+// from its decision-like lines (an upper bound, the whole file as one function).
+// A file the report could not speak about — a test, another language — has none.
+function hotspotRisk(root, relativePath, report, kind) {
+  const listed = report.files.has(relativePath);
+  const functions = listed ? worstFunctions(root, relativePath, report) : null;
+
+  if (functions && functions.length > 0) {
+    return { crap: functions[0].crap, functions, loaded: true };
+  }
+
+  if (listed) {
+    return { crap: functions ? fileRisk(report.files.get(relativePath)) : null, functions: [], loaded: true };
+  }
+
+  if (!reportCouldList(relativePath, report, kind)) {
+    return { crap: null, functions: [] };
+  }
+
+  try {
+    return { crap: estimateUnloaded(root, relativePath), functions: [], loaded: false, estimated: true };
+  } catch {
+    return { crap: null, functions: [], loaded: false };
+  }
+}
+
+// Churn × size, or churn × CRAP when a fresh lcov exists (see `hotspotRisk`); a
+// file with no CRAP then has no score and is listed after the scored ones, by
+// size, rather than mixing lines into a CRAP ranking. Without churn the second
+// factor ranks alone.
+function buildHotspots(lineCounts, churn, testFiles, tests, { root = cwd, report = null, excluded = [] } = {}) {
   const rows = [];
+  const testSet = new Set(testFiles);
+  const extensions = new Set(report ? [...report.files.keys()].map((file) => path.extname(file)) : []);
 
   for (const [relativePath, lines] of lineCounts) {
     const changed = churn.available ? churn.byPath.get(relativePath) || 0 : null;
-    const functions = worstFunctions(root, relativePath, report);
-    const crap = functions && functions.length > 0 ? functions[0].crap : null;
-    const weight = crap === null ? lines : crap;
+    const risk = report ? hotspotRisk(root, relativePath, report, { isTest: testSet.has(relativePath), excluded, extensions }) : null;
+    const weight = risk ? risk.crap : lines;
 
     rows.push({
       path: relativePath,
       lines,
       churn: changed,
-      ...(report ? { crap, functions: functions || [], loaded: functions !== null } : {}),
-      score: churn.available ? weight * changed : report ? weight : null,
+      ...(risk || {}),
+      score: weight === null ? null : churn.available ? weight * changed : report ? weight : null,
       hasTest: hasNearbyOrImportingTest(relativePath, testFiles, tests),
     });
   }
@@ -790,7 +828,7 @@ function collectRecoveryScan({ historyLimit = DEFAULT_HISTORY_LIMIT } = {}) {
     hotspotRanking: report
       ? { by: "churn × CRAP", heuristic: true, reports: report.reports }
       : { by: "churn × size", heuristic: false, reason },
-    hotspots: buildHotspots(lineCounts, churn, testFiles, tests, { root, report }),
+    hotspots: buildHotspots(lineCounts, churn, testFiles, tests, { root, report, excluded: config.nonBehaviorGlobs || [] }),
     testMap: buildTestMap(stack.codeDirectories, tracked.files, testFiles),
     secrets: {
       tree: {
@@ -813,6 +851,17 @@ function securityTools(root) {
   const { declared, undeclared } = securityCoverage(detectSecurityRecipes(root), readConfig(root).validation.security);
 
   return { declared, undeclared: undeclared.map(({ tool, command }) => ({ tool, command })) };
+}
+
+// `- src/a.js: 120 lines, churn 40, CRAP 132 (route:1, 13 lines), has a test`.
+function describeHotspot(hotspot) {
+  const churn = hotspot.churn === null ? "churn unavailable" : `churn ${hotspot.churn}`;
+  const worst = hotspot.functions && hotspot.functions[0]
+    ? `, CRAP ${hotspot.crap} (${hotspot.functions[0].name}:${hotspot.functions[0].line}, ${hotspot.functions[0].length} lines)`
+    : hotspot.estimated ? `, not loaded by any test, CRAP ≈ ${hotspot.crap} (estimated)`
+      : hotspot.loaded === false ? ", not loaded by any test" : "";
+
+  return `- ${hotspot.path}: ${hotspot.lines} lines, ${churn}${worst}, ${hotspot.hasTest ? "has a test" : "no test"}`;
 }
 
 function printRecoveryScan(scan) {
@@ -840,11 +889,7 @@ function printRecoveryScan(scan) {
     log("- none");
   }
   for (const hotspot of scan.hotspots) {
-    const churn = hotspot.churn === null ? "churn unavailable" : `churn ${hotspot.churn}`;
-    const worst = hotspot.functions && hotspot.functions[0]
-      ? `, CRAP ${hotspot.crap} (${hotspot.functions[0].name}:${hotspot.functions[0].line}, ${hotspot.functions[0].length} lines)`
-      : hotspot.loaded === false ? ", not loaded by any test" : "";
-    log(`- ${hotspot.path}: ${hotspot.lines} lines, ${churn}${worst}, ${hotspot.hasTest ? "has a test" : "no test"}`);
+    log(describeHotspot(hotspot));
   }
   log("");
 
