@@ -11,6 +11,7 @@ const { coverageTier } = require("./coverage");
 const { log, normalizePortable } = require("./util");
 const { resultStatus } = require("./validation-run");
 const { NO_CONTRARY } = require("./coverage-gate");
+const { describeGrowth } = require("./complexity");
 
 function printHarnessReport(report) {
   if (report.ok) {
@@ -63,10 +64,42 @@ function formatLineRanges(lines) {
   return `lines ${ranges.join(", ")} not executed`;
 }
 
-// Only when it failed: a held red-at-base is printed with the passing verdict.
-function printFailedRedAtBase(evidence) {
+// Only when it failed: a held red-at-base, or complexity that only warns, is
+// printed with the passing verdict.
+function printFailedProofs(evidence) {
   if (evidence.redAtBase && !evidence.redAtBase.ok) {
     printRedAtBase(evidence.redAtBase);
+  }
+
+  if (evidence.complexity && !evidence.complexity.ok) {
+    printComplexity(evidence.complexity);
+  }
+}
+
+// Why a run whose commands, coverage and contrary signals held is still not a
+// proof; empty when both held.
+function notProvenBecause(evidence) {
+  if (evidence.redAtBase && !evidence.redAtBase.ok) {
+    return "the fix is not proven";
+  }
+
+  return evidence.complexity && !evidence.complexity.ok ? "a touched function grew (functionSize.enforce)" : "";
+}
+
+// `complexity-grew`: touched functions that got longer or riskier. Labelled a
+// heuristic every time, because the decisions and the end of a function are read
+// from lcov, not from a parser.
+function printComplexity(complexity) {
+  if (!complexity || complexity.items.length === 0) {
+    return;
+  }
+
+  const verdict = complexity.enforced ? "FAILED (functionSize.enforce)" : "warning";
+  log(`  Complexity grew: ${verdict} — heuristic, from ${complexity.reports.join(", ")} ` +
+    `(length over ${complexity.max} lines, CRAP over ${complexity.crapThreshold}):`);
+
+  for (const item of complexity.items) {
+    log(`    ${describeGrowth(item)}`);
   }
 }
 
@@ -102,7 +135,8 @@ function printRedAtBase(red) {
 // A verify that held: the coverage rung it reached, then everything that still
 // deserves a look (weakened tests, open criteria, warnings), and the claims.
 function printPassed(evidence, coverage, contrary) {
-  const warnings = [describeNotExamined(evidence.results), describeContraryWarnings(contrary)].filter(Boolean).join(", ");
+  const warnings = [describeNotExamined(evidence.results), describeContraryWarnings(contrary), describeGrew(evidence.complexity)]
+    .filter(Boolean).join(", ");
   log(warnings
     ? `Harness verify passed, with warnings (${warnings}): ${evidence.results.length} command(s).`
     : `Harness verify passed (${evidence.results.length} command(s)).`);
@@ -135,6 +169,7 @@ function printPassed(evidence, coverage, contrary) {
   // means — this only refuses to let a good number hide it.
   printWeakenedTests(coverage);
   printRedAtBase(evidence.redAtBase);
+  printComplexity(evidence.complexity);
   printOpenCriteria(evidence);
   printContraryFailures(contrary);
   printClaimHeld(evidence.claim);
@@ -146,7 +181,7 @@ function printVerify(evidence, outputPath) {
   const contrary = evidence.contrary || NO_CONTRARY;
   const contraryBlocked = evidence.commandsOk && coverage.ok && !contrary.ok;
   const claimBlocked = evidence.commandsOk && coverage.ok && evidence.claim && !evidence.claim.ok;
-  const redBlocked = evidence.commandsOk && coverage.ok && contrary.ok && evidence.redAtBase && !evidence.redAtBase.ok;
+  const redBlocked = evidence.commandsOk && coverage.ok && contrary.ok && Boolean(notProvenBecause(evidence));
 
   if (evidence.refused) {
     log(`Harness verify REFUSED — ${evidence.refused}.`);
@@ -162,20 +197,20 @@ function printVerify(evidence, outputPath) {
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, coverage gate blocked.`);
     printCoverageBlocked(coverage);
     printClaimFailures(evidence.claim);
-    printFailedRedAtBase(evidence);
+    printFailedProofs(evidence);
   } else if (claimBlocked) {
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the ${evidence.claim.kind} claim does not hold.`);
     printClaimFailures(evidence.claim);
     printContraryFailures(contrary);
-    printFailedRedAtBase(evidence);
+    printFailedProofs(evidence);
     printOpenCriteria(evidence);
   } else if (evidence.ok) {
     printPassed(evidence, coverage, contrary);
   } else if (redBlocked) {
     // The suite, the coverage gate and the contrary signals all held. What is
     // missing is the fix-specific claim: the test does not demonstrate the bug.
-    log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the fix is not proven.`);
-    printRedAtBase(evidence.redAtBase);
+    log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but ${notProvenBecause(evidence)}.`);
+    printFailedProofs(evidence);
     printOpenCriteria(evidence);
   } else if (contraryBlocked) {
     // The commands passed and the coverage gate held. What stops this is the
@@ -183,14 +218,14 @@ function printVerify(evidence, outputPath) {
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the run contradicts itself.`);
     printContraryFailures(contrary);
     printWeakenedTests(coverage);
-    printFailedRedAtBase(evidence);
+    printFailedProofs(evidence);
     printOpenCriteria(evidence);
     printClaimFailures(evidence.claim);
   } else {
     log("Harness verify FAILED.");
     printWeakenedTests(coverage);
     printClaimFailures(evidence.claim);
-    printFailedRedAtBase(evidence);
+    printFailedProofs(evidence);
   }
 
   // Which commands ran, and why those. The silent fallback from a config that was
@@ -410,6 +445,12 @@ function describeNotExamined(results) {
   const count = (results || []).filter((item) => item.outcome === "not-examined").length;
 
   return count > 0 ? `${count} security command${count === 1 ? "" : "s"} not examined` : "";
+}
+
+function describeGrew(complexity) {
+  const count = complexity ? complexity.items.length : 0;
+
+  return count > 0 ? `${count} function${count === 1 ? "" : "s"} grew (heuristic)` : "";
 }
 
 function describeContraryWarnings(contrary) {

@@ -338,7 +338,7 @@ test("with git unavailable the text report says unavailable, not none", (t) => {
 
   assert.equal(result.code, 0, result.output);
   assert.match(result.output, /Git: unavailable/);
-  assert.match(result.output, /Hotspots \(size × churn\)\n- unavailable/);
+  assert.match(result.output, /Hotspots — ranked by churn × size \(no coverage report\)\n- unavailable/);
   assert.match(result.output, /Secrets in the tree\n- unavailable/);
   assert.match(result.output, /Tracked sensitive files\n- unavailable/);
   assert.match(result.output, /Large files \(over \d+ lines\)\n- unavailable/);
@@ -588,4 +588,73 @@ test("with no security command declared, the scan says no scanner runs in verify
 
   const result = run(repo, ["recover", "scan"]);
   assert.match(result.output, /- none declared — no scanner runs in verify/);
+});
+
+// Story 14-07: with a fresh lcov the hotspots rank by churn × CRAP, the file's
+// worst function; without one, by churn × size, and the scan says which.
+function crapRepo(t) {
+  const { repo } = initRepo(t, "recover-crap");
+  const ifs = Array.from({ length: 10 }, (_, i) => `  if (x === ${i}) return ${i};`);
+  fs.mkdirSync(path.join(repo, "src"));
+  fs.writeFileSync(path.join(repo, "src", "route.js"), ["function route(x) {", ...ifs, "  return -1;", "}", ""].join("\n"));
+  const big = Array.from({ length: 200 }, (_, i) => `  const v${i} = ${i};`);
+  fs.writeFileSync(path.join(repo, "src", "big.js"), ["function big() {", ...big, "}", ""].join("\n"));
+  commitAll(repo, "init");
+  return repo;
+}
+
+function writeLcov(repo) {
+  const record = (file, name, lines, hit, branchLines) => [
+    `SF:${file}`,
+    `FN:1,${name}`,
+    ...Array.from({ length: lines }, (_, i) => `DA:${i + 1},${hit}`),
+    ...branchLines.map((line) => `BRDA:${line},0,0,${hit}`),
+    "end_of_record",
+  ];
+  fs.mkdirSync(path.join(repo, "coverage"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "coverage", "lcov.info"), [
+    ...record("src/route.js", "route", 13, 0, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
+    ...record("src/big.js", "big", 202, 1, []),
+    "",
+  ].join("\n"));
+}
+
+test("without a coverage report hotspots rank by churn × size, and the scan says so", (t) => {
+  const repo = crapRepo(t);
+
+  const result = scan(repo);
+  assert.equal(result.hotspots[0].path, "src/big.js");
+  assert.equal(result.hotspotRanking.by, "churn × size");
+  assert.equal(result.hotspots[0].crap, undefined);
+
+  const text = run(repo, ["recover", "scan"]);
+  assert.match(text.output, /Hotspots — ranked by churn × size \(no coverage report\)/);
+});
+
+test("a fresh lcov ranks by churn × CRAP: the uncovered 10-branch function comes first at 132", (t) => {
+  const repo = crapRepo(t);
+  writeLcov(repo);
+
+  const result = scan(repo);
+  assert.equal(result.hotspotRanking.by, "churn × CRAP");
+  assert.equal(result.hotspotRanking.heuristic, true);
+  assert.equal(result.hotspots[0].path, "src/route.js");
+  assert.equal(result.hotspots[0].crap, 132);
+  assert.deepStrictEqual(result.hotspots[0].functions[0], { name: "route", line: 1, length: 13, crap: 132 });
+
+  const text = run(repo, ["recover", "scan"]);
+  assert.match(text.output, /Hotspots — ranked by churn × CRAP \(heuristic, from coverage\/lcov\.info\)/);
+  assert.match(text.output, /- src\/route\.js: 13 lines, churn \d+, CRAP 132 \(route:1, 13 lines\)/);
+});
+
+test("an lcov older than a source it lists is not ranked by", (t) => {
+  const repo = crapRepo(t);
+  writeLcov(repo);
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(path.join(repo, "coverage", "lcov.info"), old, old);
+
+  const result = scan(repo);
+  assert.equal(result.hotspotRanking.by, "churn × size");
+  assert.equal(result.hotspotRanking.reason, "coverage report older than the code");
+  assert.equal(result.hotspots[0].path, "src/big.js");
 });

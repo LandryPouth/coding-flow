@@ -39,8 +39,10 @@ file, so run it before anything else and keep its JSON.
 
 Run the scan and read all of it, not only the first section. It gives:
 
-- **hotspots** — size × churn, top 15, each with whether a test sits next to it
-  or imports its basename;
+- **hotspots** — top 15, each with whether a test sits next to it or imports
+  its basename. Ranked by churn × CRAP (the file's worst function, a heuristic
+  read from lcov) when a fresh coverage report exists, else by churn × size; the
+  heading says which. Run the test suite with lcov output first to get CRAP;
 - **test map** — test files per top-level code directory and the directories
   with code and no test;
 - **secrets in the tree** — heuristic allowlist applied; command substitutions

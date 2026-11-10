@@ -60,6 +60,7 @@ const {
 } = require("./validation-run");
 const { evaluateClaim } = require("./claim");
 const { runRedAtBase } = require("./red-at-base");
+const { evaluateComplexity } = require("./complexity");
 
 function buildHarnessPreflight({ story = null } = {}) {
   const { config, exists } = readHarnessConfig();
@@ -466,12 +467,12 @@ function verifyStoryOnce({
       : evaluateCoverage({ storyDir, config, exemption, startedAt });
 
   const acceptanceCriteria = readAcceptanceCriteria(storyDir);
-  // Like coverage, only judged on a green suite for a single story.
+  // Like coverage, these two are only judged on a green suite for a single story.
+  const complexity = commandsOk && !skipCoverage ? evaluateComplexity({ root: cwd, config, since: startedAt }) : null;
   const contrary = commandsOk && !skipCoverage
     ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria, policyChange })
     : NO_CONTRARY;
   const red = redAtBase && !refused ? runRedAtBase({ config, ...(cleaned ? { env: cleaned.env } : {}) }) : null;
-
   // A claim narrows the green: the commands passing is not yet "behavior held".
   // Evaluated even on a red suite so the evidence says which promise failed;
   // a refused run executed nothing and makes no claim.
@@ -506,8 +507,8 @@ function verifyStoryOnce({
     // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
     contraryPolicy: contraryPolicy(config),
     contrary,
-    ...(claimResult ? { claim: claimResult } : {}), ...(red ? { redAtBase: red } : {}),
-    ok: commandsOk && coverage.ok && contrary.ok && (!claimResult || claimResult.ok) && (!red || red.ok),
+    ...(claimResult ? { claim: claimResult } : {}), ...(red ? { redAtBase: red } : {}), ...(complexity ? { complexity } : {}),
+    ok: commandsOk && coverage.ok && contrary.ok && (!claimResult || claimResult.ok) && (!red || red.ok) && (!complexity || complexity.ok),
     results,
   };
 }

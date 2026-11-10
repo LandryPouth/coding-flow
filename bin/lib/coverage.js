@@ -604,6 +604,8 @@ module.exports = {
   loadCoverageReport,
   loadCoverageReports,
   reportCandidates,
+  toRepoRelative,
+  packageRootOf,
   packageOfFile,
   measurePatchCoverage,
   coveredExtensions,

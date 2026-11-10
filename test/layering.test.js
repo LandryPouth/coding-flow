@@ -14,7 +14,7 @@ const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'bin', 'lib');
 
 const CORE = [
-  'audit', 'claim', 'config', 'context', 'coverage', 'coverage-gate', 'detect', 'diff-base',
+  'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'detect', 'diff-base',
   'diff-scope', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
   'identity', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk',
   'security-policy', 'spec-drift', 'story', 'util', 'validation-run',

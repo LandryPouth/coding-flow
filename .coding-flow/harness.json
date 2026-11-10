@@ -11,6 +11,10 @@
     ".coverage/lcov.info"
   ],
   "minPatchCoverage": 80,
+  "functionSize": {
+    "max": 80,
+    "enforce": true
+  },
   "secretPatterns": [
     {
       "name": "Stripe live key",

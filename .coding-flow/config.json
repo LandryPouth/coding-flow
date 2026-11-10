@@ -18,8 +18,7 @@
       }
     ],
     "quality": [
-      "node scripts/check-lock-exit-reachability.js",
-      "node scripts/check-function-size.js"
+      "node scripts/check-lock-exit-reachability.js"
     ]
   }
 }

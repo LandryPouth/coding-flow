@@ -17,6 +17,7 @@ const {
 const { scanProject } = require("./bootstrap");
 const { readHarnessConfig, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
 const { readConfig } = require("./config");
+const { loadFunctionReport, measureFile } = require("./complexity");
 const { detectSecurityRecipes, securityCoverage } = require("./security-recipes");
 const {
   compileSecretPatterns,
@@ -326,23 +327,70 @@ function measureCodeLines(root, trackedFiles) {
   return byPath;
 }
 
-function buildHotspots(lineCounts, churn, testFiles, tests) {
+// The lcov the scan ranks by, when one exists and is not older than any source it
+// lists: a report written before the last edit would rank yesterday's code.
+function freshFunctionReport(root, config) {
+  const report = loadFunctionReport(root, { config });
+
+  if (!report) {
+    return { report: null, reason: "no coverage report" };
+  }
+
+  const stale = [...report.files.keys()].some((file) => {
+    try {
+      return fs.statSync(path.join(root, file)).mtimeMs > report.generatedAt;
+    } catch {
+      return false;
+    }
+  });
+
+  return stale ? { report: null, reason: "coverage report older than the code" } : { report, reason: null };
+}
+
+// A file's worst functions by CRAP, measured from the report; null when the
+// report does not list the file.
+function worstFunctions(root, relativePath, report) {
+  if (!report || !report.files.has(relativePath)) {
+    return null;
+  }
+
+  try {
+    return measureFile(root, relativePath, report.files.get(relativePath))
+      .sort((a, b) => b.crap - a.crap || b.length - a.length)
+      .slice(0, 3)
+      .map(({ name, line, length, crap }) => ({ name, line, length, crap }));
+  } catch {
+    return null;
+  }
+}
+
+// Churn × size, or churn × CRAP (the file's worst function) when a fresh lcov
+// lists the file. Without churn the second factor ranks alone.
+function buildHotspots(lineCounts, churn, testFiles, tests, { root = cwd, report = null } = {}) {
   const rows = [];
 
   for (const [relativePath, lines] of lineCounts) {
     const changed = churn.available ? churn.byPath.get(relativePath) || 0 : null;
+    const functions = worstFunctions(root, relativePath, report);
+    const crap = functions && functions.length > 0 ? functions[0].crap : null;
+    const weight = report ? crap : lines;
 
     rows.push({
       path: relativePath,
       lines,
       churn: changed,
-      score: churn.available ? lines * changed : null,
+      ...(report ? { crap, functions: functions || [] } : {}),
+      score: weight === null ? null : churn.available ? weight * changed : report ? weight : null,
       hasTest: hasNearbyOrImportingTest(relativePath, testFiles, tests),
     });
   }
 
   rows.sort((a, b) => {
-    if (a.score !== null && b.score !== null && a.score !== b.score) {
+    if ((a.score === null) !== (b.score === null)) {
+      return a.score === null ? 1 : -1;
+    }
+
+    if (a.score !== null && a.score !== b.score) {
       return b.score - a.score;
     }
 
@@ -725,6 +773,7 @@ function collectRecoveryScan({ historyLimit = DEFAULT_HISTORY_LIMIT } = {}) {
   const { patterns, invalid } = compileSecretPatterns(config);
   const exactPatterns = patterns.filter((pattern) => pattern.precision === "exact");
   const lineCounts = measureCodeLines(root, tracked.files);
+  const { report, reason } = freshFunctionReport(root, config);
 
   return {
     schemaVersion: 1,
@@ -736,7 +785,10 @@ function collectRecoveryScan({ historyLimit = DEFAULT_HISTORY_LIMIT } = {}) {
       churnAvailable: churn.available,
     },
     stack,
-    hotspots: buildHotspots(lineCounts, churn, testFiles, tests),
+    hotspotRanking: report
+      ? { by: "churn × CRAP", heuristic: true, reports: report.reports }
+      : { by: "churn × size", heuristic: false, reason },
+    hotspots: buildHotspots(lineCounts, churn, testFiles, tests, { root, report }),
     testMap: buildTestMap(stack.codeDirectories, tracked.files, testFiles),
     secrets: {
       tree: {
@@ -776,7 +828,10 @@ function printRecoveryScan(scan) {
     log("");
   }
 
-  log("Hotspots (size × churn)");
+  const ranking = scan.hotspotRanking || { by: "churn × size", reason: "no coverage report" };
+  log(ranking.reports
+    ? `Hotspots — ranked by ${ranking.by} (heuristic, from ${ranking.reports.join(", ")})`
+    : `Hotspots — ranked by ${ranking.by} (${ranking.reason})`);
   if (!scan.git.available) {
     log("- unavailable — no tracked files");
   } else if (scan.hotspots.length === 0) {
@@ -784,7 +839,10 @@ function printRecoveryScan(scan) {
   }
   for (const hotspot of scan.hotspots) {
     const churn = hotspot.churn === null ? "churn unavailable" : `churn ${hotspot.churn}`;
-    log(`- ${hotspot.path}: ${hotspot.lines} lines, ${churn}, ${hotspot.hasTest ? "has a test" : "no test"}`);
+    const worst = hotspot.functions && hotspot.functions[0]
+      ? `, CRAP ${hotspot.crap} (${hotspot.functions[0].name}:${hotspot.functions[0].line}, ${hotspot.functions[0].length} lines)`
+      : "";
+    log(`- ${hotspot.path}: ${hotspot.lines} lines, ${churn}${worst}, ${hotspot.hasTest ? "has a test" : "no test"}`);
   }
   log("");
 
