@@ -31,6 +31,24 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **`/flow-review` reads the diff against what was asked, not only against the rules.**
+  - The contract now includes the request the story came from.
+  - A new `[spec]` pass, run before the dimensions, quotes the criterion or request line behind each finding. It reports:
+    - criteria that are missing, or only partly met;
+    - criteria that look met but behave wrong;
+    - visible behavior that nothing asked for;
+    - criteria that settled an open question with no recorded confirmation.
+  - A mechanical finding names the check that would have caught it: a linter or dependency rule, or a test declared in `validation.quality`. Prose rules are kept for judgement calls.
+  - Architecture gains the deletion test and "one adapter is a hypothetical seam".
+  - Quality names eight of Fowler's smells, each with its fix, always as a heuristic.
+- **The skills and `RULES.md` cost a quarter less context, rules intact.**
+  - Skills total 15,070 words → 11,472; `/flow-run` is 3,944 → 2,649.
+  - `RULES.md`, which is read on every turn, is 898 → 707 words.
+  - What was cut: history, rationale that a Common Rationalizations row already carries, rules repeated across sections, and output templates now given as a list of headings. Descriptions are unchanged, so routing stays at 83.3 %.
+- **`/flow-plan` draws only the dependency trees `worktree place` can read.** The example showed a merge (`──┴──`) that the parser refuses, so `/flow-run` stopped at `place` on every epic drawn that way. The skill now lists the accepted shapes: one label per line, a blank line between independent roots, one parent per story, all inside the `## Backbone` section (a tree placed anywhere else is ignored). A story that needs several others is drawn as its own root and names the stories that must land first; `/flow-run` checks they have landed before starting it.
+- **`/flow-run` and `/flow-plan` say where `## Status` goes.** It belongs in `tasks.md` or `story.md`, because a `## Status` in `spec.md` is not read. Finished stories used to show up as `planned` for this reason.
+- **`/flow-run`'s independent STRICT review is handed the request too, not only the criteria**, matching `/flow-review`'s contract.
+- **`/flow-plan`: a throwaway prototype can settle a behavior question.** The prototype is built outside the product tree; only its verdict reaches the story's `## Decisions`.
 - **The default `blockedPaths` now includes `.coding-flow/runs/**` and `.coding-flow/ledger.jsonl`.** The CLI writes them through `fs`, which the guard never judges; an agent's Write/Edit or a shell redirect into the proof is now refused. An install whose `harness.json` lists `blockedPaths` explicitly is not rewritten: `doctor` warns (`evidence_writable`) and names the two entries to add. Codex enforces `blockedPaths` through its sandbox, which would also bind `ai-flow verify` itself, so these two entries are left out of the Codex profile: the proof stays writable by an agent on Codex. The guard refuses writes, not deletions.
 
 ## [0.14.0] - 2026-10-18

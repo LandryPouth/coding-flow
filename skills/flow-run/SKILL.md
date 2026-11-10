@@ -7,36 +7,43 @@ description: Implement one story end-to-end — write the code, add the tests th
 
 ## Overview
 
-Run one prepared story through the right execution pipeline: understand the edit,
-implement the smallest coherent change, add the tests that protect it, and verify.
-The success condition is not "code changed" — it is "acceptance criteria satisfied
-with captured validation evidence."
-
-Intensity scales with risk. You do not chain separate skills by hand; the modes
-below are that pipeline, inlined.
+Run one story: find the edit, implement the smallest coherent change, add the tests
+that protect it, verify. Success is "acceptance criteria satisfied with captured
+validation evidence", not "code changed". Intensity scales with risk; the modes
+below are the whole pipeline — no other skill is chained by hand.
 
 ## Conventions
 
-- `{project-root}` means the current repository root.
-- The active story lives under `epics/epic-NN-name/story-NN-NN-name/`. A QUICK story
-  is a single `story.md`; a STANDARD/STRICT story splits into `spec.md` / `plan.md` /
-  `tasks.md`. Read whichever shape is there.
-- Story scope is authoritative unless it conflicts with `RULES.md`.
-- Existing code patterns beat generic preferences; keep changes scoped and reversible.
-- If a phase finds blocking issues, fix them before continuing.
+- The story lives under `epics/epic-NN-name/story-NN-NN-name/`: one `story.md`
+  (QUICK), or `spec.md` / `plan.md` / `tasks.md`. Read whichever is there.
+- Story scope is authoritative unless it conflicts with `RULES.md`. Existing
+  patterns beat generic preferences; keep changes scoped and reversible.
+- A phase that finds a blocking issue fixes it before the next phase.
 
 ## Harness Automation (do this without being asked)
 
-When `ai-flow` is available, use the harness automatically.
-
-**Work where the story lives.** If `ai-flow status` shows the story with `→ wt: <path>`,
-its work is in that worktree: `cd <path>` before reading, editing or verifying.
-`verify --story` refuses from another checkout while that worktree holds work, and
-says where to go.
-
-> If bare `ai-flow` is not on `PATH` (common when the plugin is installed but the
-> package was never linked globally), run the same commands via
+> If bare `ai-flow` is not on `PATH`, run the same commands via
 > `npx @landry_pouth/coding-flow <args>`.
+
+**Work where the story lives.** If `ai-flow status` shows the story with
+`→ wt: <path>`, `cd <path>` first: `verify --story` refuses from another checkout.
+
+**Before any implementation, at every intensity, place and lock the story:**
+
+```bash
+ai-flow worktree place --epic <epic-dir> --story <story-dir>
+ai-flow worktree lock --story <story-dir>
+```
+
+`<epic-dir>` is the story's parent. `place` reads the epic's dependency tree: the
+story continues where its chain runs, or gets a new worktree when it starts a
+parallel chain — then `cd` into it, and run everything below from there. If `place`
+errors (an unsupported tree shape), stop and report; once resolved, place it by hand
+with `ai-flow worktree add --story <story-dir>`. `lock` stops a second story from
+mixing its diff into this checkout; if it refuses right after `place`, something
+upstream is wrong — stop rather than work around it. If the story names stories that
+must land before it starts, check they are done first. No story directory: skip both.
+An epic with one story and no tree: skip `place`.
 
 **Required at every intensity, non-skippable:** after implementation, run
 
@@ -44,376 +51,261 @@ says where to go.
 ai-flow verify --story <story-dir>
 ```
 
-It executes the declared validation commands and captures verbatim pass/fail. It is
-a phase, not an extra — the story is not finished until it has run. Fix real
-failures; never weaken tests to pass. Re-running an unchanged story replays the
-existing proof instead of re-executing, so calling it again is cheap.
+It runs the declared validation commands and captures pass/fail verbatim; the story
+is not finished until it has. Fix real failures; never weaken a test to pass. An
+unchanged story replays its proof, so a re-run without an edit tells you nothing.
 
-**In a strict project, settle the acceptance criteria before you verify.** An
-unchecked criterion in the story's `## Acceptance Criteria` makes `verify` report
-`NOT PROVEN`. Tick each one that is done (`[x]`), and mark one you are knowingly
-leaving out `[~]` (or list it under `## Deferred Criteria`) — never tick a criterion
-you did not meet. Likewise a deleted test file needs a `## Test Exemption` naming it.
+- **Strict project: settle the criteria first.** An unticked `## Acceptance
+  Criteria` item makes verify `NOT PROVEN`. Tick what is done (`[x]`), mark what you
+  knowingly leave out `[~]` (or list it under `## Deferred Criteria`), never tick
+  what you did not meet. A deleted test file needs a `## Test Exemption` naming it.
+- **`REFUSED`:** commands written in `plan.md` do not run when nobody is watching
+  (no TTY, `CI=true`, an agent run); a bare call to a project script (`npm test`,
+  `pnpm run lint`) does. Never add `--allow-plan-commands`, `AI_FLOW_FORCE_TTY` or
+  `NODE_ENV=test` yourself: move the commands to `.coding-flow/config.json` with the
+  user's agreement, or ask them. `--clean-env` drops credential-looking variables.
+- **`NOT PROVEN` with every command green:** on risky work, behavior changed and no
+  test file moved — a suite green before your edit says nothing about it. Write the
+  test that fails without the change. Only a change that cannot carry one (a vendor
+  bump, a config cutover) gets a `## Test Exemption` (`--test-exemption "<reason>"`
+  with no story); it is copied into the evidence and the PR body. Never disable
+  `requireTestChange` to finish a story.
+- **Report the rung as printed.** `Coverage: verified` measured the added lines;
+  `Coverage: evidence` only saw a test file move — a proxy, never "the change is
+  covered"; `Coverage: exempted` rests on a declared reason. A coverage report
+  (`lcov.info`, `coverage-final.json`) from the command the project already runs
+  turns `evidence` into `verified`: say so.
+- **A tool error is not a red suite.** Report it. If the harness cannot run at all,
+  continue and record that verification could not run. Either way, no
+  `## Status: done` — no proof exists.
 
-**Commands written in `plan.md` are refused when nobody is watching** (no TTY, `CI=true`,
-an agent-driven run): `verify` reports `REFUSED` and executes nothing. A bare call to
-one of the project's own scripts (`npm test`, `pnpm run lint`) is the exception: it runs. Do not add
-`--allow-plan-commands` (or `AI_FLOW_FORCE_TTY`/`NODE_ENV=test`) on your own — move the commands to `.coding-flow/config.json`
-with the user's agreement, or ask them to allow it. `--clean-env` runs any command
-without credential-looking environment variables.
+**When the tooling is the obstacle, log it in the same pass.** A gate nothing
+legitimate can satisfy, a check firing on a non-risk, an error that does not say
+what to do next: add a row to `docs/DOGFOODING.md` — **always** when you disable,
+relax, or exempt a check, reason included. A failing test, or a gate rightly asking
+for one, is the tool working: no row.
 
-**A green suite is not the same claim as "this change is covered."** When the work
-is risky, `verify` also checks that the diff contains a test. If behavior changed
-and no test file moved, it reports `NOT PROVEN` — every command passed, and the
-proof still does not reach this change, because a suite that was already green
-before your edit says nothing about it. That is not a failing test to hunt; it is
-a missing one to write. Two legitimate answers:
+Machinery that scales with intensity:
 
-- add the test that would fail without this change (the answer in nearly every case);
-- if the change genuinely cannot carry one — a vendor bump, a config-only cutover —
-  add a `## Test Exemption` section to the story stating why (or pass
-  `--test-exemption "<reason>"` when there is no story). It is copied verbatim into
-  the evidence and into the PR body, so it is a recorded claim, not a way to make
-  the gate quiet.
-
-**Whenever the tooling is the obstacle, log it before moving on.** Add a row to
-`docs/DOGFOODING.md` when a gate blocks a change that has no legitimate way to
-satisfy it, when a check fires on something that was never a risk, or when an
-error message does not say what to do next — and **always** when you disable,
-relax, or exempt a check to keep going, the exemption reason included. Write it
-in the same pass, not at the end. A failing test or a gate that correctly asked
-for one is not friction; that is the tool working, and it stays out of the log.
-
-**A pass names how strong it is — report the rung you got.** `verify` prints
-`Coverage: verified` when it measured the added lines and enough of them ran,
-`Coverage: evidence` when all it saw was a test file moving alongside the change,
-and `Coverage: exempted` when a declared reason carried it. `evidence` is a proxy,
-not a measurement: never summarize one as "the change is covered". If the project
-emits a coverage report (`lcov.info`, `coverage-final.json`) from the command it
-already runs, say so — that is what turns `evidence` into `verified`.
-
-**Risk is read from the diff, not only from the story.** Touching an auth path, a
-migration, a payment or secret path raises the risk whatever the story text says —
-so wording a story mildly does not lower the bar, and the gate applies to work with
-no story at all. The corollary matters for you: if you find yourself editing those
-paths while running QUICK, that is the signal to switch up, not to keep going.
-
-Never disable the gate (`requireTestChange`) to finish a story.
-
-**Before any implementation, at every intensity, resolve where the story runs:**
-
-```bash
-ai-flow worktree place --epic <epic-dir> --story <story-dir>
-```
-
-`<epic-dir>` is `<story-dir>`'s parent directory (`epics/epic-NN-name/`, per
-the Conventions above). Reads the epic's Backbone/dependency-tree in its
-`index.md` and decides
-whether this story continues wherever its chain already lives, or opens a
-new worktree because it starts a chain parallel to what is already
-running — the isolation `/flow-plan`'s own contract already promises for
-sibling stories, applied automatically instead of by hand (see
-docs/DOGFOODING.md, 2026-08-27, for the two real incidents — inconsistent
-placement, and a worktree created for a story with nothing to parallelize —
-this step exists to close). If it reports a new worktree, `cd` into it
-before continuing: every step below (lock, implementation, verify) runs from
-there, not from wherever this invocation started. If it errors — an
-unsupported dependency-tree shape, e.g. a consolidation/merge point — stop
-and report it rather than guessing a location; place the story manually with
-`ai-flow worktree add --story <story-dir>` once resolved. With no story
-directory, or an epic with a single story and no dependency tree, there is
-nothing to place — skip this step.
-
-**Then, at every intensity, lock the story:**
-
-```bash
-ai-flow worktree lock --story <story-dir>
-```
-
-This defends against a different failure than story risk does: a second
-`/flow-run` starting on a checkout that already carries another story's
-unfinished work, mixing two stories' diffs on one tree before either is done.
-That risk does not correlate with how risky the story itself is, so the lock
-runs unconditionally, not gated behind STRICT's `harness preflight`. If it
-refuses — the checkout is occupied by a different story — stop; this should
-not happen right after placement resolved a location for this exact story,
-so treat it as a signal something upstream is wrong rather than working
-around it. With no story directory (see below), there is nothing to
-lock — skip this step.
-
-Everything else is machinery, and scales with intensity:
-
-- QUICK/FAST: `verify` only. One command.
-- STANDARD/STRICT: also `ai-flow harness check --story <story-dir>` after notes,
-  and `ai-flow harness evidence --story <story-dir>` at the end.
-- STRICT only: `ai-flow harness preflight --story <story-dir>` before implementing,
-  to confirm the mode against the recorded risk.
-- With no story directory, `ai-flow harness check --quick` is a lightweight
-  secret/sensitive-file pass.
-
-If `verify` reports a **tool error** rather than a failing command, the harness could
-not observe the result — that is not a red suite. Report it; do not treat it as a
-validation failure, and do not write `## Status: done`.
-
-If the harness cannot run at all, continue but record that verification could not
-run — and do not write `## Status: done` (no proof exists).
+- STANDARD/STRICT: `ai-flow harness check --story <story-dir>` after notes, and
+  `ai-flow harness evidence --story <story-dir>` at the end.
+- STRICT: `ai-flow harness preflight --story <story-dir>` before implementing.
+- No story directory: `ai-flow harness check --quick` (secrets, sensitive files).
 
 ## Status From Proof
 
-`ai-flow status` derives a story's state from executed proof: a green `verify` shows
-as `verified`, a red one as `blocked`. A `## Status` line in the story overrides
-that — keep it honest:
+`ai-flow status` derives state from executed proof (green → `verified`, red →
+`blocked`). A `## Status` line overrides it, so keep it honest — and write it in
+`tasks.md` (or `story.md`): a `## Status` in `spec.md` is not read.
 
-- Write `## Status: done` **only after** a green `ai-flow verify` for this story is
-  captured. A passing verify is the precondition, not your assertion. At that
-  same point, and only that point, run
-  `ai-flow worktree unlock --story <story-dir>` — a `blocked` or
-  `in-progress` story still has real unlanded work the lock is correctly
-  protecting, so it stays locked.
-- Immediately after unlocking, run
-  `ai-flow worktree autoland --epic <epic-dir> --story <story-dir>` (skip if
-  there was no story directory to place in the first place). It checks
-  whether this story was the last not-yet-done one of its chain and, if so
-  and that chain is running in its own worktree, lands it onto the primary
-  checkout automatically — the counterpart to the placement step at the top:
-  that step opened the worktree when the chain started, this one closes it
-  when the chain finishes, so nobody has to notice a chain is done and land
-  it by hand. Report exactly what it reports: landed, not-yet-finished (a
-  sibling in the chain is still open — normal, not an error), never isolated
-  (the chain ran in the primary checkout all along — also normal), or a land
-  failure (a real conflict or a failed post-land re-verify) — stop and report
-  a failure rather than retrying blindly, the same as any other `land`
-  failure.
-- On a red or partial verify, write `## Status: blocked` and record what failed.
-- `NOT PROVEN` (commands green, coverage gate blocked) is not `done` either. The
-  story stays `in-progress` until a test covers it or an exemption is declared.
-- Before implementation is finished, or when verify could not run, leave
-  `## Status: in-progress` (or `planned`) — never `done`.
+- `## Status: done` **only after** a green verify for this story is captured. Then,
+  and only then:
 
-The user should never have to ask "did you check this?". `done` means the machine
-already proved it.
+  ```bash
+  ai-flow worktree unlock --story <story-dir>
+  ai-flow worktree autoland --epic <epic-dir> --story <story-dir>
+  ```
+
+  `autoland` lands the chain onto the primary checkout when this was its last open
+  story and it ran in its own worktree. Report what it says: landed; not finished (a
+  sibling is still open — normal); never isolated (normal); or a land failure (a
+  conflict, a red post-land verify) — stop and report, never retry blindly.
+- Red or partial verify: `## Status: blocked`, with what failed. The lock stays.
+- `NOT PROVEN` is not done: `in-progress` until a test covers it or an exemption is
+  declared.
+- Unfinished, or verify could not run: `in-progress` (or `planned`).
+
+`done` means the machine already proved it.
 
 ## Choosing Intensity
 
 If the user names a mode, use it. Otherwise pick the **lightest** mode that covers
-the change, and ask what this change can break that the test suite would not catch —
-not what subject it happens to touch.
+the change: ask what it can break that the suite would not catch, not what subject
+it touches.
 
-Use **STRICT** when the change does any of these:
+**STRICT** when the change:
 
 - alters an authorization decision, or who can reach something;
 - changes a persistence schema, or needs a migration;
 - moves money, credentials, or secrets;
-- creates a **new** externally-reachable trust boundary (a new endpoint, a new
-  upload path, a new third-party integration).
+- creates a **new** externally-reachable trust boundary (an endpoint, an upload
+  path, a third-party integration).
 
-Otherwise it is not STRICT. A form posting to an existing, already-validated
-endpoint creates no new boundary — that is STANDARD. Copy or layout inside an
-existing page is QUICK.
+Otherwise it is not STRICT: a form posting to an existing, validated endpoint is
+STANDARD; copy or layout inside an existing page is QUICK. "Touches user input" and
+"reads the database" describe nearly every feature — they are not escalation
+signals. The security rules in `RULES.md` apply at every intensity; only the
+ceremony scales.
 
-"Touches user input" and "reads the database" are not escalation signals: every form
-and nearly every feature does both, and treating them as STRICT means paying TDD and
-E2E prices for a heading change. The security rules in `RULES.md` apply at every
-intensity — what scales is the ceremony, never the constraints.
-
-There is no separate "secure" workflow; security is the STRICT intensity of this one.
+**Risk is read from the diff, not the story.** Editing an auth, migration, payment
+or secret path raises the bar whatever the story says, and with no story at all.
+Doing it while in QUICK is the signal to switch up.
 
 ### QUICK / FAST — small, isolated changes
 
-For copy updates, simple bug fixes, isolated components, low-risk local changes with
-obvious acceptance criteria and no auth/permissions/data involvement.
+Copy, simple bug fixes, isolated components: obvious criteria, no
+auth/permissions/data involvement.
 
-1. Read the request or the story; find the edit point with 1–3 targeted searches
-   (read at most ~5 files before deciding it is still small).
-2. Implement the change.
-3. Run the narrowest useful validation, then `ai-flow verify`.
-4. Update the story `## Result` only if the change is non-trivial.
+1. Find the edit point with 1–3 targeted searches (at most ~5 files read before
+   deciding it is still small).
+2. Implement; run the narrowest useful validation, then `ai-flow verify`.
+3. Update `## Result` only if the change is non-trivial.
 
-If the scope grows, several modules need changes, or the change starts matching a
-STRICT trigger, switch up rather than pushing through.
+Scope grows, several modules need changes, or a STRICT trigger appears: switch up.
 
 ### STANDARD — normal feature work
 
-For CRUD, product features, frontend/backend integration, ordinary vertical stories.
+CRUD, product features, frontend/backend integration, ordinary vertical stories.
 
-1. Build a compact **Context Map** from the story and targeted searches (see Context
-   Policy). Capture scope, stop conditions, rollback notes, likely files, and
-   validation gates — inline, not a separate document.
-2. Map acceptance criteria to code areas; inspect current patterns before editing.
-3. Implement the smallest coherent slice end-to-end: code + tests + validation in one
-   focused pass. Add/update tests per the story plan.
-4. Run `ai-flow verify`; then self-review (see Review Before Done).
-5. Fix blocking issues and re-run the failed checks. Update the story `## Result`
-   and record meaningful architecture choices in its Decisions section.
+1. Build a compact Context Map inline: scope, likely files, validation gates,
+   rollback notes, stop conditions.
+2. Map the criteria to code areas; read the current patterns before editing.
+3. Implement the smallest coherent slice end to end — code, the tests the story plan
+   calls for, and validation in one pass.
+4. `ai-flow verify`, then Review Before Done.
+5. Fix, re-run what failed; update `## Result`, and `## Decisions` for meaningful
+   architecture choices.
 
 ### STRICT — risky or security-sensitive work
 
-For auth, admin, permissions, payments, migrations, risky refactors, high-regression
-work. Everything in STANDARD, plus:
+Everything in STANDARD, plus:
 
-1. If requirements are unclear, clarify first (`/flow-plan` Clarify First).
-2. Do a scout pre-step when broad discovery is needed (see Context Policy).
-3. Use **TDD** for critical logic (see below).
-4. Answer the Security Questions before finalizing.
-5. Broaden the review to the deep sections of `/flow-review` (security, tests,
-   architecture) rather than the quick checklist.
+1. Unclear requirements: `/flow-plan` Clarify First.
+2. A scout pre-step when discovery is broad (Context Policy).
+3. TDD for critical logic.
+4. The Security Questions, answered before finalizing.
+5. `/flow-review`, required, Deep on security, tests and architecture (Review
+   Before Done).
 
-**A bug fix carries negative evidence.** When the story fixes a bug, commit the
-test and the fix, then run `ai-flow verify --story <dir> --red-at-base` as well
-as the ordinary verify. It is green only when the diff's test fails at the merge
-base and passes at HEAD; a test that already passes at base is `NOT PROVEN`, and
-so is one that never reached its tests at base (a missing module, a
-syntax error, a failed hook) or whose runner output is not read. Declare
-`redAtBase.command` in `.coding-flow/harness.json` as `node --test
---test-reporter=tap {files}` (`bootstrap --scan` suggests it): only node's test
-runner is read, so a Jest, Vitest, Go or pytest bug fix is proven by the
-ordinary verify and the review's negative evidence. Both sides must be
-committed: the base side is the merge base and the other is HEAD.
+**A bug fix carries negative evidence.** Commit the test and the fix, then run
+`ai-flow verify --story <dir> --red-at-base` besides the ordinary verify: green only
+when the diff's test fails at the merge base and passes at HEAD. A test that passes
+at base, or fails there before reaching its tests (a missing module, a syntax error,
+a failed hook), is `NOT PROVEN`. Declare `redAtBase.command` in
+`.coding-flow/harness.json` as `node --test --test-reporter=tap {files}`
+(`bootstrap --scan` suggests it). Only node's runner is read: a Jest, Vitest, Go or
+pytest fix is proven by the ordinary verify and the review's negative evidence.
 
 ## Context Policy
 
-Use the lightest context path that still lets the story ship in one focused pass.
-Prefer targeted searches over directory-wide reading. Run a **scout pre-step** — a
-read-only pass that produces a compact Context Map (relevant files, search anchors,
-likely edit points, validation focus, risks, areas to avoid) — only when edit points
-are unclear, the story crosses modules, or it is security/migration/high-regression
-work. Default scout budget: ~8 searches, ~12 files, one screen of output; do not edit
-files during it. If more than ~8 files or ~5 searches are needed before edit points
-are clear (and the mode is not STRICT), stop and do a scout pass. Context reduction
-must not fragment delivery: once edit points are clear, implement code, tests,
-validation, and notes together.
+Targeted searches over directory-wide reading. Run a **scout pre-step** — read-only,
+producing a Context Map (files, search anchors, edit points, validation focus, risks,
+areas to avoid) — only when edit points are unclear, the story crosses modules, or it
+is security, migration or high-regression work. Budget: ~8 searches, ~12 files, one
+screen of output, no edits. Outside STRICT, edit points still unclear after ~5
+searches or ~8 files means stop and scout. Once they are clear, deliver code, tests,
+validation and notes together.
 
 ## TDD (opt-in, for complex logic)
 
-Use targeted TDD where a failing test clarifies behavior and prevents regression —
-business logic, permissions, validation, transformations, complex workflows, and bug
-fixes. Skip it for trivial UI, static content, and low-risk glue.
+For business logic, permissions, validation, transformations, workflows and bug
+fixes — not trivial UI, static content or glue.
 
 1. State the behavior in Given/When/Then.
-2. Write one failing test; run the narrow command and confirm it fails for the
-   expected reason.
-3. Implement the smallest passing code; run it green.
-4. Refactor without changing behavior; add edge cases only where they protect real risk.
+2. Write one failing test; confirm it fails for the expected reason.
+3. Write the smallest code that passes; run it green.
+4. Refactor without changing behavior; add edge cases only where they protect real
+   risk.
 
-Protect behavior, not implementation details. Do not keep a test that only mirrors
-implementation. For each risky criterion, demonstrate a red→green: break the behavior,
-confirm the guarding test fails, restore, confirm it passes.
+Test behavior, not implementation: delete a test that only mirrors the code. For
+each risky criterion, show red→green: break
+the behavior, see the guarding test fail, restore, see it pass.
 
 ## Security Questions (STRICT, before finalizing)
 
-When the story touches trust boundaries, privileged actions, private data, or hostile
-input, server-side enforcement beats client-side checks. Answer:
-
-- Who is allowed to perform this action, and where is authorization enforced server-side?
+- Who may perform this action, and where is that enforced server-side?
 - What input is hostile, and where is it validated before persistence or use?
 - What private data could leak (client bundles, logs, responses, public queries)?
-- What validation or tests prove the boundary works?
+- What validation or test proves the boundary holds?
 
-An unanswered question above, or a red `ai-flow verify`, is a blocker — not
-something to work around. Route to the deep security section of `/flow-review` for auth
-systems, permission models, payments, uploads, secrets, or external integrations.
+An unanswered question, or a red verify, is a blocker. Auth systems, permission
+models, payments, uploads, secrets and external integrations go to `/flow-review`'s
+Security Deep.
 
 ## Review Before Done
 
-Before marking a story done, self-review the change: acceptance criteria met,
-architecture not drifting, tests protect behavior (not implementation), no security
-regression, no unrelated changes.
-
-For a QUICK story this is a glance. In STANDARD, `/flow-review` is **opt-in** — run
-it when the self-review finds something, when the change crosses modules, or on
-request. A full review pass over a diff you wrote minutes ago mostly re-reads your
-own reasoning; it earns its cost when the diff is large or unfamiliar, not by
-default.
+Self-review the change: criteria met, no architecture drift, tests protect behavior,
+no security regression, no unrelated change. QUICK: a glance. STANDARD:
+`/flow-review` is opt-in — when the self-review finds something, the change crosses
+modules, or on request; reviewing a diff you wrote minutes ago mostly re-reads your
+own reasoning.
 
 In STRICT, `/flow-review` is required, and the one pass must be genuinely
 independent: delegate it to a fresh Agent/subagent call, handed the diff, the
-contract — the story's acceptance criteria, `RULES.md`, and the codebase's existing
-conventions — and the fact that this diff's risk tier already resolved STRICT, so
-it can default Architecture, Tests, and Security to Deep instead of re-judging
-risk itself — nothing else beyond that, never your own reasoning or conclusion.
-Frame the prompt adversarially: find what is wrong with this change, assume the
-author is overconfident. A session reviewing its own diff minutes after writing it
-is the weakest reviewer available — the reasoning that produced a defect is still
-in context, and re-reading it just reproduces the same conclusion; a fresh context
-handed only the artifact and the contract is what an independent pass means.
+contract — the request the story came from, its acceptance criteria, `RULES.md`, and
+the codebase's existing conventions — and the fact that this diff's risk tier
+already resolved STRICT, so it defaults Architecture, Tests, and Security to Deep —
+nothing else beyond that, never your own reasoning or conclusion. Frame the prompt
+adversarially: find what is wrong with this change, assume the author is
+overconfident.
 
 ## Common Rationalizations
 
-Every row below is an excuse this skill has already answered somewhere above. It
-is repeated here because the moment you reach for one is the moment you are not
-re-reading the prose.
-
 | Rationalization | Reality |
 |---|---|
-| "Verify is green, so the change is covered." | Green means the commands passed. It says nothing about whether proof reaches *your* diff — the suite was green before you started. Read the `Coverage:` rung. |
-| "`Coverage: evidence` is good enough." | `evidence` means a test file moved. That is a proxy, not a measurement. Never summarize it as "the change is covered". |
-| "The story is worded as a small UI change, so QUICK." | Risk is read from the diff. If you are editing an auth path, a migration, or a secret path, switch up — the wording does not lower the bar. |
+| "Verify is green, so the change is covered." | Green means the commands passed; the suite was green before you started. Read the `Coverage:` rung — `evidence` is a proxy, not a measurement. |
+| "The story is worded as a small UI change, so QUICK." | Risk is read from the diff. Editing an auth, migration or secret path means switch up. |
 | "This story mentions auth, so it must be STRICT." | A story names what it is *near* as readily as what it changes. The diff decides; prose can only raise a quiet change to STANDARD. |
-| "I'll declare a test exemption to keep moving." | The reason is copied verbatim into the evidence and into the PR body. It is a recorded claim, not a mute button. |
-| "The gate is wrong here, I'll turn `requireTestChange` off." | Then the gate protects nothing from here on. Never disable it to finish a story — and if it genuinely fired on a non-risk, that is a `docs/DOGFOODING.md` row, written in the same pass. |
-| "I'll write `## Status: done`, the tests obviously pass." | `done` means a green verify for this story is already captured. A written status is not proof; `/flow-next` will surface it as `unproven`. |
-| "Let me run verify once more to be sure." | An unchanged story replays the existing proof. Re-running without an intervening edit tells you nothing you did not already have. |
-| "It is faster to read the whole module than to search." | Past ~8 files or ~5 searches without clear edit points, you are not being thorough, you are burning the budget that was meant for the change. Do a scout pass. |
+| "I'll declare a test exemption to keep moving." | The reason is copied into the evidence and the PR body: a recorded claim, not a mute button. |
+| "The gate is wrong here, I'll turn `requireTestChange` off." | Then it protects nothing from here on. If it fired on a non-risk, that is a `docs/DOGFOODING.md` row, written now. |
+| "I'll write `## Status: done`, the tests obviously pass." | `done` needs a captured green verify. `/flow-next` surfaces anything else as `unproven`. |
+| "Let me run verify once more to be sure." | An unchanged story replays its proof. Without an edit in between, you learn nothing. |
+| "It is faster to read the whole module than to search." | Past ~8 files or ~5 searches with no edit point, you are spending the change's budget. Scout. |
 
 ## Red Flags
 
-Signs you have already drifted — distinct from Stop Conditions, which are cases
-where you stop and hand back. These are cases where you correct course yourself:
+Signs you have drifted — correct course yourself (Stop Conditions are where you hand
+back):
 
-- You are editing an auth path, a migration, or a payment path while running QUICK.
+- You are editing an auth, migration or payment path while running QUICK.
 - You have read more than ~8 files and still cannot name the edit point.
-- You are about to write `## Status: done` without having read a verify result.
-- You added a test exemption and did not add the `docs/DOGFOODING.md` row.
-- You ran the same validation command twice with no edit between the two runs.
-- You are changing a test so it passes, rather than changing the code it guards.
+- You added a test exemption and no `docs/DOGFOODING.md` row.
+- You ran the same validation twice with no edit in between.
+- You are changing a test so it passes, rather than the code it guards.
 - You are touching files no acceptance criterion asked for.
-- You reported "tests pass" from the agent's own run instead of from `ai-flow verify`.
+- You reported "tests pass" from your own run instead of from `ai-flow verify`.
 
 ## Stop Conditions
 
 Stop and report — do not push through — when:
 
-- Story scope is ambiguous enough to cause rework, or acceptance criteria are not testable.
-- Required validation commands cannot be identified or run.
-- Validation fails and the root cause is outside story scope.
-- Security-sensitive behavior is discovered while not running STRICT.
-- Database schema needs breaking changes, or the auth/permission model is unclear.
-- Existing architecture conflicts with the requested implementation.
-- The change would require unrelated refactors or files outside the declared scope.
+- scope is ambiguous enough to cause rework, or the criteria are not testable;
+- the validation commands cannot be identified or run;
+- validation fails for a cause outside the story's scope;
+- security-sensitive behavior turns up while not running STRICT;
+- the schema needs a breaking change, or the auth/permission model is unclear;
+- the existing architecture conflicts with the requested implementation;
+- the change needs unrelated refactors or files outside the declared scope;
+- the story names stories that must land first, and they have not.
 
 ## Rollback Notes
 
-For STANDARD and STRICT, capture before implementing: files/areas likely to change;
-any migration/data rollback concerns; any config or feature-flag rollback path;
-manual cleanup steps if validation fails. Record them in the story `## Result` →
-`### Rollback Notes`.
-
-A QUICK change that is reverted by `git revert` needs no rollback plan — say so by
-omitting the section rather than writing "n/a".
+STANDARD and STRICT, before implementing: the files and areas likely to change,
+migration or data rollback, any config or feature-flag path, manual cleanup if
+validation fails — under `## Result` → `### Rollback Notes`. A QUICK change undone by
+`git revert` needs none: omit the section.
 
 ## Verification
 
 Before reporting the story as done:
 
-- [ ] `ai-flow verify --story <dir>` ran and its result was read. The verdict is
-      that command's output, never the agent's own test run.
-- [ ] The `Coverage:` rung was reported as printed, and `evidence` was not
-      summarized as "the change is covered".
-- [ ] Any `NOT PROVEN` was resolved by writing the missing test or by declaring a
-      `## Test Exemption` — never by lowering or disabling the gate.
-- [ ] `## Status: done` was written only against a captured green verify.
-      Otherwise it reads `blocked` or `in-progress`.
-- [ ] Any gate relaxed, exempted, or disabled has its `docs/DOGFOODING.md` row,
-      written in the same pass rather than at the end.
-- [ ] STANDARD/STRICT: `harness check` and `harness evidence` ran. STRICT also ran
+- [ ] `ai-flow verify --story <dir>` ran and its output was read — the verdict is
+      that output, never your own test run.
+- [ ] The `Coverage:` rung was reported as printed; `evidence` was not called
+      "covered".
+- [ ] Any `NOT PROVEN` was resolved by a missing test or a `## Test Exemption` —
+      never by lowering or disabling the gate.
+- [ ] `## Status: done` was written only against a captured green verify;
+      otherwise it reads `blocked` or `in-progress`.
+- [ ] Any gate relaxed, exempted or disabled has its `docs/DOGFOODING.md` row.
+- [ ] STANDARD/STRICT: `harness check` and `harness evidence` ran; STRICT also ran
       `harness preflight` before implementing.
 
 A box you cannot point at command output for is not ticked.
 
 ## Output
 
-The report scales with the story. Sections that would come back empty are omitted,
-not filled with `-`: an empty field costs tokens to write and attention to read past.
+Scale the report to the story, and omit any section that would come back empty.
 
 **QUICK / FAST** — three lines:
 
@@ -425,50 +317,8 @@ not filled with `-`: an empty field costs tokens to write and attention to read 
 - **Risks**: anything genuinely unresolved, or omit this line
 ```
 
-**STANDARD / STRICT** — the full report:
-
-```md
-# Run Result
-
-## Story
-
--
-
-## Intensity
-
-QUICK / FAST / STANDARD / STRICT
-
-## Summary
-
-- What changed and why
-
-## Acceptance Criteria Status
-
-- [ ]
-
-## Files Changed
-
--
-
-## Tests And Validation
-
-- Command:
-  - Result:
-- Verify: green / red
-
-## Decisions Recorded
-
-- Story plan: yes/no
-
-## Rollback Notes
-
--
-
-## Remaining Risks
-
--
-
-## Stop Conditions Triggered
-
--
-```
+**STANDARD / STRICT** — `# Run Result`, then these `##` sections in order: Story,
+Intensity, Summary (what changed and why), Acceptance Criteria Status (`- [ ]` per
+criterion), Files Changed, Tests And Validation (each command and its result, then
+`Verify: green / red`), Decisions Recorded (story plan: yes/no), Rollback Notes,
+Remaining Risks, Stop Conditions Triggered.

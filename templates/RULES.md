@@ -1,58 +1,57 @@
 # RULES.md
 
-The single rulebook for this repository: project constraints first, then the
-operating rules every agent follows. `CLAUDE.md` imports this file.
-
-This file states what the repository demands of any agent. It deliberately does
-**not** restate the workflow — intensity modes, context budgets, stop conditions
-and depth are owned by `/flow-run` and `/flow-review`, which are loaded only when
-they are used. A rule written in two places is a rule that will eventually
-disagree with itself, and the always-loaded copy is the one that wins by default.
+The single rulebook for this repository: project constraints, then the operating
+rules every agent follows. `CLAUDE.md` imports it, so it is read on every turn — the
+workflow itself (intensity, context budgets, stop conditions) lives in `/flow-run`
+and `/flow-review`, loaded only when used. Never write a rule in both places.
 
 ---
 
 ## Project constraints
 
-These constrain all agent work in this repository.
-
 ### Architecture
 
 - Prefer feature-first organization.
-- Keep business logic out of UI components.
-- Keep domain logic testable and independent from rendering.
-- Isolate data access behind explicit services or repositories when persistence is involved.
-- Prefer deep modules with clear APIs over many tiny abstractions.
-- Do not introduce speculative abstractions.
-- Document meaningful architecture decisions in the active story plan (Decisions section).
-- In a larger repo, treat each epic as one bounded context: do not reach into
-  another epic's internal modules, tables, or types directly. Integrate through
-  an explicit interface (a function, an API, an event) instead.
+- Keep business logic out of UI components, and domain logic testable and
+  independent from rendering.
+- Isolate data access behind explicit services or repositories when persistence is
+  involved.
+- Prefer deep modules with clear APIs over many tiny abstractions; introduce no
+  speculative abstraction.
+- Record a new architectural pattern or a meaningful decision in the active story's
+  Decisions section.
+- In a larger repo, each epic is one bounded context: integrate with another epic
+  through an explicit interface (a function, an API, an event), never its internal
+  modules, tables or types.
 
 ### Code Quality
 
-- Treat quality as context efficiency: duplication and complexity make every future story more expensive, so keeping the code clean serves the agent too.
-- Follow existing project conventions before introducing new ones.
-- Prefer strong typing and explicit boundaries.
-- Avoid `any` unless it is justified in code or story notes.
+- Quality is context efficiency: duplication and complexity make every future story
+  more expensive.
+- Follow existing conventions before introducing new ones; one implementation per
+  business rule.
+- Prefer strong typing and explicit boundaries; avoid `any` unless justified in code
+  or story notes.
 - Keep functions small and intention-revealing.
-- Prefer duplication over the wrong abstraction: apply the rule of three, and only unify cases that are the same concept and will change together.
-- Run deterministic quality checks (lint, format, duplication) as validation; declare them in `.coding-flow/config.json` under `validation.quality` so they are executed and captured, not asserted. For STRICT-risk changes, a project may opt into mutation testing (Stryker/PIT) the same way — it is expensive, so it stays a project's explicit choice, never a default `/flow-run` adds on its own.
-- Do not silently modify unrelated files.
+- Prefer duplication over the wrong abstraction: rule of three, and unify only cases
+  that are the same concept and will change together.
+- Run deterministic checks (lint, format, duplication) as validation, declared in
+  `.coding-flow/config.json` under `validation.quality` so they are executed and
+  captured, not asserted. Mutation testing (Stryker/PIT) for STRICT-risk changes is a
+  project's explicit opt-in there, never a default.
 
 ### Validation
 
-- Validate external inputs at the boundary.
-- Never trust client-side validation alone.
-- Validate server-side before persistence or privileged actions.
+- Validate external inputs at the boundary. Never trust client-side validation
+  alone: validate server-side before persistence or privileged actions.
 - Keep error handling explicit and user-safe.
 
 ### Testing
 
-- New business logic requires tests.
-- Use TDD for complex logic, permissions, validation, transformations, workflows, and bug fixes.
-- Add integration tests where data flow or service boundaries matter.
-- Add E2E tests for critical user/admin flows.
-- Do not over-test trivial UI.
+- New business logic requires tests; TDD for complex logic, permissions,
+  validation, transformations, workflows and bug fixes.
+- Integration tests where data flow or service boundaries matter; E2E for critical
+  user/admin flows. Do not over-test trivial UI.
 
 ### Security
 
@@ -62,8 +61,7 @@ These constrain all agent work in this repository.
 - Avoid leaking private admin data into public surfaces.
 - Treat file uploads, user content, and external inputs as hostile.
 
-These apply at every intensity. What changes with intensity is the ceremony
-around the work, never these constraints.
+These apply at every intensity; only the ceremony around the work scales.
 
 ---
 
@@ -71,36 +69,32 @@ around the work, never these constraints.
 
 ### Core Behavior
 
-- Follow the project constraints above before any agent preference.
-- Prefer existing patterns, APIs, and conventions.
-- Do not duplicate business logic.
-- Do not introduce new architectural patterns without recording the decision.
-- Do not bypass tests to make a task pass.
-- Do not change unrelated files.
-- Read the relevant docs and story files before coding.
+- The project constraints above come before any agent preference.
 - Preserve the current architecture unless the story explicitly changes it.
-- Run relevant validation commands when available.
+- Do not bypass tests to make a task pass, and do not change unrelated files.
+- Run the relevant validation commands when available.
 - Record unresolved risk instead of hiding it.
-- Stop and report instead of guessing when the work hits a condition the story cannot answer.
+- Stop and report instead of guessing when the work hits a condition the story
+  cannot answer.
 
 ### Execution Flow
 
-- Load the smallest context that can safely finish the work in one pass.
-- Start with the user request, active story, acceptance criteria, and targeted search anchors.
-- Read project docs only when the selected mode or risk requires them.
-- For story work, read the active story folder. Read the epic `index.md` when sequencing, scope, or dependencies are unclear.
-- Use targeted searches before opening broad directories.
-- Implement only the active story scope.
-- Record what was actually changed in the story's Result section, and meaningful tradeoffs in its Decisions section.
-- Preserve one-shot delivery: once scope and edit points are clear, implement code, tests, validation, and notes in the same focused pass.
+- Load the smallest context that can finish the work in one pass: the request, the
+  active story folder and its acceptance criteria, then targeted searches before any
+  broad directory. Read the epic
+  `index.md` when sequencing, scope or dependencies are unclear, and project docs
+  only when the mode or the risk requires them.
+- Implement only the active story's scope. Once scope and edit points are clear,
+  deliver code, tests, validation and notes in the same pass.
 
 ### Context Boundaries
 
-- `docs/project-context.md` is the current state map of the project.
-- Do not use `project-context.md` as a scratchpad, implementation log, or detailed decision journal.
-- The story's Decisions section stores detailed story decisions, tradeoffs, alternatives, and consequences.
-- The story's `## Result` section stores what was actually changed, tests run, issues, follow-ups, and remaining risks.
-- Only update `project-context.md` when the project's current state, target architecture, domains, roles, workflows, constraints, risks, roadmap, or decision summary changes.
+- `docs/project-context.md` is the current state map — never a scratchpad, log or
+  decision journal. Update it only when the project's state, architecture, domains,
+  roles, workflows, constraints, risks, roadmap or decision summary change.
+- Record a story's tradeoffs and alternatives in its Decisions section, and what
+  actually changed — tests run, issues, follow-ups, remaining risks — in its
+  `## Result`.
 
 ### Tooling Friction
 
@@ -113,7 +107,5 @@ working — that stays out.
 
 ### Communication
 
-- Summarize what changed.
-- List validation commands run.
-- State remaining risks or follow-ups.
-- Keep summaries concise and grounded in files.
+End with what changed, the validation commands run, and the remaining risks or
+follow-ups — concise and grounded in files.

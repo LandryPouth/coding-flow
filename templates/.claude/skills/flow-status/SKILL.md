@@ -7,14 +7,12 @@ description: Show where every epic and story actually stands — proof-derived s
 
 ## Overview
 
-`status` reports the state of every epic and story, derived from captured evidence
-rather than trusted prose: an explicit `## Status` line in a story file wins when
-present, otherwise the latest `verify` decides (green → `verified`, red →
-`blocked`, code changed since that run → `stale`), and only then a fallback
-heuristic. It also shows which worktree (if any) each story is checked out in, and
-reminds you when you are on the base branch under a `branchPerEpic` policy.
-
-This is not a workflow stage — run it any time, as often as you like.
+`status` reports every epic and story from captured evidence, not prose: a
+`## Status` line in the story wins when present; otherwise the latest `verify`
+decides (green → `verified`, red → `blocked`, code changed since → `stale`); a
+heuristic comes last. It also shows the worktree each story is checked out in, and a
+reminder when you are on the base branch under a `branchPerEpic` policy. Read-only,
+so run it as often as you like.
 
 ## Command
 
@@ -24,33 +22,24 @@ ai-flow status
 
 > If bare `ai-flow` is not on `PATH`, use `npx @landry_pouth/coding-flow status`.
 
-Useful flags:
-
-- `--json` — machine-readable output (epics, worktrees, policy).
+`--json` gives epics, worktrees and policy, machine-readable.
 
 ## Behavior
 
-- Read-only: never writes, verifies, commits, or pushes anything.
-- `verified` means the machine actually ran the story's validation commands and
-  they passed, and that proof still matches the current code. A story that reads
-  `## Status: done` in its file but has no captured green verify does not show as
-  `verified` here — see `/flow-next` if you want that gap turned into an action.
-- Loose worktrees (checked out but not linked to any story) are listed separately,
-  useful when several features are in flight in parallel.
+- `verified` means the story's validation commands ran green and that proof still
+  matches the code. A story whose file reads `## Status: done` with no captured green
+  verify is not `verified` — `/flow-next` turns that gap into an action.
+- Worktrees linked to no story are listed separately.
 
 ## Verification
 
-- [ ] `ai-flow status` actually ran. Nothing here is reported from memory or from
-      reading story files by hand — the whole point is that the state is derived,
-      not narrated.
+- [ ] `ai-flow status` ran: nothing is reported from memory or from reading story
+      files by hand.
 - [ ] Every story is listed by name with its state; none were summarized away.
 - [ ] The branch policy reminder was relayed if the command printed one.
 
-There is nothing else to prove: this skill has no side effects, so running the
-command and reporting all of it is the entire contract.
-
 ## Output
 
-Report the epics and their stories with each status, any worktree link, loose
-worktrees, and the policy reminder if you are on the base branch. Do not summarize
-away individual story names — the point of this skill is the detail.
+Every epic and its stories with their state and worktree link, the loose worktrees,
+and the policy reminder if one was printed. Keep the individual story names — the
+detail is the point.
