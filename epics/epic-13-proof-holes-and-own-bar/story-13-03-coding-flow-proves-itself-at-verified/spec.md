@@ -67,5 +67,3 @@ Deviations: a `mkdir coverage` prep command (Node does not create the report dir
 ### Rollback Notes
 
 `git revert`; existing installs' `harness.json` is never rewritten, so nothing to undo on their side.
-
-## Status: done

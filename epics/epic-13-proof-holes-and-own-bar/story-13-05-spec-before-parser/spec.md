@@ -48,5 +48,3 @@ acceptance criteria change during its own diff, the evidence says so.
 ### Rollback Notes
 
 `git revert`; no data or config involved.
-
-## Status: done

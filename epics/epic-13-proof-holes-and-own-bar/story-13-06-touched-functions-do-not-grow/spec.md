@@ -38,5 +38,3 @@ unless it already was, and an already-long function may not get longer.
   lcov, any language that emits `FN`).
 
 ## Result
-
-## Status: done
