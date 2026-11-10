@@ -7,8 +7,14 @@
 
 ## Result
 
-See `spec.md` → Result.
+See `spec.md` → Result. Landed by `worktree land` as `26d7907` (the refactor)
+and `7af2cfb`, after a green post-land validation
+(`.coding-flow/runs/2026-11-10T19-17-13-500Z-verify.json`, scoped against
+`develop`'s recorded fork point `4c7280c`, not this story). The claim's proof
+and the review's evidence lived in the removed worktree's `runs/`.
 
 ### Rollback Notes
 
 - See `spec.md`.
+
+## Status: done
