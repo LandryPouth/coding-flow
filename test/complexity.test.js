@@ -131,3 +131,33 @@ test('a nested function does not cut its parent short in a brace source', (t) =>
   assert.equal(outer.length, 6);
   assert.equal(inner.length, 3);
 });
+
+// Found in review (14-07): each made a function measure the wrong length.
+test('V8 class field initializers are not a function, and a function entry is not a decision', (t) => {
+  const source = ['class A {', '  x = 1;', '  f() {', '    return this.x;', '  }', '}', ''].join('\n');
+  const lcov = 'SF:src/a.js\nFN:1,<instance_members_initializer>\nFN:3,f\nBRDA:1,0,0,1\nBRDA:3,1,0,1\nDA:1,1\nDA:3,1\nend_of_record\n';
+  const fns = measure(t, 'src/a.js', source, lcov);
+
+  assert.deepStrictEqual(fns.map(({ name, length, decisions }) => ({ name, length, decisions })), [{ name: 'f', length: 3, decisions: 1 }]);
+});
+
+test('a regex literal after return does not swallow the closing brace', (t) => {
+  const source = ['function f(s) {', '  return /\\{/.test(s);', '}', '', 'function g() {}', ''].join('\n');
+  const [f] = measure(t, 'src/r.js', source, 'SF:src/r.js\nFN:1,f\nFN:5,g\nend_of_record\n');
+
+  assert.equal(f.end, 3);
+});
+
+test('a brace that never closes falls back to the next function, not one line', (t) => {
+  const source = ['function f() {', '  const a = "unterminated', '  return a;', '', 'function g() {}', ''].join('\n');
+  const [f] = measure(t, 'src/u.js', source, 'SF:src/u.js\nFN:1,f\nFN:5,g\nend_of_record\n');
+
+  assert.equal(f.end, 3);
+});
+
+test('Kotlin is bounded by the next FN: an expression body does not span the next function', (t) => {
+  const source = ['fun a() = 1', '', 'fun b(): Int {', '    return 2', '}', ''].join('\n');
+  const [a] = measure(t, 'src/K.kt', source, 'SF:src/K.kt\nFN:1,a\nFN:3,b\nend_of_record\n');
+
+  assert.equal(a.end, 1);
+});

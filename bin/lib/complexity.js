@@ -10,9 +10,9 @@
 // points are the distinct `BRDA` lines inside it, plus one; coverage is the hit
 // share of its `DA` lines. V8 block coverage only approximates decisions.
 //
-// The values at the base are not measured at the base: they are the values now,
-// minus what the diff added inside the function (its lines, its branch lines),
-// plus the lines it removed there — the same estimate story 13-06's ratchet made.
+// The length at the base is measured in the base file (`git show`), the function
+// found there by mapping its start through the diff's hunks. CRAP at the base is
+// estimated — there is no base coverage — over the lines the diff did not add.
 
 const fs = require("fs");
 const path = require("path");
@@ -24,8 +24,14 @@ const { currentDiffBase } = require("./diff-scope");
 const CRAP_THRESHOLD = 30;
 const DEFAULT_MAX_LINES = 80;
 // Sources whose functions close with a brace: their end is found by matching it.
-const BRACE_SOURCE = /\.(c|m)?(j|t)sx?$|\.(c|cc|cpp|cxx|h|hpp|cs|java|kt|kts|go|rs|swift|scala|dart|php)$/;
+// Kotlin, Scala, Swift and Rust are left out: expression bodies (`fun a() = 1`)
+// and lifetimes (`'a`) break the matching, so the next `FN` bounds them instead.
+const BRACE_SOURCE = /\.(c|m)?(j|t)sx?$|\.(c|cc|cpp|cxx|h|hpp|cs|java|go|dart|php)$/;
 const REGEX_AFTER = "(,=:[!&|?{};+-*%<>~^";
+const REGEX_AFTER_WORD = new Set(["return", "typeof", "case", "do", "else", "in", "of", "void", "yield", "await", "throw", "delete", "new"]);
+// V8 lists a class's field initializers as a function starting at the class line:
+// measured by its braces, the whole class would read as one function.
+const SYNTHETIC_FUNCTION = /^<[a-z_]+>$/;
 
 function crapScore(decisions, coverage) {
   return Math.round((decisions * decisions * (1 - coverage) ** 3 + decisions) * 10) / 10;
@@ -54,13 +60,12 @@ function parseLcovFunctions(content) {
     const [tag, value = ""] = [line.slice(0, line.indexOf(":")), line.slice(line.indexOf(":") + 1)];
 
     if (line.startsWith("SF:")) {
-      current = files.get(value.trim()) || { functions: [], branchLines: new Set(), lines: new Map() };
+      current = files.get(value.trim()) || emptyFile();
       files.set(value.trim(), current);
     } else if (line === "end_of_record") {
       current = null;
     } else if (current && tag === "FN") {
-      const fn = parseFunctionRecord(value);
-      if (fn) current.functions.push(fn);
+      addFunction(current, parseFunctionRecord(value));
     } else if (current && tag === "BRDA") {
       current.branchLines.add(Number.parseInt(value, 10));
     } else if (current && tag === "DA") {
@@ -70,6 +75,28 @@ function parseLcovFunctions(content) {
   }
 
   return files;
+}
+
+function emptyFile() {
+  return { functions: [], branchLines: new Set(), lines: new Map() };
+}
+
+// A function listed twice (two `SF` sections, two reports) is one function.
+function addFunction(data, fn) {
+  if (fn && !SYNTHETIC_FUNCTION.test(fn.name) && !data.functions.some((other) => other.line === fn.line && other.name === fn.name)) {
+    data.functions.push(fn);
+  }
+}
+
+function mergeFile(into, data) {
+  data.functions.forEach((fn) => addFunction(into, fn));
+  data.branchLines.forEach((line) => into.branchLines.add(line));
+
+  for (const [line, hits] of data.lines) {
+    into.lines.set(line, Math.max(into.lines.get(line) || 0, hits));
+  }
+
+  return into;
 }
 
 // The fresh lcov reports among the project's coverage candidates, re-read for the
@@ -87,7 +114,7 @@ function loadFunctionReport(root, { config, since = null } = {}) {
       const relative = toRepoRelative(file, root, base);
 
       if (relative && data.functions.length > 0) {
-        files.set(relative, data);
+        files.set(relative, mergeFile(files.get(relative) || emptyFile(), data));
       }
     }
 
@@ -161,11 +188,13 @@ function skipRegex(text, from) {
 // regular expression literals are skipped whole.
 function* codeChars(text, from) {
   let previous = "";
+  let word = "";
   let i = from;
 
   while (i < text.length) {
     const ch = text[i];
     const next = text[i + 1];
+    const regexMayStart = previous === "" || REGEX_AFTER.includes(previous) || REGEX_AFTER_WORD.has(word);
 
     if (ch === "/" && next === "/") {
       i = text.indexOf("\n", i) < 0 ? text.length : text.indexOf("\n", i);
@@ -177,11 +206,13 @@ function* codeChars(text, from) {
     } else if (ch === "`") {
       i = skipTemplate(text, i);
       previous = ch;
-    } else if (ch === "/" && (previous === "" || REGEX_AFTER.includes(previous))) {
+    } else if (ch === "/" && regexMayStart) {
       i = skipRegex(text, i);
       previous = "/";
+      word = "";
     } else {
       yield [ch, i];
+      word = /[\w$]/.test(ch) ? (/[\w$]/.test(previous) && !/\s/.test(text[i - 1] || "") ? word + ch : ch) : /\s/.test(ch) ? word : "";
       previous = /\s/.test(ch) ? previous : ch;
       i += 1;
     }
@@ -190,9 +221,12 @@ function* codeChars(text, from) {
 
 // Where a function's body starts, from its first character: the index of the
 // `{` that opens it, or null when it has none (an expression-bodied arrow, a
-// declaration). Braces inside the parameter list do not open the body.
+// declaration). Braces inside the parameter list, a generic (`<T extends {…}>`)
+// or a TypeScript return type (`): { a: number } {`) do not open the body.
 function bodyStart(text, from) {
   let parens = 0;
+  let angles = 0;
+  let typeBraces = 0;
   let last = "";
   let word = "";
   let afterArrow = false;
@@ -201,6 +235,12 @@ function bodyStart(text, from) {
     word = /[\w$]/.test(ch) ? word + ch : "";
 
     if (/\s/.test(ch)) {
+      continue;
+    }
+
+    if (typeBraces > 0) {
+      typeBraces += ch === "{" ? 1 : ch === "}" ? -1 : 0;
+      last = ch;
       continue;
     }
 
@@ -215,7 +255,12 @@ function bodyStart(text, from) {
     // An inline callback starts mid-line: what came before it is not its parameters.
     parens = word === "function" ? 0 : parens;
 
-    if (ch === "{" && parens === 0) {
+    if (ch === "{" && parens === 0 && angles === 0 && ":|&,".includes(last)) {
+      typeBraces = 1;
+      continue;
+    }
+
+    if (ch === "{" && parens === 0 && angles === 0) {
       return index;
     }
 
@@ -224,6 +269,7 @@ function bodyStart(text, from) {
     }
 
     afterArrow = ch === ">" && last === "=";
+    angles += parens === 0 && ch === "<" ? 1 : parens === 0 && ch === ">" && last !== "=" && angles > 0 ? -1 : 0;
     parens += ch === "(" ? 1 : ch === ")" ? -1 : 0;
     last = ch;
   }
@@ -231,7 +277,8 @@ function bodyStart(text, from) {
   return null;
 }
 
-// The index of the `}` closing the body that opens at `open`.
+// The index of the `}` closing the body that opens at `open`; null when it never
+// closes (the scan went wrong), so the caller falls back to the next `FN`.
 function bodyEnd(text, open) {
   let braces = 0;
 
@@ -243,7 +290,7 @@ function bodyEnd(text, open) {
     }
   }
 
-  return open;
+  return null;
 }
 
 function lineStarts(text) {
@@ -290,9 +337,10 @@ function functionEnd(source, fn, nextStart) {
   }
 
   const open = source.braces ? bodyStart(source.text, source.starts[fn.line - 1] || 0) : null;
+  const close = open === null ? null : bodyEnd(source.text, open);
 
-  if (open !== null) {
-    return lineOf(source.starts, bodyEnd(source.text, open));
+  if (close !== null) {
+    return lineOf(source.starts, close);
   }
 
   const depth = indentOf(source.lines[fn.line - 1] || "");
@@ -313,8 +361,7 @@ function functionEnd(source, fn, nextStart) {
   return end;
 }
 
-function readSource(root, file) {
-  const text = fs.readFileSync(path.join(root, file), "utf8");
+function readSource(root, file, text = fs.readFileSync(path.join(root, file), "utf8")) {
   const lines = text.split("\n");
   const lineCount = lines.length - (text.endsWith("\n") ? 1 : 0);
 
@@ -323,13 +370,15 @@ function readSource(root, file) {
 
 // Decision points and coverage over [start, end], leaving out `skip` lines (what
 // the diff added, when estimating the base).
+// V8 writes a BRDA at every function's entry: a function start is not a decision.
 function riskOver(data, start, end, skip = new Set()) {
   let branches = 0;
   let total = 0;
   let hit = 0;
+  const entries = new Set(data.functions.map((fn) => fn.line));
 
   for (const line of data.branchLines) {
-    branches += line >= start && line <= end && !skip.has(line) ? 1 : 0;
+    branches += line >= start && line <= end && !skip.has(line) && !entries.has(line) ? 1 : 0;
   }
 
   for (const [line, hits] of data.lines) {
@@ -349,75 +398,166 @@ function measureFile(root, file, data) {
   const source = readSource(root, file);
   const functions = [...data.functions].sort((a, b) => a.line - b.line);
 
-  return functions.map((fn, index) => {
-    const next = functions.slice(index + 1).find((other) => other.line > fn.line);
-    const end = Math.max(fn.line, functionEnd(source, fn, next ? next.line : source.lineCount + 1));
+  const nextStarts = [];
 
-    return { name: fn.name, line: fn.line, end, length: end - fn.line + 1, ...riskOver(data, fn.line, end) };
+  for (let index = functions.length - 1, next = source.lineCount + 1; index >= 0; index--) {
+    nextStarts[index] = next;
+    next = functions[index].line < next ? functions[index].line : next;
+  }
+
+  return functions.map((fn, index) => {
+    const end = Math.max(fn.line, functionEnd(source, fn, nextStarts[index]));
+
+    return {
+      name: fn.name, line: fn.line, end, declaredEnd: fn.end, next: nextStarts[index], length: end - fn.line + 1, ...riskOver(data, fn.line, end),
+    };
   });
 }
 
 // --- verify: what the diff did to the functions it touched ----------------------
 
-// `git diff -U0 <base>`: file -> hunks `{ oldCount, newStart, newCount }`. A new,
-// untracked file is added in full.
-function diffHunks(root, base) {
+function gitIn(root, args) {
+  return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 });
+}
+
+// `git diff -U0 <base>`, renames followed: new path -> `{ oldPath, hunks }`, hunks
+// `{ oldStart, oldCount, newStart, newCount }`. Paths are relative to `root`.
+function parseDiff(output) {
   const byFile = new Map();
+  let oldPath = null;
   let current = null;
-  const git = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 });
 
-  for (const line of git(["-c", "core.quotepath=false", "diff", "-U0", "--no-color", "--no-renames", base]).split(/\r?\n/)) {
-    const file = /^\+\+\+ b\/([^\t]+)/.exec(line);
-    const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+  for (const line of output.split(/\r?\n/)) {
+    const from = /^--- (?:a\/([^\t]+)|\/dev\/null)/.exec(line);
+    const to = /^\+\+\+ b\/([^\t]+)/.exec(line);
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
 
-    if (line === "+++ /dev/null") {
+    if (from) {
+      oldPath = from[1] || null;
+    } else if (line === "+++ /dev/null") {
       current = null;
-    } else if (file) {
-      current = file[1];
-      byFile.set(current, []);
+    } else if (to) {
+      current = { oldPath, hunks: [] };
+      byFile.set(to[1], current);
     } else if (hunk && current) {
-      byFile.get(current).push({
-        oldCount: hunk[1] === undefined ? 1 : Number(hunk[1]),
-        newStart: Number(hunk[2]),
-        newCount: hunk[3] === undefined ? 1 : Number(hunk[3]),
+      current.hunks.push({
+        oldStart: Number(hunk[1]),
+        oldCount: hunk[2] === undefined ? 1 : Number(hunk[2]),
+        newStart: Number(hunk[3]),
+        newCount: hunk[4] === undefined ? 1 : Number(hunk[4]),
       });
     }
-  }
-
-  for (const file of git(["ls-files", "--others", "--exclude-standard"]).split(/\r?\n/).filter(Boolean)) {
-    const lines = fs.readFileSync(path.join(root, file), "utf8").split("\n").length;
-    byFile.set(file, [{ oldCount: 0, newStart: 1, newCount: lines }]);
   }
 
   return byFile;
 }
 
-// Lines the diff added inside [start, end], and how many it removed there.
-function churnIn(hunks, start, end) {
-  const added = new Set();
-  let removed = 0;
+// The diff against `base`, plus every untracked regular file added in full. A file
+// that cannot be read is left out, as it was never measurable; a git failure
+// throws, so the caller reports the check as not run instead of passing it.
+function diffFiles(root, base) {
+  const byFile = parseDiff(gitIn(root, ["-c", "core.quotepath=false", "diff", "-U0", "--no-color", "--find-renames", "--relative", base]));
 
-  for (const { oldCount, newStart, newCount } of hunks) {
+  for (const file of gitIn(root, ["-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard"]).split(/\r?\n/).filter(Boolean)) {
+    try {
+      if (fs.lstatSync(path.join(root, file)).isFile()) {
+        const lines = fs.readFileSync(path.join(root, file), "utf8").split("\n").length;
+        byFile.set(file, { oldPath: null, hunks: [{ oldStart: 0, oldCount: 0, newStart: 1, newCount: lines }] });
+      }
+    } catch {
+      // Unreadable: nothing to measure in it.
+    }
+  }
+
+  return byFile;
+}
+
+// A line of the new file, mapped to the base: `{ line, added }`. An added line maps
+// to the old line its hunk replaced (a changed signature), or to null when the
+// hunk only inserted (a new function).
+function toBaseLine(hunks, newLine) {
+  let offset = 0;
+
+  for (const { oldStart, oldCount, newStart, newCount } of hunks) {
+    const firstNew = newCount > 0 ? newStart : newStart + 1;
+
+    if (newLine < firstNew) {
+      break;
+    }
+
+    if (newCount > 0 && newLine < newStart + newCount) {
+      return { line: oldCount > 0 ? oldStart + Math.min(newLine - newStart, oldCount - 1) : null, added: true };
+    }
+
+    offset = (oldCount > 0 ? oldStart + oldCount : oldStart + 1) - (newCount > 0 ? newStart + newCount : newStart + 1);
+  }
+
+  return { line: newLine + offset, added: false };
+}
+
+function addedLines(hunks, start, end) {
+  const added = new Set();
+
+  for (const { newStart, newCount } of hunks) {
     for (let line = Math.max(newStart, start); line <= Math.min(newStart + newCount - 1, end); line++) {
       added.add(line);
     }
-
-    const inside = newCount > 0 ? newStart >= start && newStart <= end : newStart >= start && newStart < end;
-    removed += inside ? oldCount : 0;
   }
 
-  return { added, removed };
+  return added;
+}
+
+// The function's span in the base file, measured there; null when it is new.
+function baseSpan(baseSource, fn, hunks) {
+  const start = toBaseLine(hunks, fn.line).line;
+
+  if (!baseSource || start === null) {
+    return null;
+  }
+
+  const mappedNext = fn.next > baseSource.lineCount ? null : toBaseLine(hunks, fn.next).line;
+  const next = Math.max(mappedNext || baseSource.lineCount + 1, start + 1);
+  const end = fn.declaredEnd
+    ? toBaseLine(hunks, fn.declaredEnd).line || start
+    : functionEnd(baseSource, { line: start }, next);
+
+  return { start, end: Math.max(start, end) };
+}
+
+// A line that reads like a decision: the base has no coverage, so the removed
+// lines' own text is the only witness of the branches they held.
+const DECISION_TEXT = /\b(if|for|while|case|catch)\b|\?|&&|\|\|/;
+
+// Decision-like lines the diff removed inside the base span.
+function removedDecisions(baseSource, span, hunks) {
+  let count = 0;
+
+  for (const { oldStart, oldCount } of hunks) {
+    for (let line = Math.max(oldStart, span.start); line <= Math.min(oldStart + oldCount - 1, span.end); line++) {
+      count += DECISION_TEXT.test(baseSource.lines[line - 1] || "") ? 1 : 0;
+    }
+  }
+
+  return count;
 }
 
 // One touched function, before and after; null when it did not cross a line.
-function grewPastLine(file, fn, data, hunks, max) {
-  const { added, removed } = churnIn(hunks, fn.line, fn.end);
+function grewPastLine(change, fn, data, max) {
+  const added = addedLines(change.hunks, fn.line, fn.end);
 
   if (added.size === 0) {
     return null;
   }
 
-  const before = { length: fn.length - added.size + removed, crap: riskOver(data, fn.line, fn.end, added).crap };
+  const span = baseSpan(change.baseSource, fn, change.hunks);
+  // A rewritten `if` is one decision before and after: an added branch line is
+  // only new beyond the decision-like lines the diff removed in the function.
+  const addedBranches = [...added].filter((line) => data.branchLines.has(line));
+  const rewritten = new Set(addedBranches.slice(0, span ? removedDecisions(change.baseSource, span, change.hunks) : 0));
+  const before = {
+    length: span ? span.end - span.start + 1 : 0,
+    crap: riskOver(data, fn.line, fn.end, new Set([...added].filter((line) => !rewritten.has(line)))).crap,
+  };
   const longer = fn.length > max && (before.length <= max || fn.length > before.length);
   const riskier = fn.crap > CRAP_THRESHOLD && before.crap <= CRAP_THRESHOLD;
 
@@ -426,7 +566,7 @@ function grewPastLine(file, fn, data, hunks, max) {
   }
 
   return {
-    file,
+    file: change.file,
     line: fn.line,
     name: fn.name,
     length: { before: before.length, after: fn.length },
@@ -435,48 +575,69 @@ function grewPastLine(file, fn, data, hunks, max) {
   };
 }
 
-// The `complexity-grew` signal: functions overlapping the diff's added lines whose
-// CRAP crosses 30, or whose length crosses `functionSize.max` or grows while above
-// it. Null when this run wrote no lcov listing functions: no report, no signal.
-// A warning unless `functionSize.enforce: true`.
-function evaluateComplexity({ root, config, since }) {
-  const report = loadFunctionReport(root, { config, since });
-
-  if (!report) {
+function readBase(root, base, oldPath) {
+  if (!oldPath) {
     return null;
   }
 
-  const size = config.functionSize || {};
-  const max = Number.isInteger(size.max) && size.max > 0 ? size.max : DEFAULT_MAX_LINES;
-  const enforced = size.enforce === true;
-  const mergeBase = currentDiffBase(root).mergeBase;
-  const items = [];
-  let hunksByFile = new Map();
-
   try {
-    hunksByFile = diffHunks(root, mergeBase || "HEAD");
+    return readSource(root, oldPath, gitIn(root, ["show", `${base}:./${oldPath}`]));
   } catch {
-    // No commit to diff against: nothing was touched, so nothing grew.
+    return null;
+  }
+}
+
+function settings(config) {
+  const size = config.functionSize || {};
+
+  return {
+    max: Number.isInteger(size.max) && size.max > 0 ? size.max : DEFAULT_MAX_LINES,
+    enforced: size.enforce === true,
+  };
+}
+
+// The `complexity-grew` signal: functions overlapping the diff's added lines whose
+// CRAP crosses 30, or whose length crosses `functionSize.max` or grows while above
+// it. With no lcov from this run listing a function there is no signal — unless
+// `functionSize.enforce: true`, where a check that could not run is never a pass.
+function evaluateComplexity({ root, config, since }) {
+  const { max, enforced } = settings(config);
+  const report = loadFunctionReport(root, { config, since });
+  const result = { signal: "complexity-grew", heuristic: true, enforced, max, crapThreshold: CRAP_THRESHOLD };
+
+  if (!report) {
+    return enforced ? { ...result, reports: [], items: [], unavailable: "this run wrote no lcov that lists a function", ok: false } : null;
   }
 
-  for (const [file, hunks] of hunksByFile) {
+  const mergeBase = currentDiffBase(root).mergeBase;
+  const base = mergeBase || "HEAD";
+  let files;
+
+  try {
+    files = diffFiles(root, base);
+  } catch {
+    return { ...result, reports: report.reports, items: [], unavailable: `git could not diff against ${base}`, ok: !enforced };
+  }
+
+  const items = [];
+
+  for (const [file, { oldPath, hunks }] of files) {
     if (!report.files.has(file) || !fs.existsSync(path.join(root, file))) {
       continue;
     }
 
+    const change = { file, hunks, baseSource: readBase(root, base, oldPath) };
+
     for (const fn of measureFile(root, file, report.files.get(file))) {
-      const item = grewPastLine(file, fn, report.files.get(file), hunks, max);
+      const item = grewPastLine(change, fn, report.files.get(file), max);
       if (item) items.push(item);
     }
   }
 
   return {
-    signal: "complexity-grew",
-    heuristic: true,
-    enforced,
-    max,
-    crapThreshold: CRAP_THRESHOLD,
+    ...result,
     reports: report.reports,
+    ...(mergeBase ? {} : { scope: "no merge base: only uncommitted changes were checked" }),
     items,
     ok: !(enforced && items.length > 0),
   };

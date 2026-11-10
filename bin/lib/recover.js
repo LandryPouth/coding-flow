@@ -365,7 +365,9 @@ function worstFunctions(root, relativePath, report) {
 }
 
 // Churn × size, or churn × CRAP (the file's worst function) when a fresh lcov
-// lists the file. Without churn the second factor ranks alone.
+// lists the file. A file the report does not list was never loaded by a test —
+// the riskiest kind — and keeps its size as the weight, so it is not ranked out.
+// Without churn the second factor ranks alone.
 function buildHotspots(lineCounts, churn, testFiles, tests, { root = cwd, report = null } = {}) {
   const rows = [];
 
@@ -373,14 +375,14 @@ function buildHotspots(lineCounts, churn, testFiles, tests, { root = cwd, report
     const changed = churn.available ? churn.byPath.get(relativePath) || 0 : null;
     const functions = worstFunctions(root, relativePath, report);
     const crap = functions && functions.length > 0 ? functions[0].crap : null;
-    const weight = report ? crap : lines;
+    const weight = crap === null ? lines : crap;
 
     rows.push({
       path: relativePath,
       lines,
       churn: changed,
-      ...(report ? { crap, functions: functions || [] } : {}),
-      score: weight === null ? null : churn.available ? weight * changed : report ? weight : null,
+      ...(report ? { crap, functions: functions || [], loaded: functions !== null } : {}),
+      score: churn.available ? weight * changed : report ? weight : null,
       hasTest: hasNearbyOrImportingTest(relativePath, testFiles, tests),
     });
   }
@@ -841,7 +843,7 @@ function printRecoveryScan(scan) {
     const churn = hotspot.churn === null ? "churn unavailable" : `churn ${hotspot.churn}`;
     const worst = hotspot.functions && hotspot.functions[0]
       ? `, CRAP ${hotspot.crap} (${hotspot.functions[0].name}:${hotspot.functions[0].line}, ${hotspot.functions[0].length} lines)`
-      : "";
+      : hotspot.loaded === false ? ", not loaded by any test" : "";
     log(`- ${hotspot.path}: ${hotspot.lines} lines, ${churn}${worst}, ${hotspot.hasTest ? "has a test" : "no test"}`);
   }
   log("");

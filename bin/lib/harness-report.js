@@ -83,13 +83,23 @@ function notProvenBecause(evidence) {
     return "the fix is not proven";
   }
 
-  return evidence.complexity && !evidence.complexity.ok ? "a touched function grew (functionSize.enforce)" : "";
+  if (!evidence.complexity || evidence.complexity.ok) {
+    return "";
+  }
+
+  return evidence.complexity.unavailable
+    ? "the complexity check did not run (functionSize.enforce)"
+    : "a touched function grew (functionSize.enforce)";
 }
 
 // `complexity-grew`: touched functions that got longer or riskier. Labelled a
 // heuristic every time, because the decisions and the end of a function are read
 // from lcov, not from a parser.
 function printComplexity(complexity) {
+  if (complexity && complexity.unavailable) {
+    log(`  Complexity: not checked — ${complexity.unavailable}.`);
+  }
+
   if (!complexity || complexity.items.length === 0) {
     return;
   }
@@ -100,6 +110,10 @@ function printComplexity(complexity) {
 
   for (const item of complexity.items) {
     log(`    ${describeGrowth(item)}`);
+  }
+
+  if (complexity.scope) {
+    log(`    (${complexity.scope})`);
   }
 }
 

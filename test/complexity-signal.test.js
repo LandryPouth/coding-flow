@@ -146,17 +146,29 @@ test('a touched function whose CRAP crosses 30 is reported', (t) => {
 });
 
 test('with no lcov written by the run, verify emits no complexity signal', (t) => {
+  const dir = repo(t, { command: 'node -e "process.exit(0)"', harness: { requireTestChange: false } });
+  grow(dir);
+
+  const res = run(dir, ['verify']);
+
+  assert.equal(res.code, 0, res.output);
+  assert.doesNotMatch(res.output, /Complexity/);
+  assert.equal(latestVerify(dir).complexity, undefined);
+});
+
+test('under functionSize.enforce, no lcov is a check that did not run, never a pass', (t) => {
   const dir = repo(t, { command: 'node -e "process.exit(0)"', harness: { functionSize: { enforce: true }, requireTestChange: false } });
   grow(dir);
 
   const res = run(dir, ['verify']);
 
-  assert.doesNotMatch(res.output, /Complexity grew/);
-  assert.equal(latestVerify(dir).complexity, undefined);
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /Complexity: not checked — this run wrote no lcov that lists a function/);
+  assert.equal(latestVerify(dir).complexity.ok, false);
 });
 
 test('an lcov left over from before the run is not read', (t) => {
-  const dir = repo(t, { command: 'node -e "process.exit(0)"', harness: { functionSize: { enforce: true }, requireTestChange: false } });
+  const dir = repo(t, { command: 'node -e "process.exit(0)"', harness: { requireTestChange: false } });
   grow(dir);
   execFileSync(process.execPath, ['write-lcov.js'], { cwd: dir });
   const old = new Date(Date.now() - 60_000);
@@ -165,6 +177,92 @@ test('an lcov left over from before the run is not read', (t) => {
   run(dir, ['verify']);
 
   assert.equal(latestVerify(dir).complexity, undefined);
+});
+
+// --- the review's reproductions (14-07): each was a wrong verdict under enforce --
+
+const { evaluateComplexity } = require('../bin/lib/complexity');
+
+// A repository at `base` files, branched, then edited by `edit(dir)`; the lcov is
+// written last, listing `fns` with every line executed and `branches` as BRDA.
+function evaluate(t, files, edit, lcovFor) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-complexity-review-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['config', 'user.email', 'test@example.com']);
+  git(dir, ['config', 'user.name', 'Test']);
+  write(dir, '.gitignore', 'coverage/\n');
+  for (const [file, content] of Object.entries(files)) write(dir, file, content);
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-qm', 'base']);
+  git(dir, ['checkout', '-q', '-b', 'feat']);
+  edit(dir);
+  const records = Object.entries(lcovFor).map(([file, { fns, branches = [] }]) => {
+    const count = fs.readFileSync(path.join(dir, file), 'utf8').split('\n').length - 1;
+    return [`SF:${file}`, ...fns.map(([line, name]) => `FN:${line},${name}`),
+      ...Array.from({ length: count }, (_, i) => `DA:${i + 1},1`), ...branches.map((line) => `BRDA:${line},0,0,1`), 'end_of_record'];
+  });
+  write(dir, 'coverage/lcov.info', [...records.flat(), ''].join('\n'));
+
+  return evaluateComplexity({ root: dir, config: { coverageReports: ['coverage/lcov.info'], functionSize: { max: 80, enforce: true } } });
+}
+
+const grown = (result) => result.items.map((item) => `${item.name} ${item.length.before}→${item.length.after} ${item.reasons}`);
+
+test('a moved file is not read as a new 100-line function', (t) => {
+  const result = evaluate(t, { 'src/a.js': fn('build', 100) }, (dir) => git(dir, ['mv', 'src/a.js', 'src/b.js']),
+    { 'src/b.js': { fns: [[1, 'build']] } });
+
+  assert.deepStrictEqual(grown(result), []);
+  assert.equal(result.ok, true);
+});
+
+test('an unreadable untracked file does not switch the check off', (t) => {
+  const result = evaluate(t, { 'src/a.js': fn('build', 85) }, (dir) => {
+    write(dir, 'src/a.js', fn('build', 95));
+    fs.symlinkSync('/nonexistent/target', path.join(dir, 'dangling'));
+  }, { 'src/a.js': { fns: [[1, 'build']] } });
+
+  assert.deepStrictEqual(grown(result), ['build 85→95 length']);
+  assert.equal(result.ok, false);
+});
+
+test('a hunk that also edits the line above a long function does not make it grow', (t) => {
+  const result = evaluate(t, { 'src/a.js': `// doc\n${fn('build', 100)}` },
+    (dir) => write(dir, 'src/a.js', `// doc changed\n${fn('build', 100).replace('build()', 'build(x)')}`),
+    { 'src/a.js': { fns: [[2, 'build']] } });
+
+  assert.deepStrictEqual(grown(result), []);
+});
+
+test('a hunk that grows a function and deletes the code after it is still growth', (t) => {
+  const statements = (prefix, n) => Array.from({ length: n }, (_, i) => `  const ${prefix}${i} = ${i};`);
+  const base = ['function build() {', ...statements('v', 73), '}', ...Array.from({ length: 11 }, (_, i) => `let t${i} = ${i};`), ''].join('\n');
+  const after = ['function build() {', ...statements('v', 73), ...statements('w', 6), '} // grown', ''].join('\n');
+  const result = evaluate(t, { 'src/a.js': base }, (dir) => write(dir, 'src/a.js', after), { 'src/a.js': { fns: [[1, 'build']] } });
+
+  assert.deepStrictEqual(grown(result), ['build 75→81 length']);
+});
+
+test('editing two existing conditions is not new complexity', (t) => {
+  const body = (k) => ['function route(x) {', ...Array.from({ length: 31 }, (_, i) => `  if (x === ${i === 0 ? k : i}) return ${i};`), '  return -1;', '}', ''].join('\n');
+  const branches = Array.from({ length: 31 }, (_, i) => i + 2);
+  const result = evaluate(t, { 'src/a.js': body(0) },
+    (dir) => write(dir, 'src/a.js', body(100).replace('=== 1)', '=== 101)')), { 'src/a.js': { fns: [[1, 'route']], branches } });
+
+  assert.deepStrictEqual(grown(result), []);
+});
+
+test('a TypeScript return type or generic constraint does not hide the body', (t) => {
+  const result = evaluate(t, {
+    'src/a.ts': fn('build', 85).replace('build()', 'build(): { a: number }'),
+    'src/b.ts': fn('make', 85).replace('make()', 'make<T extends { id: string }>(x: T): Promise<{ ok: true }>'),
+  }, (dir) => {
+    write(dir, 'src/a.ts', fn('build', 95).replace('build()', 'build(): { a: number }'));
+    write(dir, 'src/b.ts', fn('make', 95).replace('make()', 'make<T extends { id: string }>(x: T): Promise<{ ok: true }>'));
+  }, { 'src/a.ts': { fns: [[1, 'build']] }, 'src/b.ts': { fns: [[1, 'make']] } });
+
+  assert.deepStrictEqual(grown(result).sort(), ['build 85→95 length', 'make 85→95 length']);
 });
 
 test('this repository enforces functionSize, which replaced the 13-06 script', () => {

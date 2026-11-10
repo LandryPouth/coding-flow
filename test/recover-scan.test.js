@@ -658,3 +658,20 @@ test("an lcov older than a source it lists is not ranked by", (t) => {
   assert.equal(result.hotspotRanking.reason, "coverage report older than the code");
   assert.equal(result.hotspots[0].path, "src/big.js");
 });
+
+test("with a fresh lcov, a file no test loaded is still ranked, by its size", (t) => {
+  const repo = crapRepo(t);
+  const lines = Array.from({ length: 300 }, (_, i) => `const u${i} = ${i};`);
+  fs.writeFileSync(path.join(repo, "src", "unloaded.js"), lines.join("\n") + "\n");
+  commitAll(repo, "an untested file");
+  writeLcov(repo);
+
+  const result = scan(repo);
+  const unloaded = result.hotspots.find((hotspot) => hotspot.path === "src/unloaded.js");
+  assert.equal(result.hotspots[0].path, "src/unloaded.js");
+  assert.equal(unloaded.loaded, false);
+  assert.equal(unloaded.crap, null);
+
+  const text = run(repo, ["recover", "scan"]);
+  assert.match(text.output, /- src\/unloaded\.js: 300 lines, churn \d+, not loaded by any test/);
+});
