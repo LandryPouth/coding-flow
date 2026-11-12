@@ -7,228 +7,225 @@ description: Turn product intent or a brownfield codebase into an implementation
 
 ## Overview
 
-Turn product intent or brownfield discovery into an implementation-ready epic.
-
-Your job is not to write a beautiful plan. It is to make the next `/flow-run` able to
-one-shot a useful slice with minimal ambiguity. Keep the path short; produce dense,
-useful artifacts, not ceremony.
+Turn product intent or brownfield discovery into an implementation-ready epic. The
+goal is not a beautiful plan: it is a next `/flow-run` that one-shots a useful slice
+with minimal ambiguity. Dense artifacts, no ceremony, no document no agent will read.
 
 ## Conventions
 
-- `{project-root}` means the current repository root.
-- Epics live under `epics/epic-NN-name/`; stories under `epics/epic-NN-name/story-NN-MM-name/`.
+- Epics live under `epics/epic-NN-name/`; stories under
+  `epics/epic-NN-name/story-NN-MM-name/`.
 - A story is a vertical product outcome, not a technical layer.
-- `docs/project-context.md` is the durable current-state map only — not a decisions log.
-- Detailed story decisions belong in the story plan; execution history in its `## Result`.
+- `docs/project-context.md` is the durable current-state map, updated only when that
+  state changes — never a decisions log. Story decisions go in the story's
+  `## Decisions`; execution history in its `## Result`.
 
 ## Pipeline
 
-1. Load existing project context when present (`docs/project-context.md`, `docs/architecture.md`, roadmap, existing epics).
-2. Decide the smallest valuable epic (see Planning Heuristics). If requirements are ambiguous enough to cause rework, run **Clarify First** below.
-3. Create or update the epic `index.md` (goal, scope, ordered stories along a backbone — see below).
-4. Define the story sequence — vertical slices, each with concise Implementation Context. Story 01 is the walking skeleton (see below); check every story against INVEST before moving on.
-5. For each selected story, write its files at the shape its size calls for (see Story File Contract).
+1. Read the existing context when present: `docs/project-context.md`,
+   `docs/architecture.md`, the roadmap, existing epics.
+2. Pick the smallest valuable epic (Planning Heuristics). If ambiguity could cause
+   rework, run **Clarify First**.
+3. Write the epic `index.md`: goal, scope, and the stories ordered along a backbone.
+4. Define the stories as vertical slices, each with a short Implementation Context.
+   Story 01 is the walking skeleton; check every story against INVEST.
+5. Write each story's files at the shape its size calls for (Story File Contract).
 6. Recommend the first story to run with `/flow-run`.
 
 ## Planning Heuristics
 
-- Choose the smallest slice that proves value. Prefer "render one real resource
-  dynamically" over "migrate all data"; "admin manages one content type" over
-  "build the whole admin".
-- Split stories by shippable behavior, not by frontend/backend/database.
-- Plan heavier for auth, permissions, billing, migrations, external integrations,
-  and data modeling; lighter for static UI, copy, and isolated fixes.
-- Start with 2–5 stories for a normal epic. Fewer when the first slice validates the
-  direction; more only when dependencies or risk require it.
-- **Cap an epic around 5–7 stories.** Past that, the epic is no longer one
-  shippable capability — split the remainder into a follow-up epic instead of
-  growing this one further. A smaller epic also reaches "every story proven"
-  sooner, so its PR(s) merge sooner (see auto-merge in `/flow-ship`): a bloated
-  epic is not just harder to reason about, it sits open longer.
-- Every story is vertical, testable, and carries acceptance criteria.
+- The smallest slice that proves value: "render one real resource dynamically", not
+  "migrate all data"; "admin manages one content type", not "the whole admin".
+- Split by shippable behavior, never by frontend/backend/database.
+- Plan heavier for auth, permissions, billing, migrations, external integrations and
+  data modeling; lighter for static UI, copy and isolated fixes.
+- 2–5 stories for a normal epic; **cap it around 5–7**. Past that it is no longer one
+  shippable capability — split the rest into a follow-up epic. A small epic also
+  reaches "every story proven", and merges, sooner.
+- **Corpus first for a parser- or policy-shaped epic** (a shell reader, a path
+  policy, a config parser, a route scanner): the case corpus is story 01 — "the
+  corpus runs, red where unhandled" — and later stories turn rows green. Written
+  last, the spec is discovered one missing case per review pass (epic 05: 10–12
+  passes per story).
 
 ## Walking Skeleton (Story 01)
 
-The first story of a **new** epic must be the thinnest slice that crosses every
-layer the epic will eventually touch — UI (even a bare one) through the real
-logic to the real persistence or external call — rather than a single-layer stub
-(a UI over no data path, or an endpoint nothing calls yet). Hardcode everything
-beyond that one path; that is what later stories are for.
-
-This is not about story size — QUICK/FAST already caps that — it is about
-integration. After story 01 ships, the feature is demonstrably alive end to end;
-every later story only enriches an already-working path, so the base branch is
-never left with a rendered dead end or an orphaned endpoint waiting on a story
-that has not shipped. **Stop condition:** if story 01 does not cross every layer
-the epic implies, split it further or reorder before writing story 02 — do not
-let a later story become the first one to actually connect the pieces.
-
-A single-file QUICK story can be a walking skeleton too — "wire one real path
-end to end" is a shape, not a size.
+Story 01 of a **new** epic is the thinnest slice that crosses every layer the epic
+will touch — UI (even a bare one) through the real logic to the real persistence or
+external call — never a single-layer stub (a UI over no data path, an endpoint
+nothing calls). Hardcode everything beyond that one path. It is about integration,
+not size: a single-file QUICK story can be one. Once it ships, the feature is alive
+end to end and every later story only enriches a working path. **Stop condition:**
+if story 01 does not cross every layer, split or reorder before writing story 02.
 
 ## Backbone (Story Order)
 
-Above the `## Stories` list in `index.md`, add one line — `Backbone: <journey>` —
-naming the user or system journey the stories walk, step by step (e.g.
-`Backbone: browse → select a plan → pay → confirm`). Story order then reads as
-*where on that journey each story sits*, not as arithmetic numbering nobody
-re-derives once written. Story 01 is the walking skeleton: the thinnest path
-across the whole backbone. Every later story deepens one step of it — reordering
-a story should mean moving it to a different point on the stated journey, never
-just renumbering.
+In `index.md`, a `## Backbone` section above `## Stories` names the journey the
+stories walk in one line: `Backbone: browse → select a plan → pay → confirm`. Story
+01 is the thinnest path across it; each later story deepens one step. Reordering a
+story means moving it to another point on the journey, never just renumbering.
 
 ### Story dependency tree (optional)
 
-The Backbone line orders the journey; it does not say which stories build on
-which. When stories have real dependencies — one story lands files or behavior
-another story assumes — record them as an ASCII tree in the epic `index.md`,
-directly under the Backbone line:
+When stories have real dependencies — one lands files or behavior another assumes —
+draw them in a fenced block **inside the `## Backbone` section** (anywhere else the
+tree is ignored and the stories run as one plain chain), with the `s<number>` labels
+of `## Stories`. `ai-flow worktree place` reads it to run independent chains in
+parallel, so only these shapes parse:
 
 ```text
 s1
-├── s2 ──┐
-├── s3 ──┤
-└── s4 ──┴── s5
+├── s2
+│   └── s4
+└── s3
+
+s5
 ```
 
-Use the short `s<number>` label (matching the numbered `## Stories` list), not
-the full story name — the tree stays scannable. Story 01 (the walking skeleton)
-is the root; every later story hangs off the story it builds on. Two stories on
-sibling branches have no edge between them and run in parallel, each in its own
-worktree — `ai-flow worktree add --story <dir>`, then a `/flow-run` per
-worktree. An edge is a real build-on relationship: before leaving two stories
-unconnected, check their likely files/dirs (from their Implementation Context)
-are disjoint — a missing edge claims parallel-safety, and parallel-safety is
-checked, not assumed.
+- Story 01 is the root. Every other line is `├──` or `└──` and **one** label,
+  indented 4 characters (`│   ` or spaces) per level. A paragraph of flat chains,
+  one per line (`s1 ── s2 ── s3`), parses too — but not mixed into an indented one.
+- A story that builds on nothing in the epic is its own root, in its own paragraph
+  after a blank line (`s5` above).
+- Every story has **one parent**: no merge (`┴`, `┤`). A story that needs several
+  (verification, rollout, cleanup) is drawn as its own root, and its story names
+  the stories that must land before it starts — a root starts from the base, which
+  holds their code only once they have landed.
+- Every story of `## Stories` appears in the tree, each after its parent in the list.
 
-A story that consolidates several others (verification, rollout, cleanup)
-merges its dependents with `──┴──`, as `s5` above. Write the tree when the
-dependency structure goes beyond story order — any branching or merging. For a
-plain chain the Backbone already carries the order; omit the tree rather than
-drawing a straight line.
+Two stories on sibling branches run in parallel, each in its own worktree
+(`ai-flow worktree add --story <dir>`, then a `/flow-run` per worktree). A missing
+edge claims parallel-safety: check their likely files are disjoint before leaving
+two stories unconnected. Write a tree only when there is branching; for a plain
+chain the Backbone already carries the order.
+
+## Boundaries (when the epic adds a module)
+
+An epic that adds a module — a top-level package, layer or bounded area — records
+the dependencies it creates in `index.md`, under the Backbone:
+
+```md
+## Boundaries
+
+- allowed: `billing` → `domain`
+- forbidden: `billing` → `ui`
+- forbidden: `domain` → the database client
+
+approved by: <human name>
+```
+
+A boundary is a decision, so a human makes it: show the lines to the user and record
+the name they give. Never fill it in yourself — the tool cannot know who is human.
+Point at the project's own check: `ai-flow bootstrap --scan --json` lists
+`qualityRecipes` (dependency-cruiser, import-linter, ArchUnit, ESLint `complexity`)
+and which config already exists. The story that writes that config carries the rule;
+loosening it later is reported as `policy-changed`. An epic that adds no module has
+no `## Boundaries` section.
 
 ## Story File Contract
 
-The shape follows the story's size. Leave the `## Result` section empty for
-`/flow-run` to fill after implementation.
+The shape follows the story's size. Leave `## Result` empty for `/flow-run`, and keep
+any `## Status` line in `tasks.md` or `story.md` — a `## Status` in `spec.md` is not
+read.
 
 ### QUICK / FAST stories — one file
 
-A copy change, an isolated fix, a low-risk local change: write a single
-**`story.md`** with the sections that actually carry information — a `# Title`,
-acceptance criteria, a `## Commands` fenced code block (one command per line), and an empty `## Result`. Skip the rest.
-
-Three files for a one-line change means three files to create, three to re-read on
-every later turn, and two to update at the end — to record that a heading changed.
-The tool reads either shape, so this costs nothing in traceability: a single-file
-story verifies, reaches `verified`, and audits exactly like a three-file one.
+A copy change, an isolated fix, a low-risk local change: one **`story.md`** with only
+the sections that carry information — a `# Title`, the acceptance criteria, a
+`## Commands` fenced block (one command per line) and an empty `## Result`. It
+verifies and audits exactly like a three-file story, without three files to re-read
+on every later turn.
 
 ### STANDARD / STRICT stories — three files
 
-The split earns itself once a story is worth a day's work:
+- **`spec.md`** — what and acceptance: user value, requirements, acceptance criteria
+  (observable, testable), edge cases (correctness, security, UX, data), UX notes,
+  out of scope.
+- **`plan.md`** — how: `Implementation Context` (likely files/dirs, search anchors,
+  execution mode `QUICK|FAST|STANDARD|STRICT`, scout pre-step `yes/no`, areas to
+  avoid, validation focus), technical notes, `## Decisions`, a test plan, `## Acceptance Traceability`
+  (criterion → `file::test`), and `## Commands`: a fenced block, one command per
+  line, no bullets or labels (`verify` reads only that).
+- **`tasks.md`** — the checklist, starting with targeted discovery, and an empty
+  `## Result` with `### Rollback Notes`.
 
-- **`spec.md`** — what & acceptance: user value, requirements, acceptance criteria
-  (observable and testable), edge cases (correctness/security/UX/data), UX notes,
-  out-of-scope items to prevent scope creep.
-- **`plan.md`** — how: concise `Implementation Context` (likely files/dirs, search
-  anchors, execution mode `QUICK|FAST|STANDARD|STRICT`, scout pre-step `yes/no`,
-  areas to avoid), technical notes, `## Decisions` (meaningful tradeoffs), a test
-  plan, `## Acceptance Traceability` (criterion → `file::test`), and a `## Commands`
-  block with the validation commands: a fenced code block, one command per line,
-  no bullets or labels (`verify` reads only that).
+In either shape, write each command as the project's own script when it has one,
+bare (`npm test`, `pnpm run lint`): `verify` runs those when nobody is watching —
+every agent run — and refuses any other command there until the user declares it in
+`.coding-flow/config.json`.
 
-In either shape, write each command as the project's own script when it has one
-(`npm test`, `pnpm run lint` — bare, no extra arguments). `verify` runs those when
-nobody is watching, which is every agent-driven run; any other command is refused
-there until the user declares it in `.coding-flow/config.json`.
-- **`tasks.md`** — the execution checklist starting with targeted discovery, plus an
-  empty `## Result` section (with `### Rollback Notes`) the worker fills after running.
-
-Mention security and permissions when behavior is privileged; mention data ownership
-and migration when persistence changes. Avoid micro-stories like "create DTO".
-
-## Context Efficiency
-
-Planning should make implementation one-shot without forcing `/flow-run` to rediscover
-the whole project. For each story, capture likely files/directories, search anchors,
-the execution mode, whether a scout pre-step is needed, areas to avoid, and the
-validation focus. Mark `scout pre-step: yes` only when broad, cross-module, or
-high-risk discovery would otherwise be needed — never for small isolated stories.
+The Implementation Context is what lets `/flow-run` one-shot the story without
+rediscovering the project. Mark `scout pre-step: yes` only for broad, cross-module or
+high-risk discovery. Name security and permissions when behavior is privileged, data
+ownership and migration when persistence changes. No micro-stories ("create DTO").
 
 ## Clarify First (opt-in)
 
-When requirements are ambiguous enough to cause rework, pressure-test them before
-writing stories. Ask the fewest questions that prevent the most rework — one per
-turn, in the user's language; stop when the next question would not change
-implementation. Budget: 5–15 questions for a normal feature, 10–20 for auth,
-migration, billing, permissions, or data modeling. Highest-value question types:
+When ambiguity could cause rework, pressure-test the request before writing stories:
+the fewest questions that prevent the most rework, one per turn, in the user's
+language. Stop when the next question would not change implementation. Budget: 5–15
+questions, 10–20 for auth, migration, billing, permissions or data modeling. The
+highest-value kinds:
 
-- Scope boundary — what is explicitly out of scope?
+- Scope boundary — what is explicitly out?
 - Actor/permission — who can do this, and who cannot?
-- Data truth — where does this data come from and who owns it?
-- Failure mode — what should happen when this fails?
-- UX decision — what should the user see at the decision point?
+- Data truth — where does the data come from, and who owns it?
+- Failure mode — what happens when this fails?
+- UX decision — what does the user see at the decision point?
 - Migration — must existing data be preserved or transformed?
 - Validation — what would prove this is done?
 
 Prefer a labeled assumption over a question that would not change implementation.
 
+When the open question is how something should behave or look, a throwaway prototype
+settles it faster than another question. It is not implementation: build it outside
+the product tree (a scratch directory, or a branch that is never merged), show it,
+record the verdict in the story's `## Decisions`, and keep only the decision.
+
 ### INVEST Check
 
-Before the readiness verdict, check every story against INVEST — the failure
-modes it catches are the ones no amount of clarifying questions would surface:
+Before the readiness verdict, check every story:
 
-- **Independent** — does not require another not-yet-done story of *this* epic
-  to be minimally useful or testable on its own. A story-04 that silently needs
-  story-03 finished first is exactly the ordering hazard Walking Skeleton exists
-  to prevent for story 01, and it can recur at any position.
+- **Independent** — useful and testable without another not-yet-done story of this
+  epic. A story 04 that silently needs story 03 is the ordering hazard the walking
+  skeleton prevents for story 01, at any position.
 - **Negotiable** — a slice of scope, not a rigid spec handed down whole.
-- **Valuable** — delivers an observable user or system outcome, not an internal
-  layer nobody can see land.
-- **Estimable** — sizeable without further discovery; if it cannot be sized, it
-  is not ready to write, it is still a question.
-- **Small** — fits one focused `/flow-run` pass (QUICK through STRICT), not
-  several days of work wearing one name.
-- **Testable** — has acceptance criteria concrete enough to verify.
+- **Valuable** — an observable user or system outcome, not an invisible layer.
+- **Estimable** — sizeable without more discovery; otherwise it is still a question.
+- **Small** — one focused `/flow-run` pass, not days of work under one name.
+- **Testable** — criteria concrete enough to verify.
 
 A story that fails Independent or Small is a split, not a note for later.
 
 ### Readiness Gate
 
-When the questions stop, record a verdict instead of sliding into writing. Judge
-it against the stopping criterion: *would the next question change
-implementation?*
+When the questions stop, record a verdict against the stopping rule — *would the
+next question change implementation?* — instead of sliding into writing:
 
 - **`ready`** — no open question would change implementation. Write the stories.
-- **`not ready`** — a blocking question is still open. Do not write stories yet:
-  ask the highest-leverage follow-up, surface the missing decision to the user as
-  a labeled question, or cut scope until it no longer matters. Record what is
-  blocking.
+- **`not ready`** — a blocking question is open. Write no stories: ask the
+  highest-leverage follow-up, put the missing decision to the user as a labeled
+  question, or cut scope until it no longer matters.
+- An epic that adds a module is **`not ready`** while its `## Boundaries` section is
+  missing or has no `approved by:` name.
 
-Record the verdict — and the blocking item when `not ready` — in the epic
-`index.md`, so `/flow-run` starts from a plan explicitly judged ready, not from
-silence.
+Record the verdict, and the blocking item when `not ready`, in the epic `index.md`.
 
 ## Brownfield Bootstrap (opt-in)
 
-For an existing codebase, prepare durable project docs before creating stories. Do
-not modify application code.
+For an existing codebase, write durable project docs before any story. Application
+code is not modified, and no epic is created unless the user asks.
 
-1. Run `ai-flow bootstrap --scan --json` and read its output. The scan is mechanical
-   — directories, scripts, declared dependencies — and costs milliseconds, so always
-   run it fresh rather than trusting a `docs/bootstrap-scan.md` that may be stale.
-   Then inspect only the files needed to verify framework, scripts, architecture,
-   tests, and conventions.
-   - If the scan reports `"classification": "empty"` while the repo clearly holds
-     code, the detectors (JavaScript only) did not recognize the stack. Say so, and
-     derive the facts by reading the project directly instead of trusting the scan.
-2. Update `docs/project-context.md`, `docs/architecture.md`, `docs/conventions.md`,
-   and `docs/roadmap.md` with durable current-state facts — current architecture,
-   existing patterns, hardcoded data, coupling points, migration risks, and the first
-   safe vertical slice.
-3. Do not dump the full audit into the docs; summarize. Mark uncertain findings as
-   assumptions. Preserve existing human-written docs when they are more specific.
-4. Do not create an epic unless the user asks.
+1. Run `ai-flow bootstrap --scan --json` fresh (it is mechanical and takes
+   milliseconds; a `docs/bootstrap-scan.md` may be stale), then read only the files
+   needed to confirm framework, scripts, architecture, tests and conventions. If it
+   says `"classification": "empty"` while the repo clearly holds code, the detectors
+   (JavaScript only) missed the stack: say so, and read the project directly.
+2. Write current-state facts into `docs/project-context.md`, `docs/architecture.md`,
+   `docs/conventions.md` and `docs/roadmap.md`: architecture, existing patterns,
+   hardcoded data, coupling points, migration risks, the first safe vertical slice.
+3. Summarize rather than dump the audit; mark uncertain findings as assumptions;
+   keep human-written docs that are more specific.
 
 ## Greenfield Additions
 
@@ -236,70 +233,29 @@ For a new project, first define the product goal, target users, initial stack
 assumptions, architecture constraints, validation strategy, and the smallest
 shippable slice.
 
-## Rules
-
-- Prefer vertical slices; avoid enterprise ceremony and vague tasks.
-- Every story must be testable and carry acceptance criteria.
-- Update `project-context.md` only when the durable project state changes.
-- Do not create documents that no agent will read.
-
 ## Verification
 
 Before reporting the plan as done:
 
-- [ ] Every story file named under `## Generated Files` exists on disk — checked,
-      not assumed.
-- [ ] Story 01 is a walking skeleton: it delivers end-to-end value on its own
-      rather than being one horizontal layer of several.
-- [ ] Each story's acceptance criteria are `- [ ]` checklist items in
-      Given/When/Then form. Criteria written as prose are invisible to `verify`,
-      which lists the unticked ones back on every green run and cannot see these.
+- [ ] Every file under `## Generated Files` exists on disk — checked, not assumed.
+- [ ] Story 01 is a walking skeleton: end-to-end value on its own, not one layer.
+- [ ] Every acceptance criterion is a `- [ ]` item in Given/When/Then form — prose
+      criteria are invisible to `verify`.
 - [ ] `ai-flow doctor` ran and reports no duplicate story numbering and no
       oversized epic.
-- [ ] Any story dependency tree written has its edges backed by real
-      build-on relationships — checked, not assumed.
-- [ ] No implementation happened. Planning writes story files; `/flow-run` writes
+- [ ] Any dependency tree uses only the shapes above, and each edge is a real
+      build-on relationship — checked, not assumed.
+- [ ] An epic that adds a module carries `## Boundaries` with an `approved by:` name
+      the user gave.
+- [ ] No implementation happened: planning writes story files, `/flow-run` writes
       code.
 
-A criterion with no observable outcome cannot be verified and cannot be reviewed.
-Rewrite it here, where it is cheap, rather than handing it to `/flow-run`.
+A criterion with no observable outcome can be neither verified nor reviewed: rewrite
+it here, where it is cheap.
 
 ## Output
 
-```md
-# Plan Result
-
-## Epic
-
-- Path:
-- Goal:
-- Scope:
-
-## Stories
-
--
-
-## First Story To Run
-
--
-
-## Generated Files
-
--
-
-## Assumptions
-
--
-
-## Risks
-
--
-
-## Clarification Readiness
-
-ready / not ready — include only when Clarify First ran
-
-## Recommended Next Command
-
-Use /flow-run for ...
-```
+`# Plan Result`, then these `##` sections in order: Epic (path, goal, scope),
+Stories, First Story To Run, Generated Files, Assumptions, Risks, Clarification
+Readiness (`ready` / `not ready`, only when Clarify First ran), Recommended Next
+Command (`Use /flow-run for …`).

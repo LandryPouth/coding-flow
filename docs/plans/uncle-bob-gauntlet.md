@@ -122,6 +122,85 @@ covered), `applyDeps` (12 %). **Limit:** V8 reports block coverage, so
 labelled as one. The same `FN` ranges also give function length in any
 language that emits lcov.
 
+### Experiment 3 — the mutation probe replayed on bethl (story 15-04)
+
+`scripts/mutation-probe.js` on three bethl stories with high-risk diffs, each
+carrying a Prisma migration: 37-03 (signed agent uploads, upload cap,
+cleanup cron), 34-02 (exact address only after a confirmed visit), 34-03
+(entrance photo and presence verification). The study's operator table,
+30 sites sampled per story (34-02 has 20), the test files each story's own
+commits touched as the targeted command (`jest {files}`), run from a clone of
+bethl so its tree is never written. The auth stories (18-xx, 29-xx) have 4–16
+sites each under this table: too few to sample 20.
+
+The mutants ran on `ec8a3e0e`, the commit before bethl's switch to SWC:
+bethl's installed dependencies predate it, so `@swc/jest` is missing at HEAD.
+Sites were relocated to that tree by verbatim line match.
+
+| Story | Mutants | Killed | Timeout | Did not compile | Survived | s / mutant |
+|---|---|---|---|---|---|---|
+| 37-03 | 30 | 17 | 0 | 9 | 4 | 40.4 |
+| 34-02 | 20 | 9 | 0 | 8 | 3 | 15.2 |
+| 34-03 | 30 | 11 | 2 | 5 | 12 | 35.3 |
+| **Total** | **80** | **37** | **2** | **22** | **19** | **32.2** |
+
+Kill rate: 66 % (37 killed of the 56 that were killed or survived). The 2
+timeouts are counted apart: a run past its bound is as likely slow as hung,
+so read either way the rate is 64–67 % (37/58 to 39/58). `ts-jest`
+type-checks, so 22 mutants (28 %) were stopped by TypeScript, not by a
+test — mostly Prisma `select` flags and impossible comparisons (TS2367).
+Counting those as kills would read 75 %.
+
+The 19 survivors, classified by reading the code and its specs:
+
+| Class | Count | Sites |
+|---|---|---|
+| **Real gap** | 1 | 37-03 `cloudinary.service.ts:246` — `findImageResource`, new in 37-03, is called by no test (the integration spec stubs it; the 404 test covers `findVideoResource`). Inverting its 404 check turns a Cloudinary 500 into `null`, i.e. "photo unknown", on the upload-confirmation path. |
+| **Weak assertion, high-risk path** | 3 | 34-03 `presence-rules.ts:57` — the test named "accepte pile à la limite de 100 m" checks 99.5 m and 100.5 m, never 100 m; that rule sets `verifiedAt`. 34-03 `presence-verification.service.ts:203` — the 8 MB upload cap is tested at `MAX + 1` only. 37-03 `agent-photos.service.ts:300` — `media.create` is asserted with `objectContaining` that omits `authenticatedDelivery`. |
+| Weak assertion, low risk | 2 | 34-03 `visit-location.service.ts:70` (`hasEntrancePhoto` asserted `true` only); 34-03 `presence-rules.ts:40` (longitude ±180°). |
+| Equivalent | 5 | Swagger `nullable: true` ×3 (OpenAPI metadata only); 37-03 cron log line on an empty batch; 34-02 tie between two visits of equal expiry (the access decision is unchanged). |
+| Outside the four classes: not the story's code | 8 | 34-03 `property.service.ts:812–826` ×7, a Prisma `include` block the story only re-indented; 34-03 `property.controller.ts:344`, relocated onto another occurrence of the same line (`git blame` names a later commit). The mutant ran, but not on code the story wrote. |
+
+**Verdict: go.** One real gap and three weak assertions on high-risk paths,
+in a project the author did not design for the probe — the condition of
+wave 5. Two checks behind it:
+
+- The four go-deciding survivors were re-run against bethl's **whole** API
+  unit suite (1 763 tests; `openapi-contract.spec.ts`, already red at
+  `ec8a3e0e`, left out; the integration specs need a database and were not
+  run): all four survive. They are not artefacts of the targeted `{files}`.
+- The real gap is a function no test calls: wave 4's lcov signal finds that
+  one without mutation. What only mutation found is the three weak
+  assertions — tests that run the line and do not pin it. The go stands on
+  those.
+
+All 80 sites are still sites under the probe's corrected masking (multi-line
+and nested templates, regex literals): none sat in a SQL template. The
+numbers come from the probe's first version. Its compile pattern later
+narrowed (a `SyntaxError:` line, not the word anywhere, and only a line the
+passing baseline did not print), and the 22 compile mutants' output was not
+kept: under today's rules some might read as killed, which can only raise
+the 66 %; the timeouts, counted as kills then, are apart now. The exact `--paths`/`--tests` per story are in 15-04's Result.
+
+The replay also says what 15-05 must not inherit:
+
+- **8 of 19 survivors (42 %) were noise.** Sites must come from lines the
+  diff changed in substance, not re-indented or moved ones (`git diff -w`, or
+  `--color-moved`), and relocation onto another tree must use `git blame`,
+  never a text match.
+- **Cost: 32 s per mutant, ~43 min for 80** with a targeted command, against
+  10 s here. A per-verify probe of 30 mutants is 16 minutes on bethl: opt-in,
+  `high`-risk diffs only, as wave 5 already says — and out of the default
+  verify loop.
+- **Compiled languages:** 28 % of mutants never reached a test. Reported
+  apart (`compile`), never as killed — otherwise the kill rate reads 75 %
+  where the tests earned 66 %.
+- **Linked dependencies are live.** `--link node_modules` points at the
+  source checkout's real directory: a runner can write caches there (`git
+  status` does not see ignored files), and a workspace package reached
+  through it is that checkout's copy, not the mutated tree's. Here every
+  mutant was in `apps/api/src`, which is not reached that way.
+
 ## Clean code and clean architecture — in the tool itself
 
 | Finding | Measure |
@@ -199,10 +278,11 @@ prose is exactly what Martin found agents ignore. Turning them into signals:
 | **2 — the tool's architecture** | 11-01 split along the Dependency Rule, 12-03 layering test, size ratchet in this repo's `validation.quality` | guard → harness, core → layers, a 322-line function | M |
 | **3 — the bar does not move** | `policyGlobs` in `harness.json`: a diff touching lint config, coverage thresholds, dependency rules or `harness.json` is a contrary signal; strict fails unless a `## Policy Change` section explains it (lowers the claim, so the direction rule allows it). Also fix `nonBehaviorGlobs`, which today makes `**/*.config.js`, `**/.eslintrc*` and `tsconfig*.json` invisible to every signal | Hole read in the default config | S/M |
 | **4 — lcov signals for users** | CRAP and size ratchet on the diff | Experiment 2 | M |
-| **5 — mutation probe** | Opt-in via `harness.json` (`mutation: { command, maxMutants }`), `high`-risk diffs only, sites drawn from the story's added lines, deterministic sampling seeded by the tree token, executed in a throwaway worktree (never in the user's tree), result stored as `mutation: { killed, survived[], durationMs }`, `## Mutation Exemption` for equivalent mutants | Experiment 1: 90 % killed, ~10 s/mutant here. **Replay offline on bethl first** (183 s suite median, so a targeted test command is mandatory); drop it if it finds no real gaps there | L |
+| **5 — mutation probe** | Opt-in via `harness.json` (`mutation: { command, maxMutants }`), `high`-risk diffs only, sites drawn from the story's added lines, deterministic sampling seeded by the tree token, executed in a throwaway worktree (never in the user's tree), result stored as `mutation: { killed, survived[], durationMs }`, `## Mutation Exemption` for equivalent mutants | Experiment 1: 90 % killed, ~10 s/mutant here. **Replay offline on bethl first** (183 s suite median, so a targeted test command is mandatory); drop it if it finds no real gaps there. **Replayed 2026-11-10 (15-04): go** — 1 real gap and 3 weak assertions on high-risk paths in 80 mutants, 66 % killed (timeouts and type errors apart), 32 s/mutant; see Experiment 3 | L |
 
 Known limits of wave 5, to be printed rather than hidden: in compiled
-languages a non-compiling mutant counts as killed; equivalent mutants exist;
+languages a non-compiling mutant is reported apart, never as killed (see
+Experiment 3); equivalent mutants exist;
 the textual operator table skips strings and comments heuristically.
 
 ## Refused
@@ -267,7 +347,8 @@ Their method is fully described above; to re-run:
 - **Runs:** group `.coding-flow/runs/*.json` by suffix (`-verify`, `-review`),
   then count `coverage.tier`, `reviewer`, `verdict`, `findingCounts.p1` per
   `story`.
-- **Mutation:** `git worktree add --detach <tmp> HEAD`; take the `+` lines of
+- **Mutation:** now `scripts/mutation-probe.js` (story 15-04; its header
+  gives the usage). By hand, as experiment 1 did: `git worktree add --detach <tmp> HEAD`; take the `+` lines of
   `git diff -U0 <base> HEAD -- bin/lib/guard.js`; for each sampled site, apply
   one operator swap, run `node --require ./scripts/test-env-guard.js --test
   test/guard*.test.js test/opencode-guard.test.js`, record exit code, restore.

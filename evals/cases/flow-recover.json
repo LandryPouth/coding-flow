@@ -1,0 +1,19 @@
+{
+  "skill": "flow-recover",
+  "trigger": {
+    "positive": [
+      { "prompt": "I built this MVP with an agent in two weeks and haven't touched it in months — what is wrong or insecure?", "top_k": 1 },
+      { "prompt": "before launch, audit this whole codebase for security and risky code", "top_k": 2 },
+      { "prompt": "this repo was written fast, tell me what I should fix first", "top_k": 2 },
+      { "prompt": "assess the existing application end to end and map its entry points and trust boundaries", "top_k": 2 },
+      { "prompt": "help me understand how payments work in this code I didn't write", "top_k": 2 },
+      { "prompt": "walk me through the auth flow so I can own it", "top_k": 2 }
+    ],
+    "negative": [
+      { "prompt": "is this diff safe to merge", "owner": "flow-review" },
+      { "prompt": "document this repo's architecture before we plan the next feature", "owner": "flow-plan" },
+      { "prompt": "just tell me the single thing worth doing right now", "owner": "flow-next" },
+      { "prompt": "add a test for the login bug", "owner": "flow-run" }
+    ]
+  }
+}

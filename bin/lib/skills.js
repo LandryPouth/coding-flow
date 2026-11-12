@@ -2,10 +2,10 @@
 
 // Listing of the template skills. The set is small and flat — no macro/atomic
 // hierarchy to explain: you pick any of these directly. Five follow the workflow
-// stage by stage; flow-status and flow-next are read-only lookups, not tied to a
-// stage, usable any time. Depth (STANDARD/STRICT modes, deep validators, context
-// scout) lives as opt-in sections inside `run` and `review`, not as separate
-// front-door skills.
+// stage by stage; flow-status, flow-next and flow-recover are read-only lookups,
+// not tied to a stage, usable any time. Depth (STANDARD/STRICT modes, deep
+// validators, context scout) lives as opt-in sections inside `run` and `review`,
+// not as separate front-door skills.
 
 const fs = require("fs");
 const path = require("path");
@@ -52,7 +52,7 @@ function listSkills({ json = false } = {}) {
 
   log("The skills, in workflow order. Pick any of them directly — the deeper");
   log("modes and validators live as opt-in sections inside flow-run and flow-review.");
-  log("flow-status and flow-next are read-only lookups, usable any time.");
+  log("flow-status, flow-next and flow-recover are read-only lookups, usable any time.");
   log("");
 
   for (const skill of skills) {

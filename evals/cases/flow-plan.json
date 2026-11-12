@@ -4,7 +4,9 @@
     "positive": [
       { "prompt": "break this feature request into vertical stories", "top_k": 1 },
       { "prompt": "we want multi-tenant billing, write the epic and slice it up", "top_k": 2 },
-      { "prompt": "this is an existing codebase with no specs, bootstrap it into epics", "top_k": 2 }
+      { "prompt": "this is an existing codebase with no specs, bootstrap it into epics", "top_k": 2 },
+      { "prompt": "plan an epic for a new shell command parser: the case corpus comes first, then the parser stories", "top_k": 2 },
+      { "prompt": "plan the billing module; it must not depend on the UI", "top_k": 2 }
     ],
     "negative": [
       { "prompt": "implement story 02-01 now", "owner": "flow-run" },

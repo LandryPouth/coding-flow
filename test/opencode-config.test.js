@@ -114,13 +114,13 @@ test('global: the directory follows XDG_CONFIG_HOME, else ~/.config', () => {
   assert.equal(globalOpenCodeDir({ env: {}, home: '/h' }), path.join('/h', '.config', 'opencode'));
 });
 
-test('cli: `init --global` writes the seven skills to the user dir and nothing in the project', (t) => {
+test('cli: `init --global` writes the eight skills to the user dir and nothing in the project', (t) => {
   const home = tmp(t, 'cf-oc-home-');
   const project = tmp(t, 'cf-oc-proj-');
   const env = cleanEnv({ HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: '' });
   const out = execFileSync(process.execPath, [CLI, 'init', '--global'], { cwd: project, env, encoding: 'utf8' });
-  assert.match(out, /Skills: 7 written/);
-  assert.equal(fs.readdirSync(path.join(home, '.config', 'opencode', 'skills')).length, 7);
+  assert.match(out, /Skills: 8 written/);
+  assert.equal(fs.readdirSync(path.join(home, '.config', 'opencode', 'skills')).length, 8);
   assert.ok(fs.existsSync(path.join(home, '.config', 'opencode', 'skills', 'flow-run', 'SKILL.md')));
   assert.deepEqual(fs.readdirSync(project), []);
   assert.throws(() => execFileSync(process.execPath, [CLI, 'init', '--global', '--target', 'codex'], { cwd: project, env, stdio: 'pipe' }));
@@ -140,7 +140,7 @@ test('cli: init for OpenCode wires RULES.md into opencode.json; doctor warns whe
 test('cli: OPENCODE=1 alone is enough to pick OpenCode, no --target needed', (t) => {
   const project = tmp(t, 'cf-oc-proj-');
   const out = execFileSync(process.execPath, [CLI, 'init'], { cwd: project, env: cleanEnv({ OPENCODE: '1' }), encoding: 'utf8' });
-  assert.match(out, /Skills \(opencode\): 7 written — \.opencode\/skills/);
+  assert.match(out, /Skills \(opencode\): 8 written — \.opencode\/skills/);
 });
 
 test('cli: adding OpenCode to a minimal install does not promote it to full', (t) => {
@@ -192,7 +192,7 @@ test('cli: `init --global` wires the guard plugin in the user dir by default; --
   assert.equal(fs.readFileSync(plugin, 'utf8'), '// mine\n');
 });
 
-// "7 written (0 kept)" then "0 written (7 kept)" read as seven files the user had
+// "8 written (0 kept)" then "0 written (8 kept)" read as files the user had
 // edited. Only an edited file is "kept", and it is named.
 test('cli: upgrade says up to date for untouched skills and names an edited one', (t) => {
   const project = tmp(t, 'cf-oc-proj-');
@@ -201,5 +201,5 @@ test('cli: upgrade says up to date for untouched skills and names an edited one'
   run(['init', '--target', 'opencode']);
   fs.appendFileSync(path.join(project, '.opencode', 'skills', 'flow-run', 'SKILL.md'), '\nmine\n');
   const out = run(['upgrade']);
-  assert.match(out, /Skills \(opencode\): 0 written, 6 up to date, 1 kept because you edited it: \.opencode\/skills\/flow-run\/SKILL\.md — \.opencode\/skills/);
+  assert.match(out, /Skills \(opencode\): 0 written, 7 up to date, 1 kept because you edited it: \.opencode\/skills\/flow-run\/SKILL\.md — \.opencode\/skills/);
 });

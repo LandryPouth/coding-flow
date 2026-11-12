@@ -5,73 +5,58 @@ description: Scaffold Coding Flow into the current project from inside your codi
 
 # Setup
 
-Install the Coding Flow project scaffold into the current repository, so the
-`/flow-plan` and `/flow-run` skills have rules, docs, and a harness to act on. This is the
-one-context alternative to running `init` yourself in a terminal: `/plugin install`
-then `/flow-setup`.
-
-## When To Use
-
-- Right after installing the plugin, the first time you open a repo that does not
-  yet have Coding Flow (`RULES.md`, `epics/`, `.coding-flow/`).
-- To re-check or repair an existing install.
+Install the Coding Flow scaffold (rules, docs, harness) into the current repository
+from inside the agent: `/plugin install`, then `/flow-setup`. Use it the first time
+a repo has no `RULES.md`, `epics/` or `.coding-flow/`, or to re-check and repair an
+install.
 
 ## Steps
 
-1. Confirm the working directory is the project root (the git repo root, or where
-   `package.json` lives if there is one). Stop and ask if it is not.
-2. Run the scaffold. Use `ai-flow` when it is on the PATH (`command -v ai-flow`):
-   it is the version this machine installed. Otherwise use npx exactly as written
-   below — do not drop or change a version pinned there:
+1. Confirm the working directory is the project root (the git root, or where
+   `package.json` lives). If it is not, stop and ask.
+2. Run the scaffold — `ai-flow init` when `command -v ai-flow` finds it (the version
+   this machine installed), otherwise exactly as written here, keeping any pinned
+   version:
 
    ```bash
    npx @landry_pouth/coding-flow init
    ```
 
-   `init` detects the agent you are running in (Claude Code, OpenCode) and installs
-   its skills and its write guard. If it prints **"Platform not recognized"**, it
-   installed neither: re-run it with the agent you are in, e.g.
-   `init --target opencode` (or `claude`, `codex`, `gemini`, `antigravity`).
-
-   - `init` is **non-destructive by default**: it never overwrites your files. An
-     existing file is left untouched, so re-running is safe.
-   - If the project has no `package.json`, a minimal private one is created so the
-     `flow:*` scripts work.
-3. Read what `init` reports about the repo. It scans for an existing codebase on
-   its own and says whether it found one — relay that verdict, and if it is
-   brownfield, be explicit that the project docs are still empty: the scan is
-   mechanical and does not document anything. `/flow-plan` (its Brownfield
-   Bootstrap section) is what fills them.
-4. Verify the install:
+   `init` detects the agent (Claude Code, OpenCode) and installs its skills and its
+   write guard. **"Platform not recognized"** means it installed neither: re-run with
+   `init --target opencode` (or `claude`, `codex`, `gemini`, `antigravity`). It never
+   overwrites an existing file, so re-running is safe, and it creates a minimal
+   private `package.json` when there is none, for the `flow:*` scripts.
+3. Relay `init`'s brownfield verdict. On an existing codebase, say plainly that the
+   project docs are still empty — the scan is mechanical — and that `/flow-plan`'s
+   Brownfield Bootstrap fills them.
+4. Check the install:
 
    ```bash
    npx @landry_pouth/coding-flow doctor
    ```
 
-5. Report what was created, then point to the next step: `/flow-plan` to turn an
-   objective into implementation-ready stories, followed by `/flow-run`.
+5. Report what was created, and name the next step: `/flow-plan`, then `/flow-run`.
 
 ## Verification
 
 Before reporting the setup as done:
 
-- [ ] `init` ran, and its output was read rather than assumed — including its
-      brownfield verdict, which is relayed either way.
-- [ ] `init` did not report "Platform not recognized" — or it was re-run with
-      `--target` until it named the agent you are in.
-- [ ] `doctor` ran and reported the install as correct, with no warning about the
-      platform or the guard (a warning there means writes are not protected).
-- [ ] `RULES.md`, `epics/`, and `.coding-flow/` exist in the project root.
+- [ ] `init` ran and its output was read, brownfield verdict included.
+- [ ] `init` did not say "Platform not recognized" — or was re-run with `--target`
+      until it named the agent you are in.
+- [ ] `doctor` reported the install correct, with no warning about the platform or
+      the guard (one there means writes are not protected).
+- [ ] `RULES.md`, `epics/` and `.coding-flow/` exist at the project root.
 - [ ] The next step was named: `/flow-plan`.
 
-If `doctor` reported a problem — an error, or a warning about the platform or the
-guard — the setup is not done. Report the problem instead
-of the list of files `init` created — a scaffold that `doctor` rejects is worse
-than no scaffold, because it looks installed.
+If `doctor` reported an error, or a platform or guard warning, the setup is not
+done: report that problem instead of the files `init` created — a scaffold `doctor`
+rejects looks installed and is worse than none.
 
 ## Stop Conditions
 
 - The current directory is not the intended project root.
-- `init` reports an unparseable existing config or `settings.json` — surface it,
-  do not force. Suggest `--force` only if the user explicitly wants to reinstall
-  the templates over local edits.
+- `init` reports an unparseable existing config or `settings.json`: surface it, do
+  not force. Suggest `--force` only if the user explicitly wants the templates
+  reinstalled over local edits.

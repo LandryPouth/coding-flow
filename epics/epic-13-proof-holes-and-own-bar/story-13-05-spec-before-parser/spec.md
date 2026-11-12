@@ -27,14 +27,14 @@ acceptance criteria change during its own diff, the evidence says so.
 
 ## Acceptance Criteria
 
-- [ ] Given a story whose criterion "Given X then deny" becomes "Given X then
+- [x] Given a story whose criterion "Given X then deny" becomes "Given X then
       warn" on the branch, then `criteria-changed` lists both texts.
-- [ ] Given only ticks between base and HEAD, then no signal.
-- [ ] Given a story created in the same branch as its code, then
+- [x] Given only ticks between base and HEAD, then no signal.
+- [x] Given a story created in the same branch as its code, then
       `spec-in-diff` (warning).
-- [ ] Given strict and a `## Spec Change` section, then pass with the reason
+- [x] Given strict and a `## Spec Change` section, then pass with the reason
       recorded.
-- [ ] `/flow-plan` SKILL.md carries the corpus-first rule; its eval case gains
+- [x] `/flow-plan` SKILL.md carries the corpus-first rule; its eval case gains
       a positive prompt for a parser-shaped epic; `plugin check` green.
 
 ## Edge Cases
@@ -44,3 +44,7 @@ acceptance criteria change during its own diff, the evidence says so.
   history (`git log --follow` once); if not found, `spec-in-diff`.
 
 ## Result
+
+### Rollback Notes
+
+`git revert`; no data or config involved.

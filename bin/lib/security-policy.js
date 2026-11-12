@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
-const { defaultSecretPatterns, defaultSecretScanAllowlist } = require("./harness-config");
+const { defaultSecretPatterns, defaultSecretScanAllowlist, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
 const {
   normalizePortable,
   addIssue,
@@ -67,6 +67,61 @@ function isHeuristicAllowlisted(relativePath, config) {
   return allowlist.some((pattern) => matchesPattern(relativePath, pattern));
 }
 
+// Whether a quoted value is, as a whole, ONE shell expansion: `$VAR`,
+// `${VAR:-x}`, a balanced `$(…)`, or a single backtick pair. The secret is then
+// fetched at run time, it is not written here. A literal around or after the
+// expansion (`$2b$10$<hash>`, `${HOME}secret…`, `$(a)literal$(b)`) is not
+// exempt. What sits INSIDE the expansion is not inspected: a literal passed as a
+// command argument is an accepted gap of this heuristic (design-decisions).
+function isSingleExpansion(value) {
+  if (/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(value) || /^`[^`]*`$/.test(value)) {
+    return true;
+  }
+
+  const open = value.startsWith("${") ? "{" : value.startsWith("$(") ? "(" : null;
+
+  if (!open) {
+    return false;
+  }
+
+  const close = open === "{" ? "}" : ")";
+  let depth = 0;
+
+  for (let index = 1; index < value.length; index += 1) {
+    if (value[index] === open) {
+      depth += 1;
+    } else if (value[index] === close) {
+      depth -= 1;
+
+      if (depth === 0) {
+        return index === value.length - 1;
+      }
+    }
+  }
+
+  return false;
+}
+
+// A heuristic pattern fires on a line unless EVERY match on it is a single shell
+// expansion: `a="$(x)" b="literal…"` still reports `b`. Exact patterns never get
+// this exemption, so a real key inside a `$(…)` line is still found.
+function matchesLine(pattern, line) {
+  if (pattern.precision === "exact") {
+    return pattern.regex.test(line);
+  }
+
+  const flags = pattern.regex.flags.includes("g") ? pattern.regex.flags : `${pattern.regex.flags}g`;
+
+  return [...line.matchAll(new RegExp(pattern.regex.source, flags))].some((match) => {
+    // Exempt only a match holding exactly ONE double-quoted value: a shell does
+    // not expand inside single quotes, and a second quoted value in a custom
+    // pattern's match would otherwise hide behind the first.
+    const value = /^[^"']*[:=]\s*"([^"']*)"[^"']*$/.exec(match[0]);
+
+    return !(value && isSingleExpansion(value[1]));
+  });
+}
+
 // The single scanning primitive, shared by the after-the-fact scan (`harness
 // check`) and the at-the-boundary one (`guard`). One implementation means the
 // hook and the report can never disagree about what counts as a secret.
@@ -81,7 +136,7 @@ function findSecretsInContent(content, patterns, { skipHeuristics = false, first
   const lines = content.split(/\r?\n/);
 
   for (let index = 0; index < lines.length; index += 1) {
-    const match = active.find((pattern) => pattern.regex.test(lines[index]));
+    const match = active.find((pattern) => matchesLine(pattern, lines[index]));
 
     if (match) {
       found.push({ name: match.name, precision: match.precision, line: index + 1 });
@@ -103,7 +158,10 @@ function checkSensitivePaths(files, config, report) {
       continue;
     }
 
-    if (config.blockedPaths.some((pattern) => matchesPattern(relativePath, pattern))) {
+    // The evidence entries bar an agent's write, not a commit: `ship` commits the
+    // run files on purpose.
+    const refusedInCommit = config.blockedPaths.filter((pattern) => !EVIDENCE_BLOCKED_PATHS.includes(pattern));
+    if (refusedInCommit.some((pattern) => matchesPattern(relativePath, pattern))) {
       addIssue(
         report.errors,
         "blocked_path_present",

@@ -11,6 +11,10 @@
     ".coverage/lcov.info"
   ],
   "minPatchCoverage": 80,
+  "functionSize": {
+    "max": 80,
+    "enforce": true
+  },
   "secretPatterns": [
     {
       "name": "Stripe live key",
@@ -82,7 +86,19 @@
     "**/*credential*",
     "**/*secret*",
     "**/webhooks/**",
-    "**/*webhook*"
+    "**/*webhook*",
+    "bin/lib/guard.js",
+    "bin/lib/harness.js",
+    "bin/lib/security-policy.js",
+    "bin/lib/policy.js",
+    "bin/lib/coverage-gate.js",
+    "bin/lib/evidence.js",
+    "bin/lib/identity.js",
+    "bin/lib/policy-fingerprint.js",
+    "templates/.opencode/**",
+    "bin/lib/opencode.js",
+    "bin/lib/codex-settings.js",
+    "bin/lib/codex-probe.js"
   ],
   "testGlobs": [
     "**/*.test.*",
@@ -108,6 +124,7 @@
     "coverage/**",
     "**/coverage/**",
     "**/*.md",
+    "evals/recovery/fixture/**",
     ".gitignore",
     "**/*.lock",
     "**/package-lock.json",
@@ -136,7 +153,9 @@
     "**/id_ed25519",
     "**/*.pem",
     "**/*.key",
-    "node_modules/**"
+    "node_modules/**",
+    ".coding-flow/runs/**",
+    ".coding-flow/ledger.jsonl"
   ],
   "sensitiveGlobs": [
     "**/.env*",

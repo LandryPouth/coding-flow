@@ -54,9 +54,13 @@ const {
   resolveValidationCommands,
   cleanEnvironment,
   runValidationCommand,
+  securityOutcome,
   commandTimeout,
   captureEnvironment,
 } = require("./validation-run");
+const { evaluateClaim } = require("./claim");
+const { runRedAtBase } = require("./red-at-base");
+const { evaluateComplexity } = require("./complexity");
 
 function buildHarnessPreflight({ story = null } = {}) {
   const { config, exists } = readHarnessConfig();
@@ -257,13 +261,40 @@ function storyDigest(storyDir) {
   return crypto.createHash("sha256").update(JSON.stringify(bundle)).digest("hex").slice(0, 40);
 }
 
+// A green proof of this story that still cannot be replayed for the question
+// being asked now, whatever its tree token says.
+function canStandIn(evidence, { redAtBase }) {
+  // A proof made without the red-at-base check cannot stand in for one that
+  // asked for it: the two claims are different, and the stronger one is the
+  // question being asked now.
+  if (redAtBase && !(evidence.redAtBase && evidence.redAtBase.ok === true)) {
+    return false;
+  }
+
+  // A scanner that could not run (offline, missing) may run next time: a
+  // proof that carries one is never replayed in place of trying again.
+  if ((evidence.results || []).some((item) => item.outcome === "not-examined")) {
+    return false;
+  }
+
+  // Story-less runs share `story: null` with land's re-verify, which skipped
+  // the coverage gate: replaying it would be a green with no gate behind it.
+  // Evidence from before `skipped` existed is recognised by its reason.
+  return !(
+    evidence.coverage &&
+    (evidence.coverage.skipped === true || evidence.coverage.reason === COVERAGE_SKIPPED_REASON)
+  );
+}
+
 // Looks for a green verify that already proves this exact story, at this exact
 // working-tree content, for this exact command set. Re-running `tsc && test &&
 // lint` to reconfirm a result nothing has invalidated is pure latency.
 //
 // Conservative by construction: outside git, or when anything cannot be
 // determined, this returns null and the commands run for real.
-function findReusableVerify({ storyRelativePath, storyDir = null, commands, timeouts = {} }) {
+function findReusableVerify({
+  storyRelativePath, storyDir = null, commands, timeouts = {}, claimKind = null, redAtBase = false,
+}) {
   const token = currentTreeToken(cwd);
   const mergeBase = currentDiffBase(cwd).mergeBase;
 
@@ -294,17 +325,7 @@ function findReusableVerify({ storyRelativePath, storyDir = null, commands, time
     const fullPath = path.join(runsDir, name);
     const evidence = readJson(fullPath, null);
 
-    if (!evidence || evidence.ok !== true || evidence.story !== storyRelativePath) {
-      continue;
-    }
-
-    // Story-less runs share `story: null` with land's re-verify, which skipped
-    // the coverage gate: replaying it would be a green with no gate behind it.
-    // Evidence from before `skipped` existed is recognised by its reason.
-    if (
-      evidence.coverage &&
-      (evidence.coverage.skipped === true || evidence.coverage.reason === COVERAGE_SKIPPED_REASON)
-    ) {
+    if (!evidence || evidence.ok !== true || evidence.story !== storyRelativePath || !canStandIn(evidence, { redAtBase })) {
       continue;
     }
 
@@ -323,6 +344,7 @@ function findReusableVerify({ storyRelativePath, storyDir = null, commands, time
       evidence.policyFingerprint === policy &&
       // A proof made against another base is a different proof.
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
+      (evidence.claim ? evidence.claim.kind : null) === claimKind &&
       evidence.untrackedDigest === untracked &&
       evidence.storyDigest === storyText
     ) {
@@ -350,14 +372,66 @@ const PLAN_COMMANDS_REFUSAL =
   "commands from plan.md are not run unattended; declare them in .coding-flow/config.json " +
   "(with the user's agreement), use the project's own scripts (`npm test`), or pass --allow-plan-commands";
 
+// Runs the resolved commands and applies the post-run rules. A fully replayed
+// suite where this risk level asked for tests that actually ran is a non-proof;
+// quality and security commands are exempt from that rule. A security scanner
+// that could not run is "not examined": a warning, and a failure under strict.
+function executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict = false }) {
+  return (refused ? [] : resolution.commands).map((command) => {
+    const item = runValidationCommand(command, {
+      ...commandTimeout(resolution, command),
+      ...(cleaned ? { env: cleaned.env } : {}),
+    });
+
+    if ((resolution.security || []).includes(command)) {
+      const judged = securityOutcome(item);
+
+      return {
+        ...item,
+        kind: "security",
+        ...judged,
+        ...(judged.outcome === "not-examined" ? { ok: !strict } : {}),
+      };
+    }
+
+    if (freshRequired && item.ok && item.cache === "full" && !(resolution.quality || []).includes(command)) {
+      return {
+        ...item,
+        ok: false,
+        freshRequired:
+          "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
+          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands " +
+          "(`verify --no-cache` only skips the reuse of an earlier proof, not the build tool's cache).",
+      };
+    }
+
+    return item;
+  });
+}
+
+function evaluateClaimFor({ refused, storyDir, config, claim, resolution, commandsOk, startedAt }) {
+  return refused
+    ? null
+    : evaluateClaim({
+      storyDir,
+      config,
+      flagClaim: claim,
+      commandSource: resolution.source,
+      commands: resolution.commands,
+      commandsOk,
+      startedAt,
+    });
+}
+
 function verifyStoryOnce({
   story = null,
   exemption = null,
+  policyChange = null,
+  claim = null,
   skipCoverage = false,
   unattended = isUnattended(),
   allowPlanCommands = false,
-  cleanEnv = false,
-  announce = false,
+  cleanEnv = false, redAtBase = false, announce = false,
 } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
@@ -382,28 +456,7 @@ function verifyStoryOnce({
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const results = (refused ? [] : resolution.commands).map((command) => {
-    const item = runValidationCommand(command, {
-      ...commandTimeout(resolution, command),
-      ...(cleaned ? { env: cleaned.env } : {}),
-    });
-
-    // A full replay is not wrong, but at this risk level it is not proof that the
-    // tests ran against this code either.
-    // Quality commands (lint, format) are exempt: `freshCommands` cannot replace them.
-    if (freshRequired && item.ok && item.cache === "full" && !(resolution.quality || []).includes(command)) {
-      return {
-        ...item,
-        ok: false,
-        freshRequired:
-          "fully replayed from a build-tool cache, and this story's risk asks for tests that ran: " +
-          "re-run with the tool's force flag (e.g. --force), or declare validation.freshCommands " +
-          "(`verify --no-cache` only skips the reuse of an earlier proof, not the build tool's cache).",
-      };
-    }
-
-    return item;
-  });
+  const results = executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" });
   const commandsOk = results.length > 0 && results.every((item) => item.ok);
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.
@@ -414,10 +467,16 @@ function verifyStoryOnce({
       : evaluateCoverage({ storyDir, config, exemption, startedAt });
 
   const acceptanceCriteria = readAcceptanceCriteria(storyDir);
-  // Like coverage, only judged on a green suite for a single story.
+  // Like coverage, these two are only judged on a green suite for a single story.
+  const complexity = commandsOk && !skipCoverage ? evaluateComplexity({ root: cwd, config, since: startedAt }) : null;
   const contrary = commandsOk && !skipCoverage
-    ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria })
+    ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria, policyChange })
     : NO_CONTRARY;
+  const red = redAtBase && !refused ? runRedAtBase({ config, ...(cleaned ? { env: cleaned.env } : {}) }) : null;
+  // A claim narrows the green: the commands passing is not yet "behavior held".
+  // Evaluated even on a red suite so the evidence says which promise failed;
+  // a refused run executed nothing and makes no claim.
+  const claimResult = evaluateClaimFor({ refused, storyDir, config, claim, resolution, commandsOk, startedAt });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -448,7 +507,8 @@ function verifyStoryOnce({
     // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
     contraryPolicy: contraryPolicy(config),
     contrary,
-    ok: commandsOk && coverage.ok && contrary.ok,
+    ...(claimResult ? { claim: claimResult } : {}), ...(red ? { redAtBase: red } : {}), ...(complexity ? { complexity } : {}),
+    ok: commandsOk && coverage.ok && contrary.ok && (!claimResult || claimResult.ok) && (!red || red.ok) && (!complexity || complexity.ok),
     results,
   };
 }

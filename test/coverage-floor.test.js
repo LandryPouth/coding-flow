@@ -96,7 +96,9 @@ function writeAuth(dir, { withTest = false } = {}) {
 function setHarness(dir, patch) {
   const file = path.join(dir, '.coding-flow', 'harness.json');
   const current = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-  fs.writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2));
+  // These tests edit harness.json after the base commit; that edit is not what
+  // they are about, so the policy-changed signal is switched off for them.
+  fs.writeFileSync(file, JSON.stringify({ ...current, policyGlobs: [], ...patch }, null, 2));
 }
 
 const ALL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];

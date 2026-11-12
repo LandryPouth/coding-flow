@@ -14,19 +14,23 @@ const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'bin', 'lib');
 
 const CORE = [
-  'audit', 'config', 'context', 'coverage', 'coverage-gate', 'detect', 'diff-base',
+  'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'detect', 'diff-base',
   'diff-scope', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
-  'identity', 'policy', 'policy-fingerprint', 'report', 'risk', 'security-policy',
-  'story', 'util', 'validation-run',
+  'identity', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk',
+  'security-policy', 'shell-writes', 'spec-drift', 'story', 'util', 'validation-run',
 ];
+
+// Core modules that read nothing but their arguments: no fs, no config, no other
+// module of the tool. Whatever they need from the host is handed in.
+const PURE = ['shell-writes'];
 
 // `story` is core: a pure fs/path reader of the optional story files, used only
 // when verify is given a story. `doctor` is a layer for now: it mixes the core
 // checks with install diagnostics (templates, storage, platforms) that need
 // splitting out before it can be called core.
 const LAYER = [
-  'doctor', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'review', 'run',
-  'ship', 'skills', 'speckit', 'status', 'templates', 'worktree',
+  'doctor', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'recover',
+  'quality-recipes', 'review', 'run', 'security-recipes', 'ship', 'skills', 'speckit', 'status', 'templates', 'worktree',
   'worktree-plan',
   // install, platform wiring and CLI plumbing: not needed to guard or prove
   'bootstrap', 'ci', 'codex-probe', 'codex-settings', 'commands', 'hook',
@@ -110,4 +114,15 @@ test('no core module requires a layer module, directly or transitively', () => {
     }
   }
   assert.deepStrictEqual(violations, [], `core must not depend on a layer:\n  ${violations.join('\n  ')}`);
+});
+
+test('a pure module requires nothing but node:path', () => {
+  const impure = [];
+  for (const name of PURE) {
+    const source = fs.readFileSync(path.join(LIB, `${name}.js`), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const match of source.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)) {
+      if (match[1] !== 'node:path') impure.push(`${name} → ${match[1]}`);
+    }
+  }
+  assert.deepStrictEqual(impure, [], `a pure module reads only its arguments:\n  ${impure.join('\n  ')}`);
 });

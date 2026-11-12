@@ -192,6 +192,7 @@ Flags:
   --export   Write docs/AUDIT.md from the audit ledger, or docs/DECISIONS.md with --decisions.
   --check    Exit non-zero if the latest verify per story is failing or missing (CI gate).
   --test-exemption  Reason a verified change carries no test; recorded verbatim in the evidence.
+  --policy-change  Reason a check's own configuration changed; recorded verbatim in the evidence.
   --since    Filter audit entries to those generated at or after an ISO timestamp.
   --decisions  Aggregate every story's ## Decisions section instead of the run-evidence ledger.
   --verdict    Outcome recorded by review capture: pass or fail.

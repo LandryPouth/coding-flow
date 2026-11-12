@@ -12,13 +12,14 @@ examined**, never "clean".
 
 - `validation.security` in `.coding-flow/config.json`: same entry shape as
   `validation.quality` (string or `{ command, … }`), run after quality,
-  captured in the evidence under its own key with exit code, duration,
-  output tail.
+  captured in the evidence beside the other results, marked `kind:
+  "security"`, with exit code, duration, output tail.
 - Outcome per entry: `pass` (exit 0), `fail` (non-zero), **`not-examined`**
   — the existing `toolError` cases (could not observe), exit 127 / ENOENT,
-  timeout, and a network failure recognised by the runner's output
-  (`ENOTFOUND`, `EAI_AGAIN`, `getaddrinfo`, `network`) — never folded into
-  pass.
+  timeout, and a network failure recognised by the scanner's own HTTP-client
+  error line at the end of its output (Node fetch `getaddrinfo ENOTFOUND` /
+  `EAI_AGAIN`, Python `NameResolutionError`, Go `lookup …: no such host`; see
+  plan.md Decisions) — never folded into pass.
 - `fail` fails verify like a red quality command; `not-examined` fails only
   under strict, and is printed as a warning otherwise. Rationale printed:
   "a scanner that did not run found nothing because it looked at nothing".
@@ -33,16 +34,20 @@ examined**, never "clean".
 
 ## Acceptance Criteria
 
-- [ ] Given `validation.security: ["node -e \"process.exit(1)\""]`, then
+- [x] Given `validation.security: ["node -e \"process.exit(1)\""]`, then
       verify fails and the evidence names the security command.
-- [ ] Given a command that is not on `PATH`, then the entry is
+- [x] Given a command that is not on `PATH`, then the entry is
       `not-examined`, verify passes with a warning (non-strict) and fails
       under strict.
-- [ ] Given a command printing `getaddrinfo ENOTFOUND registry.npmjs.org`
+- [x] Given a command printing `getaddrinfo ENOTFOUND registry.npmjs.org`
       and exiting non-zero, then `not-examined`, not `fail`.
-- [ ] Given a pnpm workspace, then `bootstrap --scan --json` lists the pnpm
+- [x] Given a pnpm workspace, then `bootstrap --scan --json` lists the pnpm
       recipe; given no `gitleaks` on `PATH`, it is not suggested.
-- [ ] Given no `validation.security`, then every existing verdict is
+- [x] Given no `validation.security`, then every existing verdict is
       unchanged.
 
+## Status: done
+
 ## Result
+
+See `tasks.md` → Result.

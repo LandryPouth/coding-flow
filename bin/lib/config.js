@@ -76,7 +76,9 @@ function defaultConfig() {
     // verbatim — a red quality command blocks exactly like a red test. Splitting
     // them is documentation, not behavior: it says "these gate quality" without
     // inventing a second pipeline. The tool never judges quality; it executes what
-    // the project declared and captures the proof.
+    // the project declared and captures the proof. `security` (scanners such as
+    // `npm audit` or `gitleaks`) is the one bucket with a third outcome: a
+    // scanner that could not run is "not examined", never folded into a pass.
     validation: { commands: [], quality: [] },
   };
 }
@@ -132,6 +134,11 @@ function readConfig(cwd) {
           commands: cleanCommandList(existing.validation.commands),
           quality: cleanCommandList(existing.validation.quality),
           freshCommands: cleanCommandList(existing.validation.freshCommands),
+          // Only when declared: `validation` is hashed into every proof's policy
+          // fingerprint, and an empty key would make every existing proof stale.
+          ...(cleanCommandList(existing.validation.security).length > 0
+            ? { security: cleanCommandList(existing.validation.security) }
+            : {}),
           ...(validTimeout(existing.validation.timeoutMs) ? { timeoutMs: existing.validation.timeoutMs } : {}),
         }
       : defaults.validation;

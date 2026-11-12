@@ -1,6 +1,6 @@
 'use strict';
 
-// The engine has hundreds of tests; until this file the seven skills had none.
+// The engine has hundreds of tests; until this file the skills had none.
 // A skill that never triggers is a skill that does not exist, and nothing proved
 // that `flow-status` wins "show me every epic" while losing "what should I do
 // next" to `flow-next`.
@@ -97,6 +97,6 @@ test('ties break deterministically, so a run is reproducible', () => {
 });
 
 test('the catalog and its cases actually loaded — an empty run proves nothing', () => {
-  assert.equal(loadSkills().length, 7, 'seven skills are expected on disk');
-  assert.equal(loadCases().length, 7, 'one eval case file per skill');
+  assert.equal(loadSkills().length, 8, 'eight skills are expected on disk');
+  assert.equal(loadCases().length, 8, 'one eval case file per skill');
 });

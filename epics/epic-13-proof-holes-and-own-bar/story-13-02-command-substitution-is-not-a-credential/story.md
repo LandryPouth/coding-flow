@@ -12,15 +12,23 @@ to `heuristic` matches only, not in the default pattern.
 
 ## Acceptance Criteria
 
-- [ ] Given a file with `password="$(aws secretsmanager get-random-password --query X)"`,
+- [x] Given a file with `password="$(aws secretsmanager get-random-password --query X)"`,
       when the secret scan runs, then no finding is reported.
-- [ ] Given values `"${DB_PASSWORD:-changeme-placeholder-x}"`,
+- [x] Given values `"${DB_PASSWORD:-changeme-placeholder-x}"`,
       `"$DB_PASSWORD_FROM_THE_VAULT_X"` and a backtick substitution, then no
       finding.
-- [ ] Given `password="hunter2-but-twenty-chars-long"`, then the finding is
+- [x] Given `password="hunter2-but-twenty-chars-long"`, then the finding is
       still reported (unchanged).
-- [ ] Given an `exact` pattern (an AWS key) inside a `$(…)` line, then it is
+- [x] Given an `exact` pattern (an AWS key) inside a `$(…)` line, then it is
       still reported: the exemption is for heuristic matches only.
-- [ ] `npm test` green; the DOGFOODING row resolved; CHANGELOG (Fixed).
+- [x] `npm test` green; the DOGFOODING row resolved; CHANGELOG (Fixed).
+
+## Status: done
 
 ## Result
+
+Fix in `findSecretsInContent` (`isShellExpansion`, heuristic matches only);
+`test/secret-shell-expansion.test.js` pins the four criteria plus a custom exact
+pattern. Mutations: dropping the exemption fails 2 tests, exempting exact
+patterns fails 1. The guard refusal now states the fixture convention
+(DOGFOODING row, `docs/contributing.md`).

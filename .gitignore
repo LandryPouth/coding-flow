@@ -18,3 +18,6 @@ node_modules/
 .opencode/package.json
 .opencode/package-lock.json
 .opencode/.gitignore
+
+# Native coverage report written by this repository's verify (lcov reporter).
+coverage/

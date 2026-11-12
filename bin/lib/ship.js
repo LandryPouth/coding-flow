@@ -164,22 +164,41 @@ function latestVerifyEvidence(root) {
   }
 }
 
-// Builds the markdown evidence section (between markers) from the verify JSON.
-function buildEvidenceBlock(evidence) {
-  const lines = [EVIDENCE_START, "### 🔬 Coding Flow — verify evidence", ""];
-
+// The Result line, and why a run whose every command passed still did not prove
+// anything: "FAILED" would send a reader hunting for a broken test that does not
+// exist, when the run contradicts itself or the declared claim does not hold.
+function resultLines(evidence) {
   const source = evidence.commandSource || "n/a";
   const count = evidence.commandsFound != null ? evidence.commandsFound : (evidence.results || []).length;
-  // Every command passed but the run contradicts itself: "FAILED" would send a
-  // reader hunting for a broken test that does not exist.
   const contraryBlocked = evidence.commandsOk && !evidence.ok && evidence.contrary && !evidence.contrary.ok;
-  lines.push(`**Result:** ${evidence.ok ? "✅ passed" : contraryBlocked ? "❌ NOT PROVEN" : "❌ FAILED"} — ${count} command(s), source: \`${source}\``);
+  const claimBlocked = evidence.commandsOk && !evidence.ok && evidence.claim && !evidence.claim.ok;
+  const verdict = evidence.ok ? "✅ passed" : contraryBlocked || claimBlocked ? "❌ NOT PROVEN" : "❌ FAILED";
+  const lines = [`**Result:** ${verdict} — ${count} command(s), source: \`${source}\``];
+
+  if (evidence.ok && evidence.claim && evidence.claim.ok) {
+    lines.push(`**Claim held (${evidence.claim.kind}):** ${evidence.claim.unchangedTestFiles} test file(s) from the base untouched`);
+  }
+
+  if (claimBlocked) {
+    for (const failure of evidence.claim.failures.slice(0, 5)) {
+      lines.push(`**Claim not held (${evidence.claim.kind}):** ${failure.detail}`);
+    }
+  }
 
   if (contraryBlocked) {
     for (const failure of evidence.contrary.failures) {
       lines.push(`**Contrary signal:** ${failure.detail}`);
     }
   }
+
+  return lines;
+}
+
+// Builds the markdown evidence section (between markers) from the verify JSON.
+function buildEvidenceBlock(evidence) {
+  const lines = [EVIDENCE_START, "### 🔬 Coding Flow — verify evidence", ""];
+
+  lines.push(...resultLines(evidence));
 
   const git = evidence.provenance && evidence.provenance.git;
   if (git) {
@@ -236,7 +255,10 @@ function buildEvidenceBlock(evidence) {
   if (results.length > 0) {
     lines.push("| Command | Result | Duration |", "| --- | --- | --- |");
     for (const item of results) {
-      const status = item.ok ? "✅ exit 0" : item.timedOut ? "⏱ timeout" : `❌ exit ${item.exitCode}`;
+      // A scanner that did not run is never a ✅, whatever its `ok` under the mode.
+      const status = item.outcome === "not-examined"
+        ? `⚠️ not examined (${item.notExamined})`
+        : item.ok ? "✅ exit 0" : item.timedOut ? "⏱ timeout" : `❌ exit ${item.exitCode}`;
       const replay = item.cache === "full" || item.cache === "partial" ? " (replayed from cache)" : "";
       lines.push(`| \`${item.command}\` | ${status}${replay} | ${item.durationMs}ms |`);
     }

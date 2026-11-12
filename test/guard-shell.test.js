@@ -12,7 +12,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
 
-const { decide, shellWriteTargets, isShellLimit } = require('../bin/lib/guard');
+const { decide, shellWriteTargets, shellWrites, isShellLimit } = require('../bin/lib/guard');
 
 function project(t) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-shell-')));
@@ -210,6 +210,30 @@ test('everyday commands do not cry wolf', (t) => {
 
 test('shellWriteTargets keeps its plain-list shape', () => {
   assert.deepEqual(shellWriteTargets('echo x > a.txt && tee b.txt'), ['a.txt', 'b.txt']);
+});
+
+// `.ssh` is blocked by name, so `deny` alone cannot tell whether the existing
+// directory was seen: the file it receives (`.ssh/key`) is what proves it.
+test('cp or mv onto an existing directory writes the file inside it', (t) => {
+  const dir = project(t);
+  fs.mkdirSync(path.join(dir, '.ssh'));
+  const targets = (command) => shellWrites(command, dir).filter((e) => e.kind === 'write').map((e) => e.target);
+
+  assert.deepEqual(targets('cp key .ssh'), ['.ssh', '.ssh/key']);
+  assert.deepEqual(targets('mv key .ssh'), ['.ssh', '.ssh/key']);
+  assert.deepEqual(targets('cp -r a b .ssh'), ['.ssh', '.ssh/a', '.ssh/b']);
+  assert.deepEqual(targets('cp key notes'), ['notes'], 'a missing destination is the file itself');
+  for (const command of ['cp key .ssh', 'mv key .ssh', 'cp -r a b .ssh']) {
+    assert.equal(run(dir, command), 'deny', command);
+  }
+  assert.equal(run(dir, 'cp key notes'), 'allow');
+});
+
+test('sed -i targets exactly the files it edits, and a plain sed none', () => {
+  assert.deepEqual(shellWriteTargets('sed -i s/a/b/ x y'), ['x', 'y']);
+  assert.deepEqual(shellWriteTargets('sed -i -e s/a/b/ -f s.sed x'), ['x']);
+  assert.deepEqual(shellWriteTargets('sed --in-place=.bak s/a/b/ x'), ['x']);
+  assert.deepEqual(shellWriteTargets('sed -n p x'), []);
 });
 
 test('a cd behind a keyword or a brace group still moves the directory', (t) => {
