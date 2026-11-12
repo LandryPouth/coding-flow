@@ -25,6 +25,9 @@ and lets each project overrule them.
   rule a list item with an id, a one-line rule, a short why, tags (`stack:react`,
   `ui`, `api`…) and a status (`accepted`, `proposed`, `retired`). Written by
   the human; agents only propose (`coding-flow/proposals/`).
+  `preferences/README.md` is the folder index (format, statuses, how to
+  accept by hand) and is never parsed for rules; only lines outside fenced
+  code blocks count.
 - `ai-flow preferences propose` (machinery, `help --all`): reads the vault's
   `accepted` rules, filters by the project's detected stack (bootstrap scan
   tags), drops those already present in `docs/conventions.md` (by id), and
@@ -61,6 +64,7 @@ and lets each project overrule them.
 
 ## Edge Cases
 
+- An example rule inside a fenced code block or in `README.md`: ignored.
 - A rule without an id: skipped with a warning naming the note and line.
 - Two vault notes defining the same id: refused, both locations named.
 - A project that never runs `propose`: nothing changes; the taste stays
