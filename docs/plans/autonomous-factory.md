@@ -258,6 +258,7 @@ Before them: finish epic 15, then 16 (story 16-01's `Assumption
   `AGENTS.md` contract, `preferences/` seeded with proposed rules for 22-06).
   It is the cross-project store of what Coding Flow learns for as long as the
   tool needs to mature; 21-02 adopts it with `vault init --adopt`.
-- Confirm or veto the labeled defaults: 2 attempts per story, 45-minute limit
-  per agent process, budget caps required in config (no default spend),
-  parallelism 1 (cap 2), 1 retry of a failed command in driven runs.
+- ~~Confirm or veto the labeled defaults~~ — **confirmed 2026-11-12**: 2
+  attempts per story, **50-minute** limit per agent process (raised from 45),
+  budget caps required in config (no default spend), parallelism 1 (cap 2),
+  1 retry of a failed command in driven runs.

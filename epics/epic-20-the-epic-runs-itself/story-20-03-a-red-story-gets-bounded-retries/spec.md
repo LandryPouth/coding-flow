@@ -16,7 +16,7 @@ dependents are skipped. The research is explicit: more retries raise cheating
   the failing tests and stop causes from 19-01, the previous attempt's
   `## Result`, and the instruction to write a `### Attempt N` paragraph
   ("why it failed, what changes") in `## Result` before editing.
-- Wall-clock limit per process `run.processTimeoutMin` (default 45): on expiry
+- Wall-clock limit per process `run.processTimeoutMin` (default 50, confirmed 2026-11-12): on expiry
   the process group is killed, `run.agent.end` records `timeout`, the attempt
   counts.
 - No progress detection: no file change and no tool call output for

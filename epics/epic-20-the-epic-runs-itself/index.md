@@ -120,8 +120,9 @@ module), so there is no tree.
 
 ## Readiness
 
-`ready`, with labeled defaults open to veto: 2 attempts; per-process
-wall-clock limit 45 minutes; caps required in config (no default spend);
-parallelism 1. The exact `claude` flag set is verified on the installed version
+`ready`. Defaults confirmed by the maintainer on 2026-11-12: 2 attempts;
+per-process wall-clock limit **50 minutes** (raised from the proposed 45);
+caps required in config (no default spend); parallelism 1 (cap 2); 1 retry of
+a failed command in driven runs. The exact `claude` flag set is verified on the installed version
 inside 20-01 (a stop condition if `dontAsk` + guard denial cannot be proven
 headless).
