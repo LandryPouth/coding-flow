@@ -7,7 +7,7 @@
 - [ ] Add the `/flow-run` stop condition, removing a line elsewhere to stay
       under 500.
 - [ ] Update the eval cases, then run `node bin/ai-flow.js plugin sync`.
-- [ ] Write design-decisions entry 15; point the DOGFOODING task-5 row at
+- [ ] Write design-decisions entry 16; point the DOGFOODING task-5 row at
       epic 16.
 - [ ] Run `npm test`, `ai-flow verify`, the review, and add a CHANGELOG
       entry (Changed).

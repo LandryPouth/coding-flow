@@ -12,7 +12,7 @@
 > it is the data — most of what the watcher would need is either not recorded or
 > recorded wrong today (numbers below).
 
-**Status: proposal.** Nothing implemented. Complements the bethl
+**Status: planned** as epics 18–24 (2026-11-12). Nothing implemented. Complements the bethl
 `docs/DOGFOODING.md` section "Bilan : ce qu'il faut pour qu'une epic tourne seule
 (2026-11-12)" (epic orchestrator, detached verify, autonomy policy), which this
 plan assumes.
@@ -224,17 +224,40 @@ cost the watcher tries to remove with a precedent or a policy.
   record their own cost as a metric.
 - **Privacy.** The cross-project vault receives sanitized events only.
 
-## Roadmap (proposed epics, after 17)
+## Roadmap — planned as epics 18 to 24 (2026-11-12)
 
-1. **Event journal + review capture split** (find before fix). Smallest, unblocks all.
-2. **Verify reliability**: failing test names, flake ledger + quarantine, memory-gated queue, `lint --fix` pre-step, tiers.
-3. **`ai-flow insights`** over the journal, across projects.
-4. **Epic orchestrator** (`ai-flow epic run/resume`, run state, epic review) — from the bethl bilan.
-5. **Knowledge**: decisions registry, conventions promotion ladder, `autonomy.md` + memory migration.
-6. **Watcher + experiments**: proposal format, shadow gates, benchmark reuse, Obsidian export.
-7. **Team mode**: remote verify, shared locks, `land: pr`, routed questions.
-8. **Production feedback**: release/incident events linked to stories, escape rate.
+Planned with `/flow-plan` after the research
+([`docs/research/reports/Usines à code IA.md`](../research/reports/Usines%20à%20code%20IA.md)),
+which confirmed this plan and added four things now in the epics: tests
+read-only during driven runs and a bounded number of attempts (the only
+measured mitigations of reward hacking), playbooks extracted from runs that
+worked, and a merge queue that re-verifies the merged tree once chains run in
+parallel. The freeze exception is design-decisions entry 15.
 
-Order matters: 1–3 make the factory measurable, 4 makes it run alone, 5 makes
-it decide like the team, 6 makes it improve, 7–8 make it trustworthy beyond one
-laptop.
+Order: judge and memory first, engine second, learning last. An unattended
+loop on a signal that is noise one time in four learns to work around the
+noise.
+
+| Epic | What it delivers | Layer |
+|---|---|---|
+| [18 — The run remembers](../../epics/epic-18-the-run-remembers/index.md) | event journal, proof survives the land, notes-only edits keep the proof, reviews captured as found, ticks name their proof | 0 |
+| [19 — The judge holds](../../epics/epic-19-the-judge-holds/index.md) | failing test names, noise told apart, machine queue, detached verify, fixers, tiers, tests read-only when nobody watches | 0 |
+| [20 — The epic runs itself](../../epics/epic-20-the-epic-runs-itself/index.md) | `ai-flow run --driver claude`: headless story, owned worktree, bounded retries, second reviewer, ready agent stories, resume, epic review and report | engine |
+| [21 — The factory sees itself](../../epics/epic-21-the-factory-sees-itself/index.md) | `insights`, the Markdown vault, cross-project numbers, review and gate value, human turns, escapes | 1 + vault |
+| [22 — Decisions without asking](../../epics/epic-22-decisions-without-asking/index.md) | `autonomy.md`, searchable precedents with provenance, the promotion ladder, memory into the repo, playbooks, a personal taste profile, design-system checks | 4 |
+| [23 — The factory proposes its own improvements](../../epics/epic-23-the-factory-proposes-its-improvements/index.md) | watcher, maintainer-only proposals, shadow gates, experiments, after every epic | 2 + 3 |
+| [24 — Many hands](../../epics/epic-24-many-hands/index.md) | clean worktrees, parallel chains with a merge queue, shared locks, PR land, trusted runner, routed questions | team |
+
+Before them: finish epic 15, then 16 (story 16-01's `Assumption
+(unconfirmed)` marker is what epic 20 s5 reads) and 17 (archiving).
+
+### Maintainer to-do
+
+- ~~Give the path of a new Markdown vault~~ — **done 2026-11-12**:
+  `~/dev/.ai-memory-vault` (fixed path, private git repository, scaffolded,
+  `AGENTS.md` contract, `preferences/` seeded with proposed rules for 22-06).
+  It is the cross-project store of what Coding Flow learns for as long as the
+  tool needs to mature; 21-02 adopts it with `vault init --adopt`.
+- Confirm or veto the labeled defaults: 2 attempts per story, 45-minute limit
+  per agent process, budget caps required in config (no default spend),
+  parallelism 1 (cap 2), 1 retry of a failed command in driven runs.

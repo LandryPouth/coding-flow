@@ -34,7 +34,7 @@ proves. Without this, a green verify proves the plan, not the request
 - `evals/cases/flow-plan.json` and `evals/cases/flow-run.json` gain the
   routing and anatomy cases this calls for. Tiers 1 and 2 stay green and the
   rank-1 routing rate does not fall.
-- `docs/design-decisions.md` gets entry 15, "What was taken from
+- `docs/design-decisions.md` gets entry 16, "What was taken from
   `mattpocock/skills`, and what was not". It follows the same shape as entry
   5. It records:
   - the taken items, including those that landed without a story (see the
@@ -63,7 +63,7 @@ proves. Without this, a green verify proves the plan, not the request
 - [ ] Given `npm test`, then the skill evals (tiers 1 and 2), `plugin check`
       and the 500-line ceiling pass, and the rank-1 routing rate is not lower
       than before the change.
-- [ ] Given `docs/design-decisions.md`, then entry 15 exists, lists the taken
+- [ ] Given `docs/design-decisions.md`, then entry 16 exists, lists the taken
       items and the refused ones, and names the unverified Codex-fork claim.
 
 ## Edge Cases
@@ -76,7 +76,7 @@ proves. Without this, a green verify proves the plan, not the request
   assumptions.
 - **An unverified claim.** Pocock says Codex forks the parent conversation
   into its subagents by default. That would break the independence of the
-  STRICT review on Codex. Entry 15 lists it as unverified, and this story
+  STRICT review on Codex. Entry 16 lists it as unverified, and this story
   does not change the review.
 
 ## Out Of Scope

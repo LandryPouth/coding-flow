@@ -521,3 +521,53 @@ and so is a single-quoted value (`'$(…)'`, `'$secret…'`), which a shell, YAM
 `.env` do not expand, and a custom pattern whose match holds several quoted values.
 The detector is a net for accidents, not a proof of absence; exact patterns are
 the guarantee.
+
+## 15. The proof-driven factory — the fourth freeze exception
+
+**Decided 2026-11-12 by the maintainer.** Designed in
+[`docs/plans/autonomous-factory.md`](plans/autonomous-factory.md), grounded in
+[`docs/research/reports/Usines à code IA.md`](research/reports/Usines%20à%20code%20IA.md),
+planned as epics 18 to 24. (Entry 16 is story 16-01's, written when it lands.)
+
+The standing test is entry 6's. The refusal being reopened is the deferral of
+"Batch 4b" on 2026-07-31: `ai-flow run` would drive an agent per story. Its
+two premises were a $20 subscription that could not carry token-heavy runs, and
+a personal tool with no second project. **Both changed, and the change was
+measured, not argued:**
+
+- the maintainer runs on a $100 plan and drives whole epics, not stories;
+- three projects use the tool daily (bethl, ai-learn, coding-flow): 1 063
+  recorded verify runs, 274 stories, 58 hours of machine time in verify;
+- on bethl's epics 37 and 38 the maintainer was the orchestrator: about 20
+  process interventions ("continue", "run the review", "land") against about 6
+  product decisions (bethl `docs/DOGFOODING.md`, 2026-11-12). The tool proved
+  each story; nothing chained them.
+
+And one premise the deferral never had to face: the judge itself is noisy.
+23 % of bethl's red trees and 33 % of ai-learn's went green with no change.
+An unattended loop on that signal would "fix" healthy code. So the exception
+is ordered judge first, engine second, learning last.
+
+**What keeps it narrow.**
+
+- **The front door does not grow.** `/flow-plan` → `/flow-run` → `/flow-ship`
+  stay the path. The engine is a driver behind the existing `ai-flow run`
+  seam (`bin/lib/run.js`, `RUN_DRIVERS`), not a new orchestrator skill.
+  Everything else is machinery.
+- **Zero runtime dependencies.** The driver shells out to the agent CLI the
+  user already has, as `ship` shells out to `gh`.
+- **The tool never edits itself.** The watcher proposes; the maintainer
+  accepts; an experiment confirms or reverts. A proposal that relaxes a gate,
+  deletes a test, raises a budget or touches production is a question, never
+  a change.
+- **Two human gates stay, by design:** validating what to build (the plan) and
+  what ships (production). Everything between them is the tool's job.
+- **The vault is a storage seam, not a product.** Cross-project learning is
+  written one way, sanitized, into a Markdown vault the maintainer chooses,
+  until a real backend is justified.
+
+**Refused in the same decision**: a "dark factory" (no human review of what
+ships), self-modifying rules, swarms of more parallel agents than the judge
+can keep honest (default 1, the maintainer's cap 2), always-loaded memory
+files beyond short non-standard conventions, and a resident daemon (entry 2
+still stands; the driver is a process per run, not a service).

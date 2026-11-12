@@ -47,7 +47,7 @@ small):
   with the measurement only.
 
 Story 16-03's benchmark run measures these too, and the design-decisions
-entry 15 from story 16-01 lists them.
+entry 16 from story 16-01 lists them.
 
 ## Scope
 

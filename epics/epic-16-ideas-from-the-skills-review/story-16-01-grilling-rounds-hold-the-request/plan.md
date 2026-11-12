@@ -10,7 +10,7 @@
     file is at 474 of its 500 lines, so a line added here is paid for by a
     line removed;
   - `evals/cases/flow-plan.json` and `evals/cases/flow-run.json`;
-  - `docs/design-decisions.md` (entry 15, after entry 14) and
+  - `docs/design-decisions.md` (entry 16, after entry 15) and
     `docs/DOGFOODING.md` (the task-5 row, status column only);
   - `skills/` is regenerated with `node bin/ai-flow.js plugin sync`. Never
     edit it by hand.
