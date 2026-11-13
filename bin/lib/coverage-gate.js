@@ -20,7 +20,7 @@ const {
 const { readStoryPart, readStoryBundle, extractSection } = require("./story");
 const { matchesPattern } = require("./util");
 const { criterionItems, readSpecDrift } = require("./spec-drift");
-const { readPolicyChanged } = require("./policy-drift");
+const { readPolicyChanged, readBaseHarness } = require("./policy-drift");
 const { defaultHighRiskPaths, defaultNonBehaviorGlobs } = require("./harness-config");
 
 // The default non-behavior entries that are also default high-risk paths: the
@@ -676,9 +676,9 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
   const specChange = storySection("Spec Change");
 
   const policyChanged = currentTreeToken(cwd) ? readPolicyChanged(config) : [];
-  const declaredPolicy = [storySection("Policy Change").trim(), policyChange && policyChange.trim()]
-    .filter(Boolean)
-    .join("\n");
+  // A template's `<!-- why -->` placeholder is not a reason.
+  const policySection = storySection("Policy Change").replace(/<!--[\s\S]*?-->/g, "").trim();
+  const declaredPolicy = [policySection, policyChange && policyChange.trim()].filter(Boolean).join("\n");
 
   if (
     policyChanged.length === 0 &&
@@ -691,7 +691,11 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     return NO_CONTRARY;
   }
 
-  const enforced = policy.strict || (policy.failOnContrarySignals && scoreCombinedRisk({ storyDir, config }).level === "high");
+  // The mode the base held counts too: a diff cannot step down from strict.
+  const atBase = readBaseHarness();
+  const strict = policy.strict || Boolean(atBase && contraryPolicy(atBase).strict);
+  const failOn = policy.failOnContrarySignals || Boolean(atBase && contraryPolicy(atBase).failOnContrarySignals);
+  const enforced = strict || (failOn && scoreCombinedRisk({ storyDir, config }).level === "high");
   const drift = criteriaChanged.length > 0 || specInDiff;
   const failures = enforced
     ? contraryFailures({ deletedTests, openCriteria, criteriaChanged, specInDiff, specChange, policyChanged, declaredPolicy })

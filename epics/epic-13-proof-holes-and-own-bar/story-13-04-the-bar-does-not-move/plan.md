@@ -37,3 +37,35 @@
   `FULL_REFERENCE` constant (help output byte-identical), and the failure
   list moved to `contraryFailures` (same order, same messages; 45 contrary,
   drift and CLI tests green).
+
+## Decisions (independent review, 2026-11-13 — FAIL, fixed)
+
+- **The bar is read at the base.** `policyGlobs` comes from `harness.json` as
+  the merge base holds it (`readBaseHarness`, `git show <base>:…`), defaults
+  when the base has none; `.coding-flow/harness.json` and `config.json` are
+  always listed. A diff that writes `policyGlobs: []` next to
+  `minPatchCoverage: 0` is now `policy-changed` and fails under strict. With
+  no base at all, the working config is used (nothing to compare against).
+  The refactor claim passes its own list (`globs`), already a union that a
+  diff cannot shrink.
+- **`enforced` reads the base too**: `mode: strict` or
+  `failOnContrarySignals` at the base still applies when the diff switches
+  them off. It applies to every contrary signal, not only policy-changed —
+  stepping down from strict was the same hole for all of them.
+- **Renames are not paired** (`--no-renames`): `git mv .eslintrc.json x` is
+  the old path leaving.
+- **An empty `## Policy Change`** (blanks, or only `<!-- … -->`) gives no
+  reason.
+- **Test fixtures stopped relying on the hole.** `coverage-floor.test.js`'s
+  `setHarness` wrote `policyGlobs: []` into the diff to silence the signal;
+  it now commits a floor set before any work into the base (the project's
+  standing policy), and leaves a mid-branch edit in the diff.
+
+### Out of scope, recorded
+
+- **The verify cache key ignores `--policy-change`**, as it ignores
+  `--test-exemption` (`bin/lib/evidence.js` ~337): a green proof can be
+  replayed for a different reason. Earlier and shared defect; not fixed here.
+- **Other gates still read `mode` from the working tree** (the coverage
+  floor, `resolveCoverageFloor`): only the contrary signals were moved to the
+  base. The coverage floor reads `harness.json` as the diff leaves it.

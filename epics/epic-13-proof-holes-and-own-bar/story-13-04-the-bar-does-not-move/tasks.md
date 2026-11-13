@@ -10,9 +10,11 @@
 
 `policy-changed` contrary signal (`bin/lib/policy-drift.js`), `policyGlobs` in `harness-config.js`, `## Policy Change` / `--policy-change` in `evaluateContrarySignals`; tests in `test/policy-changed.test.js`.
 
-Proven 2026-11-13: `ai-flow verify --story <this story> --base 72dabd5` passed,
+Green 2026-11-13 (not a proof of this story alone): `ai-flow verify --story <this story> --base 72dabd5` passed,
 coverage **verified** (96.6 % of 6,749 added lines executed, min 80 %), scope 296
-files since `72dabd5`, the commit before `2489e3b`. The base is explicit because
+files since `72dabd5`, the commit before `2489e3b`. That scope also holds the
+neighbouring stories of epics 13–15: the run proves the whole window, of which
+this story is a part, not this story in isolation. The base is explicit because
 both the worktree fork point (`develop`) and `develop`'s recorded
 `codingFlowBase` (`4c7280c`) postdate the story's code (DOGFOODING 2026-11-10).
 The first run on that scope was NOT PROVEN by the size ratchet (`printHelp`
