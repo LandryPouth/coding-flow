@@ -67,6 +67,8 @@ s3
 s5
 
 s7
+
+s8
 ```
 
 `s1`, `s2`, `s5` are independent. `s4` and `s6` assume s3's lcov command is
@@ -89,6 +91,8 @@ config s3 writes).
 7. **story-13-07-a-base-branch-has-no-fork-point** — added 2026-11-13: a
    `codingFlowBase` recorded on `develop` kept 13-04 and 15-01 from being
    proven. *(QUICK)*
+8. **story-13-08-a-rename-keeps-its-risk** — added 2026-11-13: a file
+   moved out of a high-risk path is scored at its new path only. *(QUICK)*
 
 ## Decisions
 
