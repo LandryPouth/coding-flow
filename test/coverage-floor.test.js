@@ -162,9 +162,14 @@ test('editing the floor invalidates an earlier green proof', (t) => {
   assert.equal(run(dir, ['verify']).code, 0, 'green under the standard floor');
   setHarness(dir, { mode: 'strict' });
 
-  const res = run(dir, ['verify']);
+  // The edit is in the diff, so policy-changed fires too; the floor must fail
+  // on its own account, not only through that signal.
+  const res = run(dir, ['verify', '--json']);
+  const out = JSON.parse(res.output);
   assert.equal(res.code, 1, res.output);
   assert.doesNotMatch(res.output, /already proved/);
+  assert.equal(out.coverage.ok, false);
+  assert.deepEqual(out.coverage.floor, { required: 'verified', reached: 'evidence' });
 });
 
 test('strict mode: a report covering the added lines reaches verified and passes', (t) => {

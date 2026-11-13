@@ -676,8 +676,9 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
   const specChange = storySection("Spec Change");
 
   const policyChanged = currentTreeToken(cwd) ? readPolicyChanged(config) : [];
-  // A template's `<!-- why -->` placeholder is not a reason.
-  const policySection = storySection("Policy Change").replace(/<!--[\s\S]*?-->/g, "").trim();
+  // A template's `<!-- why -->` placeholder is not a reason; an unclosed one
+  // hides everything after it, as it would in rendered Markdown.
+  const policySection = storySection("Policy Change").replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim();
   const declaredPolicy = [policySection, policyChange && policyChange.trim()].filter(Boolean).join("\n");
 
   if (

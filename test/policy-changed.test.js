@@ -39,17 +39,22 @@ function write(dir, file, content) {
 
 function editJson(dir, file, change) {
   const target = path.join(dir, file);
-  const json = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8')) : {};
+  const json = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8').replace(/^﻿/, '')) : {};
   fs.writeFileSync(target, JSON.stringify(change(json), null, 2));
 }
 
 // `harness` is merged into harness.json in the base commit, before the branch.
-function repo(t, prefix, { strict = false, storyExtra = '', harness = {} } = {}) {
+// `branch: false` stays on main, the only branch: verify then has no merge base.
+function repo(t, prefix, { strict = false, storyExtra = '', harness = {}, bom = false, branch = true } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `coding-flow-${prefix}-`)));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   assert.equal(run(dir, ['init', '--minimal']).code, 0);
   editJson(dir, '.coding-flow/config.json', (c) => ({ ...c, validation: { commands: ['node -e "process.exit(0)"'], quality: [] } }));
   editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, ...(strict ? { mode: 'strict' } : {}), ...harness }));
+  if (bom) {
+    const file = path.join(dir, '.coding-flow/harness.json');
+    fs.writeFileSync(file, `﻿${fs.readFileSync(file, 'utf8')}`);
+  }
 
   write(dir, `${STORY}/spec.md`, '# Widget\n\n## Acceptance Criteria\n\n- [x] Given X then Y\n');
   write(dir, `${STORY}/plan.md`, '# Plan\n');
@@ -59,7 +64,7 @@ function repo(t, prefix, { strict = false, storyExtra = '', harness = {} } = {})
   git(dir, ['config', 'user.name', 'Test']);
   git(dir, ['add', '-A']);
   git(dir, ['commit', '-m', 'init']);
-  git(dir, ['checkout', '-b', 'feat/widget']);
+  if (branch) git(dir, ['checkout', '-b', 'feat/widget']);
   write(dir, 'src/widget.js', 'module.exports = 1;\n');
   write(dir, 'src/widget.test.js', 'assert(1);\n');
   if (storyExtra) fs.appendFileSync(path.join(dir, STORY, 'spec.md'), storyExtra);
@@ -229,4 +234,39 @@ test('deleting a policy file and adding an untracked one are both policy-changed
   const res = verify(dir);
   assert.equal(res.code, 0, res.output);
   assert.deepEqual(res.json.contrary.warnings.policyChanged, ['.eslintrc.json', 'tsconfig.json']);
+});
+
+test('strict, working-tree scope: an uncommitted step-down and unlisting is judged against HEAD', (t) => {
+  // On main alone there is no merge base: the diff is the working tree against
+  // HEAD, and HEAD's harness.json is the bar.
+  const dir = repo(t, 'pc-worktree', { strict: true, branch: false });
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'work']);
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, mode: 'standard', policyGlobs: [] }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = run(dir, ['verify', '--no-cache', '--story', STORY, '--json']);
+  const json = JSON.parse(res.output.slice(res.output.indexOf('{')));
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(json.contrary.warnings.policyChanged, ['.coding-flow/harness.json', '.eslintrc.json']);
+  assert.ok(json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('strict at the base is read through a byte-order mark', (t) => {
+  const dir = repo(t, 'pc-bom', { strict: true, bom: true });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, mode: 'standard' }));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('strict: an unclosed comment in Policy Change gives no reason', (t) => {
+  const dir = repo(t, 'pc-unclosed', { strict: true, storyExtra: '\n## Policy Change\n\n<!-- why the bar moved\n' });
+  write(dir, '.eslintrc.json', '{"rules":{"no-undef":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+  assert.equal(res.json.contrary.policyChange, undefined);
 });

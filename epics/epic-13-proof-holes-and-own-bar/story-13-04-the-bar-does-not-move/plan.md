@@ -69,3 +69,22 @@
 - **Other gates still read `mode` from the working tree** (the coverage
   floor, `resolveCoverageFloor`): only the contrary signals were moved to the
   base. The coverage floor reads `harness.json` as the diff leaves it.
+
+## Decisions (second independent review, 2026-11-13 — FAIL, fixed)
+
+- **Working-tree scope reads HEAD.** With no merge base the diff is the
+  working tree against HEAD, so HEAD's `harness.json` is the bar, both for
+  `policyGlobs` and for `enforced`. No HEAD (no commit yet): defaults.
+- **A byte-order mark is stripped** before the base `harness.json` is parsed,
+  as `util.readJson` does.
+- **An unclosed `<!--` hides the rest of the section**, as rendered Markdown
+  would; it gives no reason.
+- `coverage-floor`'s "editing the floor invalidates" now asserts the floor
+  failure itself (`coverage.floor`), since `policy-changed` also fires there.
+
+### Out of scope, recorded
+
+- **The base itself comes from the tree.** `.coding-flow/config.json`
+  `baseBranch` set to the current branch, or `--base HEAD`, yields an empty
+  diff and detects nothing. Earlier than this story; the base's source is
+  recorded in the evidence (`diffBase.source`).
