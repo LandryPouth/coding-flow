@@ -60,8 +60,9 @@ the project's policy is told apart from one person's preferences.
 - The GitHub issues storage backend (the 2026-11-10 session's issue format is
   kept in the research notes for a later epic; the vault and local epics serve
   until then).
-- More than 2 parallel chains or 2 agent processes by default; raising a
-  cap is a maintainer decision taken on `insights` numbers.
+- More than 2 parallel chains by default; raising that cap is a maintainer
+  decision taken on `insights` numbers. Agent processes are the user's
+  machine setting (24-02), not a cap of this epic.
 - Choosing which epic runs next: the maintainer starts each run.
 
 ## Backbone
@@ -148,8 +149,8 @@ by default surfaces cross-chain errors early; a project sets 1 to opt out);
   in an epic wastes its spend. Mitigation: serial paths wait up front; park
   rather than auto-resolve.
 - **Shared runtime.** One dev database, ports, memory (bethl: exit 143 with
-  `next dev` at 5.5 GB). Mitigation: serial migrations, one heavy verify per
-  machine (19-03), `serve` ports; the data itself is still shared.
+  `next dev` at 5.5 GB). Mitigation: serial migrations, heavy verifies bounded per
+  machine (19-03, `verify.maxConcurrent`), `serve` ports; the data itself is still shared.
 - **Usage limits.** Four agents on one subscription reach the account's
   window quickly; 20-03 pauses the whole run instead of burning attempts.
 - **Spend and review load double.** Two agents spend twice as fast and land

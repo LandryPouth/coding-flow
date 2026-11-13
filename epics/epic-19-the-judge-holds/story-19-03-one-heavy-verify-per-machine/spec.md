@@ -25,10 +25,12 @@ on a 14 GB WSL machine while `next dev` held 5.5 GB.
   honoured, the memory gate still applies. The lock becomes
   that many slot files; the memory gate applies to each start.
 - Memory gate: before starting, `os.freemem()` (and on Linux
-  `MemAvailable` from `/proc/meminfo`) must be ≥ `verify.minFreeMemoryMb` in
-  `harness.json` (default 3072). Otherwise wait, polling every 15 s, printing
+  `MemAvailable` from `/proc/meminfo`) must be ≥ `verify.minFreeMemoryMb`
+  (default 3072). Like `maxConcurrent`, it is a machine setting in the
+  user's global config; a project's `harness.json` may only raise it (a
+  project known to need more memory), never lower it. Otherwise wait, polling every 15 s, printing
   one line per minute: who holds the lock / how much memory is free.
-- `verify.maxWaitMinutes` (default 30): past it, the verify ends with a tool
+- `verify.maxWaitMinutes` (default 30, user global config): past it, the verify ends with a tool
   error `machine busy` (not a red), so a driver can retry later.
 - The wait time is recorded in the evidence and in `verify.start`.
 - `--no-queue` opts out for a single run.

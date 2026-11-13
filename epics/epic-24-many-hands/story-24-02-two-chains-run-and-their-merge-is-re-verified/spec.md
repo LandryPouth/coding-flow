@@ -66,8 +66,9 @@ nobody waits), two under WSL.
 - Green + no open P0/P1 → the merge is fast-forwarded onto the epic branch.
   Red or open P1 → the later chain is parked (`blocked (merge)`), never the
   earlier; the run continues with what remains.
-- The 19-03 machine queue still applies: two verifies never run at once on
-  the machine.
+- The 19-03 machine queue still applies: heavy verifies never exceed
+  `verify.maxConcurrent` on the machine (`auto`: 1 under WSL or < 16 GB,
+  else 2).
 - Events `queue.enter`, `queue.merge`, `queue.park`, `agent.slot.wait`,
   `agent.slot.take`.
 

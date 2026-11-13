@@ -280,4 +280,5 @@ Before them: finish epic 15, then 16 (story 16-01's `Assumption
   1 retry of a failed command in driven runs. **Changed 2026-11-13**:
   parallelism defaults to 2 once parallel chains ship (24-02), so errors
   between chains surface early; capped at 2 chains; agents are a
-  machine setting, `auto` = 4, or 2 under WSL.
+  machine setting the user sets freely (uncapped); `auto` = 4, or 2
+  under WSL or below 16 GB.

@@ -11,8 +11,9 @@ on demand.
 
 - [ ] Given a driven epic that ends, then one `claude -p
       "/coding-flow:flow-improve"` process starts (read-only tools,
-      `--max-budget-usd` from `run.budgetUsd.watcher`, default 1) after the
-      report, and its cost is in the run summary.
+      `--max-budget-usd` from `run.budgetUsd.watcher` when set, else what is
+      left of the required `run.budgetUsd.run`, never a spend nobody
+      declared) after the report, and its cost is in the run summary.
 - [ ] Given `run.watcher: false` in `config.json`, then it is skipped.
 - [ ] Given a run budget already spent, then the watcher is skipped and the
       report says so.

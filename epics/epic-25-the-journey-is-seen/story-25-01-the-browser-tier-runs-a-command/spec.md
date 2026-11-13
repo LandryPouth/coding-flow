@@ -12,7 +12,7 @@ ran", not "the boxes were ticked".
 - `validation.tiers.browser`: `{ command, serve, healthUrl, checklist }`.
   `serve` is the project's dev or start script, run through `ai-flow serve`
   (24-01) on a port from `serve.ports`; `healthUrl` is polled until 2xx (max
-  `browser.startTimeoutSec`, default 120); `command` gets `BASE_URL`.
+  `validation.tiers.browser.startTimeoutSec`, default 120); `command` gets `BASE_URL`.
 - The served processes are stopped after the tier, pass or fail; a server
   that will not start is a tool error (not a red), naming the last log
   lines.

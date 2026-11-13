@@ -11,7 +11,7 @@ the story back to the implementer like a red test.
 ## Requirements
 
 - Trigger: driven run, the risk requires the `browser` tier (19-06), no
-  `browser.command`, and a non-empty `## Browser Check`.
+  `validation.tiers.browser.command`, and a non-empty `## Browser Check`.
 - The app is served as in 25-01. The walker is a fresh `claude -p` process
   with browser tools only (an MCP browser server allowed by name), no
   `Edit`/`Write`/`Bash`, no sub-agents (20-01); it takes an agent slot

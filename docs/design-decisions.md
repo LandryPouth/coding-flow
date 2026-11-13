@@ -569,7 +569,7 @@ is ordered judge first, engine second, learning last.
 **Refused in the same decision**: a "dark factory" (no human review of what
 ships), self-modifying rules, swarms of more parallel agents than the judge
 can keep honest (chains: default 2 once parallel chains ship, cap 2; agent processes: a
-user machine setting, uncapped, `auto` = 4, or 2 under WSL — both set by the maintainer on
+user machine setting, uncapped, `auto` = 4, or 2 under WSL or below 16 GB — both set by the maintainer on
 2026-11-13), always-loaded memory
 files beyond short non-standard conventions, and a resident daemon (entry 2
 still stands; the driver is a process per run, not a service).

@@ -7,7 +7,7 @@
   `bin/lib/harness.js`, `bin/lib/verify-queue.js`, tests
   `test/browser-tier.test.js` (new) with a fixture `node` HTTP server.
 - **Shared identifiers**: `validation.tiers.browser`, `serve.ports`,
-  `browser.startTimeoutSec`.
+  `validation.tiers.browser.startTimeoutSec`.
 - **Search anchors**: `tiersByRisk`, `toolError`, `worktree-processes.json`.
 - **Scout pre-step**: no.
 - **Areas to avoid**: the checklist judging of 19-06 (kept as is).
