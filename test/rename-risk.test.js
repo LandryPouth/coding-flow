@@ -72,13 +72,17 @@ function verify(dir) {
   return { ...res, json: JSON.parse(res.output.slice(res.output.indexOf('{'))) };
 }
 
+function preflightRisk(dir) {
+  const res = run(dir, ['harness', 'preflight', '--story', STORY, '--json']);
+  return JSON.parse(res.output.slice(res.output.indexOf('{'))).risk;
+}
+
 test('a file moved out of a high-risk path and edited is still scored high', (t) => {
   const dir = repo(t, 'rename-risk');
   moveAndEdit(dir);
 
-  const preflight = run(dir, ['harness', 'preflight', '--story', STORY, '--json']);
-  const risk = JSON.parse(preflight.output.slice(preflight.output.indexOf('{'))).risk;
-  assert.equal(risk.level, 'high', preflight.output);
+  const risk = preflightRisk(dir);
+  assert.equal(risk.level, 'high', JSON.stringify(risk));
   assert.ok(risk.matchedPaths.includes('src/auth/login.js'), JSON.stringify(risk));
 });
 
@@ -103,8 +107,70 @@ test('the same change without the move fails too, as the baseline', (t) => {
   assert.equal(res.code, 1, res.output);
 });
 
+test('a pure move out of a high-risk path keeps the risk of its new path, and verify passes', (t) => {
+  const dir = repo(t, 'rename-risk-pure');
+  git(dir, ['mv', 'src/auth/login.js', 'src/login.js']);
+  git(dir, ['commit', '-m', 'move login out of auth, unchanged']);
+
+  const risk = preflightRisk(dir);
+  assert.equal(risk.level, 'low', JSON.stringify(risk));
+  const res = verify(dir);
+  assert.equal(res.json.contrary.enforced, false, res.output);
+  assert.equal(res.code, 0, res.output);
+});
+
+test('a move, then an edit in a later commit, is scored high: the branch diff is cumulative', (t) => {
+  const dir = repo(t, 'rename-risk-later-edit');
+  git(dir, ['mv', 'src/auth/login.js', 'src/login.js']);
+  git(dir, ['commit', '-m', 'move login out of auth, unchanged']);
+  write(dir, 'src/login.js', LOGIN.replace('user.ok === true', 'Boolean(user.ok)'));
+  git(dir, ['commit', '-am', 'edit the moved login']);
+
+  const risk = preflightRisk(dir);
+  assert.equal(risk.level, 'high', JSON.stringify(risk));
+  assert.ok(risk.matchedPaths.includes('src/auth/login.js'), JSON.stringify(risk));
+});
+
+test('an unstaged move and edit is scored high: the old path reads as a deletion', (t) => {
+  const dir = repo(t, 'rename-risk-unstaged');
+  fs.renameSync(path.join(dir, 'src/auth/login.js'), path.join(dir, 'src/login.js'));
+  write(dir, 'src/login.js', LOGIN.replace('user.ok === true', 'Boolean(user.ok)'));
+
+  const risk = preflightRisk(dir);
+  assert.equal(risk.level, 'high', JSON.stringify(risk));
+  assert.ok(risk.matchedPaths.includes('src/auth/login.js'), JSON.stringify(risk));
+});
+
+test('a base that names the high-risk path still scores the move high when the tree drops it', (t) => {
+  const dir = repo(t, 'rename-risk-base');
+  const harnessPath = path.join(dir, '.coding-flow', 'harness.json');
+  const harness = JSON.parse(fs.readFileSync(harnessPath, 'utf8'));
+  fs.writeFileSync(harnessPath, JSON.stringify({ ...harness, highRiskPaths: [] }, null, 2));
+  moveAndEdit(dir);
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.enforced, true, res.output);
+  assert.equal(res.code, 1, res.output);
+});
+
+test('status marks a done story with a moved and edited high-risk file as review required', (t) => {
+  const dir = repo(t, 'rename-risk-status');
+  write(dir, `${STORY}/tasks.md`, '# Tasks\n\n## Status: done\n');
+  moveAndEdit(dir);
+
+  const res = run(dir, ['status', '--json']);
+  const json = JSON.parse(res.output.slice(res.output.indexOf('{')));
+  const story = json.epics.flatMap((epic) => epic.stories).find((s) => s.name === 'story-01-01-login');
+  assert.equal(story.reviewRequired, true, res.output);
+});
+
+// Coverage runs here whatever the rename does (another file under src/auth/ is
+// edited), so the old path leaking into the coverage scope would show.
 test('coverage still measures the moved file at its new path only', (t) => {
   const dir = repo(t, 'rename-risk-coverage');
+  write(dir, 'src/auth/session.js', 'module.exports = 2;\n');
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'add session on main']);
   moveAndEdit(dir);
 
   const res = verify(dir);

@@ -201,22 +201,26 @@ function changedFilesForCoverage(root = cwd, scope = null) {
 }
 
 // The paths the diff RISK reads: `changedFilesForCoverage` plus the old side of
-// every rename. A file moved out of a high-risk directory still touches what
-// was there, so it is scored as if it had not moved; coverage keeps measuring
-// it at its new path only, through `changedFilesForCoverage`.
+// every rename that also changed content. A file moved out of a high-risk
+// directory and edited still changes what was there, so it is scored as if it
+// had not moved; a pure move (`R100`) changes no line and keeps the risk of its
+// new path. The branch diff is cumulative, so a move then an edit in a later
+// commit reads below 100 % and counts. Coverage keeps measuring the file at its
+// new path only, through `changedFilesForCoverage`. `--find-renames` is
+// explicit: a user's `diff.renames=false` must not turn every move into a
+// deletion. An unstaged `mv` already reads as a deletion plus an untracked file.
 function riskPathsInDiff(root = cwd, scope = null) {
   const config = scope || readHarnessConfig(root).config;
   const files = new Set(changedFilesForCoverage(root, config));
   const { mergeBase } = currentDiffBase(root);
-  const sources = [["diff", "--no-renames", "--name-only"], ["diff", "--no-renames", "--cached", "--name-only"]];
 
-  if (mergeBase) {
-    sources.push(["diff", "--no-renames", "--name-only", mergeBase]);
-  }
+  // The working tree against the base (HEAD with none): committed, staged and
+  // unstaged changes in one comparison, so the similarity is the cumulative one.
+  for (const line of runGitList(["diff", "--find-renames", "--name-status", mergeBase || "HEAD"], root)) {
+    const match = line.match(/^R(\d+)\t(.+)\t(.+)$/);
 
-  for (const argsForGit of sources) {
-    for (const file of runGitList(argsForGit, root)) {
-      files.add(normalizePortable(file));
+    if (match && match[1] !== "100") {
+      files.add(normalizePortable(match[2]));
     }
   }
 

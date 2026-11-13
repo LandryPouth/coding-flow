@@ -27,21 +27,34 @@ not introduced by 13-04.
 ## Decisions
 
 - `riskPathsInDiff` (`bin/lib/diff-scope.js`) is `changedFilesForCoverage` plus
-  the same diffs read with `--no-renames`, so both sides of a rename are named.
-  Every diff-risk call site uses it (`risk.js` `scoreCombinedRisk`,
-  `coverage-gate.js` coverage gate and `strictestRisk`, `evidence.js` preflight,
-  `status.js`, `worktree-plan.js`); `changedFilesForCoverage` is unchanged, so
-  coverage, weakening and deleted-test scans still see the new path only.
-- The old side of a rename is a path with no added lines, like a deleted file
-  (already in the list before this story), so the structural scan finds nothing
-  in it; only `highRiskPaths` matching changes.
-- A pure move (no edit) out of a high-risk directory now also scores `high`: it
-  changes what lives under that path, like a deletion does.
+  the old side of every rename read from one `--find-renames --name-status`
+  diff of the working tree against the base (HEAD with none). Every diff-risk
+  call site uses it (`risk.js` `scoreCombinedRisk`, `coverage-gate.js` coverage
+  gate and `strictestRisk`, `evidence.js` preflight, `status.js`,
+  `worktree-plan.js`); `changedFilesForCoverage` is unchanged, so coverage,
+  weakening and deleted-test scans still see the new path only.
+- A pure move (`R100`) adds no old path: it changes no line, so it keeps the
+  risk of its new path (first review's P1, option a — without it a pure move
+  out of `**/auth/**` turned high and failed the default coverage gate). The
+  diff is cumulative, so a move then an edit in a later commit reads below
+  100 % and is scored high.
+- No separate working-tree source (review P2): an unstaged `mv` already reads as
+  a deletion plus an untracked file, and the deletion names the old path
+  (`an unstaged move and edit is scored high` passes at the base too).
+- The old side of a rename is a path with no added lines, like a deleted file,
+  so the structural scan finds nothing in it; only `highRiskPaths` matching
+  changes.
+- The coverage-scope test edits a second `src/auth/` file so coverage runs at
+  the base too: it pins that the old path never enters the coverage scope,
+  independently of this story's risk change.
 
 ## Result
 
-- `test/rename-risk.test.js`: moved-and-edited file scores `high` and names the
-  old path; verify fails under `failOnContrarySignals` with an open criterion;
-  same change without the move fails (baseline); coverage lists the new path
-  only. Related suites (312 tests: contrary, coverage, risk, status,
-  worktree-plan, evidence, policy, mutation) green.
+- `test/rename-risk.test.js` (9 tests): moved-and-edited file scores `high`
+  and names the old path; verify fails under `failOnContrarySignals` with an
+  open criterion; same change without the move fails (baseline); a pure move
+  stays `low` and verifies green; a move then a later edit is `high`; an
+  unstaged move is `high`; a tree that empties `highRiskPaths` under a base that
+  names `src/auth/**` still enforces (`strictestRisk`); `status --json` marks
+  the done story `reviewRequired`; coverage lists the new path only. Tests 1, 2,
+  5, 7, 8 fail at the base; test 4 failed on the first fix (`ee7efdb`).
