@@ -42,22 +42,33 @@ repositories.)*
 
 ## Decisions
 
-- **Base branches** are `main`, `master`, `develop`, the default branch and the
-  configured `baseBranch` (`baseBranchNames`, `bin/lib/diff-base.js`) — the same
-  list `worktree add` checks before recording a fork point.
-- **Criterion 4, two answers.** A typed `--base` that is HEAD on a branch with
-  commits of its own is **refused**, naming the base to use: a flag the user
-  typed is never silently replaced. A `baseBranch` in the tree that empties the
-  diff is **read at the base instead**: when the value committed at the
-  merge-base with the nearest shared branch differs, that value is used (or the
-  nearest base, if it has none), and `diffBase.configIgnored` says why. A
-  `baseBranch` the base already carried still applies (the repository chose
-  it, not the branch).
-- **"Commits of its own"** are counted against the nearest shared branch, not
-  the recorded fork point: the fork point is a local setting, and the one on a
-  base branch is precisely what this story stops trusting.
-- **Base branches are exempt from the refusal**: `--base HEAD` on `develop`
-  still verifies only the uncommitted work, as before.
-- **Not covered**: a `--base HEAD~N` that skips *some* of a branch's commits
-  (and the policy change in them) is still honoured — out of scope ("any
-  other change to how the nearest base is picked").
+- **Base branches** are `main`, `master`, `develop` and the default branch by
+  name, plus the configured `baseBranch` unless it names a story branch
+  (`story-*`, or the `--story` folder's name): a story that sets `baseBranch`
+  to itself is not a base (`isBaseBranch`, `bin/lib/diff-base.js`).
+  `worktree add` records no fork point for those names.
+- **A fork point is ignored** (and named in `diffBase.forkPointIgnored`) on a
+  base branch, and when it names the branch itself.
+- **A base that is HEAD** (flag or `baseBranch`) is a choice on a base branch:
+  `--base HEAD` on `develop`, or on a configured `trunk` ahead of a stale
+  `main`, still verifies only the uncommitted work. On any other branch it
+  empties the diff when the branch has commits of its own, counted from the
+  first of: a `baseBranch` value the branch's history carried earlier (walking
+  the commits that touch `.coding-flow/config.json`, newest first), its fork
+  point, the nearest shared branch (`ownCommitsStart`). Then:
+  - a typed `--base` is **refused**, naming that base — a flag the user typed
+    is never silently replaced;
+  - a `baseBranch` gives way to that base, and `diffBase.configIgnored` says
+    why;
+  - a `baseBranch` naming the branch itself with none of those known is
+    **refused** (nothing to measure from). `next` catches it and falls back
+    to the default base.
+- **Out of scope** (recorded, not fixed):
+  - a branch outside the story naming (no `story-` prefix, not the
+    `--story` folder) that sets `baseBranch` to itself is taken for the base
+    branch it declares;
+  - a story branch literally named `develop`/`master`/`main` is a base branch
+    by name, even in a repository where that branch is not the base;
+  - a `--base HEAD~N` that skips *some* of a branch's commits (and the
+    policy change in them) is still honoured ("any other change to how the
+    nearest base is picked").

@@ -97,7 +97,14 @@ function hasUnshippedWork(location, base, story) {
   }
   // A story forked from an epic branch ships what it added since that fork, not
   // everything the epic holds above main.
-  const resolved = resolveDiffBase(location, { story });
+  // A base that would empty the branch's diff is refused (story 13-07): measure
+  // from the default base instead.
+  let resolved = {};
+  try {
+    resolved = resolveDiffBase(location, { story });
+  } catch {
+    resolved = {};
+  }
   const since = resolved.mergeBase || base;
   const ahead = git(location, ["rev-list", "--count", `${since}..HEAD`]);
   return ahead !== null && ahead !== "" && ahead !== "0";

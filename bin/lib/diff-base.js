@@ -16,13 +16,14 @@
 //   default     today's behaviour: origin/HEAD, else main
 //   none        no merge-base at all — the caller falls back to the working tree
 //
-// A flag or a configured base that IS HEAD on a branch with commits of its own
-// would empty the diff: the flag is refused, a baseBranch the branch set itself
-// gives way to the one committed at its base.
+// A flag or a configured base that IS HEAD, on a branch that is not a base and
+// has commits of its own, would empty the diff: the flag is refused, and the
+// baseBranch gives way to where those commits start (`ownCommitsStart`).
 //
 // Pure read. Never throws except for an explicit --base that does not resolve
-// or empties the diff: a flag the user typed must not be silently replaced by a
-// guess.
+// or empties the diff (a flag the user typed must not be silently replaced by a
+// guess), and for a baseBranch naming the branch itself with nothing earlier to
+// measure from.
 
 const { execFileSync } = require("child_process");
 
@@ -88,10 +89,7 @@ function classifyScope({ cwd, branch, source, story }) {
   if (source === "none") return "working-tree";
   if (!branch) return "branch";
 
-  const leaf = branch.split("/").pop();
-  const storyLeaf = story ? String(story).replace(/\/+$/, "").split("/").pop() : null;
-
-  if (source === "fork-point" || /^story-/i.test(leaf) || (storyLeaf && leaf === storyLeaf)) {
+  if (source === "fork-point" || storyNamed(branch, story)) {
     return "story";
   }
 
@@ -130,6 +128,9 @@ function baseBranchAt(cwd, sha) {
 function resolveDiffBase(cwd, { story = null, flagBase = null, ignoreForkPoint = false } = {}) {
   const branch = currentBranch(cwd);
   const head = git(cwd, ["rev-parse", "HEAD"]);
+  const configured = readConfig(cwd).baseBranch;
+  const value = typeof configured === "string" && configured ? configured : null;
+  const context = { story, branch, configured: value };
   const found = (source, hit, extra = {}) => ({
     ref: hit.ref,
     mergeBase: hit.mergeBase,
@@ -137,22 +138,14 @@ function resolveDiffBase(cwd, { story = null, flagBase = null, ignoreForkPoint =
     scope: classifyScope({ cwd, branch, source, story }),
     ...extra,
   });
+  const recorded = (skipForkPoint = ignoreForkPoint) =>
+    resolveRecorded(cwd, { ...context, ignoreForkPoint: skipForkPoint, found });
 
-  // A base that IS HEAD empties every committed change. That is a choice on a
-  // branch with nothing of its own, and a hole on one with commits: the diff,
-  // and the policy read at its base, would skip all of them (story 13-07).
-  // "Its own" is against the shared branches, not the fork point: that is a
-  // local setting, and the one on a base branch is exactly what 13-07 ignores.
-  const withoutChoice = () => resolveRecorded(cwd, { story, branch, ignoreForkPoint: true, found });
-  const ownCommits = (hit) => {
-    if (!head || hit.mergeBase !== head || baseBranchNames(cwd).includes(branch)) return null;
-
-    const fallback = withoutChoice();
-
-    if (!fallback.mergeBase || fallback.mergeBase === head) return null;
-
-    return { fallback, count: Number(git(cwd, ["rev-list", "--count", `${fallback.mergeBase}..HEAD`])) };
-  };
+  // A base that IS HEAD empties every committed change. On a base branch that
+  // is a choice (verify the uncommitted work); anywhere else it hides the
+  // branch's own commits, and the policy read at its base skips them (13-07).
+  const ownStart = (hit) =>
+    head && hit.mergeBase === head && !isBaseBranch(cwd, context) ? ownCommitsStart(cwd, { ...context, head, recorded }) : null;
 
   if (flagBase) {
     const hit = mergeBaseWith(cwd, flagBase);
@@ -161,73 +154,109 @@ function resolveDiffBase(cwd, { story = null, flagBase = null, ignoreForkPoint =
       throw new Error(`--base "${flagBase}" does not resolve to a ref with a merge-base against HEAD.`);
     }
 
-    const own = ownCommits(hit);
+    const own = ownStart(hit);
 
     if (own) {
       throw new Error(
         `--base "${flagBase}" is HEAD itself: this branch has ${own.count} commit(s) of its own since ` +
-          `${own.fallback.ref}, and the diff would hide them all. Pass --base ${own.fallback.ref} (or omit --base).`,
+          `${own.ref}, and the diff would hide them all. Pass --base ${own.ref} (or omit --base).`,
       );
     }
 
     return found("flag", hit);
   }
 
-  const configured = readConfig(cwd).baseBranch;
-  const { effective, hit, configIgnored } = configuredBase(cwd, { configured, head, ownCommits });
-  const recorded = () => resolveRecorded(cwd, { story, branch, ignoreForkPoint, found });
+  const hit = value ? mergeBaseWith(cwd, value) : null;
 
   if (hit) {
-    return found("config", hit, { ...forkPointIgnoredFor(cwd, branch, effective), ...(configIgnored ? { configIgnored } : {}) });
-  }
+    const own = ownStart(hit);
 
-  if (configIgnored) return { ...recorded(), configIgnored };
+    if (!own) return found("config", hit, forkPointIgnoredFor(cwd, context));
+    if (own.count === null) {
+      throw new Error(`baseBranch "${value}" names this branch itself, and no earlier base is known to measure its commits from.`);
+    }
+
+    const configIgnored = {
+      value,
+      reason: `baseBranch "${value}" would empty this branch's diff (${own.count} commit(s) of its own since ${own.ref})`,
+    };
+
+    return own.source === "config" ? found("config", own, { configIgnored }) : { ...recorded(), configIgnored };
+  }
 
   // A configured base that does not resolve is not silently ignored: it is
   // recorded, as a missing fork point is.
-  return effective ? { ...recorded(), configUnresolved: effective } : recorded();
+  return value ? { ...recorded(), configUnresolved: value } : recorded();
 }
 
-// The configured baseBranch, unless the branch set it itself to empty its own
-// diff: then the one committed at its base, if any (story 13-07).
-function configuredBase(cwd, { configured, head, ownCommits }) {
-  const value = typeof configured === "string" && configured ? configured : null;
-  const hit = value ? mergeBaseWith(cwd, value) : null;
-  const own = hit ? ownCommits(hit) : null;
+function storyNamed(branch, story) {
+  const leaf = branch.split("/").pop();
+  const storyLeaf = story ? String(story).replace(/\/+$/, "").split("/").pop() : null;
 
-  if (!own) return { effective: value, hit, configIgnored: null };
-
-  const atBase = baseBranchAt(cwd, own.fallback.mergeBase);
-
-  // Committed at the base already: the repository chose it, not this branch.
-  if (atBase === value) return { effective: value, hit, configIgnored: null };
-
-  const baseHit = atBase ? mergeBaseWith(cwd, atBase) : null;
-
-  return {
-    effective: atBase,
-    hit: baseHit && baseHit.mergeBase !== head ? baseHit : null,
-    configIgnored: {
-      value,
-      reason: `baseBranch "${value}" is set by this branch and would empty its diff (${own.count} commit(s) since ${own.fallback.ref})`,
-    },
-  };
+  return /^story-/i.test(leaf) || Boolean(storyLeaf && leaf === storyLeaf);
 }
 
-// A fork point recorded on a base branch: not used, and named with why.
-function forkPointIgnoredFor(cwd, branch, configured) {
-  if (!branch || !baseBranchNames(cwd, configured).includes(branch)) return {};
+// develop, main… by name, or the configured baseBranch — unless that names a
+// story branch: a story that sets baseBranch to itself is not a base.
+function isBaseBranch(cwd, { branch, story, configured }) {
+  if (!branch) return false;
+  if (baseBranchNames(cwd).includes(branch)) return true;
 
-  const recorded = git(cwd, ["config", "--get", `branch.${branch}.codingFlowBase`]);
+  return branch === configured && !storyNamed(branch, story);
+}
 
-  return recorded ? { forkPointIgnored: { value: recorded, reason: `${branch} is a base branch: a fork point belongs to a story branch` } } : {};
+// Where this branch's own commits start, when its chosen base is HEAD: the
+// baseBranch values its history carried before (newest first), then its fork
+// point, then the nearest shared branch. `count: null` when the chosen base
+// names the branch itself and none of those is known — nothing to fall back on.
+function ownCommitsStart(cwd, { branch, head, configured, recorded }) {
+  const commits = (git(cwd, ["log", "--format=%H", "-n", "50", "HEAD", "--", ".coding-flow/config.json"]) || "").split(/\s+/).filter(Boolean);
+  const earlier = commits.flatMap((sha) => [baseBranchAt(cwd, sha), baseBranchAt(cwd, `${sha}^`)]);
+  const forkPoint = branch ? git(cwd, ["config", "--get", `branch.${branch}.codingFlowBase`]) : null;
+  const fallback = recorded(true);
+  const candidates = [
+    ...[...new Set(earlier)].filter((name) => name && name !== configured).map((name) => ({ name, source: "config" })),
+    ...(forkPoint ? [{ name: forkPoint, source: "fork-point" }] : []),
+  ];
+
+  for (const { name, source } of candidates) {
+    const hit = mergeBaseWith(cwd, name);
+
+    if (hit && hit.mergeBase !== head) return { ...hit, source, count: countSince(cwd, hit.mergeBase) };
+  }
+
+  if (fallback.mergeBase && fallback.mergeBase !== head) {
+    return { ref: fallback.ref, mergeBase: fallback.mergeBase, source: fallback.source, count: countSince(cwd, fallback.mergeBase) };
+  }
+
+  return configured && configured === branch ? { count: null } : null;
+}
+
+function countSince(cwd, sha) {
+  return Number(git(cwd, ["rev-list", "--count", `${sha}..HEAD`]));
+}
+
+// A fork point recorded on a base branch, or naming the branch itself: not
+// used, and named with why.
+function forkPointIgnoredFor(cwd, context) {
+  const { branch } = context;
+  const recorded = branch ? git(cwd, ["config", "--get", `branch.${branch}.codingFlowBase`]) : null;
+
+  if (!recorded) return {};
+  if (isBaseBranch(cwd, context)) {
+    return { forkPointIgnored: { value: recorded, reason: `${branch} is a base branch: a fork point belongs to a story branch` } };
+  }
+  if (recorded === branch) {
+    return { forkPointIgnored: { value: recorded, reason: "it names the branch itself, which would empty the diff" } };
+  }
+
+  return {};
 }
 
 // The fork point, then the nearest base: what the branch resolves to on its own.
-function resolveRecorded(cwd, { story, branch, ignoreForkPoint, found }) {
+function resolveRecorded(cwd, { story, branch, configured, ignoreForkPoint, found }) {
   let forkPointMissing = null;
-  // Not the configured baseBranch: one that is honoured never reaches here.
-  const ignored = forkPointIgnoredFor(cwd, branch, null);
+  const ignored = forkPointIgnoredFor(cwd, { story, branch, configured });
 
   if (branch && !ignoreForkPoint && !ignored.forkPointIgnored) {
     const recorded = git(cwd, ["config", "--get", `branch.${branch}.codingFlowBase`]);
