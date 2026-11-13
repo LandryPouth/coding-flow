@@ -65,6 +65,8 @@ s3
 └── s6
 
 s5
+
+s7
 ```
 
 `s1`, `s2`, `s5` are independent. `s4` and `s6` assume s3's lcov command is
@@ -84,6 +86,9 @@ config s3 writes).
 5. **story-13-05-spec-before-parser** — corpus-first rule, criteria-drift
    signal. *(STANDARD)*
 6. **story-13-06-touched-functions-do-not-grow** — size ratchet. *(STANDARD)*
+7. **story-13-07-a-base-branch-has-no-fork-point** — added 2026-11-13: a
+   `codingFlowBase` recorded on `develop` kept 13-04 and 15-01 from being
+   proven. *(QUICK)*
 
 ## Decisions
 
