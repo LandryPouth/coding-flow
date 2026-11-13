@@ -119,6 +119,34 @@ test('a pure move out of a high-risk path keeps the risk of its new path, and ve
   assert.equal(res.code, 0, res.output);
 });
 
+test('a move that only reorders lines is not pure: scored high', (t) => {
+  const dir = repo(t, 'rename-risk-reorder');
+  write(dir, 'src/auth/guard.js', 'if (!u.admin) throw new Error("no");\nreturn doPrivileged(u);\n');
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'add guard on the branch']);
+  git(dir, ['checkout', '-q', 'main']);
+  git(dir, ['merge', '-q', 'feat/login']);
+  git(dir, ['checkout', '-q', 'feat/login']);
+  git(dir, ['mv', 'src/auth/guard.js', 'src/guard.js']);
+  write(dir, 'src/guard.js', 'return doPrivileged(u);\nif (!u.admin) throw new Error("no");\n');
+  git(dir, ['commit', '-am', 'move guard out of auth, lines swapped']);
+
+  const risk = preflightRisk(dir);
+  assert.equal(risk.level, 'high', JSON.stringify(risk));
+  assert.ok(risk.matchedPaths.includes('src/auth/guard.js'), JSON.stringify(risk));
+});
+
+test('a move with a mode change is not pure: scored high', (t) => {
+  const dir = repo(t, 'rename-risk-chmod');
+  git(dir, ['mv', 'src/auth/login.js', 'src/login.js']);
+  fs.chmodSync(path.join(dir, 'src/login.js'), 0o755);
+  git(dir, ['commit', '-am', 'move login out of auth, executable']);
+
+  const risk = preflightRisk(dir);
+  assert.equal(risk.level, 'high', JSON.stringify(risk));
+  assert.ok(risk.matchedPaths.includes('src/auth/login.js'), JSON.stringify(risk));
+});
+
 test('a move, then an edit in a later commit, is scored high: the branch diff is cumulative', (t) => {
   const dir = repo(t, 'rename-risk-later-edit');
   git(dir, ['mv', 'src/auth/login.js', 'src/login.js']);

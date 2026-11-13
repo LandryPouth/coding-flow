@@ -27,17 +27,21 @@ not introduced by 13-04.
 ## Decisions
 
 - `riskPathsInDiff` (`bin/lib/diff-scope.js`) is `changedFilesForCoverage` plus
-  the old side of every rename read from one `--find-renames --name-status`
-  diff of the working tree against the base (HEAD with none). Every diff-risk
-  call site uses it (`risk.js` `scoreCombinedRisk`, `coverage-gate.js` coverage
-  gate and `strictestRisk`, `evidence.js` preflight, `status.js`,
-  `worktree-plan.js`); `changedFilesForCoverage` is unchanged, so coverage,
-  weakening and deleted-test scans still see the new path only.
-- A pure move (`R100`) adds no old path: it changes no line, so it keeps the
-  risk of its new path (first review's P1, option a — without it a pure move
-  out of `**/auth/**` turned high and failed the default coverage gate). The
-  diff is cumulative, so a move then an edit in a later commit reads below
-  100 % and is scored high.
+  the old side of every rename that is not a pure move, read from one
+  `--find-renames --raw -z` diff of the working tree against the base (HEAD
+  with none). Every diff-risk call site uses it (`risk.js` `scoreCombinedRisk`,
+  `coverage-gate.js` coverage gate and `strictestRisk`, `evidence.js`
+  preflight, `status.js`, `worktree-plan.js`); `changedFilesForCoverage` is
+  unchanged, so coverage, weakening and deleted-test scans still see the new
+  path only.
+- A pure move adds no old path: it keeps the risk of its new path (first
+  review's P1, option a — without it a pure move out of `**/auth/**` turned
+  high and failed the default coverage gate). "Pure" is decided by the blobs,
+  not git's similarity score (second review's P1): `R100` also covers swapped
+  lines and a `chmod`. Pure means same source and destination blob, a
+  non-zero destination blob (all zeros is an unhashed working-tree file,
+  counted as changed) and the same mode. The diff is cumulative, so a move then
+  an edit in a later commit is not pure.
 - No separate working-tree source (review P2): an unstaged `mv` already reads as
   a deletion plus an untracked file, and the deletion names the old path
   (`an unstaged move and edit is scored high` passes at the base too).
@@ -50,10 +54,11 @@ not introduced by 13-04.
 
 ## Result
 
-- `test/rename-risk.test.js` (9 tests): moved-and-edited file scores `high`
+- `test/rename-risk.test.js` (11 tests): moved-and-edited file scores `high`
   and names the old path; verify fails under `failOnContrarySignals` with an
   open criterion; same change without the move fails (baseline); a pure move
-  stays `low` and verifies green; a move then a later edit is `high`; an
+  stays `low` and verifies green; a move with swapped lines or a `chmod` is
+  `high` (both `R100`, both red on `2d5a555`); a move then a later edit is `high`; an
   unstaged move is `high`; a tree that empties `highRiskPaths` under a base that
   names `src/auth/**` still enforces (`strictestRisk`); `status --json` marks
   the done story `reviewRequired`; coverage lists the new path only. Tests 1, 2,

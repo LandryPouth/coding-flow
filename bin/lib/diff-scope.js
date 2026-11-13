@@ -201,26 +201,48 @@ function changedFilesForCoverage(root = cwd, scope = null) {
 }
 
 // The paths the diff RISK reads: `changedFilesForCoverage` plus the old side of
-// every rename that also changed content. A file moved out of a high-risk
+// every rename that is not a pure move. A file moved out of a high-risk
 // directory and edited still changes what was there, so it is scored as if it
-// had not moved; a pure move (`R100`) changes no line and keeps the risk of its
-// new path. The branch diff is cumulative, so a move then an edit in a later
-// commit reads below 100 % and counts. Coverage keeps measuring the file at its
-// new path only, through `changedFilesForCoverage`. `--find-renames` is
+// had not moved; a pure move keeps the risk of its new path. "Pure" is read
+// from the blobs, not from git's similarity score: `R100` also covers reordered
+// lines and a mode change. A pure move has the same blob and mode on both sides,
+// and a known destination blob (all zeros is a working-tree file git has not
+// hashed, so it counts as changed). The branch diff is cumulative, so a move
+// then an edit in a later commit is not pure. Coverage keeps measuring the file
+// at its new path only, through `changedFilesForCoverage`. `--find-renames` is
 // explicit: a user's `diff.renames=false` must not turn every move into a
 // deletion. An unstaged `mv` already reads as a deletion plus an untracked file.
 function riskPathsInDiff(root = cwd, scope = null) {
   const config = scope || readHarnessConfig(root).config;
   const files = new Set(changedFilesForCoverage(root, config));
   const { mergeBase } = currentDiffBase(root);
+  let raw = "";
 
   // The working tree against the base (HEAD with none): committed, staged and
-  // unstaged changes in one comparison, so the similarity is the cumulative one.
-  for (const line of runGitList(["diff", "--find-renames", "--name-status", mergeBase || "HEAD"], root)) {
-    const match = line.match(/^R(\d+)\t(.+)\t(.+)$/);
+  // unstaged changes in one comparison. `-z` keeps every path byte for byte.
+  try {
+    raw = require("child_process").execFileSync(
+      "git",
+      ["diff", "--find-renames", "--raw", "-z", "--no-abbrev", mergeBase || "HEAD"],
+      { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 },
+    );
+  } catch {
+    raw = "";
+  }
 
-    if (match && match[1] !== "100") {
-      files.add(normalizePortable(match[2]));
+  const fields = raw.split("\0");
+  for (let i = 0; i < fields.length; i += 1) {
+    const header = fields[i].match(/^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])\d*$/);
+    if (!header) continue;
+
+    const [, fromMode, toMode, fromBlob, toBlob, kind] = header;
+    if (kind === "R" || kind === "C") {
+      const from = fields[i + 1];
+      const pure = fromBlob === toBlob && !/^0+$/.test(toBlob) && fromMode === toMode;
+      if (kind === "R" && !pure) files.add(normalizePortable(from));
+      i += 2;
+    } else {
+      i += 1;
     }
   }
 
