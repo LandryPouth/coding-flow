@@ -316,3 +316,13 @@ test('failOn at the base: calling an unguarded git merge a test file in the diff
   assert.equal(res.code, 1, res.output);
   assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
 });
+
+test('failOn at the base: turning failOnContrarySignals off in the diff still fails', (t) => {
+  const dir = repo(t, 'pc-failon-off', { harness: FAIL_ON_SRC });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, failOnContrarySignals: false }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
