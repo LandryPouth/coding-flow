@@ -17,6 +17,8 @@ closes the remaining worktree rows of both DOGFOODING logs.
   bethl, 10 occurrences); `link` stays available by flag (bethl bilan P2).
 - **Env files**: `worktree.copyFiles` (20-02) applies to every `add`; doctor
   warns when a listed file is missing in the primary.
+- **Setup commands**: `worktree.setup` (20-02) runs on every `add`, driven or
+  interactive; `--no-setup` skips it for one call.
 - **Servers**: `ai-flow serve -- <cmd>` (or the project's dev script through
   it) records the pid in `.coding-flow/worktree-processes.json` inside the
   worktree; `worktree remove` and `land` stop those processes (SIGTERM, then

@@ -1,6 +1,6 @@
 # Story 15-01 — The guard's tests assert what they claim
 
-## Status: in-progress
+## Status: done
 
 Experiment 1 of the Uncle Bob study (30 sampled mutants on epic 05's
 `guard.js` lines, 27 killed) left two non-equivalent survivors. Re-checked
@@ -46,7 +46,51 @@ with `git checkout`):
 | `base !== null` → `base === null` (directory destination) | killed (1 fail) |
 | `let script = false` → `true` (`sedFiles`) | killed (1 fail) |
 
+Re-run 2026-11-13, after 15-02 moved `shellWrites` out of `guard.js`: the
+sites now live in `bin/lib/shell-writes.js` (`:420` directory destination,
+`:320` `sedFiles`), so "no change to `bin/lib/guard.js`" still holds and the
+mutants were applied there. `test/guard-shell.test.js` is 48/48 unmutated.
+
+| Mutant (`bin/lib/shell-writes.js`) | Result |
+|---|---|
+| `:420` `base !== null` → `base === null` | killed — test 26, cp/mv onto an existing directory |
+| `:320` `let script = false` → `true` | killed — test 27, sed -i targets |
+| `:420` the trailing-slash regex `/(?:^\|\/)\.{0,2}\/?$/.test(directory)` removed | survived; killed once test 26 asserts `cp key nodir/` → `['nodir/', 'nodir/key']` with no `nodir/` on disk (found by the 2026-11-13 review: the existing `cp … sub/` case hid it, `sub/` exists in the fixture) |
+
+**What proves this story** is the mutation table above and
+`test/guard-shell.test.js` green (48/48, the `nodir/` assertions added inside
+test 26), not the verify's coverage figure: that 98.4 % is measured over a
+220-file scope that is mostly other stories' work.
+
+### Follow-up (not fixed here)
+
+Neighbouring mutants on the same sites survive, none of them a security gap —
+each over-collects targets or removes a redundant check, so the guard denies
+more, never less:
+
+- `:420` `optionAt !== -1` removed;
+- `"efl"` → `"ef"` in the sed option scan;
+- the `if (arg[at] === "i") break` in the sed option scan removed;
+- `!source.endsWith("/")` removed.
+
+Pin them in a later pass if mutation testing is adopted (15-04/15-05).
+
+### Rollback Notes
+
+`git revert` of the 15-01 commits; tests only, no data or config migration.
+
 ### Verify history
+
+- 2026-11-13, story worktree — green, `Coverage: verified` (98.4 % of
+  1748 added lines), with `--base 948cf54~1` so the scope (220 files) holds
+  this story's own commit; the recorded fork point `4c7280c` does not. The
+  scope is wide: it also carries everything on `develop` since, 15-02's
+  filled `shell-writes.js` included — the figure is the scope's, not this
+  story's. An earlier attempt the same day timed
+  out at 1200 s under a `TMPDIR` set inside the worktree, which made the
+  fixtures write into it; nothing from it was kept.
+
+Earlier, 2026-11-10:
 
 - 17:29 — green, `Coverage: verified` (95.9 % of the scope's added lines).
 - 17:40 — red on `test/pinned-claude-skills.test.js:52`, outside this

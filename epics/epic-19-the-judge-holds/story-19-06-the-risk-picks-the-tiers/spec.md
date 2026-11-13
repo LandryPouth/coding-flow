@@ -47,7 +47,8 @@ verify; STRICT stories ran it by hand, or not (bethl DOGFOODING 2026-11-12
 
 ## Out of Scope
 
-- Browser automation.
+- Browser automation (epic 25: the tier runs a command or a fresh process
+  walks the checklist).
 
 ## Security
 

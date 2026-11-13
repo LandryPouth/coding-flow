@@ -17,11 +17,20 @@ on a 14 GB WSL machine while `next dev` held 5.5 GB.
   (`$XDG_CACHE_HOME/coding-flow/verify.lock`, fallback `~/.cache/…`) held for
   the duration of the heavy commands, with pid, checkout, story, start time.
   Stale lock (dead pid) is taken over and reported.
+- **How many at once is a machine setting**: `verify.maxConcurrent` in the
+  user's global config (`~/.config/coding-flow/config.json`, the file 21-02
+  also uses), not in the project. Default `auto`: 1 under WSL (detected from
+  `/proc/version`) or below 16 GB total memory, else 2 (the maintainer's
+  machines, documented as reference profiles); any value the user sets is
+  honoured, the memory gate still applies. The lock becomes
+  that many slot files; the memory gate applies to each start.
 - Memory gate: before starting, `os.freemem()` (and on Linux
-  `MemAvailable` from `/proc/meminfo`) must be ≥ `verify.minFreeMemoryMb` in
-  `harness.json` (default 3072). Otherwise wait, polling every 15 s, printing
+  `MemAvailable` from `/proc/meminfo`) must be ≥ `verify.minFreeMemoryMb`
+  (default 3072). Like `maxConcurrent`, it is a machine setting in the
+  user's global config; a project's `harness.json` may only raise it (a
+  project known to need more memory), never lower it. Otherwise wait, polling every 15 s, printing
   one line per minute: who holds the lock / how much memory is free.
-- `verify.maxWaitMinutes` (default 30): past it, the verify ends with a tool
+- `verify.maxWaitMinutes` (default 30, user global config): past it, the verify ends with a tool
   error `machine busy` (not a red), so a driver can retry later.
 - The wait time is recorded in the evidence and in `verify.start`.
 - `--no-queue` opts out for a single run.
@@ -36,6 +45,9 @@ on a 14 GB WSL machine while `next dev` held 5.5 GB.
       red.
 - [ ] Given a verify with only fast commands, then it neither waits nor takes
       the lock.
+- [ ] Given `verify.maxConcurrent: 2` and enough free memory, then two heavy
+      verifies run at once and a third waits; given `auto` under WSL, then
+      the limit is 1.
 - [ ] Given a completed queued verify, then its evidence records the wait.
 
 ## Edge Cases

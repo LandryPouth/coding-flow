@@ -22,7 +22,7 @@ regroupée" (bethl bilan P1).
   16-01's marker).
 - `## Needs you` section written by a driven agent: one or more questions,
   each with the options considered and a recommendation; the CLI marks the
-  story `blocked (needs you)`; dependents `waiting`.
+  story `blocked (needs you)` (hold `needs-decision` once 27-01 ships); dependents `waiting`.
 - The run report groups all `Needs you` questions at the top.
 - `/flow-next` lists `human` stories and `needs you` questions first.
 

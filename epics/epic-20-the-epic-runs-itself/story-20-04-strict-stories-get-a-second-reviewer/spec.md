@@ -18,8 +18,22 @@ missed).
   set, configurable), `--output-format json`, its own turn and budget caps;
   prompt framing adversarial ("find what is wrong; assume the author is
   overconfident"), no worker reasoning passed.
-- The reviewer emits findings JSON; the CLI records them with `review found
-  --from` (18-04), reviewer `process`.
+- The reviewer emits findings JSON **through `--json-schema`** (severity
+  P0–P3, file, line, scenario, proposed fix; the same schema for the
+  crossing review of 24-02 and the epic review of 20-07): the CLI never
+  parses Markdown. Output that fails the schema gets one retry, then the
+  review is a tool error, not a pass. The CLI records them with `review
+  found --from` (18-04), reviewer `process`.
+- **Lenses (STRICT)**: `review.lenses` default `["spec", "security",
+  "tests"]` for STRICT — one reviewer process per lens, each told only its
+  lens; the CLI merges their findings and dedupes by file and line. One
+  generalist reviewer otherwise. Lenses queue on agent slots (24-02) like any
+  process.
+- **Skeptics on P0/P1**: each P0/P1 finding goes to `review.skeptics`
+  (default 2) fresh read-only processes asked to refute it with the code.
+  A finding is dropped only when every skeptic refutes it; dropped findings
+  stay in the record as `refuted` with the skeptics' reasons, never deleted.
+  A fix pass spent on a false P1 is the cost this removes.
 - If any P0/P1/P2: one fix process (`/coding-flow:flow-run` in driven mode
   with the findings as input and the decisions the project allows,
   epic 22); then one verify; then each finding `resolve`d by the fix
@@ -29,7 +43,11 @@ missed).
   with the open findings.
 - On pass: the CLI writes `## Status: done` (not the agent), runs `worktree
   unlock` and `worktree autoland` (20-02 semantics), and records events.
-- STANDARD stories: review is skipped unless `run.reviewStandard: true`.
+- STANDARD stories are reviewed too, by one generalist reviewer:
+  `run.reviewStandard` defaults to `true` (maintainer practice on bethl: an
+  independent review on every story found defects on most of them); QUICK
+  and FAST stories are not reviewed. A project sets `false` to save the
+  spend.
 
 ## Acceptance Criteria
 
@@ -42,6 +60,15 @@ missed).
       done.
 - [ ] Given the reviewer process argv, then its tools are read-only and its
       prompt contains the diff reference and story path but no worker output.
+- [ ] Given a reviewer output that fails the findings schema twice, then the
+      review is a tool error and the story is not done.
+- [ ] Given a STRICT story, then three lens reviewers run and their
+      duplicate findings (same file and line) are merged into one.
+- [ ] Given a P1 both skeptics refute, then it is recorded `refuted` with
+      their reasons and no fix pass runs for it; given one skeptic upholding
+      it, then it stands.
+- [ ] Given a STANDARD story and no `reviewStandard` in config, then one
+      reviewer runs.
 - [ ] Given `status` after a pass, then the review shows reviewer `process`
       with found and open counts.
 

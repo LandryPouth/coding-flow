@@ -49,8 +49,12 @@ epic-wide review and one report the maintainer reads instead of every story.
 
 **Out of scope**
 
-- Parallel chains and merge re-verification (epic 24 s2); default parallelism
-  is 1.
+- Parallel chains and merge re-verification (epic 24 s2), parallel epics
+  (epic 24 s7); this epic runs chains one at a time. Once 24-02 ships,
+  the default is 2 (maintainer, 2026-11-13). Those stories are delivered right
+  after this epic, before epic 21 (see epic 24 *Delivery order*). Every
+  process this epic spawns is already a leaf: driven agents never spawn
+  sub-agents (20-01), so 24-02 can count agents in one place.
 - Drivers for other hosts (`codex exec`, `opencode run`): the seam is kept
   host-neutral; a second driver is its own story once this one is measured.
 - Merging to `main`, pushing, production. The run stops at local land (or the
@@ -122,23 +126,23 @@ module), so there is no tree.
 
 `ready`. Defaults confirmed by the maintainer on 2026-11-12: 2 attempts;
 per-process wall-clock limit **50 minutes** (raised from the proposed 45);
-caps required in config (no default spend); parallelism 1 (cap 2); 1 retry of
+caps required in config (no default spend); parallelism 1 (cap 2) — raised
+to **2 by default** on 2026-11-13 for when 24-02 ships, so cross-chain
+errors surface early; 1 retry of
 a failed command in driven runs. The exact `claude` flag set is verified on the installed version
 inside 20-01 (a stop condition if `dontAsk` + guard denial cannot be proven
 headless).
 
+**Early first run (2026-11-13)**: 20-01 is delivered right after 18-01,
+19-01 and 19-07, ahead of the rest of epics 18 and 19, and run once on a
+real bethl story; what it shows reorders the remaining stories (see
+`docs/plans/autonomous-factory.md`, *Delivery order*).
+
 ## Maintainer cleanup on delivery
 
-Until this epic ships, epics are run by hand with a personal Claude Code skill,
-`~/.claude/skills/epic-run/` (implementer fork → fresh independent reviewer →
-fixes → closure → local land, max 2 agents). It is the manual stand-in this
-epic replaces. When the epic is delivered and the native run is proven on a
-real project:
-
-- [ ] `trash ~/.claude/skills/epic-run ~/.claude/docs/skills/epic-run.md`
-- [ ] Remove the `epic-run` row from the skills table in `~/.claude/README.md`.
-- [ ] Before deleting, compare the skill's loop with the native one: anything
-      the skill does that the epic does not (fresh reviewer that never sees the
-      implementer's reasoning, reviewer findings carried to later stories,
-      "no sub-agents" in every brief, resume a cut agent instead of a new one)
-      becomes a follow-up story, not a silent loss.
+The manual stand-ins (the `epic-run` workflow and skill, and their journal
+in the AI memory vault) are removed once **this epic and epic 27** are
+delivered and a native run has landed a real bethl epic. The checklist —
+compare the loops first, move the lessons to proposals, keep the run
+history, then delete — lives in one place:
+[epic 27, *Maintainer cleanup on delivery*](../epic-27-the-run-knows-why-it-stopped/index.md#maintainer-cleanup-on-delivery).

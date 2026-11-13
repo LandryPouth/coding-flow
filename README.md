@@ -395,5 +395,6 @@ It removes the files Coding Flow installed (rules, `docs/`, `.claude/skills/`, `
 - **[docs/agent-contract.md](docs/agent-contract.md)** — what Coding Flow expects from an agent, agent-neutral: the protocol every integration translates.
 - **[docs/DOGFOODING.md](docs/DOGFOODING.md)** — the friction log: where the tool cost more than it returned, and what was done about it. `init` installs a blank one into your project too, and the `RULES.md` it writes tells the agent to add a row as the friction happens — above all when a check gets disabled or exempted to keep moving.
 - **[docs/design-decisions.md](docs/design-decisions.md)** — what was decided, what was refused, and why: the risk scorer, the guard daemon and Go rewrite that were turned down with measurements, and what was worth taking from other skill systems.
+- **[docs/rules-and-limits.md](docs/rules-and-limits.md)** — every rule, default, cap and threshold, shipped and planned, each with its source.
 - **[docs/plans/multi-agent-install.md](docs/plans/multi-agent-install.md)** — what Claude Code, Codex and OpenCode each actually support for enforcement, verified, and the order the port should go in.
 - **[docs/contributing.md](docs/contributing.md)** — CLI architecture, distribution channels, publishing, and the full internal-docs index (for contributors).
