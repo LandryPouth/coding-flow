@@ -43,7 +43,9 @@ the project's policy is told apart from one person's preferences.
   integrating a chain re-verifies the merged tree and reviews the crossing.
   Chains include branches after a branch point, not only independent roots.
 - `run.maxAgents` (machine setting, `auto` = 4, or 2 under WSL / < 16 GB;
-  cap 4): machine-wide agent slots shared by every run.
+  any value the user sets is honoured; the auto values are the
+  maintainer's machines, documented as reference profiles): machine-wide
+  agent slots shared by every run.
 - *Shared identifiers* declared in plans and compared like files.
 - Two epics at once: epic dependencies, overlap check, a base queue that
   re-verifies the later epic against the earlier one.

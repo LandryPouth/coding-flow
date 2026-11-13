@@ -20,7 +20,9 @@ on a 14 GB WSL machine while `next dev` held 5.5 GB.
 - **How many at once is a machine setting**: `verify.maxConcurrent` in the
   user's global config (`~/.config/coding-flow/config.json`, the file 21-02
   also uses), not in the project. Default `auto`: 1 under WSL (detected from
-  `/proc/version`) or below 16 GB total memory, else 2. The lock becomes
+  `/proc/version`) or below 16 GB total memory, else 2 (the maintainer's
+  machines, documented as reference profiles); any value the user sets is
+  honoured, the memory gate still applies. The lock becomes
   that many slot files; the memory gate applies to each start.
 - Memory gate: before starting, `os.freemem()` (and on Linux
   `MemAvailable` from `/proc/meminfo`) must be ≥ `verify.minFreeMemoryMb` in

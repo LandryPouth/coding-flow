@@ -32,6 +32,9 @@
   processes under a chain cap alone; the maintainer's rule is two agents.
 - **Agents are per machine, chains per project**: the project knows how
   wide its trees are; only the machine knows its memory.
+- **The user's number wins, uncapped** (maintainer, 2026-11-13): agent count
+  is a performance choice, not a correctness one. Chains stay capped at 2
+  because they multiply merges to re-verify, whatever the machine.
 - **Identifiers are declared, not inferred**: a parser for every language's
   enums is not zero-dependency; the planner already reads the code it plans
   for and can list them in one line.

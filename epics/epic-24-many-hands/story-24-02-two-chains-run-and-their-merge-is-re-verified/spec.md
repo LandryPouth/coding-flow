@@ -26,8 +26,14 @@ nobody waits), two under WSL.
   config (`~/.config/coding-flow/config.json`, shared with 19-03 and 21-02),
   never in the project — the same repository runs on a laptop under WSL and
   on a Linux workstation. Default `auto`: 2 under WSL (`/proc/version`) or
-  below 16 GB total memory, else 4. Refused above 4 unless
-  `run.allowMoreAgents: true`. A machine-wide semaphore — slot files under
+  below 16 GB total memory, else 4 — the maintainer's machines, documented
+  in `docs/rules-and-limits.md` as reference profiles. Any positive integer
+  the user sets is honoured as is: the user knows their machine; no cap and
+  no allow flag. Safety does not rest on this number: the memory gate
+  (19-03) still guards every heavy verify, a usage limit pauses the run
+  (20-03), and `doctor` / `status` print the effective value and where it
+  came from (`auto: WSL detected → 2`, `user config → 6`). A machine-wide
+  semaphore — slot files under
   `$XDG_CACHE_HOME/coding-flow/agents/` (fallback `~/.cache/…`), each with
   pid, run id, epic, story, role, start time; a dead pid's slot is taken over
   and reported, the 19-03 rules. Every process a run spawns takes a slot for
@@ -67,8 +73,9 @@ nobody waits), two under WSL.
 
 ## Acceptance Criteria
 
-- [ ] Given `maxParallel: 3` without `allowMoreParallel`, or `maxAgents: 5`
-      without `allowMoreAgents`, then the run refuses.
+- [ ] Given `maxParallel: 3` without `allowMoreParallel`, then the run
+      refuses; given `maxAgents: 6` in the user config, then six slots exist
+      and `status` shows `user config → 6`.
 - [ ] Given `maxAgents: auto` under WSL, then 2 slots; on Linux with 32 GB,
       then 4; given `maxAgents` set in the project's `config.json`, then
       doctor warns that it is a machine setting and the project value is
