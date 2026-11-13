@@ -1,4 +1,5 @@
 # Story 13-04 — Tasks
+\n## Status: in-progress
 
 - [x] `policyGlobs` default and config read.
 - [x] Contrary signal + `## Policy Change` / `--policy-change`, tests first.
@@ -8,15 +9,16 @@
 
 `policy-changed` contrary signal (`bin/lib/policy-drift.js`), `policyGlobs` in `harness-config.js`, `## Policy Change` / `--policy-change` in `evaluateContrarySignals`; tests in `test/policy-changed.test.js`.
 
-Not marked done: no green verify of this story is on record. Its code
-(`2489e3b`) went straight to `develop`. A verify run on 2026-11-10 from
-`develop` came back NOT PROVEN and did not even measure this story. `develop`
-carries `branch.develop.codingFlowBase = 4c7280c`, a merge made *after*
-`2489e3b`, so the scope was the 98 files changed since then. The verdict came
-from `bin/lib/shell-writes.js`, the 15-02 stub missing from the lcov. All three
-validation commands passed (`.coding-flow/runs/2026-11-10T19-02-36-304Z-verify.json`).
-To prove this story, verify it with a base before `2489e3b` once 15-02 has
-filled `shell-writes.js`.
+Proven 2026-11-13: `ai-flow verify --story <this story> --base 72dabd5` passed,
+coverage **verified** (96.6 % of 6,749 added lines executed, min 80 %), scope 296
+files since `72dabd5`, the commit before `2489e3b`. The base is explicit because
+both the worktree fork point (`develop`) and `develop`'s recorded
+`codingFlowBase` (`4c7280c`) postdate the story's code (DOGFOODING 2026-11-10).
+The first run on that scope was NOT PROVEN by the size ratchet (`printHelp`
+105→106, `evaluateContrarySignals` 76→94); `1e05550` split both, behaviour
+unchanged. One warning remains: `policy-changed` on `.coding-flow/harness.json`,
+the story's own signal firing on the wide scope (13-03 and 13-06 changed that
+file), not a failure outside strict.
 
 ### Rollback Notes
 
