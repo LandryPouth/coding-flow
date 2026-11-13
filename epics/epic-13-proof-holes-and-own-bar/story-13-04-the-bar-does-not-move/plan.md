@@ -74,7 +74,8 @@
 
 - **Working-tree scope reads HEAD.** With no merge base the diff is the
   working tree against HEAD, so HEAD's `harness.json` is the bar, both for
-  `policyGlobs` and for `enforced`. No HEAD (no commit yet): defaults.
+  `policyGlobs` and for `enforced`. No commit yet: `policy-changed` is not
+  computed (no tree token), and `enforced` reads the working tree only.
 - **A byte-order mark is stripped** before the base `harness.json` is parsed,
   as `util.readJson` does.
 - **An unclosed `<!--` hides the rest of the section**, as rendered Markdown
@@ -88,3 +89,29 @@
   `baseBranch` set to the current branch, or `--base HEAD`, yields an empty
   diff and detects nothing. Earlier than this story; the base's source is
   recorded in the evidence (`diffBase.source`).
+
+## Decisions (third independent review, 2026-11-13 — FAIL, fixed)
+
+`failOnContrarySignals` was read at the base, but the risk that arms it was
+scored with the tree's config: emptying `highRiskPaths` in the same diff
+disarmed it. The risk is now scored with both configs and the higher wins
+(`contraryEnforced`, `bin/lib/coverage-gate.js`).
+
+### Inventory: every setting that decides whether `policy-changed` fails
+
+"Base" is `harness.json` at the merge base, or at HEAD in working-tree scope.
+
+| Setting | Decides | Read where | Why a diff cannot lower it |
+|---|---|---|---|
+| `mode` | `enforced` (strict) | base and tree, either `strict` wins | the base value holds whatever the diff writes |
+| `failOnContrarySignals` | `enforced` on high risk | base and tree, either `true` wins | same |
+| `highRiskPaths` | risk `high` (paths) | risk scored with the base's and with the tree's, higher wins | the base list still scores the diff |
+| `testGlobs` | risk `high` (structural git signals skip test files) | same | a diff that relabels `src/**` as tests is still scored with the base globs |
+| `ignoredPaths` | risk `high` (files ignored drop out of the scored diff) | same; `changedFilesForCoverage` takes the scope config | the base scope still sees the files |
+| `highRiskTerms` | story risk, capped at `medium` | tree | cannot reach `high`, so cannot arm `failOnContrarySignals` |
+| `policyGlobs` | which files trigger the signal | base only (plus the two `.coding-flow/` files, always) | the diff's own list is never read; the refactor claim passes its own union |
+| `## Policy Change` / `--policy-change` | lets an enforced signal pass | story text and flag | a declared reason is the design; empty or comment-only does not count |
+| diff base (`--base`, `baseBranch`, fork point) | what the diff is | flag, `config.json`, git config | out of scope below: recorded, not fixed |
+
+Every row holding "base" was pinned by a test in `test/policy-changed.test.js`
+that fails on the earlier code.

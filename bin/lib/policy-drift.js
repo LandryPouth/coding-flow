@@ -29,7 +29,7 @@ function readBaseHarness(base = currentDiffBase(cwd).mergeBase || "HEAD") {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    const parsed = JSON.parse(text.replace(/^﻿/, ""));
+    const parsed = JSON.parse(text.replace(/^\uFEFF/, ""));
 
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
   } catch {
@@ -42,7 +42,7 @@ function readBaseHarness(base = currentDiffBase(cwd).mergeBase || "HEAD") {
 // directly. A rename is its old path leaving, so renames are not paired. A
 // caller with its own list (the refactor claim) passes `globs`; otherwise the
 // list is the base's.
-function readPolicyChanged(config, { globs: own = null } = {}) {
+function readPolicyChanged({ globs: own = null } = {}) {
   const { mergeBase } = currentDiffBase(cwd);
   const atBase = readBaseHarness(mergeBase || "HEAD");
   const listed = own || (atBase && Array.isArray(atBase.policyGlobs) ? atBase.policyGlobs : defaultPolicyGlobs());

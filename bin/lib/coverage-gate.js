@@ -21,7 +21,7 @@ const { readStoryPart, readStoryBundle, extractSection } = require("./story");
 const { matchesPattern } = require("./util");
 const { criterionItems, readSpecDrift } = require("./spec-drift");
 const { readPolicyChanged, readBaseHarness } = require("./policy-drift");
-const { defaultHighRiskPaths, defaultNonBehaviorGlobs } = require("./harness-config");
+const { defaultHighRiskPaths, defaultNonBehaviorGlobs, defaultHarnessConfig } = require("./harness-config");
 
 // The default non-behavior entries that are also default high-risk paths: the
 // migration and `.sql` globs (story 13-01).
@@ -652,6 +652,30 @@ function mentionsPath(text, target) {
   return new RegExp(`(^|[^\\w./-])${escaped}($|[^\\w-]|\\.(?!\\w))`).test(text);
 }
 
+// The settings that decide whether the signals fail are read from both the base
+// (HEAD when there is no merge base) and the tree, and the stricter wins: a diff
+// cannot step down from strict, drop failOnContrarySignals, or lower the risk
+// that arms it — highRiskPaths, testGlobs (which hides structural signals) and
+// ignoredPaths (which hides files) all count at the base.
+const BASE_RISK_KEYS = ["highRiskPaths", "testGlobs", "ignoredPaths"];
+
+function contraryEnforced({ storyDir, config, policy }) {
+  const atBase = readBaseHarness();
+  const basePolicy = atBase ? contraryPolicy(atBase) : { strict: false, failOnContrarySignals: false };
+
+  if (policy.strict || basePolicy.strict) return true;
+  if (!policy.failOnContrarySignals && !basePolicy.failOnContrarySignals) return false;
+  if (scoreCombinedRisk({ storyDir, config }).level === "high") return true;
+  if (!atBase) return false;
+
+  const baseRisk = { ...defaultHarnessConfig() };
+  for (const key of BASE_RISK_KEYS) {
+    if (Array.isArray(atBase[key])) baseRisk[key] = atBase[key];
+  }
+
+  return scoreDiffRisk(changedFilesForCoverage(cwd, baseRisk), baseRisk).level === "high";
+}
+
 function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null, policyChange = null }) {
   const policy = contraryPolicy(config);
   const weakening = currentTreeToken(cwd) ? scanTestWeakening(config) : { findings: [] };
@@ -675,7 +699,7 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
   const storySection = (title) => extractSection(Object.values(readStoryBundle(storyDir || "")).join("\n\n"), title);
   const specChange = storySection("Spec Change");
 
-  const policyChanged = currentTreeToken(cwd) ? readPolicyChanged(config) : [];
+  const policyChanged = currentTreeToken(cwd) ? readPolicyChanged() : [];
   // A template's `<!-- why -->` placeholder is not a reason; an unclosed one
   // hides everything after it, as it would in rendered Markdown.
   const policySection = storySection("Policy Change").replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim();
@@ -692,11 +716,7 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     return NO_CONTRARY;
   }
 
-  // The mode the base held counts too: a diff cannot step down from strict.
-  const atBase = readBaseHarness();
-  const strict = policy.strict || Boolean(atBase && contraryPolicy(atBase).strict);
-  const failOn = policy.failOnContrarySignals || Boolean(atBase && contraryPolicy(atBase).failOnContrarySignals);
-  const enforced = strict || (failOn && scoreCombinedRisk({ storyDir, config }).level === "high");
+  const enforced = contraryEnforced({ storyDir, config, policy });
   const drift = criteriaChanged.length > 0 || specInDiff;
   const failures = enforced
     ? contraryFailures({ deletedTests, openCriteria, criteriaChanged, specInDiff, specChange, policyChanged, declaredPolicy })

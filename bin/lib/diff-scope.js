@@ -175,8 +175,9 @@ function filterScopedFiles(files, config) {
 
 // Everything this branch contributes, not just what is uncommitted: a story whose
 // tests are already committed must not read as "no test changed". Falls back to
-// the working tree when there is no base to compare against.
-function changedFilesForCoverage(root = cwd) {
+// the working tree when there is no base to compare against. `scope` is the
+// harness config whose `ignoredPaths` apply (the working one by default).
+function changedFilesForCoverage(root = cwd, scope = null) {
   const files = new Set();
   const { mergeBase } = currentDiffBase(root);
 
@@ -196,7 +197,7 @@ function changedFilesForCoverage(root = cwd) {
     files.add(file);
   }
 
-  return filterScopedFiles([...files].map(normalizePortable), readHarnessConfig(root).config).sort();
+  return filterScopedFiles([...files].map(normalizePortable), scope || readHarnessConfig(root).config).sort();
 }
 
 // The lines this change ADDED, per file. Only added lines: a deleted line has no

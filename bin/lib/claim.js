@@ -475,7 +475,7 @@ function scopeFailures(config, { behaviorFiles, excluded }) {
   // The defaults always apply: `policyGlobs: []` written in the same diff would
   // otherwise switch this check off from inside the change it checks.
   const policyGlobs = [...new Set([...defaultPolicyGlobs(), ...TEST_RUNNER_GLOBS, ...(config.policyGlobs || [])])];
-  const policy = readPolicyChanged(config, { globs: policyGlobs });
+  const policy = readPolicyChanged({ globs: policyGlobs });
 
   if (policy.length > 0) {
     failures.push({

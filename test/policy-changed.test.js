@@ -39,7 +39,7 @@ function write(dir, file, content) {
 
 function editJson(dir, file, change) {
   const target = path.join(dir, file);
-  const json = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8').replace(/^﻿/, '')) : {};
+  const json = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8').replace(/^\uFEFF/, '')) : {};
   fs.writeFileSync(target, JSON.stringify(change(json), null, 2));
 }
 
@@ -53,7 +53,7 @@ function repo(t, prefix, { strict = false, storyExtra = '', harness = {}, bom = 
   editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, ...(strict ? { mode: 'strict' } : {}), ...harness }));
   if (bom) {
     const file = path.join(dir, '.coding-flow/harness.json');
-    fs.writeFileSync(file, `﻿${fs.readFileSync(file, 'utf8')}`);
+    fs.writeFileSync(file, `\uFEFF${fs.readFileSync(file, 'utf8')}`);
   }
 
   write(dir, `${STORY}/spec.md`, '# Widget\n\n## Acceptance Criteria\n\n- [x] Given X then Y\n');
@@ -269,4 +269,50 @@ test('strict: an unclosed comment in Policy Change gives no reason', (t) => {
   assert.equal(res.code, 1, res.output);
   assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
   assert.equal(res.json.contrary.policyChange, undefined);
+});
+
+// failOnContrarySignals enforces only when the risk is high, and the risk is
+// read from highRiskPaths, testGlobs and ignoredPaths: none of them may be
+// lowered by the diff it judges.
+const FAIL_ON_SRC = { failOnContrarySignals: true, highRiskPaths: ['src/**'] };
+
+test('failOn at the base: a policy change on a high-risk diff fails', (t) => {
+  const dir = repo(t, 'pc-failon', { harness: FAIL_ON_SRC });
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('failOn at the base: emptying highRiskPaths in the diff still fails', (t) => {
+  const dir = repo(t, 'pc-riskpaths', { harness: FAIL_ON_SRC });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, highRiskPaths: [] }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('failOn at the base: ignoring the high-risk paths in the diff still fails', (t) => {
+  const dir = repo(t, 'pc-ignored', { harness: FAIL_ON_SRC });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, ignoredPaths: ['src/**'] }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('failOn at the base: calling an unguarded git merge a test file in the diff still fails', (t) => {
+  // An unguarded git(…, ["merge"]) is a structural high-risk signal outside test files.
+  const dir = repo(t, 'pc-testglobs', { harness: { failOnContrarySignals: true } });
+  write(dir, 'src/land.js', 'git(root, ["merge", "feature"]);\n');
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, testGlobs: ['src/**'] }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
 });
