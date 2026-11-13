@@ -172,7 +172,7 @@ function resolveDiffBase(cwd, { story = null, flagBase = null, ignoreForkPoint =
 
       if (count > 0) {
         throw new Error(
-          `--base "${flagBase}" is HEAD itself: this branch has ${count} commit(s) of its own since ` +
+          `--base "${flagBase}" is HEAD itself: ${branch ? "this branch" : "this checkout"} has ${count} commit(s) of its own since ` +
             `${base.ref}, and the diff would hide them all. Pass --base ${base.ref} (or omit --base).`,
         );
       }

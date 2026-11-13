@@ -390,13 +390,14 @@ function planStaging(root, config, branch, { all }) {
   }
 
   let base = null;
+  let refused = "";
   try {
     base = resolveDiffBase(root, { story: found.story.path });
-  } catch {
-    base = null;
+  } catch (error) {
+    refused = ` (${error.message})`;
   }
   if (!base || !base.mergeBase) {
-    return { ...everything("no base"), warning: "no base to measure the story's scope from — committing the whole dirty tree." };
+    return { ...everything("no base"), warning: `no base to measure the story's scope from${refused} — committing the whole dirty tree.` };
   }
 
   const touched = git(root, ["diff", "--name-only", "--no-renames", "-z", `${base.mergeBase}..HEAD`], { allowFail: true })

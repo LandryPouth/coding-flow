@@ -66,6 +66,8 @@ repositories.)*
   `--base HEAD` on `develop`, on a configured `trunk` ahead of a stale `main`,
   or on a story with no commits of its own still verifies the uncommitted
   work.
+- **A detached checkout** with commits its base lacks is treated as a
+  non-base branch: `--base HEAD` there is refused ("this checkout has …").
 - **Out of scope** (recorded, not fixed):
   - a `baseBranch` naming another ref that points at HEAD (a tag, an alias
     branch) is honoured: it cannot be told apart from a story sitting fresh
