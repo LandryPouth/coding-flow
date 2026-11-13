@@ -266,4 +266,6 @@ Before them: finish epic 15, then 16 (story 16-01's `Assumption
 - ~~Confirm or veto the labeled defaults~~ — **confirmed 2026-11-12**: 2
   attempts per story, **50-minute** limit per agent process (raised from 45),
   budget caps required in config (no default spend), parallelism 1 (cap 2),
-  1 retry of a failed command in driven runs.
+  1 retry of a failed command in driven runs. **Changed 2026-11-13**:
+  parallelism defaults to 2 once parallel chains ship (24-02), so errors
+  between chains surface early; still capped at 2 chains and 2 agents.

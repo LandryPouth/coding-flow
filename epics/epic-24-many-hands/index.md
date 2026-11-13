@@ -39,7 +39,7 @@ the project's policy is told apart from one person's preferences.
   break, declared env files copied, servers started from the worktree stopped
   on remove, land-when-clean, an epic landed from one worktree, the project's
   branch-name policy honoured.
-- `run.maxParallel` (default 1, the maintainer's cap 2) with a merge queue:
+- `run.maxParallel` (default 2, the maintainer's cap 2) with a merge queue:
   integrating a chain re-verifies the merged tree and reviews the crossing.
   Chains include branches after a branch point, not only independent roots.
 - `run.maxAgents` (cap 2): machine-wide agent slots shared by every run.
@@ -126,8 +126,9 @@ verify queue), epic 18 s2 (proof survives the land), epic 22 s1
 s1 → s2 → s7 are delivered right after epic 20, before epic 21: they need
 only epics 18, 19 and 20, and until they ship the native run is a chain
 while the maintainer runs two at a time by hand. s3–s6 (team mode) stay
-last. `maxParallel` and `maxAgents` ship at 1 and 2; raising `maxParallel`
-to 2 is the maintainer's choice per project.
+last. `maxParallel` and `maxAgents` both ship at 2 (maintainer, 2026-11-13:
+running two at once by default surfaces cross-chain errors early); a
+project sets `maxParallel: 1` to opt out.
 
 ## Risks
 
@@ -147,8 +148,9 @@ to 2 is the maintainer's choice per project.
   twice as much for one person to read. Caps per run stay required (20-06);
   `REPORT.md` per epic.
 - **Unmeasured until epic 21.** Delivering before `insights` means the first
-  parallel runs are judged on the journal (epic 18), not on dashboards; the
-  default stays 1 until the maintainer opts in.
+  parallel runs are judged on the journal (epic 18), not on dashboards. The
+  default is 2 anyway, by choice: errors between chains show up early, while
+  the merged verify and crossing review still guard each integration.
 - **Uncounted agents.** Interactive sessions and other tools on the machine
   take no slot; the cap is the tool's, not the machine's.
 

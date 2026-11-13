@@ -568,6 +568,7 @@ is ordered judge first, engine second, learning last.
 
 **Refused in the same decision**: a "dark factory" (no human review of what
 ships), self-modifying rules, swarms of more parallel agents than the judge
-can keep honest (default 1, the maintainer's cap 2), always-loaded memory
+can keep honest (default 2 once parallel chains ship, cap 2 — changed from 1 by the
+maintainer on 2026-11-13), always-loaded memory
 files beyond short non-standard conventions, and a resident daemon (entry 2
 still stands; the driver is a process per run, not a service).

@@ -50,7 +50,8 @@ epic-wide review and one report the maintainer reads instead of every story.
 **Out of scope**
 
 - Parallel chains and merge re-verification (epic 24 s2), parallel epics
-  (epic 24 s7); default parallelism is 1. Those stories are delivered right
+  (epic 24 s7); this epic runs chains one at a time. Once 24-02 ships,
+  the default is 2 (maintainer, 2026-11-13). Those stories are delivered right
   after this epic, before epic 21 (see epic 24 *Delivery order*). Every
   process this epic spawns is already a leaf: driven agents never spawn
   sub-agents (20-01), so 24-02 can count agents in one place.
@@ -125,7 +126,9 @@ module), so there is no tree.
 
 `ready`. Defaults confirmed by the maintainer on 2026-11-12: 2 attempts;
 per-process wall-clock limit **50 minutes** (raised from the proposed 45);
-caps required in config (no default spend); parallelism 1 (cap 2); 1 retry of
+caps required in config (no default spend); parallelism 1 (cap 2) — raised
+to **2 by default** on 2026-11-13 for when 24-02 ships, so cross-chain
+errors surface early; 1 retry of
 a failed command in driven runs. The exact `claude` flag set is verified on the installed version
 inside 20-01 (a stop condition if `dontAsk` + guard denial cannot be proven
 headless).

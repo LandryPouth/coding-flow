@@ -41,10 +41,10 @@ for a slot; priority on a freed slot.
 
 ## Acceptance Traceability
 
-- 1–3 → `test/run.test.js::parallel`
-- 4–5 → `test/agent-slots.test.js`
-- 6 → `test/run.test.js::serial paths`
-- 7–9 → `test/merge-queue.test.js`
+- 1–4 → `test/run.test.js::parallel`
+- 5–6 → `test/agent-slots.test.js`
+- 7 → `test/run.test.js::serial paths`
+- 8–10 → `test/merge-queue.test.js`
 
 ## Commands
 

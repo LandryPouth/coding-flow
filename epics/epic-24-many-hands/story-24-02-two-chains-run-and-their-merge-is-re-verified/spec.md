@@ -2,7 +2,7 @@
 
 ## User Value
 
-`run.maxParallel: 2` lets two independent chains of an epic run at once; when
+`run.maxParallel` (2 by default) lets two independent chains of an epic run at once; when
 each finishes, a local merge queue integrates them one at a time, re-runs
 verify on the merged tree and has an independent reviewer look at the files
 both chains touched — so the conflicts parallel work moves to the merge
@@ -17,7 +17,8 @@ Whatever runs, the machine never holds more than two agent processes.
   are two chains). A branch chain is startable once its parent story is
   `done` and landed on the epic branch; its worktree forks from the epic
   branch at that commit, never from the parent's worktree.
-- **Chain cap**: `run.maxParallel` default 1, refused above 2 unless
+- **Chain cap**: `run.maxParallel` default 2 (maintainer, 2026-11-13: errors
+  between chains surface early), `1` opts out, refused above 2 unless
   `run.allowMoreParallel: true` (the maintainer's cap is 2).
 - **Agent cap**: `run.maxAgents` default 2, refused above 2 unless
   `run.allowMoreParallel: true`. A machine-wide semaphore — slot files under
@@ -56,6 +57,8 @@ Whatever runs, the machine never holds more than two agent processes.
 
 - [ ] Given `maxParallel: 3` or `maxAgents: 3` without the allow flag, then
       the run refuses.
+- [ ] Given no `maxParallel` in config and two startable chains, then both
+      run; given `maxParallel: 1`, then they run one after the other.
 - [ ] Given two independent roots, then both chains start and run in separate
       worktrees.
 - [ ] Given a tree `s1 ├── s2 / └── s3`, when `s1` is done and landed, then
