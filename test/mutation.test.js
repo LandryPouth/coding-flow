@@ -420,3 +420,23 @@ test('a mutant decided while a detached grandchild holds the pipes is not a time
 
   assert.deepStrictEqual(report.mutants.map((m) => m.status), ['survived']);
 });
+
+test('a diff that steps down from strict at the base still fails on its survivors', (t) => {
+  const dir = project(t, 'mutation-step-down');
+  const settings = { mutation: { command: 'node --test {files}', maxMutants: 5 } };
+  git(dir, ['checkout', '-q', 'main']);
+  harness(dir, { mode: 'strict', ...settings });
+  git(dir, ['add', '-f', '.coding-flow/harness.json']);
+  git(dir, ['commit', '-q', '-m', 'strict policy']);
+  git(dir, ['checkout', '-q', 'feat']);
+  git(dir, ['merge', '-q', '--no-edit', 'main']);
+  harness(dir, { mode: 'standard', ...settings });
+
+  const { code, output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, true, output);
+  assert.equal(evidence.mutation.survived.length, 1, output);
+  assert.equal(evidence.mutation.enforced, true, output);
+  assert.equal(evidence.mutation.ok, false, output);
+  assert.notEqual(code, 0, output);
+});

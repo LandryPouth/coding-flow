@@ -27,6 +27,7 @@ const { currentTreeToken } = require("./identity");
 const { readStoryBundle, extractSection } = require("./story");
 const { scoreCombinedRisk } = require("./risk");
 const { resolveClaim } = require("./claim");
+const { contraryPolicy, contraryEnforced } = require("./coverage-gate");
 
 const PROBE = path.join(__dirname, "..", "..", "scripts", "mutation-probe.js");
 const DEFAULT_MAX_MUTANTS = 20;
@@ -203,11 +204,14 @@ function evaluateMutation({ storyDir, config, claim = null }) {
 
   const risk = scoreCombinedRisk({ storyDir, config }).level;
   const kind = (resolveClaim({ storyDir, flagClaim: claim }) || {}).kind;
-  const enforced = config.mode === "strict" || (config.failOnContrarySignals === true && risk === "high");
 
   if (risk !== "high" && kind !== "refactor") {
     return { ran: false, skipped: true, ok: true, reason: `risk is ${risk} and no refactor claim` };
   }
+
+  // As for the other contrary signals (story 13-04): the stricter of the base
+  // and the tree decides, so a diff cannot step down to silence its survivors.
+  const enforced = contraryEnforced({ storyDir, config, policy: contraryPolicy(config) });
 
   const base = currentDiffBase(cwd).mergeBase;
   const why = notExaminedBecause(settings, base, config);

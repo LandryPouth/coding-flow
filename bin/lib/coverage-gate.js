@@ -791,5 +791,6 @@ module.exports = {
   freshTestsRequired,
   NO_CONTRARY,
   contraryPolicy,
+  contraryEnforced,
   evaluateContrarySignals,
 };

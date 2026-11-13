@@ -22,10 +22,11 @@
   lower `ok` only where `deleted-tests` and the others do: `mode: strict`, or
   `failOnContrarySignals` on a high-risk diff. Elsewhere they are listed as a
   warning (`with warnings (1 mutant(s) survived)`). Opting in to the probe is
-  not opting in to strictness. Computed from the working config, as the other
-  signals are on this branch; 13-04 (in flight) moves `enforced` to the base's
-  config. Kept on the working config here for consistency (review 1); the
-  alignment with 13-04's base read is done when the two land together.
+  not opting in to strictness. `enforced` is 13-04's `contraryEnforced`,
+  reused after 13-04 merged: mode and `failOnContrarySignals` at the stricter
+  of the base and the tree, risk at the higher of the two configs, so a diff
+  that steps down from strict still fails on its survivors. Whether the probe
+  is triggered at all still reads the tree's risk only.
 - **No answer is not a pass (review 1, P1).** `ran: false`, "not examined",
   when the probe decided no mutant (no site in the diff's committed JS/TS
   lines — a non-JS project included — or every mutant timed out, failed to

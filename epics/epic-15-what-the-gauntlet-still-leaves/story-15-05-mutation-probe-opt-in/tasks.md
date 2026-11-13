@@ -1,6 +1,6 @@
 # Story 15-05 — Tasks
 
-## Status: done
+## Status: in-progress
 
 - [x] Confirm 15-04's verdict is go; otherwise close this story.
 - [x] Tests first; module from the probe script; signal; exemption.
