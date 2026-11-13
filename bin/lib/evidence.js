@@ -61,6 +61,7 @@ const {
 const { evaluateClaim } = require("./claim");
 const { runRedAtBase } = require("./red-at-base");
 const { evaluateComplexity } = require("./complexity");
+const { evaluateMutation } = require("./mutation");
 
 function buildHarnessPreflight({ story = null } = {}) {
   const { config, exists } = readHarnessConfig();
@@ -423,6 +424,16 @@ function evaluateClaimFor({ refused, storyDir, config, claim, resolution, comman
     });
 }
 
+// The proofs a run is asked for beyond the suite: red-at-base on request, the
+// mutation probe when the project opted in (it decides itself whether the diff
+// triggers it). The probe needs a green suite to mutate against.
+function extraProofs({ redAtBase, refused, cleaned, commandsOk, skipCoverage, storyDir, config, claim }) {
+  return {
+    red: redAtBase && !refused ? runRedAtBase({ config, ...(cleaned ? { env: cleaned.env } : {}) }) : null,
+    mutation: commandsOk && !skipCoverage && !refused ? evaluateMutation({ storyDir, config, claim }) : null,
+  };
+}
+
 function verifyStoryOnce({
   story = null,
   exemption = null,
@@ -472,7 +483,7 @@ function verifyStoryOnce({
   const contrary = commandsOk && !skipCoverage
     ? evaluateContrarySignals({ storyDir, config, exemption, criteria: acceptanceCriteria, policyChange })
     : NO_CONTRARY;
-  const red = redAtBase && !refused ? runRedAtBase({ config, ...(cleaned ? { env: cleaned.env } : {}) }) : null;
+  const { red, mutation } = extraProofs({ redAtBase, refused, cleaned, commandsOk, skipCoverage, storyDir, config, claim });
   // A claim narrows the green: the commands passing is not yet "behavior held".
   // Evaluated even on a red suite so the evidence says which promise failed;
   // a refused run executed nothing and makes no claim.
@@ -507,8 +518,8 @@ function verifyStoryOnce({
     // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
     contraryPolicy: contraryPolicy(config),
     contrary,
-    ...(claimResult ? { claim: claimResult } : {}), ...(red ? { redAtBase: red } : {}), ...(complexity ? { complexity } : {}),
-    ok: commandsOk && coverage.ok && contrary.ok && (!claimResult || claimResult.ok) && (!red || red.ok) && (!complexity || complexity.ok),
+    ...(claimResult ? { claim: claimResult } : {}), ...(red ? { redAtBase: red } : {}), ...(complexity ? { complexity } : {}), ...(mutation ? { mutation } : {}),
+    ok: commandsOk && coverage.ok && contrary.ok && [claimResult, red, complexity, mutation].every((proof) => !proof || proof.ok),
     results,
   };
 }

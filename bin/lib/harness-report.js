@@ -74,6 +74,10 @@ function printFailedProofs(evidence) {
   if (evidence.complexity && !evidence.complexity.ok) {
     printComplexity(evidence.complexity);
   }
+
+  if (evidence.mutation && !evidence.mutation.ok) {
+    printMutation(evidence.mutation);
+  }
 }
 
 // Why a run whose commands, coverage and contrary signals held is still not a
@@ -81,6 +85,12 @@ function printFailedProofs(evidence) {
 function notProvenBecause(evidence) {
   if (evidence.redAtBase && !evidence.redAtBase.ok) {
     return "the fix is not proven";
+  }
+
+  if (evidence.mutation && !evidence.mutation.ok) {
+    return evidence.mutation.ran
+      ? `${evidence.mutation.unexcused.length} mutant(s) survived the tests (mutation probe)`
+      : "the mutation probe did not run";
   }
 
   if (!evidence.complexity || evidence.complexity.ok) {
@@ -130,6 +140,36 @@ function printComplexity(complexity) {
   }
 }
 
+// The mutation probe (story 15-05): what it killed, each survivor by
+// `file:line`, and the limits, every time it ran. A quiet skip prints nothing.
+function printMutation(mutation) {
+  if (!mutation || mutation.skipped) {
+    return;
+  }
+
+  const verdict = mutation.ok ? "warning" : "FAILED (strict)";
+
+  if (!mutation.ran) {
+    log(`  Mutation: ${verdict} — ${mutation.reason}.`);
+    return;
+  }
+
+  const apart = Object.entries(mutation.apart).filter(([, count]) => count > 0).map(([name, count]) => `${count} ${name}`);
+  log(`  Mutation: ${mutation.killed} killed, ${mutation.survived.length} survived` +
+    `${apart.length > 0 ? ` (apart: ${apart.join(", ")})` : ""} — ${mutation.survived.length > 0 ? verdict : "ok"}, heuristic.`);
+
+  for (const { file, line, operator } of mutation.survived) {
+    const excused = !mutation.unexcused.includes(`${file}:${line}`);
+    log(`    ${file}:${line}  ${operator}${excused ? "  (Mutation Exemption)" : ""}`);
+  }
+
+  if (mutation.exemption) {
+    log(`    Mutation Exemption: "${mutation.exemption.split(/\r?\n/)[0]}"`);
+  }
+
+  log(`    Limits: ${mutation.limits}`);
+}
+
 // The fix-specific proof: what ran, where, and why it did or did not hold.
 // Printed on success too — the point of the flag is that the negative evidence
 // becomes a recorded fact, not a sentence the author wrote.
@@ -162,7 +202,9 @@ function printRedAtBase(red) {
 // A verify that held: the coverage rung it reached, then everything that still
 // deserves a look (weakened tests, open criteria, warnings), and the claims.
 function printPassed(evidence, coverage, contrary) {
-  const warnings = [describeNotExamined(evidence.results), describeContraryWarnings(contrary), describeGrew(evidence.complexity)]
+  const survivors = evidence.mutation && evidence.mutation.ran ? evidence.mutation.unexcused.length : 0;
+  const warnings = [describeNotExamined(evidence.results), describeContraryWarnings(contrary), describeGrew(evidence.complexity),
+    survivors > 0 ? `${survivors} mutant(s) survived` : "", evidence.mutation && evidence.mutation.ran === false && !evidence.mutation.skipped ? "mutation not examined" : ""]
     .filter(Boolean).join(", ");
   log(warnings
     ? `Harness verify passed, with warnings (${warnings}): ${evidence.results.length} command(s).`
@@ -197,6 +239,7 @@ function printPassed(evidence, coverage, contrary) {
   printWeakenedTests(coverage);
   printRedAtBase(evidence.redAtBase);
   printComplexity(evidence.complexity);
+  printMutation(evidence.mutation);
   printOpenCriteria(evidence);
   printContraryFailures(contrary);
   printClaimHeld(evidence.claim);

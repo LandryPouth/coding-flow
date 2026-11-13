@@ -19,6 +19,7 @@
   },
   "files": [
     "bin",
+    "scripts/mutation-probe.js",
     "templates",
     "README.md",
     "CHANGELOG.md",
