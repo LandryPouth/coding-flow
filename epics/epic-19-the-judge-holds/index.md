@@ -51,7 +51,7 @@ make the judge pass by editing the tests it is judged by.
 - Quarantining a test automatically (a proposal for the maintainer, epic 23).
 - Any change to the coverage gate's thresholds.
 - Browser automation; the `browser` tier is a declared checklist the agent
-  fills, judged by its presence.
+  fills, judged by its presence. Epic 25 makes it run.
 
 ## Backbone
 

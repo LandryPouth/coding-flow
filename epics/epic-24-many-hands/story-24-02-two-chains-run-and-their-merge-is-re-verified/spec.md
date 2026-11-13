@@ -7,7 +7,9 @@ each finishes, a local merge queue integrates them one at a time, re-runs
 verify on the merged tree and has an independent reviewer look at the files
 both chains touched — so the conflicts parallel work moves to the merge
 (bethl epics 37/38 collided on shared files) are caught before they count.
-Whatever runs, the machine never holds more than two agent processes.
+Whatever runs, the machine never holds more agent processes than it can
+carry: four on a machine with room (two chains, each with its reviewer, so
+nobody waits), two under WSL.
 
 ## Requirements
 
@@ -20,8 +22,12 @@ Whatever runs, the machine never holds more than two agent processes.
 - **Chain cap**: `run.maxParallel` default 2 (maintainer, 2026-11-13: errors
   between chains surface early), `1` opts out, refused above 2 unless
   `run.allowMoreParallel: true` (the maintainer's cap is 2).
-- **Agent cap**: `run.maxAgents` default 2, refused above 2 unless
-  `run.allowMoreParallel: true`. A machine-wide semaphore — slot files under
+- **Agent cap is a machine setting**: `run.maxAgents` in the user's global
+  config (`~/.config/coding-flow/config.json`, shared with 19-03 and 21-02),
+  never in the project — the same repository runs on a laptop under WSL and
+  on a Linux workstation. Default `auto`: 2 under WSL (`/proc/version`) or
+  below 16 GB total memory, else 4. Refused above 4 unless
+  `run.allowMoreAgents: true`. A machine-wide semaphore — slot files under
   `$XDG_CACHE_HOME/coding-flow/agents/` (fallback `~/.cache/…`), each with
   pid, run id, epic, story, role, start time; a dead pid's slot is taken over
   and reported, the 19-03 rules. Every process a run spawns takes a slot for
@@ -33,8 +39,14 @@ Whatever runs, the machine never holds more than two agent processes.
   (crossing review, fix pass, reviewer), then to a new implementation — the
   queue drains before it grows.
 - **Overlap check before a second chain starts**: compare the two chains'
-  remaining stories' declared *Likely files* and the paths the running chain
-  already changed. A shared path listed in `run.serialPaths` (default:
+  remaining stories' declared *Likely files* and *Shared identifiers*, and
+  the paths the running chain already changed. *Shared identifiers* is a new
+  line `/flow-plan` writes in each plan's Implementation Context: the enum
+  members, models/fields, routes, events and config keys the story creates,
+  renames or removes (bethl DOGFOODING 2026-08-30: two stories sharing no
+  file pushed one enum value in opposite directions). A shared identifier is
+  treated like a shared file: allowed, pre-flagged for the crossing review,
+  and named in the run report. A shared path listed in `run.serialPaths` (default:
   migration directories, schema files, lockfiles, generated clients) makes
   the second chain wait until the first has integrated; any other shared
   path is allowed and pre-flagged for the crossing review. Recorded as event
@@ -55,16 +67,24 @@ Whatever runs, the machine never holds more than two agent processes.
 
 ## Acceptance Criteria
 
-- [ ] Given `maxParallel: 3` or `maxAgents: 3` without the allow flag, then
-      the run refuses.
+- [ ] Given `maxParallel: 3` without `allowMoreParallel`, or `maxAgents: 5`
+      without `allowMoreAgents`, then the run refuses.
+- [ ] Given `maxAgents: auto` under WSL, then 2 slots; on Linux with 32 GB,
+      then 4; given `maxAgents` set in the project's `config.json`, then
+      doctor warns that it is a machine setting and the project value is
+      ignored.
 - [ ] Given no `maxParallel` in config and two startable chains, then both
       run; given `maxParallel: 1`, then they run one after the other.
 - [ ] Given two independent roots, then both chains start and run in separate
       worktrees.
 - [ ] Given a tree `s1 ├── s2 / └── s3`, when `s1` is done and landed, then
       `s2` and `s3` start as two chains forked from the epic branch.
-- [ ] Given two running chains and one more process to start (a reviewer),
-      then it waits for a slot and never makes three live agent processes.
+- [ ] Given `maxAgents: 2`, two running chains and one more process to
+      start (a reviewer), then it waits for a slot and never makes three live
+      agent processes.
+- [ ] Given two chains whose plans list the same shared identifier and no
+      common file, then the crossing review runs on the files that name it
+      and the run report lists it.
 - [ ] Given a crossing review and a new implementation both waiting, when a
       slot frees, then the crossing review takes it.
 - [ ] Given two chains whose likely files share a path in `run.serialPaths`,
@@ -83,8 +103,7 @@ Whatever runs, the machine never holds more than two agent processes.
 - Driver crash mid-queue: resume (20-06) restarts the integration from
   scratch; slots held by the dead driver's children are taken over once
   their pids are dead.
-- Two stories sharing no file but one value (an enum member born in one,
-  declared dead in the other — bethl DOGFOODING 2026-08-30): the overlap
+- A shared value the plans did not list as a shared identifier: the overlap
   check cannot see it; the merged verify and the crossing review are the net.
   Recorded as a known limit, not hidden.
 - An interactive Claude session on the same machine takes no slot: the cap

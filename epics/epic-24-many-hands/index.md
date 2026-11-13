@@ -5,7 +5,7 @@
 The factory works with more than one chain, one machine and one person:
 worktrees are ready to run and leave nothing behind; two independent chains
 run at once and their merge is re-verified before it counts, never with more
-than two agent processes on the machine; two epics share the machine when
+agent processes than the machine carries (4 with room, 2 under WSL); two epics share the machine when
 nothing forbids it and land one after the other; locks are seen
 across machines; a team lands through pull requests; verify can run on a
 runner the team trusts; a question reaches the person who owns its topic; and
@@ -42,7 +42,9 @@ the project's policy is told apart from one person's preferences.
 - `run.maxParallel` (default 2, the maintainer's cap 2) with a merge queue:
   integrating a chain re-verifies the merged tree and reviews the crossing.
   Chains include branches after a branch point, not only independent roots.
-- `run.maxAgents` (cap 2): machine-wide agent slots shared by every run.
+- `run.maxAgents` (machine setting, `auto` = 4, or 2 under WSL / < 16 GB;
+  cap 4): machine-wide agent slots shared by every run.
+- *Shared identifiers* declared in plans and compared like files.
 - Two epics at once: epic dependencies, overlap check, a base queue that
   re-verifies the later epic against the earlier one.
 - Locks as git refs shared through the remote.
@@ -101,8 +103,9 @@ releases s3's shared locks. s5 (CI runner and evidence re-check) and s6
   and an independent review of the files both chains touched. A red merge
   parks the later chain, never the earlier.
 - **Two caps**: chains (`maxParallel`) bound what must be re-merged; agent
-  slots (`maxAgents`) bound the machine and the spend. A chain cap alone
-  allows four processes (two chains, a reviewer each).
+  slots (`maxAgents`) bound the machine and the spend. Four slots let two
+  chains each keep a reviewer running without waiting; two slots (WSL)
+  serialise reviewers. Agents are per machine, chains per project.
 - **Serial paths wait**: migrations, schema files, lockfiles and generated
   clients conflict by construction, so two chains or epics touching them
   never run at once; other shared files are reviewed at the merge.
@@ -126,9 +129,10 @@ verify queue), epic 18 s2 (proof survives the land), epic 22 s1
 s1 → s2 → s7 are delivered right after epic 20, before epic 21: they need
 only epics 18, 19 and 20, and until they ship the native run is a chain
 while the maintainer runs two at a time by hand. s3–s6 (team mode) stay
-last. `maxParallel` and `maxAgents` both ship at 2 (maintainer, 2026-11-13:
-running two at once by default surfaces cross-chain errors early); a
-project sets `maxParallel: 1` to opt out.
+last. `maxParallel` ships at 2 (maintainer, 2026-11-13: running two at once
+by default surfaces cross-chain errors early; a project sets 1 to opt out);
+`maxAgents` is `auto` per machine (4, or 2 under WSL; maintainer,
+2026-11-13).
 
 ## Risks
 
@@ -144,6 +148,8 @@ project sets `maxParallel: 1` to opt out.
 - **Shared runtime.** One dev database, ports, memory (bethl: exit 143 with
   `next dev` at 5.5 GB). Mitigation: serial migrations, one heavy verify per
   machine (19-03), `serve` ports; the data itself is still shared.
+- **Usage limits.** Four agents on one subscription reach the account's
+  window quickly; 20-03 pauses the whole run instead of burning attempts.
 - **Spend and review load double.** Two agents spend twice as fast and land
   twice as much for one person to read. Caps per run stay required (20-06);
   `REPORT.md` per epic.

@@ -23,6 +23,15 @@ dependents are skipped. The research is explicit: more retries raise cheating
   `run.stallMin` (default 10) → treated as a timeout.
 - A verify that ends as a tool error (machine busy, 19-03) does not consume an
   attempt; the driver waits and re-verifies.
+- **Usage limits are not failures.** A process that ends on the account's
+  usage or rate limit (subscription window, HTTP 429, overloaded — the exact
+  signals read from the installed `claude`'s JSON output inside this story,
+  a stop condition if they cannot be told apart) consumes no attempt: the
+  run pauses (`run.paused`, reason, reset time when given, else backoff 5 →
+  60 min), starts no new process in any chain, and resumes the interrupted
+  phase from its beginning when the window reopens. The pause survives a
+  crash (state file, 20-06). `run.pauseMaxHours` (default 6) ends the run as
+  `paused` with the resume command, never as `blocked`.
 - After the last red attempt: the story's `tasks.md` gets `## Status:
   blocked` (written by the CLI) with the failing tests; dependents are
   `skipped` in the run report.
@@ -38,6 +47,11 @@ dependents are skipped. The research is explicit: more retries raise cheating
       counts.
 - [ ] Given two red attempts, then the story is `blocked` by the CLI with the
       failing tests and no third attempt starts.
+- [ ] Given a stub that exits on a usage limit with a reset time, then no
+      attempt is counted, no other process starts before the reset, and the
+      phase restarts after it.
+- [ ] Given a usage limit lasting past `run.pauseMaxHours`, then the run ends
+      `paused` with the resume command and the story is not `blocked`.
 - [ ] Given a `machine busy` tool error, then no attempt is consumed.
 
 ## Edge Cases

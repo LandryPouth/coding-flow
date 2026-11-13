@@ -5,7 +5,7 @@
 The maintainer starts a second `ai-flow run --epic` while the first is still
 running, and the tool decides whether they can share the machine: an epic
 that depends on the other, or that would touch the same migrations, waits
-with a reason; otherwise both run inside the same two agent slots, and the
+with a reason; otherwise both run inside the machine's agent slots, and the
 second to land is merged with the first, re-verified and reviewed where they
 crossed — the case of bethl epics 37/38, run side by side by hand and found
 colliding only by a review the user launched (bethl DOGFOODING 2026-11-12).
@@ -25,6 +25,9 @@ colliding only by a review the user launched (bethl DOGFOODING 2026-11-12).
   (`run.wait`, reason and holder printed once a minute, `run.waitMinutes`
   default 0 = refuse at once); any other shared path → allowed, recorded for
   the crossing review at land.
+- **Two runs per repository at most**: a third `run --epic` is refused and
+  names the two live ones (same cap as chains; more epics would multiply
+  base merges, not throughput).
 - **Shared limits**: both runs draw from 24-02's machine-wide agent slots
   and 19-03's verify queue; two epics never make more than `run.maxAgents`
   agent processes or two concurrent heavy verifies.
@@ -73,7 +76,7 @@ colliding only by a review the user launched (bethl DOGFOODING 2026-11-12).
 ## Out of Scope
 
 - Two machines (24-03 locks).
-- More than two epics at once by default (`maxAgents` already caps them).
+- More than two epics at once (refused, see Requirements).
 - Ordering epics automatically from the roadmap: the maintainer starts each
   run.
 

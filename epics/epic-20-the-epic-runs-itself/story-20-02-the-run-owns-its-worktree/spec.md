@@ -25,6 +25,13 @@ autoland later refused because the chain was recorded at the primary.
   pnpm/Turbopack, bethl `EISDIR`, 10 occurrences) and copies the env files
   listed in `config.json` (`worktree.copyFiles`, e.g. `apps/api/.env`) —
   copied, never committed, and only files ignored by git.
+- **Setup commands**: `worktree.setup` in `config.json`, an ordered list of
+  the project's own commands run in a new worktree after dependencies and
+  env files (bethl: `pnpm --filter "./packages/*" run build`, without which
+  `@workspace/geo/server` is not found in a fresh worktree). A failing setup
+  command leaves the story unstarted with the command's output, not
+  `blocked` (no attempt consumed). Same unattended rule as validation
+  commands: declared in `config.json`, never in a story.
 - **Autoland from the registry**: `autoLandIfChainFinished` decides
   `not-isolated` from the placement registry (is there a worktree holding the
   chain?), not from the caller's directory (coding-flow DOGFOODING 2026-11-10
@@ -45,6 +52,9 @@ autoland later refused because the chain was recorded at the primary.
       creates the worktree, then the file is present in it and still ignored.
 - [ ] Given a listed file that git tracks, then it is refused (never copy a
       tracked file over).
+- [ ] Given `worktree.setup` with a build command, when the driver creates
+      the worktree, then the command ran there before the agent starts; given
+      it fails, then no agent process starts and the report names it.
 - [ ] Given an isolated finished chain and `autoland` called from the primary,
       then it lands the chain instead of answering `not-isolated`.
 - [ ] Given `branch.develop.codingFlowBase` set to a SHA, when verify resolves

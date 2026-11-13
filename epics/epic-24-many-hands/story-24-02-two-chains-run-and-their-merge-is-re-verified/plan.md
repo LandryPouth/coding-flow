@@ -7,7 +7,9 @@
   `bin/lib/merge-queue.js` (new), `bin/lib/agent-slots.js` (new),
   `bin/lib/worktree.js`
   (`conflictingFiles`, scratch worktree), `bin/lib/backbone.js`,
-  `bin/lib/drivers/claude.js` (crossing review), tests
+  `bin/lib/drivers/claude.js` (crossing review), `bin/lib/machine-config.js`
+  (new, global config shared with 19-03), `skills/flow-plan/SKILL.md` and
+  its template copy (*Shared identifiers* line), tests
   `test/merge-queue.test.js` (new), `test/agent-slots.test.js` (new),
   `test/run.test.js`.
 - **Search anchors**: `conflictingFiles`, `parseBackbone`, `buildChainIds`,
@@ -28,6 +30,11 @@
 - **Two caps, not one**: chains bound the merges to re-verify, agents bound
   the machine and the spend. Two chains with a reviewer each would be four
   processes under a chain cap alone; the maintainer's rule is two agents.
+- **Agents are per machine, chains per project**: the project knows how
+  wide its trees are; only the machine knows its memory.
+- **Identifiers are declared, not inferred**: a parser for every language's
+  enums is not zero-dependency; the planner already reads the code it plans
+  for and can list them in one line.
 - **Serial paths wait, other overlaps are reviewed**: migrations and
   lockfiles conflict by construction (ordering, regenerated files), so
   running them in parallel only produces a park; ordinary shared files are
@@ -41,10 +48,11 @@ for a slot; priority on a freed slot.
 
 ## Acceptance Traceability
 
-- 1–4 → `test/run.test.js::parallel`
-- 5–6 → `test/agent-slots.test.js`
-- 7 → `test/run.test.js::serial paths`
-- 8–10 → `test/merge-queue.test.js`
+- 1, 3–5 → `test/run.test.js::parallel`
+- 2 → `test/machine-config.test.js`
+- 6, 8 → `test/agent-slots.test.js`
+- 7, 9 → `test/run.test.js::overlap`
+- 10–12 → `test/merge-queue.test.js`
 
 ## Commands
 

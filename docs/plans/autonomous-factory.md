@@ -246,12 +246,23 @@ noise.
 | [21 — The factory sees itself](../../epics/epic-21-the-factory-sees-itself/index.md) | `insights`, the Markdown vault, cross-project numbers, review and gate value, human turns, escapes | 1 + vault |
 | [22 — Decisions without asking](../../epics/epic-22-decisions-without-asking/index.md) | `autonomy.md`, searchable precedents with provenance, the promotion ladder, memory into the repo, playbooks, a personal taste profile, design-system checks | 4 |
 | [23 — The factory proposes its own improvements](../../epics/epic-23-the-factory-proposes-its-improvements/index.md) | watcher, maintainer-only proposals, shadow gates, experiments, after every epic | 2 + 3 |
-| [24 — Many hands](../../epics/epic-24-many-hands/index.md) | clean worktrees, parallel chains and parallel epics with a merge queue and two agent slots, shared locks, PR land, trusted runner, routed questions | team |
+| [24 — Many hands](../../epics/epic-24-many-hands/index.md) | clean worktrees, parallel chains and parallel epics with a merge queue and machine-sized agent slots (4, 2 under WSL), shared locks, PR land, trusted runner, routed questions | team |
+| [25 — The journey is seen](../../epics/epic-25-the-journey-is-seen/index.md) | the browser tier runs the project's own command against a served app; in driven runs a separate process walks the checklist and records what it saw | engine |
 
-Delivery order: 18 → 19 → 20 → 24 s1, s2, s7 (two chains and two epics
-at once, two agents max) → 21 → 22 → 23 → 24 s3–s6 (team). Running two at a
-time is how the maintainer already works by hand; the native run should not
-stay a chain while the learning layers are built.
+Delivery order (revised 2026-11-13):
+
+1. **First driven run early**: 18-01 (journal) → 19-01 (failing test names)
+   → 19-07 (tests read-only) → 20-01 (one story headless), then 20-01 runs
+   on a real bethl story before the rest of 18 and 19. The factory is
+   learned by running it; thirteen stories before the first driven run is
+   a cathedral built without a site visit.
+2. The rest of 18 → 19 → 20.
+3. 24 s1, s2, s7 (two chains and two epics at once, machine-sized agent
+   slots) → 25 (the browser tier is run, not ticked).
+4. 21 → 22 → 23 → 24 s3–s6 (team).
+
+Running two at a time is how the maintainer already works by hand; the
+native run should not stay a chain while the learning layers are built.
 
 Before them: finish epic 15, then 16 (story 16-01's `Assumption
 (unconfirmed)` marker is what epic 20 s5 reads) and 17 (archiving).
@@ -268,4 +279,5 @@ Before them: finish epic 15, then 16 (story 16-01's `Assumption
   budget caps required in config (no default spend), parallelism 1 (cap 2),
   1 retry of a failed command in driven runs. **Changed 2026-11-13**:
   parallelism defaults to 2 once parallel chains ship (24-02), so errors
-  between chains surface early; still capped at 2 chains and 2 agents.
+  between chains surface early; capped at 2 chains; agents are a
+  machine setting, `auto` = 4, or 2 under WSL.

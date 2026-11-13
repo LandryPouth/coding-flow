@@ -133,6 +133,11 @@ a failed command in driven runs. The exact `claude` flag set is verified on the 
 inside 20-01 (a stop condition if `dontAsk` + guard denial cannot be proven
 headless).
 
+**Early first run (2026-11-13)**: 20-01 is delivered right after 18-01,
+19-01 and 19-07, ahead of the rest of epics 18 and 19, and run once on a
+real bethl story; what it shows reorders the remaining stories (see
+`docs/plans/autonomous-factory.md`, *Delivery order*).
+
 ## Maintainer cleanup on delivery
 
 Until this epic ships, epics are run by hand with a personal Claude Code skill,

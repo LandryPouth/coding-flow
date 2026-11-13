@@ -17,6 +17,10 @@
 
 ## Decisions
 
+- **A usage limit pauses the whole run**: every chain draws on the same
+  account; starting another process into a closed window only burns a
+  retry. Two or four agents make the limit the common case, not the edge.
+
 - **Fresh process per attempt** rather than `--resume`: context rot and the
   research's "fresh context per unit" pattern.
 
