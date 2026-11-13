@@ -16,7 +16,7 @@ const LIB = path.join(__dirname, '..', 'bin', 'lib');
 const CORE = [
   'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'detect', 'diff-base',
   'diff-scope', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
-  'identity', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk',
+  'identity', 'mutation', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk',
   'security-policy', 'shell-writes', 'spec-drift', 'story', 'util', 'validation-run',
 ];
 
