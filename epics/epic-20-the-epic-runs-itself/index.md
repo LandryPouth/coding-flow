@@ -147,9 +147,9 @@ epic replaces. When the epic is delivered and the native run is proven on a
 real project:
 
 - [ ] `trash ~/.claude/skills/epic-run ~/.claude/docs/skills/epic-run.md
-      ~/.claude/workflows/epic-run.js ~/.claude/docs/workflows/epic-run.md`
+      ~/.claude/workflows/epic-run.js`
 - [ ] Remove the `epic-run` rows (skill and workflow) from `~/.claude/README.md`.
-- [ ] Before deleting, compare the skill's loop with the native one: anything
+- [ ] Before deleting, compare the skill's and the workflow's loop with the native one: anything
       the skill does that the epic does not (fresh reviewer that never sees the
       implementer's reasoning, reviewer findings carried to later stories,
       "no sub-agents" in every brief, resume a cut agent instead of a new one)
