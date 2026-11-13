@@ -140,17 +140,9 @@ real bethl story; what it shows reorders the remaining stories (see
 
 ## Maintainer cleanup on delivery
 
-Until this epic ships, epics are run by hand with a personal Claude Code skill,
-`~/.claude/skills/epic-run/` (implementer fork → fresh independent reviewer →
-fixes → closure → local land, max 2 agents). It is the manual stand-in this
-epic replaces. When the epic is delivered and the native run is proven on a
-real project:
-
-- [ ] `trash ~/.claude/skills/epic-run ~/.claude/docs/skills/epic-run.md
-      ~/.claude/workflows/epic-run.js`
-- [ ] Remove the `epic-run` rows (skill and workflow) from `~/.claude/README.md`.
-- [ ] Before deleting, compare the skill's and the workflow's loop with the native one: anything
-      the skill does that the epic does not (fresh reviewer that never sees the
-      implementer's reasoning, reviewer findings carried to later stories,
-      "no sub-agents" in every brief, resume a cut agent instead of a new one)
-      becomes a follow-up story, not a silent loss.
+The manual stand-ins (the `epic-run` workflow and skill, and their journal
+in the AI memory vault) are removed once **this epic and epic 27** are
+delivered and a native run has landed a real bethl epic. The checklist —
+compare the loops first, move the lessons to proposals, keep the run
+history, then delete — lives in one place:
+[epic 27, *Maintainer cleanup on delivery*](../epic-27-the-run-knows-why-it-stopped/index.md#maintainer-cleanup-on-delivery).

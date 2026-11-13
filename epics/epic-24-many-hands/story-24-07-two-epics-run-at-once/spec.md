@@ -37,7 +37,7 @@ colliding only by a review the user launched (bethl DOGFOODING 2026-11-12).
   the merged tree (all required tiers) and a crossing review on the files
   both epics changed; green and no open P0/P1 → the land proceeds (`land:
   local` merge or the 24-04 PR); red → the later epic is parked
-  (`blocked (base merge)`), the earlier one is never undone.
+  (hold `parked: base-merge`, epic 27), the earlier one is never undone.
 - **Servers**: `ai-flow serve` (24-01) picks a free port from `serve.ports`
   and exports it to the command; it never starts on a port another
   worktree's recorded server holds, and says which.
