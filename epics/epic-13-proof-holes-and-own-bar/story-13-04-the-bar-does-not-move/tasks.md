@@ -28,8 +28,15 @@ command came back FAILED, each on a timing test outside this story's diff:
 `test/command-timeout.test.js:76` (`node fast.js` cut at its 500 ms limit) three
 times, and `test/mutation-probe.test.js:544` once. Both pass alone (8/8 three
 times; the probe file failed once alone too). Load average was 19–28, with
-story 15-05's verify running at the same time. No green verify is on record for
-`6a6ca4d`: re-run it on a quiet machine.
+story 15-05's verify running at the same time. A fourth, alone, failed only on
+`mutation-probe.test.js:544`, a race in that test (fixed on `develop`, `dffd898`).
+
+Green 2026-11-13 after merging `develop` (`2f4f428`): same command, passed,
+coverage **verified** (96.6 % of 6,785 added lines executed), scope 349 files
+since `72dabd5`, evidence `2026-11-13T19-31-17-291Z-verify.json`. As above, the
+window holds the neighbouring stories too: green on the whole window, not a
+proof of this story alone. One warning: `policy-changed` on
+`.coding-flow/harness.json`.
 
 ### Rollback Notes
 
