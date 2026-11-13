@@ -419,7 +419,12 @@ function runCommand(command, cwd, timeoutMs, stop) {
     // open and overlap the next mutant: it goes when `sh` does. A grandchild
     // that left the group (`setsid`, a detached spawn) still holds them: past a
     // grace period the pipes are closed from this side, so `close` comes.
-    child.on("exit", () => {
+    // The verdict is fixed when `sh` exits: the per-mutant timer must not turn
+    // a decided mutant into a timeout while the grace period runs.
+    let exitCode = null;
+    child.on("exit", (code) => {
+      exitCode = code;
+      clearTimeout(timer);
       killGroup();
       setTimeout(() => {
         child.stdout.destroy();
@@ -433,7 +438,7 @@ function runCommand(command, cwd, timeoutMs, stop) {
         fs.writeFileSync(running, "");
       }
       const output = Buffer.concat(chunks).toString("utf8");
-      const status = stop.interrupted ? "interrupted" : timedOut ? "timeout" : code === 0 ? "pass" : "fail";
+      const status = stop.interrupted ? "interrupted" : timedOut ? "timeout" : (exitCode === null ? code : exitCode) === 0 ? "pass" : "fail";
       // The lines that say a type or syntax error: a mutant failing on one was
       // stopped before any test could catch it.
       const compileLines = output.split("\n").filter((line) => /\bTS\d{4}\b|^\s*SyntaxError:/.test(line)).map((line) => line.trim());

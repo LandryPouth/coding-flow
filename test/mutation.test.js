@@ -368,3 +368,55 @@ test('an uncommitted edit to a tracked non-JS file is not examined', (t) => {
   assert.equal(evidence.mutation.ran, false, output);
   assert.match(evidence.mutation.reason, /uncommitted changes in package\.json/);
 });
+
+test('a Mutation Exemption heading inside a fenced code block excuses nothing', (t) => {
+  const fence = '\n```markdown\n## Mutation Exemption\n\nsrc/auth/limit.js:2 is equivalent.\n```\n\n~~~\n## Mutation Exemption\n\nsrc/auth/limit.js:2 again\n~~~\n';
+  const dir = project(t, 'mutation-fenced', { story: fence });
+  harness(dir, { mode: 'strict', mutation: { command: 'node --test {files}', maxMutants: 5 } });
+
+  const { evidence } = verify(dir, ['--story', STORY]);
+
+  assert.equal(evidence.mutation.ok, false);
+  assert.deepStrictEqual(evidence.mutation.unexcused, ['src/auth/limit.js:2']);
+});
+
+test('the head recorded is the commit the probe mutated, read before it ran', (t) => {
+  const dir = project(t, 'mutation-head-before');
+  const head = git(dir, ['rev-parse', 'HEAD']);
+  // The command moves the user's branch while the probe runs.
+  harness(dir, { mutation: { command: `git -C '${dir}' commit -q --allow-empty -m moved; node --test {files}`, maxMutants: 5 } });
+
+  const { output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, true, output);
+  assert.notEqual(git(dir, ['rev-parse', 'HEAD']), head, 'the branch did move during the run');
+  assert.equal(evidence.mutation.head, head);
+});
+
+test('an uncommitted edit to a markdown test fixture is not examined', (t) => {
+  const dir = project(t, 'mutation-md-fixture');
+  write(dir, 'test/fixtures/sample.md', '# sample\n');
+  commit(dir, 'test: a markdown fixture');
+  write(dir, 'test/fixtures/sample.md', '# sample, edited\n');
+  harness(dir, { mutation: { command: 'node --test {files}', maxMutants: 5 } });
+
+  const { output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, false, output);
+  assert.match(evidence.mutation.reason, /uncommitted changes in test\/fixtures\/sample\.md/);
+});
+
+test('a mutant decided while a detached grandchild holds the pipes is not a timeout', { skip: process.platform === 'win32' }, (t) => {
+  const dir = project(t, 'mutation-grace');
+  const out = path.join(scratch(t, 'mutation-grace-out'), 'report.json');
+  const detach = "node -e \"require('child_process').spawn('sleep', ['6'], { detached: true, stdio: 'inherit' }).unref()\"";
+  const probe = path.join(__dirname, '..', 'scripts', 'mutation-probe.js');
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+
+  execFileSync(process.execPath, [probe, '--repo', dir, '--base', 'main', '--head', 'feat', '--command', `${detach}; node --test {files}`,
+    '--timeout', '1', '--json', out], { cwd: dir, env, stdio: 'ignore' });
+  const report = JSON.parse(fs.readFileSync(out, 'utf8'));
+
+  assert.deepStrictEqual(report.mutants.map((m) => m.status), ['survived']);
+});

@@ -36,7 +36,8 @@ const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const LIMITS =
   "heuristic, JS/TS only: strings, templates and comments are skipped by a line scanner; equivalent mutants exist and " +
   "only a human can tell them; a mutant that does not compile, times out or is not applied is counted apart, never as " +
-  "killed; the mutants run on the committed HEAD; the throwaway worktree shares the repository's refs, stash and git config.";
+  "killed; the mutants run on the committed HEAD; the throwaway worktree shares the repository's refs, stash and git config; " +
+  "a process a test detached from its group is not killed (its pipes are closed 2 s after the command exits).";
 
 // `harness.json` `mutation: { command, maxMutants, link, timeoutMs }`; null when absent.
 function mutationSettings(config) {
@@ -72,8 +73,12 @@ function readExemption(storyDir) {
     return "";
   }
 
-  // Before the section is cut out: a commented-out heading is no section.
-  const text = Object.values(readStoryBundle(storyDir)).join("\n\n").replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+  // Before the section is cut out: a heading in a comment or a fenced code
+  // block (``` or ~~~, an unclosed one running to the end) is no section.
+  const text = Object.values(readStoryBundle(storyDir))
+    .join("\n\n")
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[^\n]*$|(?![\s\S]))/gm, "");
 
   return extractSection(text, "Mutation Exemption").trim();
 }
@@ -86,14 +91,19 @@ function git(args) {
 // so with any of them edited — code, `package.json`, a tsconfig, a fixture —
 // the verdict would be about other code. Prose and Coding Flow's own files do
 // not change behaviour; an untracked file is not in HEAD, nor in the run.
+// A markdown file a test reads (a `testGlobs` match, anything under a
+// `fixtures/` directory) is behaviour too.
 const NOT_BEHAVIOUR = /(?:^|\/)[^/]*\.md$|^(?:\.coding-flow|epics|specs|\.specify)\//;
+const FIXTURE = /(?:^|\/)_*fixtures_*\//;
 
-function uncommittedChanges() {
+function uncommittedChanges(config) {
+  const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
+
   return git(["status", "--porcelain=v1", "-z", "--untracked-files=no"])
     .split("\0")
     .filter((entry) => /^.. /.test(entry))
     .map((entry) => entry.slice(3))
-    .filter((file) => !NOT_BEHAVIOUR.test(file));
+    .filter((file) => !NOT_BEHAVIOUR.test(file) || FIXTURE.test(file) || isTest(file));
 }
 
 // The test files `{files}` receives. The probe takes the ones the diff touched;
@@ -110,10 +120,10 @@ function testsFor(base, config) {
   return listed(["ls-tree", "-r", "-z", "--full-tree", "--name-only", "HEAD"]).filter(isTest);
 }
 
-function runProbe(settings, base, seed, config) {
+function runProbe(settings, { base, head, seed }, config) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "coding-flow-mutation-"));
   const json = path.join(dir, "report.json");
-  const args = [PROBE, "--repo", cwd, "--base", base, "--head", "HEAD", "--command", settings.command,
+  const args = [PROBE, "--repo", cwd, "--base", base, "--head", head, "--command", settings.command,
     "--max", String(settings.max), "--seed", seed, "--json", json, ...settings.link.flatMap((link) => ["--link", link]),
     ...testsFor(base, config).flatMap((file) => ["--tests", file])];
 
@@ -165,7 +175,7 @@ function judge(report, { enforced, storyDir, started, head }) {
 }
 
 // Why the probe's answer would not be about the tree under proof, or null.
-function notExaminedBecause(settings, base) {
+function notExaminedBecause(settings, base, config) {
   if (settings.invalid) {
     return settings.invalid;
   }
@@ -174,7 +184,7 @@ function notExaminedBecause(settings, base) {
     return "no merge base to take the diff's sites from";
   }
 
-  const dirty = uncommittedChanges();
+  const dirty = uncommittedChanges(config);
 
   return dirty.length > 0
     ? `uncommitted changes in ${dirty.slice(0, 3).join(", ")}${dirty.length > 3 ? ", …" : ""}: the mutants run on HEAD, commit first`
@@ -200,9 +210,11 @@ function evaluateMutation({ storyDir, config, claim = null }) {
   }
 
   const base = currentDiffBase(cwd).mergeBase;
-  const why = notExaminedBecause(settings, base);
+  const why = notExaminedBecause(settings, base, config);
   const started = Date.now();
-  const report = why ? { error: why } : runProbe(settings, base, currentTreeToken(cwd) || base, config);
+  // Read once, before the probe: the commit it mutates is the one recorded.
+  const head = git(["rev-parse", "HEAD"]).trim();
+  const report = why ? { error: why } : runProbe(settings, { base, head, seed: currentTreeToken(cwd) || base }, config);
   const decided = report.error ? 0 : report.mutants.filter((m) => m.status === "killed" || m.status === "survived").length;
   const reason = report.error ||
     (decided === 0 ? (report.mutants.length === 0 ? "no site in the diff's committed JS/TS lines" : "no mutant was decided (all timed out, did not compile, did not start or were not applied)") : null);
@@ -211,7 +223,7 @@ function evaluateMutation({ storyDir, config, claim = null }) {
     return { ran: false, enforced, ok: !enforced, reason: `not examined — ${reason}`, durationMs: Date.now() - started };
   }
 
-  return judge(report, { enforced, storyDir, started, head: git(["rev-parse", "HEAD"]).trim() });
+  return judge(report, { enforced, storyDir, started, head });
 }
 
 // One line for the PR body and the run summary; null when nothing ran.

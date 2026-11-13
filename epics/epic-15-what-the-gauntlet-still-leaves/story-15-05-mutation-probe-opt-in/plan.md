@@ -46,6 +46,13 @@
 - **Exemption text without HTML comments**, an unclosed one running to the
   end, as 13-04 does for `## Policy Change` — stripped from the story before
   the section is cut out, so a commented-out heading is no section (review 2).
+- **Review 3 (pass, five P2s fixed).** A heading inside a fenced code block
+  is no section either; HEAD is read once before the probe and passed as
+  `--head`, so the recorded head is the commit mutated; a markdown file under
+  `fixtures/` or matching `testGlobs` counts as behaviour; the per-mutant
+  timer is cleared and the exit code fixed when `sh` exits, so the grace
+  period cannot turn a decided mutant into a timeout (a detached grandchild
+  is not killed, said in the limits).
 - **What "uncommitted" means (review 2).** Any tracked file whose working
   copy differs from HEAD, except prose (`*.md`) and Coding Flow's own
   directories (`.coding-flow/`, `epics/`, `specs/`, `.specify/`): a
