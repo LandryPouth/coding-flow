@@ -49,8 +49,11 @@ epic-wide review and one report the maintainer reads instead of every story.
 
 **Out of scope**
 
-- Parallel chains and merge re-verification (epic 24 s2); default parallelism
-  is 1.
+- Parallel chains and merge re-verification (epic 24 s2), parallel epics
+  (epic 24 s7); default parallelism is 1. Those stories are delivered right
+  after this epic, before epic 21 (see epic 24 *Delivery order*). Every
+  process this epic spawns is already a leaf: driven agents never spawn
+  sub-agents (20-01), so 24-02 can count agents in one place.
 - Drivers for other hosts (`codex exec`, `opencode run`): the seam is kept
   host-neutral; a second driver is its own story once this one is measured.
 - Merging to `main`, pushing, production. The run stops at local land (or the

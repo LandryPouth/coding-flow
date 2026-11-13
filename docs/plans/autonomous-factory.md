@@ -246,7 +246,12 @@ noise.
 | [21 — The factory sees itself](../../epics/epic-21-the-factory-sees-itself/index.md) | `insights`, the Markdown vault, cross-project numbers, review and gate value, human turns, escapes | 1 + vault |
 | [22 — Decisions without asking](../../epics/epic-22-decisions-without-asking/index.md) | `autonomy.md`, searchable precedents with provenance, the promotion ladder, memory into the repo, playbooks, a personal taste profile, design-system checks | 4 |
 | [23 — The factory proposes its own improvements](../../epics/epic-23-the-factory-proposes-its-improvements/index.md) | watcher, maintainer-only proposals, shadow gates, experiments, after every epic | 2 + 3 |
-| [24 — Many hands](../../epics/epic-24-many-hands/index.md) | clean worktrees, parallel chains with a merge queue, shared locks, PR land, trusted runner, routed questions | team |
+| [24 — Many hands](../../epics/epic-24-many-hands/index.md) | clean worktrees, parallel chains and parallel epics with a merge queue and two agent slots, shared locks, PR land, trusted runner, routed questions | team |
+
+Delivery order: 18 → 19 → 20 → 24 s1, s2, s7 (two chains and two epics
+at once, two agents max) → 21 → 22 → 23 → 24 s3–s6 (team). Running two at a
+time is how the maintainer already works by hand; the native run should not
+stay a chain while the learning layers are built.
 
 Before them: finish epic 15, then 16 (story 16-01's `Assumption
 (unconfirmed)` marker is what epic 20 s5 reads) and 17 (archiving).

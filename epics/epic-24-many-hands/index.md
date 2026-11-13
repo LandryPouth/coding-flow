@@ -4,7 +4,9 @@
 
 The factory works with more than one chain, one machine and one person:
 worktrees are ready to run and leave nothing behind; two independent chains
-run at once and their merge is re-verified before it counts; locks are seen
+run at once and their merge is re-verified before it counts, never with more
+than two agent processes on the machine; two epics share the machine when
+nothing forbids it and land one after the other; locks are seen
 across machines; a team lands through pull requests; verify can run on a
 runner the team trusts; a question reaches the person who owns its topic; and
 the project's policy is told apart from one person's preferences.
@@ -21,6 +23,9 @@ the project's policy is told apart from one person's preferences.
   conflicts (including semantic ones) to integration; Gas Town's Refinery and
   the C compiler's late CI exist for that reason. bethl's parallel epics
   37/38 collided on shared files (DOGFOODING 2026-11-12).
+- **The maintainer already runs two at a time, by hand** (two stories or two
+  epics, two agents max including sub-agents, through a personal skill).
+  Until this epic, the native run is a chain only.
 - **Team mode is the maintainer's explicit goal** ("prêt pour tourner dans
   une team"). Today: locks are local files, land is a local merge, evidence is
   trusted because it is on the laptop, and questions are answered by whoever
@@ -36,6 +41,10 @@ the project's policy is told apart from one person's preferences.
   branch-name policy honoured.
 - `run.maxParallel` (default 1, the maintainer's cap 2) with a merge queue:
   integrating a chain re-verifies the merged tree and reviews the crossing.
+  Chains include branches after a branch point, not only independent roots.
+- `run.maxAgents` (cap 2): machine-wide agent slots shared by every run.
+- Two epics at once: epic dependencies, overlap check, a base queue that
+  re-verifies the later epic against the earlier one.
 - Locks as git refs shared through the remote.
 - `land: local | pr` per project.
 - Remote verify through `ai-flow ci`, with evidence re-checked.
@@ -47,18 +56,20 @@ the project's policy is told apart from one person's preferences.
 - The GitHub issues storage backend (the 2026-11-10 session's issue format is
   kept in the research notes for a later epic; the vault and local epics serve
   until then).
-- More than 2 parallel chains by default; raising the cap is a maintainer
-  decision taken on `insights` numbers.
+- More than 2 parallel chains or 2 agent processes by default; raising a
+  cap is a maintainer decision taken on `insights` numbers.
+- Choosing which epic runs next: the maintainer starts each run.
 
 ## Backbone
 
-`Backbone: a worktree is ready and leaves nothing → two chains run and their merge is re-verified → locks are seen across machines → a team lands through PRs → verify runs on a trusted runner → a question finds its owner and policy is told from preference`
+`Backbone: a worktree is ready and leaves nothing → two chains run and their merge is re-verified → two epics share the machine and land one after the other → locks are seen across machines → a team lands through PRs → verify runs on a trusted runner → a question finds its owner and policy is told from preference`
 
 ### Story dependency tree
 
 ```text
 s1
 └── s2
+    └── s7
 
 s3
 └── s4
@@ -68,7 +79,8 @@ s5
 s6
 ```
 
-s2's merge queue lands chains through s1's land path. s4's PR land claims and
+s2's merge queue lands chains through s1's land path; s7 reuses s2's agent
+slots and merge queue (base as target). s4's PR land claims and
 releases s3's shared locks. s5 (CI runner and evidence re-check) and s6
 (routing and policy precedence) touch disjoint modules.
 
@@ -80,6 +92,7 @@ releases s3's shared locks. s5 (CI runner and evidence re-check) and s6
 4. **story-24-04-a-team-lands-through-pull-requests** *(STANDARD)*
 5. **story-24-05-verify-runs-on-a-trusted-runner** *(STRICT — trust in evidence)*
 6. **story-24-06-a-question-finds-its-owner** *(STANDARD)*
+7. **story-24-07-two-epics-run-at-once** *(STRICT — unattended merges against the base)*
 
 ## Decisions
 
@@ -87,6 +100,12 @@ releases s3's shared locks. s5 (CI runner and evidence re-check) and s6
   integrate one at a time; each integration re-runs verify on the merged tree
   and an independent review of the files both chains touched. A red merge
   parks the later chain, never the earlier.
+- **Two caps**: chains (`maxParallel`) bound what must be re-merged; agent
+  slots (`maxAgents`) bound the machine and the spend. A chain cap alone
+  allows four processes (two chains, a reviewer each).
+- **Serial paths wait**: migrations, schema files, lockfiles and generated
+  clients conflict by construction, so two chains or epics touching them
+  never run at once; other shared files are reviewed at the merge.
 - **Locks as refs** (`refs/coding-flow/locks/<story>`), pushed and fetched
   explicitly; a lock carries holder, host, pid, heartbeat; a stale lock is
   reported with its age, never broken silently.
@@ -98,11 +117,43 @@ releases s3's shared locks. s5 (CI runner and evidence re-check) and s6
 
 ## Dependencies outside this epic
 
-Epic 20 (driver), epic 18 s2 (proof survives the land), epic 22 s1
-(`autonomy.md` owners).
+Epic 20 (driver, run state 20-06, no sub-agents 20-01), epic 19 s3 (machine
+verify queue), epic 18 s2 (proof survives the land), epic 22 s1
+(`autonomy.md` owners, s6 only).
+
+## Delivery order
+
+s1 → s2 → s7 are delivered right after epic 20, before epic 21: they need
+only epics 18, 19 and 20, and until they ship the native run is a chain
+while the maintainer runs two at a time by hand. s3–s6 (team mode) stay
+last. `maxParallel` and `maxAgents` ship at 1 and 2; raising `maxParallel`
+to 2 is the maintainer's choice per project.
+
+## Risks
+
+- **A tree that lies about independence.** Parallel-safety rests on the
+  plan's tree and *Likely files*; bethl had two "independent" stories
+  pushing one enum value in opposite directions (DOGFOODING 2026-08-30) and
+  two parallel stories of epic 37 crossing unseen. Net: overlap check,
+  merged verify, crossing review. Known limit: a shared value with no shared
+  file is caught only if a test or the reviewer sees it.
+- **Merge debt.** The later chain or epic pays the integration; a park late
+  in an epic wastes its spend. Mitigation: serial paths wait up front; park
+  rather than auto-resolve.
+- **Shared runtime.** One dev database, ports, memory (bethl: exit 143 with
+  `next dev` at 5.5 GB). Mitigation: serial migrations, one heavy verify per
+  machine (19-03), `serve` ports; the data itself is still shared.
+- **Spend and review load double.** Two agents spend twice as fast and land
+  twice as much for one person to read. Caps per run stay required (20-06);
+  `REPORT.md` per epic.
+- **Unmeasured until epic 21.** Delivering before `insights` means the first
+  parallel runs are judged on the journal (epic 18), not on dashboards; the
+  default stays 1 until the maintainer opts in.
+- **Uncounted agents.** Interactive sessions and other tools on the machine
+  take no slot; the cap is the tool's, not the machine's.
 
 ## Readiness
 
-`ready` for s1 and s2; s3–s6 are `ready` as designs but should be re-read
+`ready` for s1, s2 and s7; s3–s6 are `ready` as designs but should be re-read
 against the first month of epic 20 runs before they start (a labeled
 assumption, not a blocker).
