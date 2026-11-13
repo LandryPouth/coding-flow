@@ -97,13 +97,13 @@ function hasUnshippedWork(location, base, story) {
   }
   // A story forked from an epic branch ships what it added since that fork, not
   // everything the epic holds above main.
-  // A base that would empty the branch's diff is refused (story 13-07): measure
-  // from the default base instead.
+  // A baseBranch naming the branch itself with no earlier base is refused
+  // (story 13-07): say so, and measure from the default base instead.
   let resolved = {};
   try {
     resolved = resolveDiffBase(location, { story });
-  } catch {
-    resolved = {};
+  } catch (error) {
+    process.stderr.write(`warning: ${error.message} Measured from ${base} instead.\n`);
   }
   const since = resolved.mergeBase || base;
   const ahead = git(location, ["rev-list", "--count", `${since}..HEAD`]);

@@ -49,21 +49,29 @@ repositories.)*
   `worktree add` records no fork point for those names.
 - **A fork point is ignored** (and named in `diffBase.forkPointIgnored`) on a
   base branch, and when it names the branch itself.
-- **A base that is HEAD** (flag or `baseBranch`) is a choice on a base branch:
-  `--base HEAD` on `develop`, or on a configured `trunk` ahead of a stale
-  `main`, still verifies only the uncommitted work. On any other branch it
-  empties the diff when the branch has commits of its own, counted from the
-  first of: a `baseBranch` value the branch's history carried earlier (walking
-  the commits that touch `.coding-flow/config.json`, newest first), its fork
-  point, the nearest shared branch (`ownCommitsStart`). Then:
-  - a typed `--base` is **refused**, naming that base — a flag the user typed
-    is never silently replaced;
-  - a `baseBranch` gives way to that base, and `diffBase.configIgnored` says
-    why;
-  - a `baseBranch` naming the branch itself with none of those known is
-    **refused** (nothing to measure from). `next` catches it and falls back
-    to the default base.
+- **A branch contained in its base has nothing of its own**: a fresh story,
+  or one already fast-forwarded into its base, gets an empty diff, and that is
+  the truth. Only commits HEAD has and its base lacks count.
+- **A `baseBranch` is replaced only when it names the current branch itself**
+  (same name, a ref resolving to it, or `HEAD`), on a branch that is not a
+  base: only the branch's own write can say that. Its base is then its fork
+  point, else the value its config held before the commits that hold the
+  self-naming value (`valueBefore`: those commits only, never the base's
+  history), else the nearest shared branch; `diffBase.configIgnored` gives
+  the count since that base. None known: refused; `next` prints the reason
+  on stderr and measures from the default base.
+- **A typed `--base` that is HEAD** is refused only on a non-base branch with
+  commits its real base lacks (the configured `baseBranch`, or the base
+  above when that names the branch itself, else the fork point / nearest).
+  `--base HEAD` on `develop`, on a configured `trunk` ahead of a stale `main`,
+  or on a story with no commits of its own still verifies the uncommitted
+  work.
 - **Out of scope** (recorded, not fixed):
+  - a `baseBranch` naming another ref that points at HEAD (a tag, an alias
+    branch) is honoured: it cannot be told apart from a story sitting fresh
+    at the top of `develop` without a rule this story does not need;
+  - which commits are "the branch's own" is read from git (fork point,
+    config history): a branch that rewrites them can still choose its base;
   - a branch outside the story naming (no `story-` prefix, not the
     `--story` folder) that sets `baseBranch` to itself is taken for the base
     branch it declares;
