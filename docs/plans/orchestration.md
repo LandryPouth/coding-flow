@@ -164,5 +164,5 @@ Until epics 20 and 27 ship, the `epic-run` workflow
 holds in its report, the circuit breaker on repeated or environment
 failures, critical path first, and a run journal in the AI memory vault
 (`workflows/epic-run/`), read back as lessons at the start of each run.
-Removal of the workflow, the skill and how their journal is kept: epic 27,
+Removal of the workflow and the skill, and archiving of their journal: epic 27,
 *Maintainer cleanup on delivery*.

@@ -106,10 +106,22 @@ real bethl epic to its land. Then:
 - [ ] Move each still-valid lesson from the vault's
       `workflows/epic-run/lessons.md` into `coding-flow/proposals/` (one
       proposal per lesson, template `_templates/proposal.md`).
-- [ ] Keep `workflows/epic-run/runs/` as history: set the zone's
-      `README.md` to `status: retired`, add the date; the runs stay
-      readable in Obsidian.
+- [ ] Carry what the run notes measured (durations, holds, findings per
+      story, breaker trips) into the native journal or `insights` history
+      (epic 21) when it can import them; otherwise note in the native docs
+      that this history exists and where it is archived.
+- [ ] Archive the journal like the workflow itself: `git mv` the whole
+      vault zone `workflows/epic-run/` (README, `lessons.md`, `runs/`) to
+      `archive/workflows/epic-run/`, mark every note `status: retired` with
+      the date, and commit `vault: archive epic-run journal`. Nothing reads
+      or writes it afterwards (the SessionStart hook and the native run
+      never look under `archive/`); deleting it later is the maintainer's
+      choice, never a run's.
 - [ ] `trash ~/.claude/workflows/epic-run.js ~/.claude/skills/epic-run
       ~/.claude/docs/skills/epic-run.md`
 - [ ] Remove the `epic-run` row from `~/.claude/README.md`, and the
-      `workflows/epic-run/` line from the vault's `AGENTS.md` and `Home.md`.
+      `workflows/epic-run/` row and map line from the vault's `AGENTS.md`
+      and `Home.md` (replace them with one `archive/` line).
+- [ ] Done when: no file outside `archive/` names `epic-run`
+      (`rg -l epic-run ~/.claude ~/dev/.ai-memory-vault --glob '!archive/**'`
+      prints nothing but this epic's history).
