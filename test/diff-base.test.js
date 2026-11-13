@@ -332,7 +332,7 @@ test('a baseBranch set by the branch itself to its own name does not empty the d
   assert.match(report.diffBase.configIgnored.reason, /empt/);
 });
 
-test('a baseBranch the base already carried still applies, even when it empties the diff', (t) => {
+test('a baseBranch committed at the base applies to a story forked from it', (t) => {
   const dir = epicRepo(t);
   const configPath = path.join(dir, '.coding-flow', 'config.json');
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -358,4 +358,75 @@ test('--base HEAD on a branch with commits of its own is refused and says why', 
   // Without commits of its own there is nothing to hide: allowed.
   git(dir, ['switch', '-c', 'story-07-02-empty', 'feature/EPIC-07-x']);
   assert.equal(run(dir, ['verify', '--no-cache', '--base', 'HEAD']).code, 0);
+});
+
+// A repository with no main, no develop: its only base is the baseBranch it
+// commits. A story that renames it to itself is measured from the value its
+// history carried before.
+function trunkRepo(t, { story = 'story-01-01-x' } = {}) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-diffbase-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  assert.equal(run(dir, ['init']).code, 0);
+  git(dir, ['init', '-b', 'trunk']);
+  git(dir, ['config', 'user.email', 'test@example.com']);
+  git(dir, ['config', 'user.name', 'Test']);
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.coding-flow/runs/\n.coding-flow/*.lock\n');
+  commit(dir, { 'README.md': '# x\n', '.coding-flow/config.json': configWith(dir, { baseBranch: 'trunk' }) }, 'init');
+  if (story) git(dir, ['switch', '-c', story]);
+  return dir;
+}
+
+function configWith(dir, fields) {
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = { ...JSON.parse(fs.readFileSync(configPath, 'utf8')), validation: { commands: ['node -e "process.exit(0)"'], quality: [] }, ...fields };
+  return `${JSON.stringify(config, null, 2)}\n`;
+}
+
+test('on a trunk-only repository, a story that sets baseBranch to itself is measured from trunk', (t) => {
+  const dir = trunkRepo(t);
+  commit(dir, { 'src/a.js': '1\n', '.coding-flow/config.json': configWith(dir, { baseBranch: 'story-01-01-x' }) }, 'own');
+
+  const report = JSON.parse(run(dir, ['harness', 'check', '--json']).output);
+  assert.equal(report.diffBase.ref, 'trunk');
+  assert.equal(report.diffBase.configIgnored.value, 'story-01-01-x');
+
+  const refused = run(dir, ['verify', '--no-cache', '--base', 'HEAD']);
+  assert.notEqual(refused.code, 0);
+  assert.match(refused.output, /Pass --base trunk/);
+});
+
+test('a story whose only known base is itself is refused, not measured against nothing', (t) => {
+  const dir = trunkRepo(t, { story: null });
+  git(dir, ['branch', '-m', 'trunk', 'story-01-01-x']);
+  commit(dir, { 'src/a.js': '1\n', '.coding-flow/config.json': configWith(dir, { baseBranch: 'story-01-01-x' }) }, 'own');
+
+  const result = run(dir, ['verify', '--no-cache']);
+  assert.notEqual(result.code, 0);
+  assert.match(result.output, /names this branch itself/);
+});
+
+// The configured base branch, ahead of a stale main: verifying on it is a
+// choice, as on develop, whoever committed the setting.
+test('on the configured base branch ahead of a stale main, baseBranch and --base HEAD still apply', (t) => {
+  const dir = epicRepo(t);
+  git(dir, ['switch', '-c', 'trunk', 'main']);
+  for (const i of [1, 2, 3]) commit(dir, { [`src/f${i}.js`]: `${i}\n` }, `w${i}`);
+  commit(dir, { '.coding-flow/config.json': configWith(dir, { baseBranch: 'trunk' }) }, 'trunk is the base');
+
+  const diffBase = JSON.parse(run(dir, ['harness', 'check', '--json']).output).diffBase;
+  assert.equal(diffBase.source, 'config');
+  assert.equal(diffBase.ref, 'trunk');
+  assert.equal(diffBase.configIgnored, undefined);
+  assert.equal(run(dir, ['verify', '--no-cache', '--base', 'HEAD']).code, 0);
+});
+
+test('a fork point naming the branch itself is ignored and named', (t) => {
+  const dir = epicRepo(t);
+  git(dir, ['switch', '-c', 'story-07-01-geo']);
+  commit(dir, { 'src/geo/a.ts': 'export const g = 1;\n' }, 'story work');
+  git(dir, ['config', 'branch.story-07-01-geo.codingFlowBase', 'story-07-01-geo']);
+
+  const diffBase = JSON.parse(run(dir, ['harness', 'check', '--json']).output).diffBase;
+  assert.equal(diffBase.ref, 'feature/EPIC-07-x');
+  assert.equal(diffBase.forkPointIgnored.value, 'story-07-01-geo');
 });
