@@ -26,7 +26,8 @@ with minimal ambiguity. Dense artifacts, no ceremony, no document no agent will 
    `docs/architecture.md`, the roadmap, existing epics.
 2. Pick the smallest valuable epic (Planning Heuristics). If ambiguity could cause
    rework, run **Clarify First**.
-3. Write the epic `index.md`: goal, scope, and the stories ordered along a backbone.
+3. Write the epic `index.md`: the `## Intent`, scope, and the stories ordered along
+   a backbone.
 4. Define the stories as vertical slices, each with a short Implementation Context.
    Story 01 is the walking skeleton; check every story against INVEST.
 5. Write each story's files at the shape its size calls for (Story File Contract).
@@ -48,20 +49,57 @@ with minimal ambiguity. Dense artifacts, no ceremony, no document no agent will 
   last, the spec is discovered one missing case per review pass (epic 05: 10–12
   passes per story).
 
+## Intent (in `index.md`)
+
+Eight lines at most, above the Backbone, so every story is judged against the same
+need instead of a long PRD:
+
+```md
+## Intent
+
+- Problem: one concrete situation, not a category.
+- Actors: who or what acts — a person, a calling service, a player, a peer, a device.
+- Success signal: what someone can observe when it works.
+- Appetite: how many stories this is worth (2–7).
+- No-gos: what this epic will not do. Must not change: what already works and stays.
+- Assumptions: at most three, each tagged value / usability / feasibility / viability
+  and named by the story that tests it — the riskiest one by story 02.
+```
+
+Tag every product claim with where it comes from: `user-stated`, `repo-observed:
+<path>`, `web-sourced: <url> <date>`, or `assumption`. Never invent personas, market
+figures or "users want X": an untagged claim is an assumption.
+
 ## Walking Skeleton (Story 01)
 
 Story 01 of a **new** epic is the thinnest slice that crosses every layer the epic
-will touch — UI (even a bare one) through the real logic to the real persistence or
-external call — never a single-layer stub (a UI over no data path, an endpoint
-nothing calls). Hardcode everything beyond that one path. It is about integration,
-not size: a single-file QUICK story can be one. Once it ships, the feature is alive
-end to end and every later story only enriches a working path. **Stop condition:**
-if story 01 does not cross every layer, split or reorder before writing story 02.
+will touch — from its real entry point through the real logic to the real
+persistence, wire or device — never a single-layer stub (a screen over no data path,
+an endpoint nothing calls). Hardcode everything beyond that one path. The entry point
+depends on the project:
+
+| Project | Story 01 proves |
+|---|---|
+| Web or mobile app | one screen, even bare, backed by the real path |
+| Service / API | one real request end to end, through the real store |
+| CLI | argv → core → stdout and exit code, tested |
+| Library / SDK | one public call, exercised by a test or doctest |
+| Protocol / networking | two peers exchange one message over a real socket |
+| Game | one playable tick of the core loop, greybox |
+| Embedded | boot → one sensor read → one output, on target or emulator |
+| Data / ML | ingest → transform → one metric against a baseline |
+
+It is about integration, not size: a single-file QUICK story can be one. Once it
+ships, the feature is alive end to end and every later story only enriches a working
+path. **Stop condition:** if story 01 does not cross every layer, split or reorder
+before writing story 02.
 
 ## Backbone (Story Order)
 
 In `index.md`, a `## Backbone` section above `## Stories` names the journey the
-stories walk in one line: `Backbone: browse → select a plan → pay → confirm`. Story
+stories walk in one line: `Backbone: browse → select a plan → pay → confirm` for a
+product, `request → validate → store → notify` for a service, `connect → handshake →
+exchange → close` for a protocol, `spawn → move → collide → score` for a game. Story
 01 is the thinnest path across it; each later story deepens one step. Reordering a
 story means moving it to another point on the journey, never just renumbering.
 
@@ -162,16 +200,22 @@ ownership and migration when persistence changes. No micro-stories ("create DTO"
 ## Clarify First (opt-in)
 
 When ambiguity could cause rework, pressure-test the request before writing stories:
-the fewest questions that prevent the most rework, one per turn, in the user's
-language. Stop when the next question would not change implementation. Budget: 5–15
-questions, 10–20 for auth, migration, billing, permissions or data modeling. The
-highest-value kinds:
+the fewest questions that prevent the most rework, in the user's language. **Read
+before asking**: what the repo, the scan or the docs can answer is never a question.
+Give each question a recommended answer, so a "yes" settles it; ask one at a time, or
+up to five per round when they are independent. Stop when the next question would not
+change implementation. Budget: 5–15 questions, 10–20 for auth, migration, billing,
+permissions or data modeling. The highest-value kinds — ask only those that apply:
 
 - Scope boundary — what is explicitly out?
 - Actor/permission — who can do this, and who cannot?
 - Data truth — where does the data come from, and who owns it?
 - Failure mode — what happens when this fails?
-- UX decision — what does the user see at the decision point?
+- Platform and budgets — target runtime, toolchain, memory, latency, frame or
+  real-time limits.
+- Compatibility — wire format, public API or semver promises, existing callers.
+- Determinism and packaging — reproducible output, how it ships and installs.
+- UX decision (when there is a UI) — what does the user see at the decision point?
 - Migration — must existing data be preserved or transformed?
 - Validation — what would prove this is done?
 
@@ -195,7 +239,8 @@ Before the readiness verdict, check every story:
 - **Small** — one focused `/flow-run` pass, not days of work under one name.
 - **Testable** — criteria concrete enough to verify.
 
-A story that fails Independent or Small is a split, not a note for later.
+A story that fails Independent or Small is a split, not a note for later. The riskiest
+assumption of the `## Intent` is tested by story 01 or 02, not discovered in story 05.
 
 ### Readiness Gate
 
@@ -206,6 +251,8 @@ next question change implementation?* — instead of sliding into writing:
 - **`not ready`** — a blocking question is open. Write no stories: ask the
   highest-leverage follow-up, put the missing decision to the user as a labeled
   question, or cut scope until it no longer matters.
+- **`stop`** — it should not be built, or not now: say why (already exists,
+  assumption refuted, cost beyond the appetite). Write no stories.
 - An epic that adds a module is **`not ready`** while its `## Boundaries` section is
   missing or has no `approved by:` name.
 
@@ -220,24 +267,67 @@ code is not modified, and no epic is created unless the user asks.
    milliseconds; a `docs/bootstrap-scan.md` may be stale), then read only the files
    needed to confirm framework, scripts, architecture, tests and conventions. If it
    says `"classification": "empty"` while the repo clearly holds code, the detectors
-   (JavaScript only) missed the stack: say so, and read the project directly.
+   (JS/TS, Go, Rust, Python and Java manifests) missed the stack — .NET, C/C++, a game
+   engine, firmware: say so, and read the project directly.
 2. Write current-state facts into `docs/project-context.md`, `docs/architecture.md`,
    `docs/conventions.md` and `docs/roadmap.md`: architecture, existing patterns,
    hardcoded data, coupling points, migration risks, the first safe vertical slice.
 3. Summarize rather than dump the audit; mark uncertain findings as assumptions;
    keep human-written docs that are more specific.
 
-## Greenfield Additions
+## Foundations (new project or new module, opt-in)
 
-For a new project, first define the product goal, target users, initial stack
-assumptions, architecture constraints, validation strategy, and the smallest
-shippable slice.
+Decide once what later stories must not drift from, and make a command hold it rather
+than prose. One question: *what is this project's public surface?* Then:
+
+| Surface | Artifact | Drift check (into `validation.quality`) |
+|---|---|---|
+| UI | short design tokens file (colors, type, spacing) | token lint, contrast check |
+| Service / API | OpenAPI, protobuf, GraphQL SDL or AsyncAPI | `oasdiff breaking`, `buf breaking` |
+| Data | versioned migrations | migration lint, migrate from empty |
+| Library | public API snapshot | semver checker (API diff) |
+| CLI | `--help` and `--json` output, exit-code table | snapshot tests |
+| Protocol | state table and test vectors | vector tests, fuzzing |
+| Game | one-page core loop (3–4 verbs) | headless loop tests |
+| Embedded | RAM / flash budget | size check on the linker map |
+
+Story 01 creates the artifact and wires its check. Like `## Boundaries`, the choice is
+a human decision; the command is what enforces it. Keep the artifact small: a large
+file loaded on every turn costs more than it saves.
+
+Record the cross-cutting needs once, in `docs/project-context.md`, as ten short lines
+— security level and auth model, data sensitivity, logs and traces, config and
+secrets, i18n, accessibility target, performance, reliability, packaging and delivery,
+test layers — each `yes`, `no` or `n/a` with one line of why and its check (or "review
+only"). Decide now what is costly to retrofit; defer the numbers (SLOs, budgets) until
+the skeleton can measure them.
+
+## Research (opt-in, for a named unknown)
+
+Research only answers a question the plan names (`NEEDS RESEARCH: which CRDT library
+handles offline edits?`), never a general survey. Every fact carries its URL, the
+supporting quote and the date, and goes into the story's `## Decisions` or a short
+`## Sources` in `index.md`; a fact without them is an assumption. Keep what the
+existing system does apart from what will be built, or the plan rebuilds what exists.
+Look where the project type lives — RFCs, comparable libraries and their issues,
+dataset cards, comparable games — and at the market only for a consumer or SaaS
+product. If the user has their own research tool, write the prompt for it instead.
+
+## Plan Review (opt-in, STRICT epics)
+
+For an epic carrying STRICT stories, hand the request and the written plan — not this
+conversation — to a fresh read-only reviewer: is it feasible against the code, are the
+cited files, APIs and packages real, is any story too big, is the riskiest assumption
+tested early? Fix what is wrong; a reviewer always finds something, so leave style
+and taste alone.
 
 ## Verification
 
 Before reporting the plan as done:
 
 - [ ] Every file under `## Generated Files` exists on disk — checked, not assumed.
+- [ ] `index.md` has an `## Intent` whose assumptions each name the story that tests
+      them, and every product claim carries its source tag.
 - [ ] Story 01 is a walking skeleton: end-to-end value on its own, not one layer.
 - [ ] Every acceptance criterion is a `- [ ]` item in Given/When/Then form — prose
       criteria are invisible to `verify`.
@@ -257,5 +347,5 @@ it here, where it is cheap.
 
 `# Plan Result`, then these `##` sections in order: Epic (path, goal, scope),
 Stories, First Story To Run, Generated Files, Assumptions, Risks, Clarification
-Readiness (`ready` / `not ready`, only when Clarify First ran), Recommended Next
+Readiness (`ready` / `not ready` / `stop`, only when Clarify First ran), Recommended Next
 Command (`Use /flow-run for …`).
