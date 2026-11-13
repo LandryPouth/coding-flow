@@ -29,3 +29,21 @@ core) and on `command-timeout.test.js` under load (8/8 alone). The suite took
 1 199.6 s of its 1 200 s budget while two other verifies ran on the machine.
 
 ### Rollback Notes
+
+### Review 1 (independent, STRICT, fail) — fixed, full verify pending
+
+P1: an empty probe passed under strict and was replayed by the cache — a
+high-risk edit left uncommitted was mutated as HEAD (0 sites, "ok"), and
+once committed `verify` answered "already proved". Now no decided mutant
+(no site in the committed JS/TS lines) and uncommitted JS/TS changes are
+"not examined", and `canStandIn` never replays a probe that did not answer.
+P2s: HTML comments in a `## Mutation Exemption` excuse nothing; the
+tree-token test read an undefined field (now `provenance.git.treeToken`, with
+a tracked edit — an untracked file makes verify record a null token, a
+pre-existing defect noted in plan.md); a whole-probe budget
+(`mutation.timeoutMs`, 30 min); CHANGELOG/README say JS/TS only, what cleanup
+covers, and that the worktree shares refs, stash and config; `ship` and `run`
+carry a Mutation line. 15 tests in `test/mutation.test.js`; each new guard
+(decided, dirty, cache, HTML, budget) was put back one at a time and turns its
+test red. Targeted suites green (80/80); the full verify waits for a free
+machine.
