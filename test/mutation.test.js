@@ -457,3 +457,28 @@ test('a diff that drops its own path from highRiskPaths still runs the probe', (
   assert.equal(evidence.mutation.ran, true, output);
   assert.deepStrictEqual(evidence.mutation.survived, [{ file: 'src/auth/limit.js', line: 2, operator: '< → <=' }]);
 });
+
+// A base commit with no harness.json, or an unreadable one, is scored with the
+// defaults: emptying highRiskPaths in the diff does not lower the risk.
+for (const [label, atBase] of [['absent', null], ['invalid JSON', '{ not json']]) {
+  test(`a base harness ${label}: emptying highRiskPaths still runs and enforces the probe`, (t) => {
+    const dir = project(t, 'mutation-base-default');
+    if (atBase !== null) {
+      git(dir, ['checkout', '-q', 'main']);
+      write(dir, '.coding-flow/harness.json', atBase);
+      git(dir, ['add', '-f', '.coding-flow/harness.json']);
+      git(dir, ['commit', '-q', '-m', 'broken policy']);
+      git(dir, ['checkout', '-q', 'feat']);
+      git(dir, ['merge', '-q', '--no-edit', 'main']);
+    }
+    harness(dir, { failOnContrarySignals: true, highRiskPaths: [], mutation: { command: 'node --test {files}', maxMutants: 5 } });
+
+    const { code, output, evidence } = verify(dir);
+
+    assert.equal(evidence.mutation.ran, true, output);
+    assert.equal(evidence.mutation.survived.length, 1, output);
+    assert.equal(evidence.mutation.enforced, true, output);
+    assert.equal(evidence.mutation.ok, false, output);
+    assert.notEqual(code, 0, output);
+  });
+}

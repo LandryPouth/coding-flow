@@ -289,3 +289,25 @@ test('strict: a generic Deferred Criteria line does not defer every criterion th
   assert.equal(res.code, 1, res.output);
   assert.deepEqual(res.json.contrary.warnings.openCriteria, ['works']);
 });
+
+test('failOn with no harness at the base: emptying highRiskPaths still enforces', (t) => {
+  const dir = repo(t, 'cs-base-absent', { criteria: ['- [ ] open one'] });
+  const file = path.join(dir, '.coding-flow', 'harness.json');
+  const kept = fs.readFileSync(file, 'utf8');
+  git(dir, ['checkout', '-q', 'main']);
+  git(dir, ['rm', '-q', '--cached', '.coding-flow/harness.json']);
+  git(dir, ['commit', '-q', '-m', 'no harness at the base']);
+  fs.unlinkSync(file);
+  git(dir, ['checkout', '-q', 'feat/widget']);
+  git(dir, ['merge', '-q', '--no-edit', 'main']);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, kept);
+  setHarness(dir, { failOnContrarySignals: true, highRiskPaths: [] });
+  write(dir, 'src/auth.js', 'module.exports = 1;\n');
+  write(dir, 'src/auth.test.js', "require('node:test');\n");
+  commitAll(dir);
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.enforced, true, res.output);
+  assert.equal(res.code, 1, res.output);
+});

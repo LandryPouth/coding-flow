@@ -661,30 +661,39 @@ function mentionsPath(text, target) {
 // renamed away from a high-risk path is scored at its new path only.
 const BASE_RISK_KEYS = ["highRiskPaths", "testGlobs", "ignoredPaths"];
 
+// The base's harness. A base commit with none, or an unreadable one, counts as
+// the defaults (`{}`), as `policyGlobs` does; null only when there is no base
+// commit at all.
+function readBaseConfig() {
+  const base = currentDiffBase(cwd).mergeBase || "HEAD";
+  if (!runGitText(["rev-parse", "--verify", "--quiet", `${base}^{commit}`]).trim()) return null;
+
+  return readBaseHarness(base) || {};
+}
+
 // The higher of the tree's risk and the diff scored with the base's risk keys.
-// The base is only read when the tree is not already high.
-function strictestRisk({ storyDir, config, atBase = undefined }) {
+function strictestRisk({ storyDir, config, atBase = readBaseConfig() }) {
   const tree = scoreCombinedRisk({ storyDir, config }).level;
-  const base = atBase === undefined ? readBaseHarness() : atBase;
-  if (tree === "high" || !base) return tree;
+  if (tree === "high" || !atBase) return tree;
 
   const baseRisk = { ...defaultHarnessConfig() };
   for (const key of BASE_RISK_KEYS) {
-    if (Array.isArray(base[key])) baseRisk[key] = base[key];
+    if (Array.isArray(atBase[key])) baseRisk[key] = atBase[key];
   }
 
   const atBaseLevel = scoreDiffRisk(changedFilesForCoverage(cwd, baseRisk), baseRisk).level;
   return RISK_RANK[atBaseLevel] > RISK_RANK[tree] ? atBaseLevel : tree;
 }
 
-function contraryEnforced({ storyDir, config, policy }) {
-  const atBase = readBaseHarness();
+// A caller that already scored the risk passes `atBase` and `risk`, so neither
+// is read twice.
+function contraryEnforced({ storyDir, config, policy, atBase = readBaseConfig(), risk = null }) {
   const basePolicy = atBase ? contraryPolicy(atBase) : { strict: false, failOnContrarySignals: false };
 
   if (policy.strict || basePolicy.strict) return true;
   if (!policy.failOnContrarySignals && !basePolicy.failOnContrarySignals) return false;
 
-  return strictestRisk({ storyDir, config, atBase }) === "high";
+  return (risk || strictestRisk({ storyDir, config, atBase })) === "high";
 }
 
 function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null, policyChange = null }) {
@@ -802,6 +811,7 @@ module.exports = {
   NO_CONTRARY,
   contraryPolicy,
   contraryEnforced,
+  readBaseConfig,
   strictestRisk,
   evaluateContrarySignals,
 };

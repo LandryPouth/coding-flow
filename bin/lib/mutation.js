@@ -26,7 +26,7 @@ const { currentDiffBase } = require("./diff-scope");
 const { currentTreeToken } = require("./identity");
 const { readStoryBundle, extractSection } = require("./story");
 const { resolveClaim } = require("./claim");
-const { contraryPolicy, contraryEnforced, strictestRisk } = require("./coverage-gate");
+const { contraryPolicy, contraryEnforced, readBaseConfig, strictestRisk } = require("./coverage-gate");
 
 const PROBE = path.join(__dirname, "..", "..", "scripts", "mutation-probe.js");
 const DEFAULT_MAX_MUTANTS = 20;
@@ -203,7 +203,8 @@ function evaluateMutation({ storyDir, config, claim = null }) {
 
   // The higher of the base and the tree: a diff cannot drop its own path from
   // highRiskPaths to skip the probe (same family as story 13-04).
-  const risk = strictestRisk({ storyDir, config });
+  const atBase = readBaseConfig();
+  const risk = strictestRisk({ storyDir, config, atBase });
   const kind = (resolveClaim({ storyDir, flagClaim: claim }) || {}).kind;
 
   if (risk !== "high" && kind !== "refactor") {
@@ -212,7 +213,7 @@ function evaluateMutation({ storyDir, config, claim = null }) {
 
   // As for the other contrary signals (story 13-04): the stricter of the base
   // and the tree decides, so a diff cannot step down to silence its survivors.
-  const enforced = contraryEnforced({ storyDir, config, policy: contraryPolicy(config) });
+  const enforced = contraryEnforced({ storyDir, config, policy: contraryPolicy(config), atBase, risk });
 
   const base = currentDiffBase(cwd).mergeBase;
   const why = notExaminedBecause(settings, base, config);
