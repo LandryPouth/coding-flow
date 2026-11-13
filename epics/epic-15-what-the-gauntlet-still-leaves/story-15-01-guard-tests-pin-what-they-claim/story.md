@@ -46,6 +46,16 @@ with `git checkout`):
 | `base !== null` → `base === null` (directory destination) | killed (1 fail) |
 | `let script = false` → `true` (`sedFiles`) | killed (1 fail) |
 
+Re-run 2026-11-13, after 15-02 moved `shellWrites` out of `guard.js`: the
+sites now live in `bin/lib/shell-writes.js` (`:420` directory destination,
+`:320` `sedFiles`), so "no change to `bin/lib/guard.js`" still holds and the
+mutants were applied there. `test/guard-shell.test.js` is 48/48 unmutated.
+
+| Mutant (`bin/lib/shell-writes.js`) | Result |
+|---|---|
+| `:420` `base !== null` → `base === null` | killed — test 26, cp/mv onto an existing directory |
+| `:320` `let script = false` → `true` | killed — test 27, sed -i targets |
+
 ### Verify history
 
 - 17:29 — green, `Coverage: verified` (95.9 % of the scope's added lines).
