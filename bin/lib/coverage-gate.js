@@ -38,6 +38,7 @@ const {
   deletedFilesInDiff,
 } = require("./diff-scope");
 const {
+  RISK_RANK,
   scoreStoryRisk,
   scoreDiffRisk,
   combineRisk,
@@ -660,21 +661,30 @@ function mentionsPath(text, target) {
 // renamed away from a high-risk path is scored at its new path only.
 const BASE_RISK_KEYS = ["highRiskPaths", "testGlobs", "ignoredPaths"];
 
+// The higher of the tree's risk and the diff scored with the base's risk keys.
+// The base is only read when the tree is not already high.
+function strictestRisk({ storyDir, config, atBase = undefined }) {
+  const tree = scoreCombinedRisk({ storyDir, config }).level;
+  const base = atBase === undefined ? readBaseHarness() : atBase;
+  if (tree === "high" || !base) return tree;
+
+  const baseRisk = { ...defaultHarnessConfig() };
+  for (const key of BASE_RISK_KEYS) {
+    if (Array.isArray(base[key])) baseRisk[key] = base[key];
+  }
+
+  const atBaseLevel = scoreDiffRisk(changedFilesForCoverage(cwd, baseRisk), baseRisk).level;
+  return RISK_RANK[atBaseLevel] > RISK_RANK[tree] ? atBaseLevel : tree;
+}
+
 function contraryEnforced({ storyDir, config, policy }) {
   const atBase = readBaseHarness();
   const basePolicy = atBase ? contraryPolicy(atBase) : { strict: false, failOnContrarySignals: false };
 
   if (policy.strict || basePolicy.strict) return true;
   if (!policy.failOnContrarySignals && !basePolicy.failOnContrarySignals) return false;
-  if (scoreCombinedRisk({ storyDir, config }).level === "high") return true;
-  if (!atBase) return false;
 
-  const baseRisk = { ...defaultHarnessConfig() };
-  for (const key of BASE_RISK_KEYS) {
-    if (Array.isArray(atBase[key])) baseRisk[key] = atBase[key];
-  }
-
-  return scoreDiffRisk(changedFilesForCoverage(cwd, baseRisk), baseRisk).level === "high";
+  return strictestRisk({ storyDir, config, atBase }) === "high";
 }
 
 function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null, policyChange = null }) {
@@ -792,5 +802,6 @@ module.exports = {
   NO_CONTRARY,
   contraryPolicy,
   contraryEnforced,
+  strictestRisk,
   evaluateContrarySignals,
 };

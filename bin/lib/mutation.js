@@ -25,9 +25,8 @@ const { matchesPattern } = require("./util");
 const { currentDiffBase } = require("./diff-scope");
 const { currentTreeToken } = require("./identity");
 const { readStoryBundle, extractSection } = require("./story");
-const { scoreCombinedRisk } = require("./risk");
 const { resolveClaim } = require("./claim");
-const { contraryPolicy, contraryEnforced } = require("./coverage-gate");
+const { contraryPolicy, contraryEnforced, strictestRisk } = require("./coverage-gate");
 
 const PROBE = path.join(__dirname, "..", "..", "scripts", "mutation-probe.js");
 const DEFAULT_MAX_MUTANTS = 20;
@@ -202,7 +201,9 @@ function evaluateMutation({ storyDir, config, claim = null }) {
     return null;
   }
 
-  const risk = scoreCombinedRisk({ storyDir, config }).level;
+  // The higher of the base and the tree: a diff cannot drop its own path from
+  // highRiskPaths to skip the probe (same family as story 13-04).
+  const risk = strictestRisk({ storyDir, config });
   const kind = (resolveClaim({ storyDir, flagClaim: claim }) || {}).kind;
 
   if (risk !== "high" && kind !== "refactor") {

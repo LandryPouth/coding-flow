@@ -440,3 +440,20 @@ test('a diff that steps down from strict at the base still fails on its survivor
   assert.equal(evidence.mutation.ok, false, output);
   assert.notEqual(code, 0, output);
 });
+
+test('a diff that drops its own path from highRiskPaths still runs the probe', (t) => {
+  const dir = project(t, 'mutation-drop-path');
+  const settings = { mutation: { command: 'node --test {files}', maxMutants: 5 } };
+  git(dir, ['checkout', '-q', 'main']);
+  harness(dir, { highRiskPaths: ['src/auth/**'], ...settings });
+  git(dir, ['add', '-f', '.coding-flow/harness.json']);
+  git(dir, ['commit', '-q', '-m', 'auth is high risk']);
+  git(dir, ['checkout', '-q', 'feat']);
+  git(dir, ['merge', '-q', '--no-edit', 'main']);
+  harness(dir, { highRiskPaths: ['src/payments/**'], ...settings });
+
+  const { output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, true, output);
+  assert.deepStrictEqual(evidence.mutation.survived, [{ file: 'src/auth/limit.js', line: 2, operator: '< → <=' }]);
+});

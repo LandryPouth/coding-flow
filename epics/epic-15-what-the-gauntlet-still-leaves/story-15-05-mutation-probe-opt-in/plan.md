@@ -25,8 +25,9 @@
   not opting in to strictness. `enforced` is 13-04's `contraryEnforced`,
   reused after 13-04 merged: mode and `failOnContrarySignals` at the stricter
   of the base and the tree, risk at the higher of the two configs, so a diff
-  that steps down from strict still fails on its survivors. Whether the probe
-  is triggered at all still reads the tree's risk only.
+  that steps down from strict still fails on its survivors. The trigger reads
+  the same risk (`strictestRisk`, shared with `contraryEnforced`): a diff that
+  drops its own path from `highRiskPaths` still runs the probe.
 - **No answer is not a pass (review 1, P1).** `ran: false`, "not examined",
   when the probe decided no mutant (no site in the diff's committed JS/TS
   lines — a non-JS project included — or every mutant timed out, failed to

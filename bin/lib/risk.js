@@ -233,6 +233,7 @@ function scoreCombinedRisk({ storyDir, config }) {
 }
 
 module.exports = {
+  RISK_RANK,
   scoreStoryRisk,
   scoreDiffRisk,
   combineRisk,
