@@ -22,3 +22,18 @@
 ## Acceptance Traceability
 
 - criteria 1–4 → `test/policy-changed.test.js`
+
+## Decisions (proof, 2026-11-13)
+
+- **Proven with `--base 72dabd5`**, the commit before `2489e3b`: the branch's
+  fork point (`develop`) and `develop`'s own recorded `codingFlowBase`
+  (`4c7280c`) both lie after the story's code, so neither scope measures it.
+  The wide scope (295 files) is the price; `branch.develop.codingFlowBase` is
+  left untouched (DOGFOODING 2026-11-10, "verify (proof scope)").
+- **The size ratchet held the story's two functions, and the fix is a split,
+  not a gate change.** The first verify was NOT PROVEN: `printHelp` 105→106
+  (the `--policy-change` line) and `evaluateContrarySignals` 76→94 (this story
+  and 13-05's drift both grew it). The reference text moved to a
+  `FULL_REFERENCE` constant (help output byte-identical), and the failure
+  list moved to `contraryFailures` (same order, same messages; 45 contrary,
+  drift and CLI tests green).

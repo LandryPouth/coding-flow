@@ -692,9 +692,27 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
   }
 
   const enforced = policy.strict || (policy.failOnContrarySignals && scoreCombinedRisk({ storyDir, config }).level === "high");
+  const drift = criteriaChanged.length > 0 || specInDiff;
+  const failures = enforced
+    ? contraryFailures({ deletedTests, openCriteria, criteriaChanged, specInDiff, specChange, policyChanged, declaredPolicy })
+    : [];
+
+  return {
+    enforced,
+    ok: failures.length === 0,
+    failures,
+    warnings: { deletedTests, openCriteria, assertionsRemoved, criteriaChanged, specInDiff, policyChanged },
+    ...(drift && specChange ? { specChange } : {}),
+    ...(policyChanged.length > 0 && declaredPolicy ? { policyChange: declaredPolicy } : {}),
+  };
+}
+
+// The signals that fail an enforced run; each one a written section can lower
+// to a claim says which section.
+function contraryFailures({ deletedTests, openCriteria, criteriaChanged, specInDiff, specChange, policyChanged, declaredPolicy }) {
   const failures = [];
 
-  if (enforced && deletedTests.length > 0) {
+  if (deletedTests.length > 0) {
     failures.push({
       signal: "deleted-tests",
       detail: `${deletedTests.length} test file(s) deleted, and no Test Exemption names them: ${deletedTests.slice(0, 5).join(", ")}`,
@@ -702,7 +720,7 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     });
   }
 
-  if (enforced && openCriteria.length > 0) {
+  if (openCriteria.length > 0) {
     failures.push({
       signal: "open-criteria",
       detail:
@@ -713,9 +731,7 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
   }
 
   // A written reason lowers the claim and is accepted, and is kept in the evidence.
-  const drift = criteriaChanged.length > 0 || specInDiff;
-
-  if (enforced && drift && !specChange) {
+  if ((criteriaChanged.length > 0 || specInDiff) && !specChange) {
     const what = specInDiff
       ? "the story's spec is born in this diff, so the specifier is the coder"
       : `${criteriaChanged.length} acceptance criterion(a) changed since the diff base: ${criteriaChanged.slice(0, 5).join("; ")}`;
@@ -727,7 +743,7 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     });
   }
 
-  if (enforced && policyChanged.length > 0 && !declaredPolicy) {
+  if (policyChanged.length > 0 && !declaredPolicy) {
     failures.push({
       signal: "policy-changed",
       detail:
@@ -737,14 +753,7 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     });
   }
 
-  return {
-    enforced,
-    ok: failures.length === 0,
-    failures,
-    warnings: { deletedTests, openCriteria, assertionsRemoved, criteriaChanged, specInDiff, policyChanged },
-    ...(drift && specChange ? { specChange } : {}),
-    ...(policyChanged.length > 0 && declaredPolicy ? { policyChange: declaredPolicy } : {}),
-  };
+  return failures;
 }
 
 module.exports = {
