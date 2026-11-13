@@ -1,6 +1,6 @@
 # Story 13-08 — A rename keeps its risk
 
-## Status: in-progress
+## Status: done
 
 Found by story 13-04's fourth review (2026-11-13): under a base with
 `failOnContrarySignals: true` and `highRiskPaths: ["src/auth/**"]`,
