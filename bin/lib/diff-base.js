@@ -174,39 +174,44 @@ function resolveDiffBase(cwd, { story = null, flagBase = null, ignoreForkPoint =
   }
 
   const configured = readConfig(cwd).baseBranch;
-  let effective = typeof configured === "string" && configured ? configured : null;
-  let configuredHit = effective ? mergeBaseWith(cwd, effective) : null;
-  let configIgnored = null;
+  const { effective, hit, configIgnored } = configuredBase(cwd, { configured, head, ownCommits });
+  const recorded = () => resolveRecorded(cwd, { story, branch, ignoreForkPoint, found });
 
-  const own = configuredHit ? ownCommits(configuredHit) : null;
-
-  if (own) {
-    const atBase = baseBranchAt(cwd, own.fallback.mergeBase);
-
-    // Committed at the base already: the repository chose it, not this branch.
-    if (atBase !== configured) {
-      configIgnored = {
-        value: configured,
-        reason: `baseBranch "${configured}" is set by this branch and would empty its diff (${own.count} commit(s) since ${own.fallback.ref})`,
-      };
-      const baseHit = atBase ? mergeBaseWith(cwd, atBase) : null;
-
-      effective = atBase;
-      configuredHit = baseHit && baseHit.mergeBase !== head ? baseHit : null;
-      if (!configuredHit) return { ...resolveRecorded(cwd, { story, branch, ignoreForkPoint, found }), configIgnored };
-    }
+  if (hit) {
+    return found("config", hit, { ...forkPointIgnoredFor(cwd, branch, effective), ...(configIgnored ? { configIgnored } : {}) });
   }
 
-  if (configuredHit) {
-    return found("config", configuredHit, { ...forkPointIgnoredFor(cwd, branch, effective), ...(configIgnored ? { configIgnored } : {}) });
-  }
+  if (configIgnored) return { ...recorded(), configIgnored };
 
   // A configured base that does not resolve is not silently ignored: it is
   // recorded, as a missing fork point is.
-  const configUnresolved = effective;
-  const result = resolveRecorded(cwd, { story, branch, ignoreForkPoint, found });
+  return effective ? { ...recorded(), configUnresolved: effective } : recorded();
+}
 
-  return configUnresolved ? { ...result, configUnresolved } : result;
+// The configured baseBranch, unless the branch set it itself to empty its own
+// diff: then the one committed at its base, if any (story 13-07).
+function configuredBase(cwd, { configured, head, ownCommits }) {
+  const value = typeof configured === "string" && configured ? configured : null;
+  const hit = value ? mergeBaseWith(cwd, value) : null;
+  const own = hit ? ownCommits(hit) : null;
+
+  if (!own) return { effective: value, hit, configIgnored: null };
+
+  const atBase = baseBranchAt(cwd, own.fallback.mergeBase);
+
+  // Committed at the base already: the repository chose it, not this branch.
+  if (atBase === value) return { effective: value, hit, configIgnored: null };
+
+  const baseHit = atBase ? mergeBaseWith(cwd, atBase) : null;
+
+  return {
+    effective: atBase,
+    hit: baseHit && baseHit.mergeBase !== head ? baseHit : null,
+    configIgnored: {
+      value,
+      reason: `baseBranch "${value}" is set by this branch and would empty its diff (${own.count} commit(s) since ${own.fallback.ref})`,
+    },
+  };
 }
 
 // A fork point recorded on a base branch: not used, and named with why.
