@@ -96,9 +96,18 @@ function writeAuth(dir, { withTest = false } = {}) {
 function setHarness(dir, patch) {
   const file = path.join(dir, '.coding-flow', 'harness.json');
   const current = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-  // These tests edit harness.json after the base commit; that edit is not what
-  // they are about, so the policy-changed signal is switched off for them.
-  fs.writeFileSync(file, JSON.stringify({ ...current, policyGlobs: [], ...patch }, null, 2));
+  fs.writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2));
+
+  // Before any work, the floor is the project's standing policy: it goes into
+  // the base, so the diff under proof does not carry a policy change. Set later,
+  // it stays in the diff, as a real mid-branch edit would.
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' });
+  const main = execFileSync('git', ['rev-parse', 'main'], { cwd: dir, encoding: 'utf8' });
+  if (head === main) {
+    git(dir, ['add', '-A']);
+    git(dir, ['commit', '-m', 'policy']);
+    git(dir, ['branch', '-f', 'main', 'HEAD']);
+  }
 }
 
 const ALL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -153,9 +162,14 @@ test('editing the floor invalidates an earlier green proof', (t) => {
   assert.equal(run(dir, ['verify']).code, 0, 'green under the standard floor');
   setHarness(dir, { mode: 'strict' });
 
-  const res = run(dir, ['verify']);
+  // The edit is in the diff, so policy-changed fires too; the floor must fail
+  // on its own account, not only through that signal.
+  const res = run(dir, ['verify', '--json']);
+  const out = JSON.parse(res.output);
   assert.equal(res.code, 1, res.output);
   assert.doesNotMatch(res.output, /already proved/);
+  assert.equal(out.coverage.ok, false);
+  assert.deepEqual(out.coverage.floor, { required: 'verified', reached: 'evidence' });
 });
 
 test('strict mode: a report covering the added lines reaches verified and passes', (t) => {

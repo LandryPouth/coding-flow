@@ -39,16 +39,22 @@ function write(dir, file, content) {
 
 function editJson(dir, file, change) {
   const target = path.join(dir, file);
-  const json = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8')) : {};
+  const json = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8').replace(/^\uFEFF/, '')) : {};
   fs.writeFileSync(target, JSON.stringify(change(json), null, 2));
 }
 
-function repo(t, prefix, { strict = false, storyExtra = '' } = {}) {
+// `harness` is merged into harness.json in the base commit, before the branch.
+// `branch: false` stays on main, the only branch: verify then has no merge base.
+function repo(t, prefix, { strict = false, storyExtra = '', harness = {}, bom = false, branch = true } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `coding-flow-${prefix}-`)));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   assert.equal(run(dir, ['init', '--minimal']).code, 0);
   editJson(dir, '.coding-flow/config.json', (c) => ({ ...c, validation: { commands: ['node -e "process.exit(0)"'], quality: [] } }));
-  if (strict) editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, mode: 'strict' }));
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, ...(strict ? { mode: 'strict' } : {}), ...harness }));
+  if (bom) {
+    const file = path.join(dir, '.coding-flow/harness.json');
+    fs.writeFileSync(file, `\uFEFF${fs.readFileSync(file, 'utf8')}`);
+  }
 
   write(dir, `${STORY}/spec.md`, '# Widget\n\n## Acceptance Criteria\n\n- [x] Given X then Y\n');
   write(dir, `${STORY}/plan.md`, '# Plan\n');
@@ -58,7 +64,7 @@ function repo(t, prefix, { strict = false, storyExtra = '' } = {}) {
   git(dir, ['config', 'user.name', 'Test']);
   git(dir, ['add', '-A']);
   git(dir, ['commit', '-m', 'init']);
-  git(dir, ['checkout', '-b', 'feat/widget']);
+  if (branch) git(dir, ['checkout', '-b', 'feat/widget']);
   write(dir, 'src/widget.js', 'module.exports = 1;\n');
   write(dir, 'src/widget.test.js', 'assert(1);\n');
   if (storyExtra) fs.appendFileSync(path.join(dir, STORY, 'spec.md'), storyExtra);
@@ -149,16 +155,75 @@ test('a boundary checker config is a policy file by default', (t) => {
   ]);
 });
 
-test('a policyGlobs override replaces the defaults', (t) => {
-  const dir = repo(t, 'pc-glob');
-  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, policyGlobs: ['custom.rules'] }));
-  git(dir, ['add', '-A']);
-  git(dir, ['commit', '-m', 'glob']);
+test('a policyGlobs override present at the base replaces the defaults', (t) => {
+  const dir = repo(t, 'pc-glob', { harness: { policyGlobs: ['custom.rules'] } });
   write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
   write(dir, 'custom.rules', 'a\n');
 
   const res = verify(dir);
   assert.deepEqual(res.json.contrary.warnings.policyChanged, ['custom.rules']);
+});
+
+test('strict: emptying policyGlobs in the same diff that lowers the bar still fails', (t) => {
+  // The globs that judge a diff come from the base: the diff cannot unlist itself.
+  const dir = repo(t, 'pc-unlist', { strict: true });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, minPatchCoverage: 0, policyGlobs: [] }));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(res.json.contrary.warnings.policyChanged, ['.coding-flow/harness.json']);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('the Coding Flow config files are policy files even when the base override omits them', (t) => {
+  const dir = repo(t, 'pc-own', { harness: { policyGlobs: ['custom.rules'] } });
+  editJson(dir, '.coding-flow/config.json', (c) => ({ ...c, validation: { commands: ['true'], quality: [] } }));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.policyChanged, ['.coding-flow/config.json']);
+});
+
+test('strict: lowering minPatchCoverage in harness.json fails, and a Policy Change section lets it pass', (t) => {
+  const dir = repo(t, 'pc-harness-strict', { strict: true });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, minPatchCoverage: 10 }));
+
+  const failed = verify(dir);
+  assert.equal(failed.code, 1, failed.output);
+  assert.ok(failed.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+
+  fs.appendFileSync(path.join(dir, STORY, 'spec.md'), '\n## Policy Change\n\nThe floor moved to the team-wide value.\n');
+  const passed = verify(dir);
+  assert.equal(passed.code, 0, passed.output);
+  assert.match(passed.json.contrary.policyChange, /team-wide value/);
+});
+
+test('strict: renaming a policy file away is policy-changed and fails', (t) => {
+  const dir = repo(t, 'pc-rename', { strict: true });
+  git(dir, ['mv', '.eslintrc.json', 'eslintrc.bak.json']);
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(res.json.contrary.warnings.policyChanged, ['.eslintrc.json']);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('strict: a Policy Change section holding only a comment or blanks gives no reason', (t) => {
+  const dir = repo(t, 'pc-empty', { strict: true, storyExtra: '\n## Policy Change\n\n<!-- why the bar moved -->\n\n' });
+  write(dir, '.eslintrc.json', '{"rules":{"no-undef":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+  assert.equal(res.json.contrary.policyChange, undefined);
+});
+
+test('strict at the base: switching mode to standard in the diff does not soften the verdict', (t) => {
+  const dir = repo(t, 'pc-mode', { strict: true });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, mode: 'standard' }));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
 });
 
 test('deleting a policy file and adding an untracked one are both policy-changed', (t) => {
@@ -169,4 +234,95 @@ test('deleting a policy file and adding an untracked one are both policy-changed
   const res = verify(dir);
   assert.equal(res.code, 0, res.output);
   assert.deepEqual(res.json.contrary.warnings.policyChanged, ['.eslintrc.json', 'tsconfig.json']);
+});
+
+test('strict, working-tree scope: an uncommitted step-down and unlisting is judged against HEAD', (t) => {
+  // On main alone there is no merge base: the diff is the working tree against
+  // HEAD, and HEAD's harness.json is the bar.
+  const dir = repo(t, 'pc-worktree', { strict: true, branch: false });
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'work']);
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, mode: 'standard', policyGlobs: [] }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = run(dir, ['verify', '--no-cache', '--story', STORY, '--json']);
+  const json = JSON.parse(res.output.slice(res.output.indexOf('{')));
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(json.contrary.warnings.policyChanged, ['.coding-flow/harness.json', '.eslintrc.json']);
+  assert.ok(json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('strict at the base is read through a byte-order mark', (t) => {
+  const dir = repo(t, 'pc-bom', { strict: true, bom: true });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, mode: 'standard' }));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('strict: an unclosed comment in Policy Change gives no reason', (t) => {
+  const dir = repo(t, 'pc-unclosed', { strict: true, storyExtra: '\n## Policy Change\n\n<!-- why the bar moved\n' });
+  write(dir, '.eslintrc.json', '{"rules":{"no-undef":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+  assert.equal(res.json.contrary.policyChange, undefined);
+});
+
+// failOnContrarySignals enforces only when the risk is high, and the risk is
+// read from highRiskPaths, testGlobs and ignoredPaths: none of them may be
+// lowered by the diff it judges.
+const FAIL_ON_SRC = { failOnContrarySignals: true, highRiskPaths: ['src/**'] };
+
+test('failOn at the base: a policy change on a high-risk diff fails', (t) => {
+  const dir = repo(t, 'pc-failon', { harness: FAIL_ON_SRC });
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('failOn at the base: emptying highRiskPaths in the diff still fails', (t) => {
+  const dir = repo(t, 'pc-riskpaths', { harness: FAIL_ON_SRC });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, highRiskPaths: [] }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('failOn at the base: ignoring the high-risk paths in the diff still fails', (t) => {
+  const dir = repo(t, 'pc-ignored', { harness: FAIL_ON_SRC });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, ignoredPaths: ['src/**'] }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('failOn at the base: calling an unguarded git merge a test file in the diff still fails', (t) => {
+  // An unguarded git(…, ["merge"]) is a structural high-risk signal outside test files.
+  const dir = repo(t, 'pc-testglobs', { harness: { failOnContrarySignals: true } });
+  write(dir, 'src/land.js', 'git(root, ["merge", "feature"]);\n');
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, testGlobs: ['src/**'] }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
+});
+
+test('failOn at the base: turning failOnContrarySignals off in the diff still fails', (t) => {
+  const dir = repo(t, 'pc-failon-off', { harness: FAIL_ON_SRC });
+  editJson(dir, '.coding-flow/harness.json', (h) => ({ ...h, failOnContrarySignals: false }));
+  write(dir, '.eslintrc.json', '{"rules":{"x":"off"}}\n');
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'policy-changed'));
 });
