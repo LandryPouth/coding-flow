@@ -107,19 +107,61 @@ test('the same change without the move fails too, as the baseline', (t) => {
   assert.equal(res.code, 1, res.output);
 });
 
-test('a pure move out of a high-risk path keeps the risk of its new path, and verify passes', (t) => {
+// A path is behavior: a pure move out of a high-risk path is scored high, and
+// the coverage gate asks for a test (or an exemption) as for any high change.
+test('a pure move out of a high-risk path is scored high, and verify asks for a test', (t) => {
   const dir = repo(t, 'rename-risk-pure');
+  write(dir, `${STORY}/spec.md`, '# Login\n\n## Acceptance Criteria\n\n- [x] it works\n');
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'close the criterion']);
   git(dir, ['mv', 'src/auth/login.js', 'src/login.js']);
   git(dir, ['commit', '-m', 'move login out of auth, unchanged']);
 
   const risk = preflightRisk(dir);
-  assert.equal(risk.level, 'low', JSON.stringify(risk));
+  assert.equal(risk.level, 'high', JSON.stringify(risk));
+  assert.ok(risk.matchedPaths.includes('src/auth/login.js'), JSON.stringify(risk));
   const res = verify(dir);
-  assert.equal(res.json.contrary.enforced, false, res.output);
-  assert.equal(res.code, 0, res.output);
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /no test file did/, res.output);
 });
 
-test('a move that only reorders lines is not pure: scored high', (t) => {
+test('a pure move of a middleware away from its name is scored high under the default paths', (t) => {
+  const dir = repo(t, 'rename-risk-middleware');
+  const harnessPath = path.join(dir, '.coding-flow', 'harness.json');
+  const { highRiskPaths, ...harness } = JSON.parse(fs.readFileSync(harnessPath, 'utf8'));
+  fs.writeFileSync(harnessPath, JSON.stringify(harness, null, 2));
+  write(dir, 'src/middleware.ts', 'export function middleware() {}\n');
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'add middleware, default high-risk paths']);
+  git(dir, ['checkout', '-q', 'main']);
+  git(dir, ['merge', '-q', 'feat/login']);
+  git(dir, ['checkout', '-q', 'feat/login']);
+  git(dir, ['mv', 'src/middleware.ts', 'src/mw-disabled.ts']);
+  git(dir, ['commit', '-m', 'disable the middleware']);
+
+  const risk = preflightRisk(dir);
+  assert.equal(risk.level, 'high', JSON.stringify(risk));
+  assert.ok(risk.matchedPaths.includes('src/middleware.ts'), JSON.stringify(risk));
+});
+
+test('a high-risk deletion paired by git with an identical file elsewhere is still scored high', (t) => {
+  const dir = repo(t, 'rename-risk-paired');
+  write(dir, 'src/util/login.js', LOGIN);
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'add an identical login under util']);
+  git(dir, ['checkout', '-q', 'main']);
+  git(dir, ['merge', '-q', 'feat/login']);
+  git(dir, ['checkout', '-q', 'feat/login']);
+  git(dir, ['rm', '-q', 'src/auth/login.js']);
+  git(dir, ['mv', 'src/util/login.js', 'src/x.js']);
+  git(dir, ['commit', '-m', 'delete auth login, move util login']);
+
+  const risk = preflightRisk(dir);
+  assert.equal(risk.level, 'high', JSON.stringify(risk));
+  assert.ok(risk.matchedPaths.includes('src/auth/login.js'), JSON.stringify(risk));
+});
+
+test('a move that only reorders lines is scored high', (t) => {
   const dir = repo(t, 'rename-risk-reorder');
   write(dir, 'src/auth/guard.js', 'if (!u.admin) throw new Error("no");\nreturn doPrivileged(u);\n');
   git(dir, ['add', '-A']);
@@ -136,7 +178,7 @@ test('a move that only reorders lines is not pure: scored high', (t) => {
   assert.ok(risk.matchedPaths.includes('src/auth/guard.js'), JSON.stringify(risk));
 });
 
-test('a move with a mode change is not pure: scored high', (t) => {
+test('a move with a mode change is scored high', (t) => {
   const dir = repo(t, 'rename-risk-chmod');
   git(dir, ['mv', 'src/auth/login.js', 'src/login.js']);
   fs.chmodSync(path.join(dir, 'src/login.js'), 0o755);
