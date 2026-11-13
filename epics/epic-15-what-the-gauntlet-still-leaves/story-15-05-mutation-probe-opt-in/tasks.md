@@ -1,10 +1,10 @@
 # Story 15-05 — Tasks
 
-## Status: in-progress
+## Status: done
 
 - [x] Confirm 15-04's verdict is go; otherwise close this story.
 - [x] Tests first; module from the probe script; signal; exemption.
-- [~] `npm test`; verify; CHANGELOG (Added) — done; independent review pending.
+- [x] `npm test`; verify; independent review (three STRICT passes); CHANGELOG (Added).
 
 ## Result
 
@@ -29,6 +29,9 @@ core) and on `command-timeout.test.js` under load (8/8 alone). The suite took
 1 199.6 s of its 1 200 s budget while two other verifies ran on the machine.
 
 ### Rollback Notes
+
+`git revert` the story's commits. Nothing persists: the probe runs only when
+`mutation` is declared in `harness.json`, and removing the key turns it off.
 
 ### Review 1 (independent, STRICT, fail) — fixed, full verify pending
 
@@ -62,3 +65,18 @@ The tree test has its untracked file back, asserting `git status` and the
 content. 21 tests in `test/mutation.test.js`; each new guard put back one at
 a time turns its test red. Targeted suites 136/136, the probe's own 50
 included.
+
+### Review 3 (independent, STRICT, pass) — P2s fixed, verified
+
+Fenced code blocks no longer hold an exemption; HEAD is read once before the
+probe and passed as `--head`; markdown under `fixtures/` or matching
+`testGlobs` counts as behaviour; the per-mutant timer is cleared and the exit
+code fixed when `sh` exits. 25 tests in `test/mutation.test.js`; each new
+guard put back turns its test red.
+
+Final verify (2026-11-13, after merging `develop`):
+`ai-flow verify --story epics/epic-15-what-the-gauntlet-still-leaves/story-15-05-mutation-probe-opt-in`
+— passed, `Coverage: verified` (93.7 % of 367 added lines), scope: diff
+against `develop` (fork point), 15 files. Review captured (pass, p1 1, p2 11).
+`harness check` fails only on the known pre-existing fixtures
+(`test/guard.test.js:95,141`, `test/harness.test.js:56`).
