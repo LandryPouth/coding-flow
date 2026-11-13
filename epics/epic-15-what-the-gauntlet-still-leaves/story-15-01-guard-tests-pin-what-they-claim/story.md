@@ -1,6 +1,6 @@
 # Story 15-01 — The guard's tests assert what they claim
 
-## Status: in-progress
+## Status: done
 
 Experiment 1 of the Uncle Bob study (30 sampled mutants on epic 05's
 `guard.js` lines, 27 killed) left two non-equivalent survivors. Re-checked
@@ -74,6 +74,10 @@ more, never less:
 - `!source.endsWith("/")` removed.
 
 Pin them in a later pass if mutation testing is adopted (15-04/15-05).
+
+### Rollback Notes
+
+`git revert` of the 15-01 commits; tests only, no data or config migration.
 
 ### Verify history
 
