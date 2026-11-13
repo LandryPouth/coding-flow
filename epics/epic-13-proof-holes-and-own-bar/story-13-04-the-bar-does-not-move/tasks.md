@@ -1,5 +1,6 @@
 # Story 13-04 — Tasks
-\n## Status: in-progress
+
+## Status: in-progress
 
 - [x] `policyGlobs` default and config read.
 - [x] Contrary signal + `## Policy Change` / `--policy-change`, tests first.
