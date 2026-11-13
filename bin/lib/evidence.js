@@ -278,6 +278,12 @@ function canStandIn(evidence, { redAtBase }) {
     return false;
   }
 
+  // Likewise a mutation probe that did not answer (uncommitted edits, no site,
+  // a budget run out): the same tree, committed, may get an answer.
+  if (evidence.mutation && evidence.mutation.ran === false && !evidence.mutation.skipped) {
+    return false;
+  }
+
   // Story-less runs share `story: null` with land's re-verify, which skipped
   // the coverage gate: replaying it would be a green with no gate behind it.
   // Evidence from before `skipped` existed is recognised by its reason.

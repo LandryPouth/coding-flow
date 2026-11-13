@@ -43,7 +43,9 @@ const STORY = 'epics/epic-01-limits/story-01-01-limit-attempts';
 // A base on `main` with a story and a placeholder, then a branch adding `file`:
 // `attempts < max`, with a test that never tries `attempts === max`, so the
 // `<` → `<=` mutant survives.
-function project(t, prefix, { file = 'src/auth/limit.js', story = '' } = {}) {
+const LIMIT = 'function allowed(attempts, max) {\n  return attempts < max;\n}\n\nmodule.exports = { allowed };\n';
+
+function project(t, prefix, { file = 'src/auth/limit.js', story = '', body = LIMIT } = {}) {
   const dir = scratch(t, prefix);
   git(dir, ['init', '-q', '-b', 'main']);
   git(dir, ['config', 'user.email', 'mutation@example.com']);
@@ -54,7 +56,7 @@ function project(t, prefix, { file = 'src/auth/limit.js', story = '' } = {}) {
   write(dir, 'README.md', 'fixture\n');
   commit(dir, 'base');
   git(dir, ['checkout', '-q', '-b', 'feat']);
-  write(dir, file, 'function allowed(attempts, max) {\n  return attempts < max;\n}\n\nmodule.exports = { allowed };\n');
+  write(dir, file, body);
   write(dir, 'test/limit.test.js', [
     "const test = require('node:test');",
     "const assert = require('node:assert');",
@@ -81,8 +83,8 @@ function run(dir, args) {
   }
 }
 
-function verify(dir, extra = []) {
-  const { code, output } = run(dir, ['verify', '--json', '--no-cache', ...extra]);
+function verify(dir, extra = [], { cache = false } = {}) {
+  const { code, output } = run(dir, ['verify', '--json', ...(cache ? [] : ['--no-cache']), ...extra]);
   return { code, output, evidence: JSON.parse(output) };
 }
 
@@ -207,7 +209,8 @@ test('a probe that cannot run is reported as not examined, never as killed', (t)
 
 test('no worktree remains after a run, and the user tree token is unchanged', (t) => {
   const dir = project(t, 'mutation-clean');
-  write(dir, 'notes.txt', 'uncommitted work\n');
+  // A tracked edit: with an untracked file, verify records no tree token at all.
+  write(dir, 'README.md', 'uncommitted work\n');
   harness(dir, { mutation: { command: 'node --test {files}', maxMutants: 5 } });
   const tokenBefore = verify(dir).evidence.provenance;
   const statusBefore = git(dir, ['status', '--porcelain']);
@@ -219,5 +222,79 @@ test('no worktree remains after a run, and the user tree token is unchanged', (t
   assert.equal(git(dir, ['status', '--porcelain']), statusBefore);
   assert.equal(git(dir, ['stash', 'list']), '');
   assert.equal(fs.readFileSync(path.join(dir, 'src/auth/limit.js'), 'utf8').includes('attempts < max'), true);
-  assert.deepStrictEqual(evidence.provenance.treeToken, tokenBefore.treeToken);
+  assert.notEqual(tokenBefore.git.treeToken, undefined);
+  assert.equal(evidence.provenance.git.treeToken, tokenBefore.git.treeToken);
+});
+
+test('uncommitted edits to the diff are not examined, a failure under strict', (t) => {
+  const dir = project(t, 'mutation-dirty');
+  harness(dir, { mode: 'strict', mutation: { command: 'node --test {files}', maxMutants: 5 } });
+  write(dir, 'src/auth/limit.js', 'function allowed(attempts, max) {\n  return attempts < max && max > 0;\n}\n\nmodule.exports = { allowed };\n');
+
+  const { output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, false, output);
+  assert.match(evidence.mutation.reason, /uncommitted changes in src\/auth\/limit\.js/);
+  assert.equal(evidence.ok, false);
+});
+
+test('a green run whose probe did not answer is never replayed once the same content is committed', (t) => {
+  const dir = project(t, 'mutation-replay');
+  harness(dir, { mutation: { command: 'node --test {files}', maxMutants: 5 } });
+  write(dir, 'src/auth/limit.js', 'function allowed(attempts, max) {\n  return attempts < max && max > 0;\n}\n\nmodule.exports = { allowed };\n');
+
+  const dirty = verify(dir, [], { cache: true });
+  assert.equal(dirty.evidence.ok, true, dirty.output);
+  assert.equal(dirty.evidence.mutation.ran, false);
+
+  commit(dir, 'feat: the limit must be positive');
+  const committed = verify(dir, [], { cache: true });
+  assert.notEqual(committed.evidence.reused, true, 'the not-examined answer is not replayed');
+  assert.equal(committed.evidence.mutation.ran, true, committed.output);
+  assert.ok(committed.evidence.mutation.survived.length > 0);
+});
+
+test('a high-risk diff with no site in its JS/TS lines is not examined, never ok under strict', (t) => {
+  const dir = project(t, 'mutation-no-site', { body: 'function allowed(attempts, max) {\n  return Boolean(Math.min(1, Math.max(0, max - attempts)));\n}\n\nmodule.exports = { allowed };\n' });
+  harness(dir, { mode: 'strict', mutation: { command: 'node --test {files}', maxMutants: 5 } });
+
+  const { output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, false, output);
+  assert.match(evidence.mutation.reason, /no site in the diff's committed JS\/TS lines/);
+  assert.equal(evidence.mutation.ok, false);
+  assert.equal(evidence.ok, false);
+});
+
+test('an exemption inside an HTML comment excuses nothing', (t) => {
+  const dir = project(t, 'mutation-commented', { story: '\n## Mutation Exemption\n\n<!-- src/auth/limit.js:2 is equivalent -->\n<!-- unclosed src/auth/limit.js:2\n' });
+  harness(dir, { mode: 'strict', mutation: { command: 'node --test {files}', maxMutants: 5 } });
+
+  const { evidence } = verify(dir, ['--story', STORY]);
+
+  assert.equal(evidence.mutation.ok, false);
+  assert.deepStrictEqual(evidence.mutation.unexcused, ['src/auth/limit.js:2']);
+  assert.equal(evidence.mutation.exemption, undefined);
+});
+
+test('the probe stops at its budget, says so, and leaves no worktree', (t) => {
+  const dir = project(t, 'mutation-budget');
+  harness(dir, { mutation: { command: 'sleep 5; node --test {files}', maxMutants: 5, timeoutMs: 1500 } });
+  const started = Date.now();
+
+  const { output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, false, output);
+  assert.match(evidence.mutation.reason, /budget of 1\.5s \(mutation\.timeoutMs\) ran out/);
+  assert.ok(Date.now() - started < 60000, 'the budget bounded the run');
+  assert.equal(worktreeCount(dir), 1);
+});
+
+test('the ship PR body names the probe: survivors, or why it did not answer', () => {
+  const { buildEvidenceBlock } = require('../bin/lib/ship');
+  const block = (mutation) => buildEvidenceBlock({ ok: true, commandsOk: true, results: [], mutation });
+
+  assert.match(block({ ran: true, ok: true, killed: 3, unexcused: ['src/auth/limit.js:2'] }), /\*\*Mutation:\*\* ⚠️ 3 killed, 1 survived: src\/auth\/limit\.js:2/);
+  assert.match(block({ ran: false, ok: false, reason: 'not examined — no site' }), /\*\*Mutation:\*\* ⚠️ not examined — no site/);
+  assert.doesNotMatch(block({ ran: false, skipped: true, ok: true, reason: 'risk is low' }), /Mutation/);
 });

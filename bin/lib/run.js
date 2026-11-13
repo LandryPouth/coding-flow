@@ -33,6 +33,7 @@ const {
   harnessRunsDir,
 } = require("./harness");
 const { coverageTier } = require("./coverage");
+const { describeMutation } = require("./mutation");
 
 // Executors. "none" is the only one implemented; the rest are reserved names for
 // the pluggable-driver seam (an agent that implements each story before verify).
@@ -122,6 +123,20 @@ function printDryRun(target, driver, json) {
   }
 }
 
+// What a passing or blocked story did not prove: a security scanner that could
+// not run, and the mutation probe's line when it ran or could not.
+function printUnexamined(entry) {
+  for (const item of entry.results.filter((result) => result.outcome === "not-examined")) {
+    log(`    security not examined: ${item.command} — ${item.notExamined}`);
+  }
+
+  const mutation = describeMutation(entry.mutation);
+
+  if (mutation) {
+    log(`    mutation: ${mutation}`);
+  }
+}
+
 function printReport(report, reportPath) {
   const { target } = report;
   log(`Run report — driver: ${report.driver}, target: ${target.kind}${target.ref ? ` ${target.ref}` : ""}`);
@@ -138,16 +153,14 @@ function printReport(report, reportPath) {
     const coverageBlocked = entry.commandsOk && entry.coverage && !entry.coverage.ok;
     const contraryBlocked = entry.commandsOk && !coverageBlocked && entry.contrary && !entry.contrary.ok;
     const claimBlocked = entry.commandsOk && entry.claim && !entry.claim.ok;
-    const label = entry.ok ? "pass" : coverageBlocked || contraryBlocked || claimBlocked ? "no proof" : "FAIL";
+    const label = entry.ok ? "pass" : coverageBlocked || contraryBlocked || claimBlocked || (entry.commandsOk && entry.mutation && !entry.mutation.ok) ? "no proof" : "FAIL";
     // Ten stories that all say "pass" hide which of them were measured and which
     // merely moved a test file. Over a batch that difference is the whole report.
     const tier = entry.coverage ? entry.coverage.tier || coverageTier(entry.coverage) : "not-required";
     const proof = entry.ok && tier !== "not-required" ? ` — coverage: ${tier}` : "";
     log(`- [${label}] ${entry.story} (${entry.commandsFound} cmd(s), ${duration}ms)${proof}`);
 
-    for (const item of entry.results.filter((result) => result.outcome === "not-examined")) {
-      log(`    security not examined: ${item.command} — ${item.notExamined}`);
-    }
+    printUnexamined(entry);
 
     // Every reason at once: naming only the first sends someone to fix it and
     // run again just to meet the next one.
@@ -220,7 +233,7 @@ function verifyStoryEntry(entry, json) {
     ...(evidence.refused ? { refused: evidence.refused } : {}),
     coverage: evidence.coverage,
     contrary: evidence.contrary,
-    ...(evidence.claim ? { claim: evidence.claim } : {}),
+    ...(evidence.claim ? { claim: evidence.claim } : {}), ...(evidence.mutation ? { mutation: evidence.mutation } : {}),
     ok: evidence.ok,
     results: evidence.results,
     evidencePath: evidencePath ? normalizePortable(path.relative(cwd, evidencePath)) : null,

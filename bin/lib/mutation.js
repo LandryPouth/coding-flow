@@ -11,7 +11,9 @@
 // verdict to NOT PROVEN only where the project asked for strictness, as the
 // other contrary signals do. A `## Mutation Exemption` naming `file:line`
 // excuses a survivor (an equivalent mutant is a human call) and is kept in the
-// evidence verbatim. A probe that cannot run is "not examined", never a pass.
+// evidence verbatim. A probe that cannot run, that decided no mutant, or that
+// would have mutated something other than the tree under proof is "not
+// examined", never a pass.
 
 const fs = require("fs");
 const os = require("os");
@@ -28,12 +30,17 @@ const { resolveClaim } = require("./claim");
 
 const PROBE = path.join(__dirname, "..", "..", "scripts", "mutation-probe.js");
 const DEFAULT_MAX_MUTANTS = 20;
+// The whole probe, baseline included. Past it the probe is stopped (it cleans
+// up on SIGTERM) and what it had not decided is not examined.
+const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+// The probe's own reach: it finds sites in JavaScript and TypeScript only.
+const SOURCE = /\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/;
 const LIMITS =
-  "heuristic: strings, templates and comments are skipped by a line scanner; equivalent mutants exist and only a human " +
-  "can tell them; a mutant that does not compile, times out or is not applied is counted apart, never as killed; " +
-  "the mutants run on the committed HEAD, not on uncommitted edits.";
+  "heuristic, JS/TS only: strings, templates and comments are skipped by a line scanner; equivalent mutants exist and " +
+  "only a human can tell them; a mutant that does not compile, times out or is not applied is counted apart, never as " +
+  "killed; the mutants run on the committed HEAD; the throwaway worktree shares the repository's refs, stash and git config.";
 
-// `harness.json` `mutation: { command, maxMutants, link }`; null when absent.
+// `harness.json` `mutation: { command, maxMutants, link, timeoutMs }`; null when absent.
 function mutationSettings(config) {
   const settings = config.mutation;
 
@@ -49,6 +56,7 @@ function mutationSettings(config) {
     command: settings.command,
     max: Number.isInteger(settings.maxMutants) && settings.maxMutants > 0 ? settings.maxMutants : DEFAULT_MAX_MUTANTS,
     link: Array.isArray(settings.link) ? settings.link.filter((entry) => typeof entry === "string" && entry) : [],
+    timeoutMs: Number.isInteger(settings.timeoutMs) && settings.timeoutMs > 0 ? settings.timeoutMs : DEFAULT_TIMEOUT_MS,
   };
 }
 
@@ -59,11 +67,37 @@ function names(text, key) {
   return new RegExp(`(^|[^\\w./-])${escaped}(?![\\w])`).test(text);
 }
 
+// The exemption as written, without HTML comments (an unclosed one runs to the
+// end): a commented-out line is a template, not a reason.
+function readExemption(storyDir) {
+  if (!storyDir) {
+    return "";
+  }
+
+  return extractSection(Object.values(readStoryBundle(storyDir)).join("\n\n"), "Mutation Exemption")
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .trim();
+}
+
+function git(args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+}
+
+// JS/TS files that differ from HEAD in the working tree, untracked ones
+// included: the mutants run on HEAD, so a verdict would be about other code.
+function uncommittedSources() {
+  return git(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+    .split("\0")
+    .filter((entry) => /^.. /.test(entry))
+    .map((entry) => entry.slice(3))
+    .filter((file) => SOURCE.test(file));
+}
+
 // The test files `{files}` receives. The probe takes the ones the diff touched;
 // a diff that touched none — a refactor claim, by definition — is guarded by
 // the tests already there, so every committed file matching `testGlobs` is named.
 function testsFor(base, config) {
-  const listed = (args) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\0").filter(Boolean);
+  const listed = (args) => git(args).split("\0").filter(Boolean);
   const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
 
   if (listed(["diff", "--name-only", "-z", "--no-renames", base, "HEAD"]).some(isTest)) {
@@ -81,9 +115,19 @@ function runProbe(settings, base, seed, config) {
     ...testsFor(base, config).flatMap((file) => ["--tests", file])];
 
   try {
-    const child = spawnSync(process.execPath, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    // SIGTERM on the budget: the probe stops its command's group, removes its
+    // worktree and writes what it decided before exiting.
+    const child = spawnSync(process.execPath, args, {
+      cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: settings.timeoutMs, killSignal: "SIGTERM",
+    });
     const report = fs.existsSync(json) ? JSON.parse(fs.readFileSync(json, "utf8")) : null;
     const said = String(child.stderr || "").trim().split(/\r?\n/).pop();
+    const outOfTime = Boolean(child.error && child.error.code === "ETIMEDOUT");
+
+    if (outOfTime) {
+      const decided = report ? report.mutants.length : 0;
+      return { error: `the budget of ${settings.timeoutMs / 1000}s (mutation.timeoutMs) ran out after ${decided} mutant(s)` };
+    }
 
     return report || { error: said || `the probe exited with ${child.status === null ? child.signal : child.status}` };
   } finally {
@@ -92,8 +136,8 @@ function runProbe(settings, base, seed, config) {
 }
 
 // What the probe found, judged: survivors not named by the exemption decide `ok`.
-function judge(report, { enforced, storyDir, started }) {
-  const exemption = storyDir ? extractSection(Object.values(readStoryBundle(storyDir)).join("\n\n"), "Mutation Exemption").trim() : "";
+function judge(report, { enforced, storyDir, started, head }) {
+  const exemption = readExemption(storyDir);
   const count = (status) => report.mutants.filter((mutant) => mutant.status === status).length;
   const survived = report.mutants
     .filter((mutant) => mutant.status === "survived")
@@ -104,6 +148,7 @@ function judge(report, { enforced, storyDir, started }) {
     ran: true,
     enforced,
     ok: !enforced || unexcused.length === 0,
+    head,
     seed: report.seed,
     killed: count("killed"),
     survived,
@@ -116,9 +161,26 @@ function judge(report, { enforced, storyDir, started }) {
   };
 }
 
+// Why the probe's answer would not be about the tree under proof, or null.
+function notExaminedBecause(settings, base) {
+  if (settings.invalid) {
+    return settings.invalid;
+  }
+
+  if (!base) {
+    return "no merge base to take the diff's sites from";
+  }
+
+  const dirty = uncommittedSources();
+
+  return dirty.length > 0
+    ? `uncommitted changes in ${dirty.slice(0, 3).join(", ")}${dirty.length > 3 ? ", …" : ""}: the mutants run on HEAD, commit first`
+    : null;
+}
+
 // Null when the project did not opt in. Otherwise the probe's verdict, or why
 // it did not run: not triggered (not high risk, no refactor claim) is a quiet
-// skip; triggered but unable to run is "not examined", a failure when enforced.
+// skip; triggered but unable to answer is "not examined", a failure when enforced.
 function evaluateMutation({ storyDir, config, claim = null }) {
   const settings = mutationSettings(config);
 
@@ -135,15 +197,35 @@ function evaluateMutation({ storyDir, config, claim = null }) {
   }
 
   const base = currentDiffBase(cwd).mergeBase;
-  const why = settings.invalid || (!base ? "no merge base to take the diff's sites from" : null);
+  const why = notExaminedBecause(settings, base);
   const started = Date.now();
   const report = why ? { error: why } : runProbe(settings, base, currentTreeToken(cwd) || base, config);
+  const decided = report.error ? 0 : report.mutants.filter((m) => m.status === "killed" || m.status === "survived").length;
+  const reason = report.error ||
+    (decided === 0 ? (report.mutants.length === 0 ? "no site in the diff's committed JS/TS lines" : "no mutant was decided (all timed out, did not compile, did not start or were not applied)") : null);
 
-  if (report.error) {
-    return { ran: false, enforced, ok: !enforced, reason: `not examined — ${report.error}`, durationMs: Date.now() - started };
+  if (reason) {
+    return { ran: false, enforced, ok: !enforced, reason: `not examined — ${reason}`, durationMs: Date.now() - started };
   }
 
-  return judge(report, { enforced, storyDir, started });
+  return judge(report, { enforced, storyDir, started, head: git(["rev-parse", "HEAD"]).trim() });
 }
 
-module.exports = { evaluateMutation, mutationSettings };
+// One line for the PR body and the run summary; null when nothing ran.
+function describeMutation(mutation) {
+  if (!mutation || mutation.skipped) {
+    return null;
+  }
+
+  if (!mutation.ran) {
+    return `⚠️ ${mutation.reason}`;
+  }
+
+  const listed = mutation.unexcused.slice(0, 5).join(", ");
+
+  return mutation.unexcused.length > 0
+    ? `${mutation.ok ? "⚠️" : "❌"} ${mutation.killed} killed, ${mutation.unexcused.length} survived: ${listed}${mutation.unexcused.length > 5 ? ", …" : ""}`
+    : `✅ ${mutation.killed} killed, none survived unexcused`;
+}
+
+module.exports = { evaluateMutation, mutationSettings, describeMutation };

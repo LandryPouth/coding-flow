@@ -21,6 +21,7 @@ const { readConfig } = require("./config");
 const { getStorage } = require("./storage");
 const { collectHarnessReport } = require("./harness");
 const { coverageTier } = require("./coverage");
+const { describeMutation } = require("./mutation");
 const { describeScope, resolveDiffBase } = require("./diff-base");
 const { latestVerifyByStoryDir } = require("./audit");
 
@@ -247,6 +248,11 @@ function buildEvidenceBlock(evidence) {
   );
   if (scopeLine) {
     lines.push(`**${scopeLine.replace(/^Scope: /, "Scope:** ")}`);
+  }
+
+  const mutationLine = describeMutation(evidence.mutation);
+  if (mutationLine) {
+    lines.push(`**Mutation:** ${mutationLine}`);
   }
 
   lines.push("");

@@ -24,7 +24,30 @@
   warning (`with warnings (1 mutant(s) survived)`). Opting in to the probe is
   not opting in to strictness. Computed from the working config, as the other
   signals are on this branch; 13-04 (in flight) moves `enforced` to the base's
-  config, and this rule should follow it when both land.
+  config. Kept on the working config here for consistency (review 1); the
+  alignment with 13-04's base read is done when the two land together.
+- **No answer is not a pass (review 1, P1).** `ran: false`, "not examined",
+  when the probe decided no mutant (no site in the diff's committed JS/TS
+  lines — a non-JS project included — or every mutant timed out, failed to
+  compile, did not start or was not applied), and when the working tree has
+  uncommitted JS/TS changes: the mutants run on HEAD, so their verdict would
+  be about other code. `canStandIn` never replays such a proof, like a
+  scanner that could not run: the tree token ignores HEAD, so the same
+  content committed would otherwise read "already proved". A run that
+  answered records the `head` it mutated.
+- **A budget for the whole probe** — `mutation.timeoutMs`, default 30 min
+  (the probe bounds each mutant at max(60 s, 3 × baseline); twenty mutants of
+  a slow suite would otherwise hold a verify for hours). Past it `spawnSync`
+  sends SIGTERM: the probe stops its command's process group, removes its
+  worktree and writes what it decided; the run is then "not examined" with
+  the count. The probe's own process group is not killed from here (a
+  `spawnSync` child is not detached); a probe that ignores SIGTERM would
+  hold the verify — it does not, its handler is tested in 15-04.
+- **Exemption text without HTML comments**, an unclosed one running to the
+  end, as 13-04 does for `## Policy Change`.
+- **`ship` and `run` carry the probe's line** (`describeMutation`): the PR
+  body gets `**Mutation:**` (✅ / ⚠️ / ❌), the `run` summary a
+  `mutation:` line, and a story blocked by it reads "no proof", not "FAIL".
 - **Not examined is not killed.** A probe that cannot run (the unmutated tree
   fails the command, no test file, no merge base) returns `ran: false` with
   the reason; it fails verify only when enforced, like a scanner that could
@@ -49,6 +72,12 @@
   became one `every` over the optional proofs.
 
 ## Out of Scope
+
+- **Found, not fixed (pre-existing):** with an untracked file in the tree,
+  `verify` records `provenance.git.treeToken: null` (seen in this story's
+  fixtures, with and without the probe; `currentTreeToken` called directly
+  in the same repository returns a token). The tree-token assertion of
+  criterion 5 therefore uses a tracked edit.
 
 - The verify cache key does not include the mutation result (a mutation
   config change is covered: `harness.json` is in the policy fingerprint).
