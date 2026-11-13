@@ -223,6 +223,9 @@ test('cp or mv onto an existing directory writes the file inside it', (t) => {
   assert.deepEqual(targets('mv key .ssh'), ['.ssh', '.ssh/key']);
   assert.deepEqual(targets('cp -r a b .ssh'), ['.ssh', '.ssh/a', '.ssh/b']);
   assert.deepEqual(targets('cp key notes'), ['notes'], 'a missing destination is the file itself');
+  // No `nodir/` on disk: only the trailing slash says it is a directory.
+  assert.deepEqual(targets('cp key nodir/'), ['nodir/', 'nodir/key']);
+  assert.deepEqual(targets('cp /tmp/x/.env nodir/'), ['nodir/', 'nodir/.env']);
   for (const command of ['cp key .ssh', 'mv key .ssh', 'cp -r a b .ssh']) {
     assert.equal(run(dir, command), 'deny', command);
   }
