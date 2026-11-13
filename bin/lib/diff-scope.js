@@ -200,6 +200,29 @@ function changedFilesForCoverage(root = cwd, scope = null) {
   return filterScopedFiles([...files].map(normalizePortable), scope || readHarnessConfig(root).config).sort();
 }
 
+// The paths the diff RISK reads: `changedFilesForCoverage` plus the old side of
+// every rename. A file moved out of a high-risk directory still touches what
+// was there, so it is scored as if it had not moved; coverage keeps measuring
+// it at its new path only, through `changedFilesForCoverage`.
+function riskPathsInDiff(root = cwd, scope = null) {
+  const config = scope || readHarnessConfig(root).config;
+  const files = new Set(changedFilesForCoverage(root, config));
+  const { mergeBase } = currentDiffBase(root);
+  const sources = [["diff", "--no-renames", "--name-only"], ["diff", "--no-renames", "--cached", "--name-only"]];
+
+  if (mergeBase) {
+    sources.push(["diff", "--no-renames", "--name-only", mergeBase]);
+  }
+
+  for (const argsForGit of sources) {
+    for (const file of runGitList(argsForGit, root)) {
+      files.add(normalizePortable(file));
+    }
+  }
+
+  return filterScopedFiles([...files], config).sort();
+}
+
 // The lines this change ADDED, per file. Only added lines: a deleted line has no
 // coverage to have, and asking a test to execute code that no longer exists is
 // nonsense. `--unified=0` makes every hunk header exact, so no context line is
@@ -397,6 +420,7 @@ module.exports = {
   isScopedOut,
   filterScopedFiles,
   changedFilesForCoverage,
+  riskPathsInDiff,
   runGitText,
   changedLinesForCoverage,
   renamedFilesInDiff,

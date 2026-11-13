@@ -19,7 +19,7 @@ const { readConfig } = require("./config");
 const { evaluateBranchPolicy } = require("./policy");
 const {
   readHarnessConfig,
-  changedFilesForCoverage,
+  riskPathsInDiff,
   readStoryBundle,
   scoreStoryRisk,
   scoreDiffRisk,
@@ -101,7 +101,7 @@ function computeReviewStatus(root, storyPath) {
 // sharing a checkout shares one diff), not on the story itself — cached per
 // root so a project with many done stories on the same checkout (the common
 // case: most stories share `cwd`, since worktrees are the exception) pays for
-// `changedFilesForCoverage`'s several `git` spawns once, not once per story.
+// `riskPathsInDiff`'s several `git` spawns once, not once per story.
 // A `/flow-review` measured `ai-flow status`/`next` going from ~0.1s to
 // ~0.5-0.7s on this repository's own 7 done stories before this cache existed.
 function diffRiskForRoot(root, cache) {
@@ -110,7 +110,7 @@ function diffRiskForRoot(root, cache) {
   }
 
   const { config } = readHarnessConfig(root);
-  const diffRisk = scoreDiffRisk(changedFilesForCoverage(root), config, root);
+  const diffRisk = scoreDiffRisk(riskPathsInDiff(root), config, root);
   const entry = { config, diffRisk };
   cache.set(root, entry);
   return entry;
