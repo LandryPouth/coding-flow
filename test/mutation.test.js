@@ -414,7 +414,10 @@ test('a mutant decided while a detached grandchild holds the pipes is not a time
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
 
-  execFileSync(process.execPath, [probe, '--repo', dir, '--base', 'main', '--head', 'feat', '--command', `${detach}; node --test {files}`,
+  // `--timeout` must stay under the 2 s close grace, or a timer left running
+  // through the grace would go unseen: the command after the detached spawn is
+  // `true`, not a test run, so a loaded machine does not push it past 1 s.
+  execFileSync(process.execPath, [probe, '--repo', dir, '--base', 'main', '--head', 'feat', '--command', `${detach}; true`,
     '--timeout', '1', '--json', out], { cwd: dir, env, stdio: 'ignore' });
   const report = JSON.parse(fs.readFileSync(out, 'utf8'));
 
