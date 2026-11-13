@@ -58,6 +58,16 @@ mutants were applied there. `test/guard-shell.test.js` is 48/48 unmutated.
 
 ### Verify history
 
+- 2026-11-13, story worktree — green, `Coverage: verified` (98.4 % of
+  1748 added lines), with `--base 948cf54~1` so the scope (220 files) holds
+  this story's own commit; the recorded fork point `4c7280c` does not. The
+  scope is wide: it also carries everything on `develop` since, 15-02's
+  filled `shell-writes.js` included. An earlier attempt the same day timed
+  out at 1200 s under a `TMPDIR` set inside the worktree, which made the
+  fixtures write into it; nothing from it was kept.
+
+Earlier, 2026-11-10:
+
 - 17:29 — green, `Coverage: verified` (95.9 % of the scope's added lines).
 - 17:40 — red on `test/pinned-claude-skills.test.js:52`, outside this
   story; passes 3/3 alone (logged in `docs/DOGFOODING.md`).
