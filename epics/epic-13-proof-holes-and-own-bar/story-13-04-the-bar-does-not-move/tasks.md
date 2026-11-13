@@ -38,6 +38,12 @@ window holds the neighbouring stories too: green on the whole window, not a
 proof of this story alone. One warning: `policy-changed` on
 `.coding-flow/harness.json`.
 
+Green again after the third review's fixes (`8c6a481`, `9468898`) and a merge of
+`develop` (`4e7d8f6`): same command, passed, coverage **verified** (96.6 % of
+6,810 added lines), scope 349 files, evidence
+`2026-11-13T19-50-22-930Z-verify.json`, same single warning. Same caveat: the
+window, not this story alone.
+
 ### Rollback Notes
 
 `git revert`; no data or config migration.
