@@ -27,6 +27,12 @@ repositories.)*
 - [ ] Given `worktree add <base-branch-name> --from <ref>` on a fresh
       repository where that branch does not exist yet, then no
       `codingFlowBase` is written for it.
+- [ ] Given a branch whose own diff sets `.coding-flow/config.json`
+      `baseBranch` to the current branch (or `--base HEAD`) while it has
+      commits of its own, then the diff is not silently emptied: the base is
+      read as it was at the fork point (or the run is refused and says why),
+      so a strict bar at the base still holds (found by story 13-04's fourth
+      review, 2026-11-13).
 - [ ] `docs/DOGFOODING.md`'s row is resolved (what was done; origin still
       unknown if it is), CHANGELOG `[Unreleased]` → Fixed.
 
