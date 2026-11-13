@@ -97,7 +97,7 @@ function diffBaseFlag() {
   return diffBaseRequest.flagBase;
 }
 
-function publicDiffBase({ ref, mergeBase, source, scope, forkPointMissing, configUnresolved }) {
+function publicDiffBase({ ref, mergeBase, source, scope, forkPointMissing, configUnresolved, forkPointIgnored, configIgnored }) {
   return {
     ref,
     mergeBase,
@@ -105,6 +105,8 @@ function publicDiffBase({ ref, mergeBase, source, scope, forkPointMissing, confi
     scope,
     ...(forkPointMissing ? { forkPointMissing } : {}),
     ...(configUnresolved ? { configUnresolved } : {}),
+    ...(forkPointIgnored ? { forkPointIgnored } : {}),
+    ...(configIgnored ? { configIgnored } : {}),
   };
 }
 

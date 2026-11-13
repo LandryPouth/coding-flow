@@ -21,6 +21,7 @@ const path = require("path");
 const { hasStoryContent } = require("./story");
 const { readJson, writeJson, canonicalPath, relativePath, samePath } = require("./util");
 const { readConfig } = require("./config");
+const { baseBranchNames } = require("./diff-base");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
@@ -262,7 +263,9 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   git(root, addArgs);
-  if (!branchExists) {
+  // A base branch (develop, main…) has no fork point: verify would read one as a
+  // story scope (story 13-07).
+  if (!branchExists && !baseBranchNames(root, readConfig(root).baseBranch).includes(name)) {
     // The fork point travels with the branch in the repository's own config, so
     // verify can measure the story from where it forked, not from main. The ref
     // is a branch name, re-resolved on every run: a rebase keeps it valid.
