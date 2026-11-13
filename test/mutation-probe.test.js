@@ -543,7 +543,8 @@ test('a background process the command left does not turn a pass into a timeout'
 
 test('the running file names the group while the command runs, and is emptied after', async (t) => {
   const dir = scratch(t, 'coding-flow-mutation-run-');
-  const run = await runCommand('cat running', dir, 10000, { tmp: dir });
+  // The parent writes the file just after spawn: under load `sh` can start first.
+  const run = await runCommand('until [ -s running ]; do sleep 0.01; done; cat running', dir, 10000, { tmp: dir });
   assert.match(run.tail, /^\d+$/m);
   assert.equal(fs.readFileSync(path.join(dir, 'running'), 'utf8'), '');
 });

@@ -65,7 +65,7 @@ nobody waits), two under WSL.
   landed and both touched common files, runs a read-only review process on
   those files (findings recorded, scope `crossing`).
 - Green + no open P0/P1 → the merge is fast-forwarded onto the epic branch.
-  Red or open P1 → the later chain is parked (`blocked (merge)`), never the
+  Red or open P1 → the later chain is parked (hold `parked: merge`, epic 27), never the
   earlier; the run continues with what remains.
 - The 19-03 machine queue still applies: heavy verifies never exceed
   `verify.maxConcurrent` on the machine (`auto`: 1 under WSL or < 16 GB,

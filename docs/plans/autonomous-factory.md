@@ -249,6 +249,7 @@ noise.
 | [24 — Many hands](../../epics/epic-24-many-hands/index.md) | clean worktrees, parallel chains and parallel epics with a merge queue and machine-sized agent slots (4, 2 under WSL), shared locks, PR land, trusted runner, routed questions | team |
 | [25 — The journey is seen](../../epics/epic-25-the-journey-is-seen/index.md) | the browser tier runs the project's own command against a served app; in driven runs a separate process walks the checklist and records what it saw | engine |
 | [26 — Nothing left by hand](../../epics/epic-26-nothing-left-by-hand/index.md) | findings travel between stories, notify command and `ai-flow todo`, docs checked against the code, the epic closes itself, `run --watch`, `ai-flow rules` | engine + team |
+| [27 — The run knows why it stopped](../../epics/epic-27-the-run-knows-why-it-stopped/index.md) | typed holds, failure taxonomy and circuit breaker, git checkpoints, critical path and base sync, `run --plan/--stop/--abort`, decision packets, notification levels and human latency — design in [orchestration.md](orchestration.md) | engine |
 
 Delivery order (revised 2026-11-13):
 
@@ -261,7 +262,9 @@ Delivery order (revised 2026-11-13):
    learned by running it; thirteen stories before the first driven run is
    a cathedral built without a site visit.
 2. The rest of 18 → 19 → 20.
-3. 26-01, 26-02, 26-05 (findings travel, notify and todo, live view) →
+3. 27 (the run knows why it stopped: holds, failure classes, circuit
+   breaker, checkpoints, packets, notification levels) →
+   26-01, 26-02, 26-05 (findings travel, notify and todo, live view) →
    24 s1, s2, s7 (two chains and two epics at once, machine-sized agent
    slots) → 26-04 (the epic closes itself) → 25 (the browser tier is run,
    not ticked).

@@ -2,7 +2,7 @@
 
 Every rule that governs Coding Flow, with its default, its cap or threshold, how
 to change it, and where it is defined. Part 1 is what the shipped code does
-today. Part 2 is what epics 18–26 plan and is not built yet.
+today. Part 2 is what epics 18–27 plan and is not built yet.
 
 Generated from the sources on 2026-11-13 (commit `e00ff82`). Part 1 is read from
 `bin/lib/` and the shipped skills, not from other docs. Part 2 is read from the
@@ -263,6 +263,28 @@ walker, critic and report on a lighter model.
 Notify examples: `notify-send "Coding Flow" "$(jq -r .summary)"` on Linux;
 from WSL, a PowerShell toast through `powershell.exe -c`; a phone push with
 `curl -d @- ntfy.sh/<topic>`.
+
+### Holds, failures and notifications (planned)
+
+Design: [`docs/plans/orchestration.md`](plans/orchestration.md).
+
+| Rule | Default | Max / threshold | Change with | Delivered by / source |
+|---|---|---|---|---|
+| Hold reasons | `waiting`, `paused`, `failed`, `needs-decision`, `parked`, `skipped`, `error`, `stopped` (run) | every hold has an owner and a next command | — | 27-01 |
+| `Hold:` line | written by the CLI with `## Status: blocked` | a driven agent writing it is denied by the guard | — | 27-01 |
+| Transient errors | retried up to 3 times, backoff 30 s → 5 min | no attempt spent | — | 27-02 |
+| Fallback model on `overloaded` | light roles only (skeptic, walker, critic, report) | never for implementer or reviewer | `run.roles.<role>.fallbackModel` | 27-02 |
+| Circuit breaker | trips on 2 stories failing on the same command or test, 2 `environment` failures, or a failing `run.healthCheck` | no new story starts; run `stopped: environment` | `run.healthCheck` (project command) | 27-02 |
+| Guard denials per story | 1 tolerated (attempt spent) | 2nd → `failed: security` | — | 27-02 |
+| `Coding-Flow-Run` commit trailer | on every driven commit | resume trusts git over the state file | — | 27-03 |
+| Scheduling | critical path first (most dependents), then story order | — | — | 27-04 |
+| `run.syncBase` | `between-stories` | conflict or red → `parked: base-sync` | `at-land` | 27-04 |
+| `run --plan` / `--stop` / `--abort` | preview, graceful stop, kill; all resumable | — | — | 27-05 |
+| `decide.afterHours` | unset (never) | never for irreversible topics | `config.json` + `autonomy.md` per topic | 27-06 |
+| `notify.remindAfterHours` | 4 | one reminder per urgent event | user config | 27-07 |
+| `notify.batchMinutes` | 30 | info events only | user config | 27-07 |
+| `notify.digest` | unset | `daily` or `run-end` | user config | 27-07 |
+| `notify.quiet` | unset | holds all but urgent | user config, e.g. `"22:00-08:00"` | 27-07 |
 
 ### Browser (planned)
 
