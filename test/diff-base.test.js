@@ -329,7 +329,7 @@ test('a baseBranch set by the branch itself to its own name does not empty the d
   assert.notEqual(report.diffBase.source, 'config');
   assert.equal(report.diffBase.ref, 'feature/EPIC-07-x');
   assert.equal(report.diffBase.configIgnored.value, 'story-07-01-geo');
-  assert.match(report.diffBase.configIgnored.reason, /empt/);
+  assert.match(report.diffBase.configIgnored.reason, /names this branch itself \(1 commit\(s\) of its own since feature\/EPIC-07-x\)/);
 });
 
 test('a baseBranch committed at the base applies to a story forked from it', (t) => {
@@ -429,4 +429,46 @@ test('a fork point naming the branch itself is ignored and named', (t) => {
   const diffBase = JSON.parse(run(dir, ['harness', 'check', '--json']).output).diffBase;
   assert.equal(diffBase.ref, 'feature/EPIC-07-x');
   assert.equal(diffBase.forkPointIgnored.value, 'story-07-01-geo');
+});
+
+// A branch already contained in its base has nothing of its own: the empty
+// diff is the truth, whatever the base's config history says.
+test('a fresh story on develop keeps develop as its base, though the config once said main', (t) => {
+  const dir = epicRepo(t);
+  git(dir, ['switch', 'main']);
+  commit(dir, { '.coding-flow/config.json': configWith(dir, { baseBranch: 'main' }) }, 'main is the base');
+  git(dir, ['switch', '-c', 'develop']);
+  commit(dir, { '.coding-flow/config.json': configWith(dir, { baseBranch: 'develop' }) }, 'develop is the base');
+  for (const i of [1, 2]) commit(dir, { [`src/d${i}.js`]: `${i}\n` }, `d${i}`);
+  git(dir, ['switch', '-c', 'story-07-03-fresh']);
+  git(dir, ['config', 'branch.story-07-03-fresh.codingFlowBase', 'develop']);
+
+  const diffBase = JSON.parse(run(dir, ['harness', 'check', '--json']).output).diffBase;
+  assert.equal(diffBase.ref, 'develop');
+  assert.equal(diffBase.source, 'config');
+  assert.equal(diffBase.configIgnored, undefined);
+  assert.equal(run(dir, ['verify', '--no-cache', '--base', 'HEAD']).code, 0);
+});
+
+test('a story contained in the configured trunk (fresh, or landed) is measured from trunk', (t) => {
+  const dir = epicRepo(t);
+  git(dir, ['switch', '-c', 'trunk', 'main']);
+  commit(dir, { '.coding-flow/config.json': configWith(dir, { baseBranch: 'trunk' }) }, 'trunk is the base');
+  for (const i of [1, 2, 3]) commit(dir, { [`src/t${i}.js`]: `${i}\n` }, `t${i}`);
+  git(dir, ['switch', '-c', 'story-07-04-x']);
+
+  const fresh = JSON.parse(run(dir, ['harness', 'check', '--json']).output).diffBase;
+  assert.equal(fresh.ref, 'trunk');
+  assert.equal(fresh.source, 'config');
+  assert.equal(fresh.configIgnored, undefined);
+
+  commit(dir, { 'src/s.js': 's\n' }, 'own');
+  git(dir, ['switch', 'trunk']);
+  git(dir, ['merge', '-q', '--ff-only', 'story-07-04-x']);
+  git(dir, ['switch', 'story-07-04-x']);
+  git(dir, ['config', 'branch.story-07-04-x.codingFlowBase', 'trunk']);
+  const landed = JSON.parse(run(dir, ['harness', 'check', '--json']).output).diffBase;
+  assert.equal(landed.ref, 'trunk');
+  assert.equal(landed.source, 'config');
+  assert.equal(landed.configIgnored, undefined);
 });
