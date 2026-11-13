@@ -44,7 +44,22 @@
   `spawnSync` child is not detached); a probe that ignores SIGTERM would
   hold the verify — it does not, its handler is tested in 15-04.
 - **Exemption text without HTML comments**, an unclosed one running to the
-  end, as 13-04 does for `## Policy Change`.
+  end, as 13-04 does for `## Policy Change` — stripped from the story before
+  the section is cut out, so a commented-out heading is no section (review 2).
+- **What "uncommitted" means (review 2).** Any tracked file whose working
+  copy differs from HEAD, except prose (`*.md`) and Coding Flow's own
+  directories (`.coding-flow/`, `epics/`, `specs/`, `.specify/`): a
+  `package.json`, tsconfig or fixture edit changes what the mutants would
+  run against as much as code does. An untracked file is not in HEAD and not
+  in the throwaway tree, so it does not block (`scratch.js`).
+- **A replay needs the same HEAD (review 2).** `canStandIn` compares the
+  recorded `mutation.head` with HEAD: a reset or an amend onto the same
+  content is not "already proved".
+- **The budget is a hard bound (review 2).** The probe waited for `close` on
+  its command's pipes, which a grandchild outside the group (`setsid`, a
+  detached spawn) holds open: 1.5 s took 28.6 s. The probe now closes the
+  pipes itself 2 s after the command's `sh` exits (`CLOSE_GRACE_MS`), on every
+  run — a mutant whose command leaves such a grandchild no longer hangs either.
 - **`ship` and `run` carry the probe's line** (`describeMutation`): the PR
   body gets `**Mutation:**` (✅ / ⚠️ / ❌), the `run` summary a
   `mutation:` line, and a story blocked by it reads "no proof", not "FAIL".

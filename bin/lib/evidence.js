@@ -7,6 +7,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { execFileSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { policyFingerprint } = require("./policy-fingerprint");
@@ -262,6 +263,14 @@ function storyDigest(storyDir) {
   return crypto.createHash("sha256").update(JSON.stringify(bundle)).digest("hex").slice(0, 40);
 }
 
+function currentHead() {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
 // A green proof of this story that still cannot be replayed for the question
 // being asked now, whatever its tree token says.
 function canStandIn(evidence, { redAtBase }) {
@@ -281,6 +290,12 @@ function canStandIn(evidence, { redAtBase }) {
   // Likewise a mutation probe that did not answer (uncommitted edits, no site,
   // a budget run out): the same tree, committed, may get an answer.
   if (evidence.mutation && evidence.mutation.ran === false && !evidence.mutation.skipped) {
+    return false;
+  }
+
+  // The tree token ignores HEAD, but the probe mutated a commit: a proof made
+  // at another one (a reset, an amend) answered about other code.
+  if (evidence.mutation && evidence.mutation.ran === true && evidence.mutation.head !== currentHead()) {
     return false;
   }
 

@@ -47,3 +47,18 @@ carry a Mutation line. 15 tests in `test/mutation.test.js`; each new guard
 (decided, dirty, cache, HTML, budget) was put back one at a time and turns its
 test red. Targeted suites green (80/80); the full verify waits for a free
 machine.
+
+### Review 2 (independent, STRICT, fail) — fixed, full verify pending
+
+P1 confirmed closed. Five P2s: a `## Mutation Exemption` section entirely
+inside an HTML comment still excused (comments now stripped before the
+section is cut out); the budget was not a hard bound — a detached grandchild
+holding the command's pipes made 1.5 s take 28.6 s (the probe now closes the
+pipes 2 s after `sh` exits); `mutation.head` was recorded but never compared
+(a replay now needs the same HEAD); "uncommitted" blocked on any untracked
+JS file and missed `package.json` (now: tracked files only, prose and Coding
+Flow's directories aside); a failing not-examined probe read ⚠️ (now ❌).
+The tree test has its untracked file back, asserting `git status` and the
+content. 21 tests in `test/mutation.test.js`; each new guard put back one at
+a time turns its test red. Targeted suites 136/136, the probe's own 50
+included.

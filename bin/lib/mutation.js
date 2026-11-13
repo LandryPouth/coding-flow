@@ -33,8 +33,6 @@ const DEFAULT_MAX_MUTANTS = 20;
 // The whole probe, baseline included. Past it the probe is stopped (it cleans
 // up on SIGTERM) and what it had not decided is not examined.
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
-// The probe's own reach: it finds sites in JavaScript and TypeScript only.
-const SOURCE = /\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/;
 const LIMITS =
   "heuristic, JS/TS only: strings, templates and comments are skipped by a line scanner; equivalent mutants exist and " +
   "only a human can tell them; a mutant that does not compile, times out or is not applied is counted apart, never as " +
@@ -74,23 +72,28 @@ function readExemption(storyDir) {
     return "";
   }
 
-  return extractSection(Object.values(readStoryBundle(storyDir)).join("\n\n"), "Mutation Exemption")
-    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
-    .trim();
+  // Before the section is cut out: a commented-out heading is no section.
+  const text = Object.values(readStoryBundle(storyDir)).join("\n\n").replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+
+  return extractSection(text, "Mutation Exemption").trim();
 }
 
 function git(args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 }
 
-// JS/TS files that differ from HEAD in the working tree, untracked ones
-// included: the mutants run on HEAD, so a verdict would be about other code.
-function uncommittedSources() {
-  return git(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+// Tracked files whose working copy differs from HEAD: the mutants run on HEAD,
+// so with any of them edited — code, `package.json`, a tsconfig, a fixture —
+// the verdict would be about other code. Prose and Coding Flow's own files do
+// not change behaviour; an untracked file is not in HEAD, nor in the run.
+const NOT_BEHAVIOUR = /(?:^|\/)[^/]*\.md$|^(?:\.coding-flow|epics|specs|\.specify)\//;
+
+function uncommittedChanges() {
+  return git(["status", "--porcelain=v1", "-z", "--untracked-files=no"])
     .split("\0")
     .filter((entry) => /^.. /.test(entry))
     .map((entry) => entry.slice(3))
-    .filter((file) => SOURCE.test(file));
+    .filter((file) => !NOT_BEHAVIOUR.test(file));
 }
 
 // The test files `{files}` receives. The probe takes the ones the diff touched;
@@ -171,7 +174,7 @@ function notExaminedBecause(settings, base) {
     return "no merge base to take the diff's sites from";
   }
 
-  const dirty = uncommittedSources();
+  const dirty = uncommittedChanges();
 
   return dirty.length > 0
     ? `uncommitted changes in ${dirty.slice(0, 3).join(", ")}${dirty.length > 3 ? ", …" : ""}: the mutants run on HEAD, commit first`
@@ -218,7 +221,7 @@ function describeMutation(mutation) {
   }
 
   if (!mutation.ran) {
-    return `⚠️ ${mutation.reason}`;
+    return `${mutation.ok ? "⚠️" : "❌"} ${mutation.reason}`;
   }
 
   const listed = mutation.unexcused.slice(0, 5).join(", ");

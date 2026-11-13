@@ -62,6 +62,8 @@ const TEST = /(?:^|\/)(?:__tests__|test|tests)\/|\.(?:spec|test|integration-spec
 const TEST_FILE = /\.(?:spec|test|integration-spec|e2e-spec)\.[a-z]+$/;
 const NOT_SITES = /(?:^|\/)__mocks__\/|\.d\.[cm]?ts$|\.stories\.[jt]sx?$/;
 const OUTPUT_LIMIT = 16 * 1024 * 1024;
+// How long a command's pipes may stay open after its `sh` exited.
+const CLOSE_GRACE_MS = 2000;
 // Set by a git hook or `rebase --exec`, they would point every git command, and
 // the command under test, at the user's repository instead of the worktree.
 const GIT_LOCATION = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX", "GIT_CEILING_DIRECTORIES"];
@@ -414,8 +416,16 @@ function runCommand(command, cwd, timeoutMs, stop) {
       : null;
     stop.kill = killGroup;
     // What the command left running in the background would hold the pipes
-    // open and overlap the next mutant: it goes when `sh` does.
-    child.on("exit", killGroup);
+    // open and overlap the next mutant: it goes when `sh` does. A grandchild
+    // that left the group (`setsid`, a detached spawn) still holds them: past a
+    // grace period the pipes are closed from this side, so `close` comes.
+    child.on("exit", () => {
+      killGroup();
+      setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }, CLOSE_GRACE_MS).unref();
+    });
     child.on("close", (code) => {
       clearTimeout(timer);
       stop.kill = null;

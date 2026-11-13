@@ -224,6 +224,16 @@ test('no worktree remains after a run, and the user tree token is unchanged', (t
   assert.equal(fs.readFileSync(path.join(dir, 'src/auth/limit.js'), 'utf8').includes('attempts < max'), true);
   assert.notEqual(tokenBefore.git.treeToken, undefined);
   assert.equal(evidence.provenance.git.treeToken, tokenBefore.git.treeToken);
+
+  // An untracked file too: verify records no tree token then (a known defect
+  // outside this story), so what is asserted is what git shows.
+  write(dir, 'notes.txt', 'untracked work\n');
+  const statusUntracked = git(dir, ['status', '--porcelain']);
+  const again = verify(dir).evidence;
+  assert.equal(again.mutation.ran, true);
+  assert.equal(git(dir, ['status', '--porcelain']), statusUntracked);
+  assert.equal(fs.readFileSync(path.join(dir, 'notes.txt'), 'utf8'), 'untracked work\n');
+  assert.equal(worktreeCount(dir), 1);
 });
 
 test('uncommitted edits to the diff are not examined, a failure under strict', (t) => {
@@ -295,6 +305,66 @@ test('the ship PR body names the probe: survivors, or why it did not answer', ()
   const block = (mutation) => buildEvidenceBlock({ ok: true, commandsOk: true, results: [], mutation });
 
   assert.match(block({ ran: true, ok: true, killed: 3, unexcused: ['src/auth/limit.js:2'] }), /\*\*Mutation:\*\* ⚠️ 3 killed, 1 survived: src\/auth\/limit\.js:2/);
-  assert.match(block({ ran: false, ok: false, reason: 'not examined — no site' }), /\*\*Mutation:\*\* ⚠️ not examined — no site/);
+  assert.match(block({ ran: false, ok: false, reason: 'not examined — no site' }), /\*\*Mutation:\*\* ❌ not examined — no site/);
+  assert.match(block({ ran: false, ok: true, reason: 'not examined — no site' }), /\*\*Mutation:\*\* ⚠️ not examined — no site/);
   assert.doesNotMatch(block({ ran: false, skipped: true, ok: true, reason: 'risk is low' }), /Mutation/);
+});
+
+test('a Mutation Exemption section that is itself inside an HTML comment excuses nothing', (t) => {
+  const dir = project(t, 'mutation-commented-section', { story: '\n<!--\n## Mutation Exemption\n\nsrc/auth/limit.js:2 is equivalent.\n-->\n' });
+  harness(dir, { mode: 'strict', mutation: { command: 'node --test {files}', maxMutants: 5 } });
+
+  const { evidence } = verify(dir, ['--story', STORY]);
+
+  assert.equal(evidence.mutation.ok, false);
+  assert.deepStrictEqual(evidence.mutation.unexcused, ['src/auth/limit.js:2']);
+});
+
+test('the budget holds even when a detached grandchild keeps the pipes open', { skip: process.platform === 'win32' }, (t) => {
+  const dir = project(t, 'mutation-grandchild');
+  const detach = "node -e \"require('child_process').spawn('sleep', ['25'], { detached: true, stdio: 'inherit' }).unref()\"";
+  harness(dir, { mutation: { command: `${detach}; node --test {files}`, maxMutants: 5, timeoutMs: 1500 } });
+  const started = Date.now();
+
+  const { output, evidence } = verify(dir);
+
+  assert.ok(Date.now() - started < 15000, `verify took ${Date.now() - started}ms`);
+  assert.equal(evidence.mutation.ran, false, output);
+  assert.match(evidence.mutation.reason, /budget/);
+  assert.equal(worktreeCount(dir), 1);
+});
+
+test('a proof is not replayed once HEAD moved, even onto the same content', (t) => {
+  const dir = project(t, 'mutation-head');
+  harness(dir, { mutation: { command: 'node --test {files}', maxMutants: 5 } });
+  const first = verify(dir, [], { cache: true });
+  assert.equal(first.evidence.mutation.ran, true, first.output);
+
+  git(dir, ['reset', '--soft', 'HEAD~1']);
+  git(dir, ['commit', '-q', '-m', 'feat: limit attempts, again']);
+  const second = verify(dir, [], { cache: true });
+
+  assert.notEqual(second.evidence.reused, true, 'a proof made at another HEAD is not replayed');
+  assert.equal(second.evidence.mutation.ran, true, second.output);
+});
+
+test('an untracked scratch file outside the diff does not block the probe', (t) => {
+  const dir = project(t, 'mutation-scratch');
+  write(dir, 'scratch.js', 'console.log(1 < 2);\n');
+  harness(dir, { mutation: { command: 'node --test {files}', maxMutants: 5 } });
+
+  const { output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, true, output);
+});
+
+test('an uncommitted edit to a tracked non-JS file is not examined', (t) => {
+  const dir = project(t, 'mutation-package');
+  write(dir, 'package.json', JSON.stringify({ name: 'mutation-fixture', scripts: { test: 'node --test' }, type: 'commonjs' }, null, 2));
+  harness(dir, { mutation: { command: 'node --test {files}', maxMutants: 5 } });
+
+  const { output, evidence } = verify(dir);
+
+  assert.equal(evidence.mutation.ran, false, output);
+  assert.match(evidence.mutation.reason, /uncommitted changes in package\.json/);
 });
