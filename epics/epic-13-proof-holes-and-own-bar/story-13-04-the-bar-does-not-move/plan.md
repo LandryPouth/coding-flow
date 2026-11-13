@@ -113,5 +113,11 @@ disarmed it. The risk is now scored with both configs and the higher wins
 | `## Policy Change` / `--policy-change` | lets an enforced signal pass | story text and flag | a declared reason is the design; empty or comment-only does not count |
 | diff base (`--base`, `baseBranch`, fork point) | what the diff is | flag, `config.json`, git config | out of scope below: recorded, not fixed |
 
-Every row holding "base" was pinned by a test in `test/policy-changed.test.js`
-that fails on the earlier code.
+Every row holding "base" is pinned by a test in `test/policy-changed.test.js`.
+The ones for `policyGlobs`, `mode`, `highRiskPaths`, `testGlobs` and
+`ignoredPaths` fail on the code before each fix; the `failOnContrarySignals`
+step-down test (`9468898`) already passed on the earlier code, where failOn was
+read at the base: it pins that behaviour, it did not find a hole.
+
+Known limit: a file renamed away from a high-risk path is scored at its new
+path only (follow-up story to be created).

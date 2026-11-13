@@ -656,7 +656,8 @@ function mentionsPath(text, target) {
 // (HEAD when there is no merge base) and the tree, and the stricter wins: a diff
 // cannot step down from strict, drop failOnContrarySignals, or lower the risk
 // that arms it — highRiskPaths, testGlobs (which hides structural signals) and
-// ignoredPaths (which hides files) all count at the base.
+// ignoredPaths (which hides files) all count at the base. One exception: a file
+// renamed away from a high-risk path is scored at its new path only.
 const BASE_RISK_KEYS = ["highRiskPaths", "testGlobs", "ignoredPaths"];
 
 function contraryEnforced({ storyDir, config, policy }) {
