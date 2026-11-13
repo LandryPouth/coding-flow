@@ -1,6 +1,6 @@
 # Story 15-05 — Tasks
 
-## Status: in-progress
+## Status: done
 
 - [x] Confirm 15-04's verdict is go; otherwise close this story.
 - [x] Tests first; module from the probe script; signal; exemption.
@@ -80,3 +80,19 @@ Final verify (2026-11-13, after merging `develop`):
 against `develop` (fork point), 15 files. Review captured (pass, p1 1, p2 11).
 `harness check` fails only on the known pre-existing fixtures
 (`test/guard.test.js:95,141`, `test/harness.test.js:56`).
+
+### Alignment with 13-04 (after its merge) — targeted review pass, P2s fixed
+
+`develop` merged (13-04, `3aa04b9`). `enforced` is 13-04's `contraryEnforced`;
+the probe's trigger reads `strictestRisk`, shared with it: mode and
+`failOnContrarySignals` at the stricter of the base and the tree, risk at the
+higher of the two configs. A base commit whose `harness.json` is missing or
+unreadable is scored with the defaults (`readBaseConfig`); `atBase` and the
+risk are read once and passed to `contraryEnforced`. Tests: a diff stepping
+down from strict, a diff dropping its path from `highRiskPaths`, a base
+harness absent or invalid JSON, and a 13-04 witness in
+`test/contrary-signals.test.js`.
+
+Verify after the alignment: passed, 94.1 % of 393 added lines (17 files).
+Final verify after the P2s: passed, `Coverage: verified` (94.3 % of 404
+added lines), 18 files, evidence `2026-11-13T20-50-57-446Z-verify.json`.
