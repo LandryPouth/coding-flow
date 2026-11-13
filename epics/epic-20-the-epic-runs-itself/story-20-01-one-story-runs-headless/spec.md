@@ -38,6 +38,15 @@ of the factory engine designed on 2026-11-10 and set aside
   the story's worktree and env `AI_FLOW_DRIVEN=<runId>`, `AI_FLOW_STORY=<dir>`,
   `AI_FLOW_BASE=<diff base>`. Never `--bare` (it skips hooks, i.e. the
   guard). Nested-session env (`CLAUDECODE`) handled as `init` already does.
+- **Model and effort per role**: `run.roles.<role>.model`, `.effort` and
+  `.fallbackModel` (roles: `implementer`, `reviewer`, `skeptic`, `crossing`,
+  `walker`, `epicReview`, `critic`, `report`) passed as `--model`,
+  `--effort`, `--fallback-model` (all present in `claude --help`, checked
+  2026-11-13). Default: every role inherits the user's default model;
+  reference profile in `docs/rules-and-limits.md`: implementer, reviewer,
+  crossing and epic review at the strongest model and high effort; skeptic,
+  walker, critic and report on a lighter model. Fewer strong-model calls is
+  also fewer hits on the subscription's usage window (20-03).
 - **No sub-agents**: a driven process never spawns its own agents. `Agent`
   and `Task` are always passed in `--disallowedTools`, and a configured
   `run.allowedTools` that lists either is refused by preflight. The run is
@@ -70,6 +79,8 @@ of the factory engine designed on 2026-11-10 and set aside
       and the env markers; then the CLI runs verify and the run report holds
       cost, session id and verdict.
 - [ ] Given a driven agent writing `## Status: done`, then the guard denies it.
+- [ ] Given `run.roles.reviewer.model` set, then the reviewer's argv carries
+      `--model` with it; given no role config, then no `--model` is passed.
 - [ ] Given `run.allowedTools` listing `Agent` or `Task`, then preflight
       refuses; given any run, then the stub receives `--disallowedTools`
       naming both.

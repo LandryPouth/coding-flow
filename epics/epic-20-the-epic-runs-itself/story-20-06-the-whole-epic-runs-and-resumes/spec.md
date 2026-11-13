@@ -19,6 +19,13 @@ a reboot or a killed terminal exactly where it stopped (bethl bilan P0: "un
 - `run --resume [<runId>]` (latest unfinished by default) continues from the
   state: a phase interrupted mid-process is restarted from its beginning
   (fresh process), never assumed done.
+- **Resume replays only what is unchanged**: the state records a content
+  hash of each story's files (story.md or spec/plan/tasks) when it starts.
+  On resume, a `done` story whose files are unchanged is skipped; a story
+  whose files the maintainer edited (a corrected spec, an answered `Needs
+  you`) is re-queued, and so are its dependents in the tree; independent
+  chains are untouched. The report says which stories were replayed and
+  why.
 - Caps: `run.budgetUsd.run` stops the run before starting a story it cannot
   afford (estimate: max of the story cap and the mean cost so far);
   `run.stopAfterBlocked` (default 3 consecutive blocked) stops the run.
@@ -37,6 +44,9 @@ a reboot or a killed terminal exactly where it stopped (bethl bilan P0: "un
 - [ ] Given a run budget smaller than the next story's cap, then the run stops
       before starting it and says why.
 - [ ] Given 3 consecutive blocked stories, then the run stops.
+- [ ] Given a done `s2` whose spec the maintainer edited before `run
+      --resume`, then `s2` and its dependents rerun and an unchanged done
+      independent story does not.
 - [ ] Given the state file after any transition, then it parses and matches
       the run's events.
 

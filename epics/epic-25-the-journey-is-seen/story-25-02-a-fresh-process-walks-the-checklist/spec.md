@@ -21,7 +21,8 @@ the story back to the implementer like a red test.
   "E2E_AGENT" }`); values come from an ignored local file
   (`worktree.copyFiles`). The walker is told the role and the variable
   name, never the value. A story naming an undeclared role is not ready.
-- The walker returns, per item: `observed YYYY-MM-DD — <what it saw>` or
+- The walker returns through `--json-schema` (one entry per checklist
+  item: `observed` or `not confirmed`, with its text), per item: `observed YYYY-MM-DD — <what it saw>` or
   `not confirmed — <why>`. The CLI writes those lines under the item (the
   walker never edits files); all confirmed → the tier passes.
 - Any `not confirmed` → the story returns to the implementer with the

@@ -146,8 +146,9 @@ fixes → closure → local land, max 2 agents). It is the manual stand-in this
 epic replaces. When the epic is delivered and the native run is proven on a
 real project:
 
-- [ ] `trash ~/.claude/skills/epic-run ~/.claude/docs/skills/epic-run.md`
-- [ ] Remove the `epic-run` row from the skills table in `~/.claude/README.md`.
+- [ ] `trash ~/.claude/skills/epic-run ~/.claude/docs/skills/epic-run.md
+      ~/.claude/workflows/epic-run.js ~/.claude/docs/workflows/epic-run.md`
+- [ ] Remove the `epic-run` rows (skill and workflow) from `~/.claude/README.md`.
 - [ ] Before deleting, compare the skill's loop with the native one: anything
       the skill does that the epic does not (fresh reviewer that never sees the
       implementer's reasoning, reviewer findings carried to later stories,

@@ -2,7 +2,7 @@
 
 Every rule that governs Coding Flow, with its default, its cap or threshold, how
 to change it, and where it is defined. Part 1 is what the shipped code does
-today. Part 2 is what epics 18–25 plan and is not built yet.
+today. Part 2 is what epics 18–26 plan and is not built yet.
 
 Generated from the sources on 2026-11-13 (commit `e00ff82`). Part 1 is read from
 `bin/lib/` and the shipped skills, not from other docs. Part 2 is read from the
@@ -179,7 +179,7 @@ are recorded in `docs/plans/autonomous-factory.md` (*Maintainer to-do*),
 | Usage-limit pause | uses no attempt. Backoff 5 → 60 min when the limit gives no reset time | `run.pauseMaxHours` 6, after which the run ends as `paused` (never `blocked`) | `config.json` | 20-03 (`spec.md:26-34`) |
 | `run.stopAfterBlocked` | 3 consecutive blocked stories | stops the run | `config.json` | 20-06 (`spec.md:24`) |
 | Fix passes after review | 1 | — | — | 20-04 (`spec.md:22-27`); epic 20 `index.md:102-106` |
-| `run.reviewStandard` | `false`: a second reviewer only for STRICT stories | — | `config.json` | 20-04 (`spec.md:32`) |
+| `run.reviewStandard` | `true`: STANDARD stories get one generalist reviewer; QUICK and FAST none | — | `config.json` (`false` saves the spend) | 20-04 |
 | Driven agent cannot write `## Status: done` | refused by the guard; the CLI writes it | — | — | epic 20 `index.md:92-97`; 20-04 (`spec.md:30-31`) |
 | Story ownership | `Owner: human` | only `agent` stories that are ready run | `Owner:` line | 20-05 (`spec.md:6`); epic 20 `index.md:107-109` |
 | Story lock liveness | heartbeat every 60 s | a dead pid with no heartbeat for 10 min is stale and taken over | — | 20-02 (`spec.md:14-22`) |
@@ -230,7 +230,38 @@ your own values in `~/.config/coding-flow/config.json`: `run.maxAgents` and
 | Machine | Detected as | `run.maxAgents` | `verify.maxConcurrent` |
 |---|---|---|---|
 | WSL2 laptop: 32 GB host, WSL limited to 14 GB, 8 vCPU | WSL (`/proc/version`), or < 16 GB | 2 | 1 |
-| Native Linux or Windows, ≥ 16 GB | neither | 4 | 2 |
+| Native Linux or Windows, ≥ 16 GB | neither | 4 (never more than CPUs − 2) | 2 |
+
+### Reviews and roles (planned)
+
+| Rule | Default | Max / threshold | Change with | Delivered by / source |
+|---|---|---|---|---|
+| Findings output | JSON through `claude --json-schema` (severity, file, line, scenario, fix) | invalid twice → tool error, never a pass | — | 20-04 |
+| `review.lenses` (STRICT) | `["spec", "security", "tests"]`, one process each, merged by file and line | each lens takes an agent slot | `config.json` | 20-04 |
+| `review.skeptics` (per P0/P1) | 2 | dropped only if every skeptic refutes; kept as `refuted` | `config.json` | 20-04 |
+| `run.roles.<role>.model` / `.effort` / `.fallbackModel` | inherit the user's default model | — | `config.json`; roles: implementer, reviewer, skeptic, crossing, walker, epicReview, critic, report, closer | 20-01 |
+| Completeness critic | one read-only process after the epic review | an unproven ticked criterion reopens its story `blocked` | role `critic` | 20-07 |
+| Open risks | carried in the run state, handed to stories sharing files or identifiers | listed open in `REPORT.md` until a story closes them | — | 26-01 |
+
+Reference role profile (the maintainer's): implementer, reviewer, crossing,
+epic review and closer on the strongest model at high effort; skeptic,
+walker, critic and report on a lighter model.
+
+### Around the run (planned)
+
+| Rule | Default | Max / threshold | Change with | Delivered by / source |
+|---|---|---|---|---|
+| `notify.command` | not set (nothing runs) | 10 s timeout; failure never stops the run | user global config only; a project value is ignored | 26-02 |
+| `notify.events` | `needs-you`, `blocked`, `paused`, `run.end`, `epic.landed` | — | user global config | 26-02 |
+| `todo.headings` | `Maintainer to-do`, `Maintainer cleanup on delivery` | — | `config.json` (bethl adds `À faire côté utilisateur`) | 26-02 |
+| `docs.check.include` / `.exclude` / `.ignorePaths` | `docs/**/*.md`, `README.md`, `RULES.md` | warnings only, never fails `doctor` | `config.json` | 26-03 |
+| Closer allowed paths | `epics/<epic>/`, `docs/`, `CHANGELOG.md` | anything else is reverted and listed | — | 26-04 |
+| `run --watch` refresh | 2 s | — | `--once`, `--json` | 26-05 |
+| `ai-flow rules` | prints every registry key with its effective value and source | — | — | 26-06 |
+
+Notify examples: `notify-send "Coding Flow" "$(jq -r .summary)"` on Linux;
+from WSL, a PowerShell toast through `powershell.exe -c`; a phone push with
+`curl -d @- ntfy.sh/<topic>`.
 
 ### Browser (planned)
 

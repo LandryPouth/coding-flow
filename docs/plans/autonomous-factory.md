@@ -248,17 +248,23 @@ noise.
 | [23 — The factory proposes its own improvements](../../epics/epic-23-the-factory-proposes-its-improvements/index.md) | watcher, maintainer-only proposals, shadow gates, experiments, after every epic | 2 + 3 |
 | [24 — Many hands](../../epics/epic-24-many-hands/index.md) | clean worktrees, parallel chains and parallel epics with a merge queue and machine-sized agent slots (4, 2 under WSL), shared locks, PR land, trusted runner, routed questions | team |
 | [25 — The journey is seen](../../epics/epic-25-the-journey-is-seen/index.md) | the browser tier runs the project's own command against a served app; in driven runs a separate process walks the checklist and records what it saw | engine |
+| [26 — Nothing left by hand](../../epics/epic-26-nothing-left-by-hand/index.md) | findings travel between stories, notify command and `ai-flow todo`, docs checked against the code, the epic closes itself, `run --watch`, `ai-flow rules` | engine + team |
 
 Delivery order (revised 2026-11-13):
 
+0. **No factory needed, ship any time**: 26-06 (`ai-flow rules`, the
+   inconsistencies of `docs/rules-and-limits.md`), 26-03 (`docs check`),
+   19-05 (fixers before the checks: lint/format no longer fail a verify).
 1. **First driven run early**: 18-01 (journal) → 19-01 (failing test names)
    → 19-07 (tests read-only) → 20-01 (one story headless), then 20-01 runs
    on a real bethl story before the rest of 18 and 19. The factory is
    learned by running it; thirteen stories before the first driven run is
    a cathedral built without a site visit.
 2. The rest of 18 → 19 → 20.
-3. 24 s1, s2, s7 (two chains and two epics at once, machine-sized agent
-   slots) → 25 (the browser tier is run, not ticked).
+3. 26-01, 26-02, 26-05 (findings travel, notify and todo, live view) →
+   24 s1, s2, s7 (two chains and two epics at once, machine-sized agent
+   slots) → 26-04 (the epic closes itself) → 25 (the browser tier is run,
+   not ticked).
 4. 21 → 22 → 23 → 24 s3–s6 (team).
 
 Running two at a time is how the maintainer already works by hand; the

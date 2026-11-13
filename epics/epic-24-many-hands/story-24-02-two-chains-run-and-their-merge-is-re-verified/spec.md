@@ -26,7 +26,8 @@ nobody waits), two under WSL.
   config (`~/.config/coding-flow/config.json`, shared with 19-03 and 21-02),
   never in the project — the same repository runs on a laptop under WSL and
   on a Linux workstation. Default `auto`: 2 under WSL (`/proc/version`) or
-  below 16 GB total memory, else 4 — the maintainer's machines, documented
+  below 16 GB total memory, else 4, and never more than CPUs − 2 (the same
+  bound Claude Code's Workflow uses for its agents) — the maintainer's machines, documented
   in `docs/rules-and-limits.md` as reference profiles. Any positive integer
   the user sets is honoured as is: the user knows their machine; no cap and
   no allow flag. Safety does not rest on this number: the memory gate
