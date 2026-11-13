@@ -472,3 +472,15 @@ test('a story contained in the configured trunk (fresh, or landed) is measured f
   assert.equal(landed.source, 'config');
   assert.equal(landed.configIgnored, undefined);
 });
+
+test('--base HEAD on a detached checkout ahead of its base is refused, naming the checkout', (t) => {
+  const dir = epicRepo(t);
+  git(dir, ['switch', '-c', 'develop', 'main']);
+  commit(dir, { 'src/a.ts': 'export const a = 1;\n' }, 'develop work');
+  git(dir, ['checkout', '-q', '--detach']);
+  commit(dir, { 'src/b.ts': 'export const b = 1;\n' }, 'detached work');
+
+  const refused = run(dir, ['verify', '--no-cache', '--base', 'HEAD']);
+  assert.notEqual(refused.code, 0);
+  assert.match(refused.output, /this checkout has 1 commit\(s\) of its own since develop/);
+});
