@@ -254,7 +254,6 @@ test('a timeout stops every process the command started', async (t) => {
 
 test('Ctrl-C ends the run with 130, counts no interrupted mutant, and removes the worktree', async (t) => {
   const dir = fixture(t);
-  const before = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('mutation-probe-'));
   // The baseline passes at once; the first mutant sleeps until interrupted.
   const command = 'git diff --quiet || sleep 31.7';
   t.after(() => spawnSync('pkill', ['-9', '-f', '^sleep 31\\.7$']));
@@ -276,8 +275,10 @@ test('Ctrl-C ends the run with 130, counts no interrupted mutant, and removes th
   assert.doesNotMatch(out, /killed/);
   assert.match(out, /Interrupted after 0 mutant/);
   assert.equal(git(dir, 'worktree', 'list').trim().split('\n').length, 1);
-  const after = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('mutation-probe-'));
-  assert.deepEqual(after.filter((name) => !before.includes(name)), []);
+  // Only this probe's own directory: other test files run probes in the same
+  // tmpdir at the same time, and their directories come and go.
+  const left = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(`mutation-probe-${child.pid}-`));
+  assert.deepEqual(left, []);
 });
 
 test('--repo may be a subdirectory: paths are read from the repository root', async (t) => {
