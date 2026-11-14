@@ -41,3 +41,20 @@ borrows the 121 lines of the `old()` below it and passes under `enforce`.
 ## Out of Scope
 
 - Changing the bar (80 lines, CRAP 30).
+
+## Result
+
+Verified 2026-11-14 in the story's worktree: 3 commands green, coverage 93.5 %
+of 232 added lines, scope story (5 files), evidence
+`.coding-flow/runs/2026-11-14T05-29-59-326Z-verify.json`. Tests:
+`test/complexity-new-function.test.js` (9, red first at `645df3b`, one a
+regression guard); the existing complexity tests are unchanged and green. The
+review's reproduction script now gives the expected verdict for every case
+(B: `fresh 0→100`; J: `a 54→101`; A: the quoted path's growth; D: no report).
+Decisions in `plan.md`.
+
+### Rollback Notes
+
+Revert the fix commit (`bin/lib/complexity.js`); the check falls back to the
+positional mapping and the HEAD fallback. No data or config changes.
+
