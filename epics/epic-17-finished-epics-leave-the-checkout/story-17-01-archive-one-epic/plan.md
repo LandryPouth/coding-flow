@@ -37,6 +37,27 @@
 - **Stage, do not commit.** The user sees the deletion in `git status` and
   commits it with their own message. This is also how the command stays
   undoable before the commit (`git restore --staged --worktree`).
+- **`epics/INDEX.md` is staged with the deletion when it was clean** (or
+  new), so one commit carries both; when it holds the user's own
+  uncommitted edits it is written but left unstaged, and the output says so
+  (staging it would sweep their edits into the archive commit). *(Decided by
+  the unattended run, 2026-11-14.)*
+- **Ignored files refuse too.** `git status --porcelain --ignored`: `git rm`
+  would leave them behind, so the directory would not leave the checkout.
+- **The recovery line names the full SHA;** the entry shows the short one.
+- **"Already archived" only when the directory is gone.** An epic brought
+  back with its recovery line and archived again gets a second entry, at its
+  new commit: that is a second archive, not a duplicate.
+- **Scout result (criterion 7).** `status`, `next` and `trace` walk the
+  epics on disk, so evidence of a removed story never reaches them.
+  `audit --check` grouped the latest verify per story *from the run files*
+  and failed on an archived story's old red or stale run (reproduced by the
+  test before the fix); the review summary listed its accepted P1s by name.
+  Both now skip a story directory under `epics/` that no longer exists
+  (`storyStillOnDisk`, `bin/lib/audit.js`). The ledger itself keeps every
+  entry: it is history.
+- **Design-decisions entry 18**, not 16: entry 16 is reserved by story
+  16-01, which runs in parallel.
 - **A forced archive is not in this story.** The gate already admits 13 of
   15 epics; add a `--force` only if story 17-04 finds a real case.
 
