@@ -1,6 +1,6 @@
 # Story 13-11 — A wrapped criterion is read whole
 
-## Status: in-progress
+## Status: done
 
 Found by the independent review of story 13-05 on `develop` (2026-11-14,
 P1). `criteria-changed` compares each acceptance criterion on its first line
@@ -33,6 +33,10 @@ behavioural tests on throwaway repositories with wrapped criteria.)*
 - [x] Open-criterion detection (`coverage-gate.js`, which also reads
       `criterionItems`) behaves as before. Existing tests stay green,
       unmodified. CHANGELOG `[Unreleased]` → Fixed.
+- Rollback: revert the `fix(spec-drift)` commits; no data or config
+  migrates — the drift check returns to first-line comparison.
+- Verify: green, 100 % of 107 added lines covered; independent review PASS
+  after 3 rounds.
 
 ## Spec Change
 
