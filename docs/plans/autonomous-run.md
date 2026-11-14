@@ -82,6 +82,7 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 
 - [ ] 26-06  - [ ] 26-03  - [ ] 26-07
 - [ ] 19-05  - [ ] 26-02 (todo)  - [ ] 28-01
+- [ ] 13-14 a deletion is a structural signal (QUICK; from 17-01's review)
 - [ ] 13-13 the guard's long tail (STRICT; follow-up of 13-09)
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
 

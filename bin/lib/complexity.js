@@ -21,6 +21,9 @@ const { execFileSync } = require("child_process");
 const { loadCoverageReports, reportCandidates, toRepoRelative, packageRootOf } = require("./coverage");
 const { normalizePortable } = require("./util");
 const { currentDiffBase } = require("./diff-scope");
+const { baseBranchNames } = require("./diff-base");
+const { readConfig } = require("./config");
+const { currentBranch } = require("./policy");
 const { matchesPattern } = require("./util");
 
 const CRAP_THRESHOLD = 30;
@@ -443,43 +446,102 @@ function gitIn(root, args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 });
 }
 
-// `git diff -U0 <base>`, renames followed: new path -> `{ oldPath, hunks }`, hunks
-// `{ oldStart, oldCount, newStart, newCount }`. Paths are relative to `root`.
-function parseDiff(output) {
-  const byFile = new Map();
-  let oldPath = null;
-  let current = null;
+const C_ESCAPES = { a: "\x07", b: "\b", t: "\t", n: "\n", v: "\v", f: "\f", r: "\r" };
 
-  for (const line of output.split(/\r?\n/)) {
-    const from = /^--- (?:a\/([^\t]+)|\/dev\/null)/.exec(line);
-    const to = /^\+\+\+ b\/([^\t]+)/.exec(line);
-    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+// git C-quotes a path holding `"`, `\` or a control character (`"a/x\"y.js"`),
+// octal escapes standing for UTF-8 bytes.
+function unquotePath(text) {
+  const raw = Buffer.from(text.slice(1, text.lastIndexOf('"')), "utf8");
+  const out = [];
 
-    if (from) {
-      oldPath = from[1] || null;
-    } else if (line === "+++ /dev/null") {
-      current = null;
-    } else if (to) {
-      current = { oldPath, hunks: [] };
-      byFile.set(to[1], current);
-    } else if (hunk && current) {
-      current.hunks.push({
-        oldStart: Number(hunk[1]),
-        oldCount: hunk[2] === undefined ? 1 : Number(hunk[2]),
-        newStart: Number(hunk[3]),
-        newCount: hunk[4] === undefined ? 1 : Number(hunk[4]),
-      });
+  for (let index = 0; index < raw.length; index++) {
+    if (raw[index] !== 0x5c) {
+      out.push(raw[index]);
+    } else if (/[0-7]/.test(String.fromCharCode(raw[index + 1]))) {
+      out.push(parseInt(raw.toString("latin1", index + 1, index + 4), 8));
+      index += 3;
+    } else {
+      const next = String.fromCharCode(raw[++index]);
+      out.push((C_ESCAPES[next] || next).charCodeAt(0));
     }
   }
 
-  return byFile;
+  return Buffer.from(out).toString("utf8");
+}
+
+// `--- a/x` / `+++ b/x`: the path after its side's prefix, unquoted; null for
+// /dev/null; undefined when the line is not that header or cannot be read.
+function headerPath(line, marker, side) {
+  if (!line.startsWith(`${marker} `)) {
+    return undefined;
+  }
+
+  const rest = line.slice(marker.length + 1);
+
+  if (rest === "/dev/null") {
+    return null;
+  }
+
+  const file = rest.startsWith('"') ? unquotePath(rest) : rest.split("\t")[0];
+
+  return file.startsWith(`${side}/`) ? file.slice(side.length + 1) : undefined;
+}
+
+// `git diff -U0 <base>`, renames followed: `{ files, unreadable }`, files mapping
+// a new path to `{ oldPath, hunks }`, hunks `{ oldStart, oldCount, newStart,
+// newCount }`, paths relative to `root`. A hunk's own lines are skipped by count,
+// so a removed `-- a/x` line is never read as a header; `diff --git` starts a
+// file afresh, so one path's hunks never land on the file before it. A `+++`
+// header the parser cannot read is listed in `unreadable`, never skipped silently.
+function parseDiff(output) {
+  const files = new Map();
+  const unreadable = [];
+  let oldPath = null;
+  let current = null;
+  let pending = { old: 0, new: 0 };
+
+  for (const line of output.split(/\r?\n/)) {
+    if (pending.old > 0 && line.startsWith("-")) {
+      pending.old -= 1;
+    } else if (pending.new > 0 && line.startsWith("+")) {
+      pending.new -= 1;
+    } else if (line.startsWith("diff --git ")) {
+      oldPath = null;
+      current = null;
+    } else if (line.startsWith("--- ")) {
+      oldPath = headerPath(line, "---", "a") || null;
+    } else if (line.startsWith("+++ ")) {
+      const to = headerPath(line, "+++", "b");
+
+      current = to ? { oldPath, hunks: [] } : null;
+      if (to) files.set(to, current);
+      if (to === undefined) unreadable.push(line.slice(4));
+    } else {
+      const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+
+      if (hunk) {
+        const counts = {
+          oldStart: Number(hunk[1]),
+          oldCount: hunk[2] === undefined ? 1 : Number(hunk[2]),
+          newStart: Number(hunk[3]),
+          newCount: hunk[4] === undefined ? 1 : Number(hunk[4]),
+        };
+
+        pending = { old: counts.oldCount, new: counts.newCount };
+        if (current) current.hunks.push(counts);
+      }
+    }
+  }
+
+  return { files, unreadable };
 }
 
 // The diff against `base`, plus every untracked regular file added in full. A file
 // that cannot be read is left out, as it was never measurable; a git failure
 // throws, so the caller reports the check as not run instead of passing it.
 function diffFiles(root, base) {
-  const byFile = parseDiff(gitIn(root, ["-c", "core.quotepath=false", "diff", "-U0", "--no-color", "--find-renames", "--relative", base]));
+  const diff = ["diff", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", "--find-renames", "--relative", base];
+  const { files: byFile, unreadable } = parseDiff(gitIn(root, ["-c", "core.quotepath=false", ...diff]));
 
   for (const file of gitIn(root, ["-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard"]).split(/\r?\n/).filter(Boolean)) {
     try {
@@ -492,7 +554,7 @@ function diffFiles(root, base) {
     }
   }
 
-  return byFile;
+  return { byFile, unreadable };
 }
 
 // A line of the new file, mapped to the base: `{ line, added }`. An added line maps
@@ -530,11 +592,91 @@ function addedLines(hunks, start, end) {
   return added;
 }
 
-// The function's span in the base file, measured there; null when it is new.
-function baseSpan(baseSource, fn, hunks) {
-  const start = toBaseLine(hunks, fn.line).line;
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-  if (!baseSource || start === null) {
+// The name to look for in source: the last segment of a qualified lcov name
+// (`exports.build`, `module.exports.run`, `K.m`), or null for a function V8 or
+// another tool lists without one (`anonymous_0`, `(anonymous_3)`, `<anonymous>`).
+function sourceName(name) {
+  const short = String(name).split(/[.#:]/).pop();
+
+  return /^[\w$]+$/.test(short) && !/^anonymous(_\d+)?$/.test(short) ? short : null;
+}
+
+// A test for a line that starts the function `name`: a declaration, an
+// assignment of a function or arrow (`exports.build = function`), a method,
+// `def`/`func`/`fn`; `default` is `export default`, and a class's name is also
+// its constructor (V8 lists `constructor()` under the class name). Null when
+// the function has no name to find.
+function startsFunction(name) {
+  const short = sourceName(name);
+
+  if (!short) {
+    return null;
+  }
+
+  const n = escapeRegex(short);
+  const forms = [
+    `\\bfunction\\s*\\*?\\s*${n}\\b`,
+    `\\b(def|func|fn|fun|sub)\\s+(\\([^)]*\\)\\s*)?${n}\\b`,
+    `(^|[^\\w$])${n}\\s*[:=]\\s*(async\\s+)?(function\\b|\\([^)]*\\)\\s*(:[^=]*)?=>|[\\w$]+\\s*=>)`,
+    `^\\s*([\\w$<>\\[\\],]+\\s+)*${n}\\s*(<[^>]*>)?\\s*\\([^;]*$`,
+    ...(short === "default" ? ["\\bexport\\s+default\\b"] : []),
+    ...(/^[A-Z]/.test(short) ? ["^\\s*constructor\\s*\\("] : []),
+  ];
+  const pattern = new RegExp(forms.join("|"));
+
+  return (line) => pattern.test(line) && !/^\s*(return|if|while|for|switch|throw|await|yield|new)\b/.test(line);
+}
+
+// Any line that reads like a function start, for a function with no name.
+const LOOKS_LIKE_A_START = /\bfunction\b|=>|\)\s*(:[^{]*)?\{\s*$/;
+
+// The base line `fn` started at, or null when it is new. An unchanged start maps
+// through the hunks; an added one is the same function only when its hunk
+// replaced a line starting a function of the same name (a changed signature) —
+// never whatever base function the hunk happened to replace. With no name, the
+// replaced lines must hold exactly one function start, and only one function of
+// the head claims it (`claimsStart`); the others are new.
+function baseStartOf(hunks, fn, baseSource, functions = [fn]) {
+  const mapped = toBaseLine(hunks, fn.line);
+
+  if (!mapped.added || mapped.line === null) {
+    return mapped.line;
+  }
+
+  const hunk = hunks.find(({ newStart, newCount }) => fn.line >= newStart && fn.line < newStart + newCount);
+  const starts = startsFunction(fn.name);
+  const replaced = Array.from({ length: hunk.oldCount }, (_, index) => hunk.oldStart + index);
+
+  if (!starts) {
+    const candidates = replaced.filter((line) => LOOKS_LIKE_A_START.test(baseSource.lines[line - 1] || ""));
+    return candidates.length === 1 && claimsStart(hunk, fn, candidates[0], functions) ? candidates[0] : null;
+  }
+
+  const named = replaced.filter((line) => starts(baseSource.lines[line - 1] || ""));
+
+  return named.length === 0 ? null : named.reduce((best, line) => (Math.abs(line - mapped.line) < Math.abs(best - mapped.line) ? line : best));
+}
+
+// Which unnamed head function, of those starting in the hunk's added lines,
+// owns the one base start the hunk replaced: the first whose body runs on past
+// the hunk (the base body kept as context), else the one at the same position
+// in the hunk. A new function inserted above or below it is new.
+function claimsStart(hunk, fn, candidate, functions) {
+  const inHunk = functions.filter((each) => !sourceName(each.name) && each.line >= hunk.newStart && each.line < hunk.newStart + hunk.newCount);
+  const pastHunk = inHunk.find((each) => each.end >= hunk.newStart + hunk.newCount);
+  const position = candidate - hunk.oldStart;
+  const nearest = inHunk.reduce((best, each) => (Math.abs(each.line - hunk.newStart - position) < Math.abs(best.line - hunk.newStart - position) ? each : best), fn);
+
+  return (pastHunk || nearest) === fn;
+}
+
+// The function's span in the base file, measured there; null when it is new.
+function baseSpan(baseSource, fn, hunks, functions) {
+  const start = baseSource ? baseStartOf(hunks, fn, baseSource, functions) : null;
+
+  if (start === null) {
     return null;
   }
 
@@ -545,6 +687,51 @@ function baseSpan(baseSource, fn, hunks) {
     : functionEnd(baseSource, { line: start }, next);
 
   return { start, end: Math.max(start, end) };
+}
+
+// A function that reads as new may have moved: a function of that name that the
+// diff removed whole (every line of its base span), from any touched file, is
+// where it came from, and its span there is its length before. One only edited
+// (a changed signature) is still in place, so nothing is borrowed from it.
+function movedSpan(removed, fn) {
+  const starts = startsFunction(fn.name);
+
+  for (const { baseSource, line, lines } of starts ? removed : []) {
+    if (starts(baseSource.lines[line - 1] || "")) {
+      const end = Math.max(line, functionEnd(baseSource, { line }, baseSource.lineCount + 1));
+
+      if (Array.from({ length: end - line + 1 }, (_, index) => line + index).every((each) => lines.has(each))) {
+        return { start: line, end, moved: true };
+      }
+    }
+  }
+
+  return null;
+}
+
+// Every line the diff removed, with its base file and the file's other removed
+// lines: where moved functions came from.
+function removedLines(changes) {
+  const removed = [];
+
+  for (const { baseSource, hunks } of changes) {
+    const lines = new Set();
+
+    for (const { oldStart, oldCount } of baseSource ? hunks : []) {
+      for (let line = oldStart; line < oldStart + oldCount; line++) {
+        lines.add(line);
+        removed.push({ baseSource, line, lines });
+      }
+    }
+  }
+
+  return removed;
+}
+
+// A pure deletion inside the function (git places it after line `newStart`):
+// growth by removing the lines that separated it from the next function.
+function deletedInside(hunks, fn) {
+  return hunks.some(({ oldCount, newStart, newCount }) => oldCount > 0 && newCount === 0 && newStart >= fn.line && newStart < fn.end);
 }
 
 // A line that reads like a decision: the base has no coverage, so the removed
@@ -568,15 +755,15 @@ function removedDecisions(baseSource, span, hunks) {
 function grewPastLine(change, fn, data, max) {
   const added = addedLines(change.hunks, fn.line, fn.end);
 
-  if (added.size === 0) {
+  if (added.size === 0 && !deletedInside(change.hunks, fn)) {
     return null;
   }
 
-  const span = baseSpan(change.baseSource, fn, change.hunks);
+  const span = baseSpan(change.baseSource, fn, change.hunks, change.functions) || movedSpan(change.removed, fn);
   // A rewritten `if` is one decision before and after: an added branch line is
   // only new beyond the decision-like lines the diff removed in the function.
   const addedBranches = [...added].filter((line) => data.branchLines.has(line));
-  const rewritten = new Set(addedBranches.slice(0, span ? removedDecisions(change.baseSource, span, change.hunks) : 0));
+  const rewritten = new Set(addedBranches.slice(0, span && !span.moved ? removedDecisions(change.baseSource, span, change.hunks) : 0));
   const before = {
     length: span ? span.end - span.start + 1 : 0,
     crap: riskOver(data, fn.line, fn.end, new Set([...added].filter((line) => !rewritten.has(line)))).crap,
@@ -662,35 +849,24 @@ function evaluateComplexity({ root, config, since }) {
 
   const mergeBase = currentDiffBase(root).mergeBase;
   const base = mergeBase || "HEAD";
-  let files;
+  const notRun = (reason) => ({ ...result, reports: report.reports, items: [], unlisted: [], unavailable: reason, ok: !enforced });
+  let diff;
+
+  if (!mergeBase && enforced && !onBaseBranch(root)) {
+    return notRun("no merge base with a base branch: the branch's committed changes could not be measured");
+  }
 
   try {
-    files = diffFiles(root, base);
+    diff = diffFiles(root, base);
   } catch {
-    return { ...result, reports: report.reports, items: [], unlisted: [], unavailable: `git could not diff against ${base}`, ok: !enforced };
+    return notRun(`git could not diff against ${base}`);
   }
 
-  const items = [];
-  const unlisted = [];
-  const extensions = new Set([...report.files.keys()].map((listed) => path.extname(listed)).filter(Boolean));
-
-  for (const [file, { oldPath, hunks }] of files) {
-    if (!fs.existsSync(path.join(root, file))) {
-      continue;
-    }
-
-    if (!report.files.has(file)) {
-      if (isUnlisted(file, hunks, report, config, extensions)) unlisted.push(file);
-      continue;
-    }
-
-    const change = { file, hunks, baseSource: readBase(root, base, oldPath) };
-
-    for (const fn of measureFile(root, file, report.files.get(file))) {
-      const item = grewPastLine(change, fn, report.files.get(file), max);
-      if (item) items.push(item);
-    }
+  if (diff.unreadable.length > 0) {
+    return notRun(`git printed a path the diff reader could not read: ${diff.unreadable.join(", ")}`);
   }
+
+  const { items, unlisted } = measureChanges(root, base, diff.byFile, { report, config, max });
 
   return {
     ...result,
@@ -700,6 +876,51 @@ function evaluateComplexity({ root, config, since }) {
     unlisted: unlisted.sort(),
     ok: !(enforced && (items.length > 0 || unlisted.length > 0)),
   };
+}
+
+// On a base branch (`main`, `develop`, the configured one) verify measures the
+// uncommitted work against HEAD, the scope it states; anywhere else, no merge base
+// means the branch's commits could not be measured.
+function onBaseBranch(root) {
+  const branch = currentBranch(root);
+  let configured = null;
+
+  try {
+    configured = readConfig(root).baseBranch || null;
+  } catch {
+    configured = null;
+  }
+
+  return Boolean(branch) && baseBranchNames(root, configured).includes(branch);
+}
+
+// Each touched file the lcov lists, its functions measured before and after.
+function measureChanges(root, base, byFile, { report, config, max }) {
+  const items = [];
+  const unlisted = [];
+  const extensions = new Set([...report.files.keys()].map((listed) => path.extname(listed)).filter(Boolean));
+  const changes = [...byFile].map(([file, { oldPath, hunks }]) => ({ file, hunks, baseSource: readBase(root, base, oldPath) }));
+  const removed = removedLines(changes);
+
+  for (const change of changes) {
+    if (!fs.existsSync(path.join(root, change.file))) {
+      continue;
+    }
+
+    if (!report.files.has(change.file)) {
+      if (isUnlisted(change.file, change.hunks, report, config, extensions)) unlisted.push(change.file);
+      continue;
+    }
+
+    const functions = measureFile(root, change.file, report.files.get(change.file));
+
+    for (const fn of functions) {
+      const item = grewPastLine({ ...change, removed, functions }, fn, report.files.get(change.file), max);
+      if (item) items.push(item);
+    }
+  }
+
+  return { items, unlisted };
 }
 
 // `src/a.js:12 build 85→90 lines, CRAP 12→45` — the reasons it was listed.
