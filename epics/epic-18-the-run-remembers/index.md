@@ -64,6 +64,7 @@ s1
 └── s5
 
 s2
+└── s7
 
 s3
 
@@ -83,6 +84,7 @@ both are open (same `worktree.js` edit points).
 4. **story-18-04-review-findings-are-captured-before-fixes** *(STANDARD)*
 5. **story-18-05-gates-status-and-worktrees-leave-events** *(STANDARD)*
 6. **story-18-06-a-ticked-criterion-names-its-proof** *(STRICT — a claim-binding rule, entry 9)*
+7. **story-18-07-worktrees-are-a-setting** *(STANDARD — design decision 17: the worktree layer becomes optional; after s2, so a land already carries its proof)*
 
 ## Decisions
 

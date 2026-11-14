@@ -573,3 +573,25 @@ user machine setting, uncapped, `auto` = 4, or 2 under WSL or below 16 GB — bo
 2026-11-13), always-loaded memory
 files beyond short non-standard conventions, and a resident daemon (entry 2
 still stands; the driver is a process per run, not a service).
+
+## 17. The worktree layer becomes a setting
+
+**Decided 2026-11-14 by the maintainer**, on the count in story 15-06
+([`docs/plans/uncle-bob-gauntlet.md`](plans/uncle-bob-gauntlet.md),
+*Re-measured 2026-11-14*). The study's rule was: *if the friction persists
+once epics 02/03 are stable, make the layer optional rather than extend it.*
+It persisted: 8 DOGFOODING rows by surface since 2026-10-18 and 6 more caused
+by a worktree, 7 of the 8 open; in epic 15's run `autoland` refused every land
+it was asked for, and every land deleted the story's proof.
+
+- **Optional, not removed.** A `worktrees` setting (`on` / `off`), a user
+  machine setting overridable per project. The worktree commands stay, for
+  parallel chains and for the users who keep them on.
+- **The maintainer keeps them on**, for this repository and their own
+  projects: other sessions work in the primary checkout, and a story's
+  worktree keeps them apart. For other users the lean is `off` ("maybe not
+  for others"); the default is fixed when story 18-07 lands.
+- **Proof first.** A land must carry the story's proof into the primary
+  (story 18-02) before the setting ships (story 18-07): losing it is a defect
+  in the proof, whatever the setting.
+

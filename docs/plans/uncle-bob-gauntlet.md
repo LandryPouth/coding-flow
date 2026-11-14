@@ -77,13 +77,12 @@ in this series `autoland` refused every land it was asked for (15-01,
 15-05, 13-08 — each then landed by hand with `worktree land`; 13-07 went
 straight to `land`), and every land deleted the story's proof.
 
-**Recommendation (not decided — a product decision for the maintainer):**
+**Decided 2026-11-14** ([design decision 17](../design-decisions.md)): the layer becomes a setting (story 18-07, after 18-02), on for the maintainer. The recommendation as written:
 make the worktree layer optional — stories run in the current checkout by
 default, a worktree only when a second chain runs in parallel — and, ahead
 of that, carry a story's verify and review evidence into the primary at land
 (the 2026-11-09 row). The second is a defect in the proof itself, whatever is
-decided about the first. Not recorded in `docs/design-decisions.md` until it
-is decided.
+decided about the first. Recorded as design decision 17.
 
 ## Re-measured 2026-10-18, after epics 01–12
 
