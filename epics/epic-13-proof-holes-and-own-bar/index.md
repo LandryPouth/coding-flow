@@ -77,6 +77,8 @@ s10
 s11
 
 s12
+
+s13
 ```
 
 `s1`, `s2`, `s5` are independent. `s4` and `s6` assume s3's lcov command is
@@ -113,6 +115,9 @@ config s3 writes).
 12. **story-13-12-a-new-function-is-measured-as-new** — added 2026-11-14
     from 13-06's review: a new long function borrows the length of the base
     function its hunk replaced. *(STANDARD)*
+13. **story-13-13-the-guards-long-tail** — added 2026-11-14 from 13-09's
+    five reviews: git plumbing, scp, busybox, other archivers, and in-project
+    extraction judged by its members. *(STRICT)*
 
 ## Decisions
 
