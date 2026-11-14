@@ -1,6 +1,6 @@
 # Story 13-10 — The security core stays high-risk
 
-## Status: in-progress
+## Status: done
 
 Found by the independent review of story 13-03 on `develop` (2026-11-14,
 P1). 13-03 put "the files that decide a denial or a proof" in this
