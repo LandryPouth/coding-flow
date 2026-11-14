@@ -82,9 +82,13 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
   unchecked when its source is a glob, a variable or a remote (`host:/x`,
   `h::m`, `rsync://` — with `rsync -e` a "remote" is local), or when anything
   ran first: an earlier segment of the same command (`&&`, `;`, a pipe, an outer
-  segment before `bash -c`) or a substitution inside the copy's own segment
-  (`--exclude=$(…)`, a backtick, `<(…)`) — it may have made, filled or swapped
-  the source under any name. `rsync -e`/`--rsh` is unchecked wherever it lands.
+  segment before `bash -c`) or an unquoted substitution anywhere on the line
+  (`$(…)`, a backtick, `<(…)`, `>(…)`) — it may have made, filled or swapped the
+  source under any name. The line is also read with each substitution replaced
+  by one unknown word, so `rsync --exclude-from=<(…) E/ .` keeps its source and
+  destination together (fifth review). `rsync -e`/`--rsh` is unchecked unless
+  the destination is remote (`host:/x`, `rsync://`): a push writes nothing here
+  (`rsync -avz -e ssh dist/ deploy@host:/var/www/` stays allowed).
   Deeper shell tricks past this round are honest limits (DOGFOODING), not this
   story.
   Otherwise the source is read on disk: refused when it holds a literal blocked
@@ -118,7 +122,8 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
 - **Commit check:** a file is exempt when it matches an `EVIDENCE_BLOCKED_PATHS`
   entry, whatever blocked entry covers it — the doctor's equivalence, applied to
   the file instead of the pattern.
-- Expectations of this story's own red tests moved after a review: `tar -C
+- Expectations of this story's own red tests moved after a review:
+  `rsync -avze ssh src/ h:/x/` from unchecked to allowed (fifth); `tar -C
   /tmp` became a sibling directory (the test project lives under the temp dir,
   so `/tmp` is its ancestor). After the first review:
   `unzip -d .coding-flow` and `git apply < forge.diff` were `unchecked`; both

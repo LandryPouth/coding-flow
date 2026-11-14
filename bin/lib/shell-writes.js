@@ -202,7 +202,7 @@ function reader(startCwd, host, options = {}) {
   // The shell resolves `..` physically once a `cd` went through a symlink, so every
   // directory it tracks is the real one when it exists (a missing one stays lexical).
   const start = host.realpath(path.resolve(startCwd));
-  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0 };
+  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0, substitutes: Boolean(options.substitutes) };
 }
 
 const homeOf = (r, target) => expandHome(target, r.host.home());
@@ -497,7 +497,9 @@ function readCopy(r, command) {
 // (`X/.`, rsync's `X/`, a glob) — and DIR itself in every case but `-t DIR`, `.` and
 // `..`: an earlier `rm -rf`/`trash` in the same command may have emptied the name,
 // and `mv X dst/` onto a missing `dst/` creates dst.
-function copiedTrees(r, { segment, name, args }, { optionAt, directory, sources }, isDirectory) {
+const REMOTE = /^(?:[^/]*:|rsync:\/\/)/;
+
+function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDirectory) {
   const symbolic = name === "cp" && args.some((arg) => /^-[A-Za-z]*[sl]/.test(arg) || arg === "--symbolic-link" || arg === "--link");
   const recursive = name === "rsync" || name === "mv" || name === "ln" || symbolic || (name === "cp" && args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || arg === "--recursive" || arg === "--archive"));
   if (!r.trees || !recursive || typeof directory !== "string") {
@@ -505,12 +507,13 @@ function copiedTrees(r, { segment, name, args }, { optionAt, directory, sources 
   }
   const itself = optionAt === -1 && !/(?:^|\/)\.{1,2}\/?$/.test(directory);
   const noTarget = args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory");
-  // `rsync -e X`: X runs as the "remote" end, local or not.
-  if (name === "rsync" && args.some((arg) => /^-[a-zA-Z]*e/.test(arg) || arg.startsWith("--rsh"))) {
+  // `rsync -e X`: X runs as the "remote" end, local or not. Pushed to a remote
+  // destination, nothing lands here.
+  if (name === "rsync" && !REMOTE.test(directory) && args.some((arg) => /^-[a-zA-Z]*e/.test(arg) || arg.startsWith("--rsh"))) {
     r.found.push({ target: directory, kind: "tree", unchecked: REMOTE_SHELL });
   }
   for (const source of sources) {
-    const from = treeSource(r, source, segment);
+    const from = treeSource(r, source);
     if (!isDirectory || noTarget || itself) {
       add(r, directory, "tree", from);
     }
@@ -524,17 +527,14 @@ function copiedTrees(r, { segment, name, args }, { optionAt, directory, sources 
 
 // What a tree's source is, for the guard to judge a landing on the project root:
 // `source` (resolved), `chained` when something else ran first — an earlier
-// segment, or a substitution inside this one (`$(…)`, a backtick, `<(…)`) — as it
+// segment, or a substitution anywhere on the line (`$(…)`, a backtick, `<(…)`) — as it
 // may have made or filled the source under any name, or `unread` when a glob, a
 // variable or a remote (`host:/x`, `rsync://`) decides it.
-function treeSource(r, source, segment) {
-  if (classify(source) !== "path" || r.cwd === null || /^[^/]*:/.test(source)) {
+function treeSource(r, source) {
+  if (classify(source) !== "path" || r.cwd === null || REMOTE.test(source)) {
     return { unread: true };
   }
-  // The segment splitter opens a group at `$(`/`<(`, leaving the `$` or `<` behind.
-  const text = segment ? segment.text.replace(/'[^']*'/g, "") : "";
-  const substitutes = /\$\(|`|[<>]\(/.test(text) || (segment?.after === "open" && /[$<>]$/.test(text.trimEnd()));
-  return { source: path.resolve(r.cwd, homeOf(r, source)), chained: r.segments > 0 || substitutes };
+  return { source: path.resolve(r.cwd, homeOf(r, source)), chained: r.segments > 0 || r.substitutes };
 }
 
 // --- archives -----------------------------------------------------------------
@@ -988,7 +988,7 @@ function readForwarded(r, command) {
 // A script handed to `bash -c` / `eval` runs from the current directory. With the
 // directory unknown, only its absolute targets can still be judged; a relative one is unchecked.
 function followScript(r, program) {
-  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees, after: r.segments })) {
+  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees, after: r.segments, substitutes: r.substitutes })) {
     if (entry.unchecked) {
       r.found.push(entry);
     } else if (r.cwd === null && !path.isAbsolute(homeOf(r, entry.target))) {
@@ -1154,6 +1154,67 @@ function readVerb(r, command) {
 // `options.trees`: also give a "tree" entry for every write of a whole directory
 // (a recursive copy, a checked-out pathspec), judged on what it holds. Off, the
 // list is the per-file one.
+// The line with each unquoted substitution (`$(…)`, `<(…)`, `>(…)`, a backtick
+// pair) replaced by one unknown word: the segment splitter cuts a command at a
+// substitution's parenthesis, so `rsync --exclude-from=<(…) E/ .` reads its
+// source and destination only once the substitution is out of the way.
+function withoutSubstitutions(command) {
+  let out = "";
+  let quote = null;
+  for (let i = 0; i < command.length; i += 1) {
+    const ch = command[i];
+    if (quote === "'") {
+      quote = ch === "'" ? null : quote;
+    } else if (ch === "'" && quote === null) {
+      quote = "'";
+    } else if (ch === '"') {
+      quote = quote === '"' ? null : '"';
+    } else if (ch === "\\") {
+      out += ch + (command[i + 1] ?? "");
+      i += 1;
+      continue;
+    } else if ((/[$<>]/.test(ch) && command[i + 1] === "(") || ch === "`") {
+      i = ch === "`" ? command.indexOf("`", i + 1) : closingParen(command, i + 1);
+      if (i === -1) {
+        return out + "$SUBSTITUTED";
+      }
+      out += "$SUBSTITUTED";
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+function closingParen(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    depth += text[i] === "(" ? 1 : text[i] === ")" ? -1 : 0;
+    if (depth === 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Trees, moves and extractions of the command the substitutions sat in.
+function readAroundSubstitutions(r, command, startCwd, options) {
+  const flat = withoutSubstitutions(command);
+  if (!r.trees || options.flat || flat === command) {
+    return;
+  }
+  for (const entry of shellWrites(flat, startCwd, r.host, { ...options, flat: true, substitutes: true })) {
+    if (["tree", "move", "extract"].includes(entry.kind)) {
+      const { target, kind, unchecked, ...tree } = entry;
+      if (unchecked) {
+        r.found.push(entry);
+      } else {
+        add(r, target, kind, tree);
+      }
+    }
+  }
+}
+
 function shellWrites(command, startCwd, host, options = {}) {
   if (typeof command !== "string" || !command.trim()) {
     return [];
@@ -1163,6 +1224,9 @@ function shellWrites(command, startCwd, host, options = {}) {
   command = command.replace(/\\\n/g, "");
 
   const r = reader(startCwd, host, options);
+  // A substitution anywhere on the line (`$(…)`, a backtick, `<(…)`, `>(…)`)
+  // runs before the command it sits in, wherever it is placed.
+  r.substitutes = r.substitutes || /\$\(|`|[<>]\(/.test(command.replace(/'[^']*'/g, ""));
   let left = null;
 
   for (const segment of splitSegments(command)) {
@@ -1190,6 +1254,9 @@ function shellWrites(command, startCwd, host, options = {}) {
     }
   }
 
+  if (r.substitutes) {
+    readAroundSubstitutions(r, command, startCwd, options);
+  }
   return r.found;
 }
 
