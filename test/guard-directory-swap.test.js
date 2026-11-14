@@ -385,3 +385,23 @@ test('a trailing slash or a link does not bring the swap back', (t) => {
   fs.mkdirSync(path.join(dir, 'build'));
   expectDecisions(dir, 'allow', ['mv build dist', 'mv a.txt src', 'mv a.txt src/', `cp -r ${forged}/x src/`, 'ln -s ../a.txt src/a', 'tar -xf /tmp/a.tar -C /opt', 'unzip /tmp/a.zip -d ~/Downloads', 'patch -p1 < /dev/null']);
 });
+
+// --- fourth review of 13-09 --------------------------------------------------------
+
+test('a substitution in the copy\'s own segment, a remote source or a remote shell is unchecked', (t) => {
+  const dir = repo(t);
+  const empty = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-subst-')));
+  t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
+  expectDecisions(dir, 'unchecked', [
+    `rsync -a ${empty}/ . --exclude=$(mkdir -p ${empty}/.coding-flow/runs; echo zz)`,
+    `rsync -a ${empty}/ . --exclude=\`mkdir -p ${empty}/.coding-flow/runs\``,
+    `rsync -a ${empty}/ . --exclude-from=<(mkdir -p ${empty}/.coding-flow/runs)`,
+    'rsync -a host:/x/ .',
+    'rsync -a rsync://h/m/ .',
+    'rsync -a h::m/ .',
+    'rsync -a -e /tmp/loc.sh h:/x/ src/',
+    'rsync -avze ssh src/ h:/x/',
+    'rsync --rsh=/tmp/loc.sh -a h:/x/ src/',
+  ]);
+  expectDecisions(dir, 'allow', [`rsync -a ${empty}/ . --exclude='$(x)'`, 'rsync -a src/ build/', 'patch -p1 < /dev/null', 'patch < /dev/null']);
+});
