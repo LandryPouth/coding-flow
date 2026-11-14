@@ -28,10 +28,46 @@ const ESLINT_CONFIGS = [
 ];
 
 // An ESLint config is not the complexity check: nearly every Node project has
-// one. It counts only when it names both rules; `package.json` counts only
-// through its `eslintConfig` key.
+// one. It counts only when both rules are on. A JSON config (and
+// `package.json`'s `eslintConfig`) is read for its rules — top level and
+// `overrides` — so a rule set to "off" or 0 does not count; a JS or YAML config
+// cannot be read without running it, so there it is a name match.
+const ESLINT_RULE_NAMES = ["complexity", "max-lines-per-function"];
 const ESLINT_RULES = /^(?=[\s\S]*\bcomplexity\b)(?=[\s\S]*\bmax-lines-per-function\b)/;
-const ESLINT_PACKAGE_RULES = /^(?=[\s\S]*"eslintConfig")(?=[\s\S]*\bcomplexity\b)(?=[\s\S]*\bmax-lines-per-function\b)/;
+
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function ruleIsOn(value) {
+  const severity = Array.isArray(value) ? value[0] : value;
+  return severity !== undefined && severity !== "off" && severity !== 0 && severity !== "0";
+}
+
+function eslintRulesOn(config) {
+  if (!config || typeof config !== "object") {
+    return false;
+  }
+  const overrides = Array.isArray(config.overrides) ? config.overrides : [];
+  const blocks = [config.rules, ...overrides.map((override) => override && override.rules)].filter(
+    (rules) => rules && typeof rules === "object",
+  );
+  return ESLINT_RULE_NAMES.every((name) => blocks.some((rules) => ruleIsOn(rules[name])));
+}
+
+function eslintConfigChecks(text) {
+  const json = parseJson(text);
+  return json !== undefined ? eslintRulesOn(json) : ESLINT_RULES.test(text);
+}
+
+function eslintPackageChecks(text) {
+  const pkg = parseJson(text);
+  return Boolean(pkg && typeof pkg === "object" && eslintRulesOn(pkg.eslintConfig));
+}
 
 const DEPCRUISE_CONFIGS = [".dependency-cruiser.js", ".dependency-cruiser.cjs", ".dependency-cruiser.mjs", ".dependency-cruiser.json"];
 
@@ -44,11 +80,13 @@ const IMPORTLINTER_CONFIGS = [
   { file: "setup.cfg", section: /^\[importlinter\]/m },
 ];
 
-// ArchUnit has no config file: the dependency in the build is the sign.
+// ArchUnit has no config file: the dependency in the build is the sign, read
+// as its coordinate — a mere mention of "archunit" is not a dependency.
+const ARCHUNIT_DEPENDENCY = /com\.tngtech\.archunit/;
 const ARCHUNIT_CONFIGS = [
-  { file: "pom.xml", section: /archunit/i },
-  { file: "build.gradle", section: /archunit/i },
-  { file: "build.gradle.kts", section: /archunit/i },
+  { file: "pom.xml", section: ARCHUNIT_DEPENDENCY },
+  { file: "build.gradle", section: ARCHUNIT_DEPENDENCY },
+  { file: "build.gradle.kts", section: ARCHUNIT_DEPENDENCY },
 ];
 
 const ECOSYSTEMS = [
@@ -77,8 +115,8 @@ function recipesFor(ecosystem, root) {
         command: "npx eslint .",
         note: "with the `complexity` and `max-lines-per-function` rules",
         configs: [
-          ...ESLINT_CONFIGS.map((file) => ({ file, section: ESLINT_RULES })),
-          { file: "package.json", section: ESLINT_PACKAGE_RULES },
+          ...ESLINT_CONFIGS.map((file) => ({ file, checks: eslintConfigChecks })),
+          { file: "package.json", checks: eslintPackageChecks },
         ],
       },
     ];
@@ -109,13 +147,16 @@ function readSafely(filePath) {
 }
 
 function presentConfig(root, configs) {
-  const found = configs.find(({ file, section }) => {
+  const found = configs.find(({ file, section, checks }) => {
     const filePath = path.join(root, file);
-    if (!section) {
+    if (!section && !checks) {
       return fs.existsSync(filePath);
     }
     const text = readSafely(filePath);
-    return text !== null && section.test(text);
+    if (text === null) {
+      return false;
+    }
+    return checks ? checks(text) : section.test(text);
   });
   return found ? found.file : null;
 }
