@@ -100,8 +100,9 @@ const SHIFTED_PATCH = "a patch's paths are shifted by an option the guard does n
 const FORWARDED = "a write command runs on paths another command hands it";
 const UNREAD_TREE = "a tree is copied onto the project from a source the guard cannot read";
 const PATHSPEC_MAGIC = "git reads a pathspec magic the guard does not model";
+const REMOTE_SHELL = "rsync runs a remote shell the guard cannot read";
 const SUBSTITUTED_VERB = "the command itself depends on shell expansion";
-const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH, SHIFTED_PATCH, FORWARDED, UNREAD_TREE, PATHSPEC_MAGIC, SUBSTITUTED_VERB]);
+const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH, SHIFTED_PATCH, FORWARDED, UNREAD_TREE, PATHSPEC_MAGIC, SUBSTITUTED_VERB, REMOTE_SHELL]);
 const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 
 // --- segments -----------------------------------------------------------------
@@ -496,7 +497,7 @@ function readCopy(r, command) {
 // (`X/.`, rsync's `X/`, a glob) — and DIR itself in every case but `-t DIR`, `.` and
 // `..`: an earlier `rm -rf`/`trash` in the same command may have emptied the name,
 // and `mv X dst/` onto a missing `dst/` creates dst.
-function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDirectory) {
+function copiedTrees(r, { segment, name, args }, { optionAt, directory, sources }, isDirectory) {
   const symbolic = name === "cp" && args.some((arg) => /^-[A-Za-z]*[sl]/.test(arg) || arg === "--symbolic-link" || arg === "--link");
   const recursive = name === "rsync" || name === "mv" || name === "ln" || symbolic || (name === "cp" && args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || arg === "--recursive" || arg === "--archive"));
   if (!r.trees || !recursive || typeof directory !== "string") {
@@ -504,8 +505,12 @@ function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDire
   }
   const itself = optionAt === -1 && !/(?:^|\/)\.{1,2}\/?$/.test(directory);
   const noTarget = args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory");
+  // `rsync -e X`: X runs as the "remote" end, local or not.
+  if (name === "rsync" && args.some((arg) => /^-[a-zA-Z]*e/.test(arg) || arg.startsWith("--rsh"))) {
+    r.found.push({ target: directory, kind: "tree", unchecked: REMOTE_SHELL });
+  }
   for (const source of sources) {
-    const from = treeSource(r, source);
+    const from = treeSource(r, source, segment);
     if (!isDirectory || noTarget || itself) {
       add(r, directory, "tree", from);
     }
@@ -518,14 +523,18 @@ function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDire
 }
 
 // What a tree's source is, for the guard to judge a landing on the project root:
-// `source` (resolved), `chained` when an earlier segment of the command ran
-// first (it may have made or filled the source, under any name), or `unread`
-// when a glob or a variable decides it.
-function treeSource(r, source) {
-  if (classify(source) !== "path" || r.cwd === null) {
+// `source` (resolved), `chained` when something else ran first — an earlier
+// segment, or a substitution inside this one (`$(…)`, a backtick, `<(…)`) — as it
+// may have made or filled the source under any name, or `unread` when a glob, a
+// variable or a remote (`host:/x`, `rsync://`) decides it.
+function treeSource(r, source, segment) {
+  if (classify(source) !== "path" || r.cwd === null || /^[^/]*:/.test(source)) {
     return { unread: true };
   }
-  return { source: path.resolve(r.cwd, homeOf(r, source)), chained: r.segments > 0 };
+  // The segment splitter opens a group at `$(`/`<(`, leaving the `$` or `<` behind.
+  const text = segment ? segment.text.replace(/'[^']*'/g, "") : "";
+  const substitutes = /\$\(|`|[<>]\(/.test(text) || (segment?.after === "open" && /[$<>]$/.test(text.trimEnd()));
+  return { source: path.resolve(r.cwd, homeOf(r, source)), chained: r.segments > 0 || substitutes };
 }
 
 // --- archives -----------------------------------------------------------------
@@ -862,7 +871,7 @@ function patchOptions(operands) {
 
 function readPatchCommand(r, command) {
   const { positional, values, dryRun } = patchOptions(command.operands);
-  if (dryRun || positional.length) {
+  if (dryRun || positional.length || (values.i || stdinFile(command)) === "/dev/null") {
     return; // `patch FILE [PATCH]` writes FILE, read as an edited file
   }
   if (!["0", "1"].includes(values.p) || values.d !== undefined) {

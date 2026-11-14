@@ -79,9 +79,14 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
   `mv x .coding-flow/` is refused even while `.coding-flow` exists (third review).
 - **The project root and its ancestors: unchecked over path-text matching**
   (third review). A tree landing on the root or an ancestor (`..`, `/`) is
-  unchecked when its source is a glob or variable, or when any earlier segment
-  of the same command ran first (`&&`, `;`, a pipe, an outer segment before
-  `bash -c`) — it may have made, filled or swapped the source under any name.
+  unchecked when its source is a glob, a variable or a remote (`host:/x`,
+  `h::m`, `rsync://` — with `rsync -e` a "remote" is local), or when anything
+  ran first: an earlier segment of the same command (`&&`, `;`, a pipe, an outer
+  segment before `bash -c`) or a substitution inside the copy's own segment
+  (`--exclude=$(…)`, a backtick, `<(…)`) — it may have made, filled or swapped
+  the source under any name. `rsync -e`/`--rsh` is unchecked wherever it lands.
+  Deeper shell tricks past this round are honest limits (DOGFOODING), not this
+  story.
   Otherwise the source is read on disk: refused when it holds a literal blocked
   path at the project's place (`X/.coding-flow/runs`, `X/<project>/…` for an
   ancestor). A missing source in a one-segment command stays allowed, not
