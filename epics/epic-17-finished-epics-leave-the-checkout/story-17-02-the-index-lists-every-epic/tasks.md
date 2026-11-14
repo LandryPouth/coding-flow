@@ -6,7 +6,7 @@
       doctor check and its `--fix`.
 - [x] Add the `/flow-plan` Pipeline and Verification lines, update the evals,
       run `plugin sync`.
-- [ ] Run `npm test`, `ai-flow verify`, the review, and add a CHANGELOG
+- [x] Run `npm test`, `ai-flow verify`, the review, and add a CHANGELOG
       entry (Added).
 
 ## Result
@@ -25,4 +25,4 @@ Revert the story's commits: the live section is a managed block, so an
 `epics/INDEX.md` already written keeps its markers and its archived section;
 delete the block between the markers by hand if wanted. No data migration.
 
-## Status: in-progress
+## Status: done
