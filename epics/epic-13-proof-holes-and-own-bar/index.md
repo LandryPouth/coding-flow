@@ -75,6 +75,8 @@ s9
 s10
 
 s11
+
+s12
 ```
 
 `s1`, `s2`, `s5` are independent. `s4` and `s6` assume s3's lcov command is
@@ -108,6 +110,9 @@ config s3 writes).
 11. **story-13-11-a-wrapped-criterion-is-read-whole** — added 2026-11-14
     from 13-05's review: a criterion wrapped onto two lines is compared on
     its first line only. *(STANDARD)*
+12. **story-13-12-a-new-function-is-measured-as-new** — added 2026-11-14
+    from 13-06's review: a new long function borrows the length of the base
+    function its hunk replaced. *(STANDARD)*
 
 ## Decisions
 
