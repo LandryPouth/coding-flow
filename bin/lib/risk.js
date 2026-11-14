@@ -62,12 +62,18 @@ function scoreStoryRisk(storyText, config) {
 // wrapped in this project's own `git(root, [...])` helper shape (see
 // `worktree.js`'s `git()`), matching the exact call convention the real
 // story-03-02 bug used — a bounded text signal, not a generic shell-command
-// scanner.
+// scanner. Story 13-14 added deletions: `git rm`, `git clean` and a recursive
+// file-system delete (`fs.rmSync`/`rmdirSync`/`promises.rm` with
+// `recursive: true`) — new code that removes the user's files is what the
+// coverage gate exists for (17-01's `archive` scored `low` without them).
 const STRUCTURAL_GIT_SIGNALS = [
   { name: "git worktree remove", pattern: /\bgit\s*\([^;]*?\[\s*["'`]worktree["'`]\s*,\s*["'`]remove["'`]/ },
   { name: "git branch -D/-f (force branch delete)", pattern: /\bgit\s*\([^;]*?\[\s*["'`]branch["'`]\s*,\s*["'`]-[DdFf]["'`]/ },
   { name: "git reset --hard", pattern: /\bgit\s*\([^;]*?\[\s*["'`]reset["'`]\s*,\s*["'`]--hard["'`]/ },
   { name: "git merge", pattern: /\bgit\s*\([^;]*?\[\s*["'`]merge["'`]/ },
+  { name: "git rm", pattern: /\bgit\s*\([^;]*?\[\s*["'`]rm["'`]/ },
+  { name: "git clean", pattern: /\bgit\s*\([^;]*?\[\s*["'`]clean["'`]/ },
+  { name: "recursive delete", pattern: /\brm(?:dir)?(?:Sync)?\s*\([^;]*?\brecursive\s*:\s*true/ },
 ];
 
 // A call already passing `{ allowFail: true }` (this project's own converted
