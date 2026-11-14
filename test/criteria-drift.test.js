@@ -160,3 +160,89 @@ test('strict: spec-in-diff fails, and a Spec Change section lets it pass', (t) =
   assert.equal(passed.code, 0, passed.output);
   assert.match(passed.json.contrary.specChange, /one sitting/);
 });
+
+// Story 13-11: a criterion wrapped over several lines is compared whole.
+const WRAPPED = ['- [ ] Given a request from X the guard must', '      deny the write and say why'];
+
+test('a word reworded on a continuation line is criteria-changed', (t) => {
+  const dir = repo(t, 'cd-wrap-word', { criteria: WRAPPED });
+  write(dir, `${STORY}/spec.md`, spec([WRAPPED[0], '      warn on the write and say why']));
+
+  const res = verify(dir);
+  assert.equal(res.code, 0, res.output);
+  const [entry] = res.json.contrary.warnings.criteriaChanged;
+  assert.match(entry, /deny the write/);
+  assert.match(entry, /warn on the write/);
+});
+
+test('a clause added on a new continuation line is criteria-changed', (t) => {
+  const dir = repo(t, 'cd-wrap-clause', { criteria: WRAPPED });
+  write(dir, `${STORY}/spec.md`, spec([...WRAPPED, '      unless the file is in a sandbox']));
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+  assert.match(res.json.contrary.warnings.criteriaChanged[0], /unless the file is in a sandbox/);
+});
+
+test('strict: a continuation-line change fails', (t) => {
+  const dir = repo(t, 'cd-wrap-strict', { criteria: WRAPPED, strict: true });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given a request from X the guard must', '      warn on the write and say why']));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'criteria-changed'));
+});
+
+test('re-wrapping and ticking a wrapped criterion stay silent, CRLF included', (t) => {
+  const dir = repo(t, 'cd-wrap-silent', { criteria: WRAPPED });
+  const rewrapped = ['- [x] Given a request', '  from X the guard must deny', '  the write and say why'];
+  write(dir, `${STORY}/spec.md`, spec(rewrapped).replace(/\n/g, '\r\n'));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('a nested list item and a later heading are not part of the criterion above', (t) => {
+  const nested = [...WRAPPED, '  - [ ] Given Y then allow', '', '## Notes', '', '    indented note'];
+  const dir = repo(t, 'cd-wrap-nested', { criteria: nested });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given a request from X the guard must', '      deny the write and say why', '  - [x] Given Y then allow', '', '## Notes', '', '    another note']));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('strict: a Spec Change holding only a comment is not a reason', (t) => {
+  const dir = repo(t, 'cd-spec-comment', { strict: true });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given X then warn'], '\n## Spec Change\n\n<!-- why the criteria changed -->\n\n'));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'criteria-changed'));
+});
+
+test('a changed criterion pairs with its most similar old one, and an added one is shown', (t) => {
+  const dir = repo(t, 'cd-pair', { criteria: ['- [ ] Given Y then allow the read', DENY] });
+  write(dir, `${STORY}/spec.md`, spec([WARN, '- [ ] Given Y then allow the read', '- [ ] Export writes a CSV file']));
+
+  const res = verify(dir);
+  const changed = res.json.contrary.warnings.criteriaChanged;
+  assert.ok(changed.includes('Given X then deny → Given X then warn'), JSON.stringify(changed));
+  assert.ok(changed.includes('(added) → Export writes a CSV file'), JSON.stringify(changed));
+  assert.equal(changed.length, 2);
+});
+
+test('criteria with no clear pair are listed apart', (t) => {
+  const dir = repo(t, 'cd-nopair');
+  write(dir, `${STORY}/spec.md`, spec(['- [ ] Export writes a CSV file']));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged.sort(), ['(added) → Export writes a CSV file', 'Given X then deny → (removed)']);
+});
+
+test('removing one of two identical criteria is reported', (t) => {
+  const dir = repo(t, 'cd-dup', { criteria: [DENY, DENY] });
+  write(dir, `${STORY}/spec.md`, spec([DENY]));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, ['Given X then deny → (removed)']);
+});
