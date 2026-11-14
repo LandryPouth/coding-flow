@@ -1,6 +1,6 @@
 # Story 13-14 — A deletion is a structural signal
 
-## Status: in-progress
+## Status: done
 
 Found by the independent review of story 17-01 (2026-11-14): `ai-flow
 archive` adds code that runs `git rm -r` on a whole epic directory, yet its
