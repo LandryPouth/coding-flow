@@ -1,6 +1,6 @@
 # Story 13-13 — The guard's long tail
 
-## Status: in-progress
+## Status: done
 
 Left open on purpose by story 13-09 after five review rounds (2026-11-14):
 13-09 closed every plainly written copy, move, link, extract, patch and
