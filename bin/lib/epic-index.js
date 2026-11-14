@@ -47,9 +47,29 @@ function readIndex(root) {
 }
 
 // Every archived entry as { number, slug }, in file order.
+// Read only after the archived-section marker: a marker-shaped string anywhere
+// else (a title in the live section) is not an entry.
 function archivedEpics(root) {
-  const text = readIndex(root) || "";
-  return [...text.matchAll(ENTRY_MARKER)].map((match) => ({ number: match[1], slug: match[2] }));
+  const text = lf(readIndex(root) || "");
+  const section = text.indexOf(SECTION_MARKER);
+  if (section < 0) return [];
+  return [...text.slice(section).matchAll(ENTRY_MARKER)].map((match) => ({ number: match[1], slug: match[2] }));
+}
+
+// A title printed into INDEX.md cannot open or close an HTML comment, so it can
+// never end the live section early or pass for an archived entry's marker.
+function inert(text) {
+  return String(text).replace(/<!--/g, "&lt;!--").replace(/-->/g, "--&gt;");
+}
+
+// INDEX.md is compared and spliced in LF, then written back in the line endings
+// the file already had.
+function lf(text) {
+  return text.replace(/\r\n/g, "\n");
+}
+
+function inLineEndingsOf(original, text) {
+  return original !== null && original.includes("\r\n") ? lf(text).replace(/\n/g, "\r\n") : text;
 }
 
 // `epic-08-evidence-levels` → { number: "08", slug: "evidence-levels" }; a
@@ -76,11 +96,14 @@ function isArchived(root, name) {
 
 // The file content once `entry` (Markdown) is appended to the archived section,
 // creating the file or the section when missing. Pure: the caller writes.
-function withArchivedEntry(existing, entry) {
-  if (existing === null) {
+function withArchivedEntry(original, entry) {
+  if (original === null) {
     return `# Epics\n\n${SECTION_HEADER}\n${entry}`;
   }
+  return inLineEndingsOf(original, appendEntry(lf(original), entry));
+}
 
+function appendEntry(existing, entry) {
   const base = existing.endsWith("\n") ? existing : `${existing}\n`;
 
   if (base.includes(SECTION_MARKER)) {
@@ -112,9 +135,9 @@ function renderLiveSection(epics) {
   if (epics.length === 0) lines.push("No epic directory on disk.", "");
   for (const epic of epics) {
     const { number } = parseEpicName(epic.name);
-    lines.push(`### ${number ? `Epic ${number}` : epic.name} — ${epic.title} (\`epics/${epic.name}/\`)`, "");
+    lines.push(`### ${number ? `Epic ${number}` : epic.name} — ${inert(epic.title)} (\`epics/${epic.name}/\`)`, "");
     if (epic.stories.length === 0) lines.push("- no story yet");
-    for (const story of epic.stories) lines.push(`- ${story.number} · ${story.title} · ${story.status || "—"}`);
+    for (const story of epic.stories) lines.push(`- ${story.number} · ${inert(story.title)} · ${story.status || "—"}`);
     lines.push("");
   }
   lines.push(LIVE_END);
@@ -134,21 +157,26 @@ function liveSectionBounds(text) {
 
 // Whether a marker is there but the pair is unusable.
 function liveSectionBroken(text) {
-  const bounds = text === null ? null : liveSectionBounds(text);
+  const bounds = text === null ? null : liveSectionBounds(lf(text));
   return Boolean(bounds && bounds.broken);
 }
 
 // The current live section as written, or null.
 function liveSectionOf(text) {
-  const bounds = text === null ? null : liveSectionBounds(text);
-  return bounds && !bounds.broken ? text.slice(bounds.start, bounds.end) : null;
+  const normal = text === null ? null : lf(text);
+  const bounds = normal === null ? null : liveSectionBounds(normal);
+  return bounds && !bounds.broken ? normal.slice(bounds.start, bounds.end) : null;
 }
 
 // The file content with `section` as its live section. Text outside the
 // markers is kept byte for byte; without markers the section goes above the
 // archived section, or at the end. Pure; throws on broken markers.
-function withLiveSection(existing, section) {
-  if (existing === null) return `# Epics\n\n${section}\n`;
+function withLiveSection(original, section) {
+  if (original === null) return `# Epics\n\n${section}\n`;
+  return inLineEndingsOf(original, splice(lf(original), section));
+}
+
+function splice(existing, section) {
   const bounds = liveSectionBounds(existing);
   if (bounds && bounds.broken) {
     throw new Error(`${INDEX_FILE} has a broken live section: ${LIVE_START} and ${LIVE_END} must each appear once, in that order — fix the markers by hand`);
@@ -176,5 +204,6 @@ module.exports = {
   renderLiveSection,
   liveSectionOf,
   liveSectionBroken,
+  inert,
   withLiveSection,
 };

@@ -33,6 +33,7 @@ const {
   liveSectionOf,
   liveSectionBroken,
   withLiveSection,
+  inert,
 } = require("./epic-index");
 
 // The only states that mean "finished". `## Status:` accepts any written word,
@@ -232,7 +233,7 @@ function storyRow(story) {
 }
 
 function cell(text) {
-  return String(text).replace(/\|/g, "\\|");
+  return inert(text).replace(/\|/g, "\\|");
 }
 
 function buildEntry({ name, sha, stories, date }) {
@@ -307,12 +308,15 @@ function indexFreshness() {
   if (existing === null) {
     return epics.length > 0 ? { stale: true, reason: `epics/ holds ${epics.length} epic(s) and has no ${toPortable(INDEX_FILE)}` } : null;
   }
+  const file = toPortable(INDEX_FILE);
+  if (liveSectionBroken(existing)) {
+    return { stale: true, reason: `${file} has a broken live section — fix its index:start / index:end markers by hand` };
+  }
   const current = liveSectionOf(existing);
+  // A hand-written INDEX.md, no markers, no epic on disk: nothing to judge.
+  if (current === null && epics.length === 0) return null;
   if (current === renderLiveSection(epics)) return { stale: false };
-  return {
-    stale: true,
-    reason: current === null ? `${toPortable(INDEX_FILE)} has no usable live section` : `${toPortable(INDEX_FILE)} no longer matches the epics on disk`,
-  };
+  return { stale: true, reason: current === null ? `${file} has no live section` : `${file} no longer matches the epics on disk` };
 }
 
 // The refresh, computed: { skip } (nothing to write), { refused }, or

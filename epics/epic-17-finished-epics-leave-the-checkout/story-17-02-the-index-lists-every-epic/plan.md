@@ -49,6 +49,18 @@
 - **Written status** comes from the same regex `inferStoryStatus` used, now shared
   as `writtenStatus()` in `storage/local.js`.
 
+- **Review fixes (2026-11-14):** titles are made inert (`<!--` / `-->` escaped)
+  wherever INDEX.md prints them, and archived markers are read only after the
+  archived-section marker, so a title can neither end the live section nor forge
+  an archived entry. INDEX.md is compared and spliced in LF and written back in
+  the line endings it already had. A broken live section warns "fix the markers
+  by hand" and `doctor --fix` prints its refusal. A hand-written INDEX.md with no
+  markers and no epic on disk is not judged.
+- **Refresh on the base branch only (for 17-04 and the run).** The live section
+  changes with every written-status flip, so two parallel story branches that
+  both refresh conflict on it. Refresh after landing, on the base branch — not
+  inside story worktrees.
+
 ## Acceptance Traceability
 
 - 1–3, 6 → `test/epic-index.test.js`
