@@ -266,3 +266,81 @@ test('git mv is a move; braces, find -exec, xargs and a substituted verb are unc
   ]);
   expectDecisions(dir, 'allow', ['git mv src lib', 'git mv src/a.txt src/b.txt', 'find . -name "*.js" -exec grep x {} +', 'ls | xargs echo', 'git stash', 'git stash list']);
 });
+
+// --- re-review of 13-09: a write form that may land a blocked path is refused
+// when known, else unchecked — never a silent allow.
+
+function forgedTree(t, dir) {
+  const forged = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-forged-')));
+  t.after(() => fs.rmSync(forged, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(forged, '.coding-flow', 'runs'), { recursive: true });
+  fs.mkdirSync(path.join(forged, path.basename(dir), '.coding-flow', 'runs'), { recursive: true });
+  return forged;
+}
+
+test('a move or copy whose destination names a blocked directory is judged as it, existing or not', (t) => {
+  const dir = repo(t);
+  const forged = forgedTree(t, dir);
+  expectDecisions(dir, 'deny', [
+    `mv ${forged}/.coding-flow .coding-flow`,
+    `cp -r ${forged}/.coding-flow .coding-flow`,
+    `mv -T ${forged}/.coding-flow .coding-flow`,
+    `rm -rf .coding-flow && mv ${forged}/.coding-flow .coding-flow`,
+    `trash .coding-flow && mv ${forged}/.coding-flow .coding-flow`,
+    `rm -rf .coding-flow && cp -r ${forged}/.coding-flow .coding-flow`,
+    `cp -r .coding-flow /tmp/cf && sed -i s/failed/passed/ /tmp/cf/runs/a.json && rm -rf .coding-flow && mv /tmp/cf .coding-flow`,
+    'git mv x .coding-flow',
+  ]);
+  expectDecisions(dir, 'allow', [`mv ${forged}/x .coding-flow/`, 'mv src lib', 'cp -r src lib', 'git mv src lib']);
+});
+
+test('a tree copied onto the project root from a source the guard cannot read is unchecked', (t) => {
+  const dir = repo(t);
+  const forged = forgedTree(t, dir);
+  const made = path.join(os.tmpdir(), `coding-flow-dir-swap-made-${process.pid}`);
+  expectDecisions(dir, 'unchecked', [
+    `mkdir -p ${made}/.coding-flow/runs && echo '{}' > ${made}/.coding-flow/runs/a.json && rsync -a ${made}/ .`,
+    `mkdir -p ${made}/.coding-flow/runs && cp .coding-flow/runs/a.json ${made}/.coding-flow/runs/ && cp -r ${made}/. .`,
+    `cp -r ${forged}/.[!.]* .`,
+    `cp -r ${forged}/.c* .`,
+    `cp -r ${forged}/.coding* ./`,
+    `rsync -a ${forged}/.c* .`,
+    `cp -r ${forged}/* .`,
+  ]);
+  // A missing source nothing in the command makes: the copy fails, nothing lands.
+  expectDecisions(dir, 'allow', [`cp -r ${made}-never/. .`]);
+});
+
+test('a tree or an extraction landing on an ancestor of the project is judged as the root', (t) => {
+  const dir = repo(t);
+  const forged = forgedTree(t, dir);
+  expectDecisions(dir, 'deny', [`cp -r ${forged}/. ..`, `rsync -a ${forged}/ ..`]);
+  expectDecisions(dir, 'unchecked', [
+    'tar -xf /tmp/a.tar -C ..',
+    'tar -xf /tmp/a.tar -C /',
+    'unzip /tmp/a.zip -d ..',
+    '7z x /tmp/a.7z -o..',
+    'tar -xPf /tmp/a.tar -C /tmp',
+    'tar -x --absolute-names -f /tmp/a.tar',
+    'tar -xf /tmp/a.tar --to-command=sh -C /tmp',
+  ]);
+  expectDecisions(dir, 'allow', ['tar -xf /tmp/a.tar -C /tmp', 'unzip /tmp/a.zip -d /tmp/out']);
+});
+
+test('git pathspec magic, clustered patch flags, cpio -D and context diffs', (t) => {
+  const dir = repo(t);
+  fs.writeFileSync(path.join(dir, 'p_context.patch'), '*** a/.coding-flow/runs/c.json\n--- b/.coding-flow/runs/c.json\n***************\n*** 1 ****\n! a\n--- 1 ----\n! b\n');
+  fs.writeFileSync(path.join(dir, 'p_context_ok.patch'), '*** a/src/a.txt\n--- b/src/a.txt\n***************\n*** 1 ****\n! a\n--- 1 ----\n! b\n');
+  expectDecisions(dir, 'deny', [
+    "git checkout HEAD~1 -- ':/.coding-flow/runs/a.json'",
+    "git checkout HEAD~1 -- ':(top).coding-flow/runs'",
+    "git restore -s HEAD~1 -- ':/.coding-flow'",
+    ['src', "git checkout HEAD~1 -- ':/.coding-flow/runs'"],
+    'patch -Np1 < p_plain.patch',
+    'patch -N -p1 -i p_plain.patch',
+    'cpio -idm -D .coding-flow/runs < /tmp/a.cpio',
+    'cpio -i --directory=.coding-flow/runs < /tmp/a.cpio',
+  ]);
+  expectDecisions(dir, 'unchecked', ["git checkout HEAD~1 -- ':(glob).coding-flow/**'", "git checkout HEAD~1 -- ':!src'", 'patch -p1 < p_context.patch', 'patch -p1 < p_context_ok.patch']);
+  expectDecisions(dir, 'allow', ['patch -Np1 < p_ok.patch', 'patch -Np1 --dry-run < p_plain.patch', "git checkout -- ':/src'", 'cpio -idm -D /tmp/out < /tmp/a.cpio']);
+});
