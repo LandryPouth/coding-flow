@@ -1,4 +1,4 @@
-# Reliability benchmark (run once, 2026-10-17)
+# Reliability benchmark (runs of 2026-10-17 and 2026-11-14)
 
 Coding Flow claims to make Claude Code **more reliable**: fewer forgotten files and
 higher first-pass success, because the machine verifies instead of the agent
@@ -187,6 +187,120 @@ on tasks 1–4 and lost on task 5; no task shows it ahead on the scored metrics.
   means "not initialised and not invoked", not "absent".
 - Tasks ran in parallel, ten sessions at once; timings are indicative only.
 - The model was `claude-sonnet-5-5`; a stronger model may change the gap either way.
+
+## Second run, 2026-11-14 (coding-flow arm only)
+
+Run 2026-11-14, after the 2026-11-10 prose pass, the `/flow-review` additions and
+stories 16-01 (Clarify First rounds, `Assumption (unconfirmed):` keeps an epic
+`not ready`) and 16-02 (a bug fix starts red). Same protocol, fixture, prompts and
+model as 2026-10-17: `claude-sonnet-5-5` (read back from every run's
+`modelUsage`), headless (`-p --output-format json --permission-mode acceptEdits`),
+`/coding-flow:flow-plan <prompt>` then `/coding-flow:flow-run the story you just
+planned`, then up to 3 re-prompts with the failing `accept` output. **N = 1, one
+arm.** The vanilla arm was not re-run: the 2026-10-17 vanilla numbers above are
+the baseline, from another day and another `claude` build.
+
+**Deviations from the 2026-10-17 run:**
+
+- `claude` 2.1.311 (was 2.1.302); the plugin was loaded from this branch with
+  `--plugin-dir` and the installed copy disabled for the session, and `ai-flow`
+  on `PATH` pointed at this checkout.
+- `Bash` was allowed (`--allowedTools Bash`). A first attempt at task 1 without
+  it stopped on "requires approval" for `npm test` under this machine's
+  permission defaults (`permission_denials` 5) and was discarded, not counted:
+  it measured the sandbox, not the skills. The 2026-10-17 runs show no denials.
+- Tasks ran one after another, not ten at once, so timings are less noisy than
+  the first run's and still indicative.
+- `final.patch` was written by the run itself (new files staged first), not
+  exported afterwards.
+- The user-scope `CLAUDE.md` of the machine was present, as in the first run;
+  one session (task 5, `run-0`) answered in French because of it.
+
+Raw runs: [`evals/benchmark/runs/2026-11-14/`](../../evals/benchmark/runs/2026-11-14/README.md).
+The table is `node evals/benchmark/run.js summarize evals/benchmark/runs/2026-11-14`;
+`test/benchmark-results.test.js` pins it too.
+
+<!-- summarize-2026-11-14:begin -->
+| Task | Arm | First-pass | Round-trips | Tokens (in/out) | Cache read | Cache write | Cost | Time | Spec lines added |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 fix | coding-flow | yes | 0 | 28/5,937 | 619,713 | 89,846 | $0.48 | 71s | 16 |
+| 2 crud | coding-flow | no | 1 | 40/21,416 | 1,153,260 | 126,215 | $1.01 | 231s | 198 |
+| 3 refactor | coding-flow | no | 3 | 26/7,308 | 427,977 | 82,666 | $0.93 | 79s | 0 |
+| 4 auth | coding-flow | yes | 0 | 16/9,250 | 366,656 | 54,569 | $0.84 | 83s | 110 |
+| 5 cross-module | coding-flow | no | 1 | 26/9,138 | 591,503 | 98,480 | $0.71 | 111s | 30 |
+| **Total** | coding-flow | 2/5 | 5 | 136/53,049 | 3,159,109 | 451,776 | $3.98 | 575s | 354 |
+<!-- summarize-2026-11-14:end -->
+
+Next to the 2026-10-17 coding-flow arm:
+
+| Task | First-pass 10-17 → 11-14 | Cost 10-17 → 11-14 | Time 10-17 → 11-14 |
+| --- | --- | --- | --- |
+| 1 fix | yes → yes | $0.46 → $0.48 | 75s → 71s |
+| 2 crud | no → no | $0.76 → $1.01 | 139s → 231s |
+| 3 refactor | yes → **no, never green** | $0.56 → $0.93 | 103s → 79s |
+| 4 auth | yes → yes | $0.81 → $0.84 | 96s → 83s |
+| 5 cross-module | no → no | $0.78 → $0.71 | 134s → 111s |
+| **Total** | 3/5 → 2/5 | $3.36 → $3.98 | 547s → 575s |
+
+Against the 2026-10-17 vanilla arm ($0.97, 217s, 4/5): cost 4.1×, time 2.6×.
+
+### What the second run says
+
+**The lighter skills did not make the arm cheaper, and 16-01 made it stop.** Cost
+went up 18 % ($3.36 → $3.98) and first-pass success went down (3/5 → 2/5). The
+cause is one behaviour, not the word count: in three of five tasks `/flow-plan`
+wrote an `Assumption (unconfirmed):` line and ended at `not ready`, and
+`/flow-run` then refused to implement — exactly what 16-01 asks for, and in a
+headless run nobody can answer. Tasks 1 and 4, where the plan wrote no
+unconfirmed assumption, passed first time at about the first run's cost.
+
+- **Task 5 (the ambiguity 16-01 was written for): `/flow-plan` stopped at
+  `not ready`; it did not settle the ambiguity.** It named the reading it would
+  recommend (`approved` only), wrote it as `Assumption (unconfirmed):` with the
+  other reading and the question for finance, and said it "did not pick the
+  answer myself" (`05-cross-module-B/run-plan.json`). `/flow-run` stopped on that
+  line and left the story `planned` (`run-0.json`, `accept-0.txt`: 1 of 5).
+  This is the behaviour asked for, and it fails the grader on first pass — both
+  are true. On the re-prompt, `/flow-run` took the failing acceptance test as the
+  answer ("I treated your acceptance spec as the answer to the open question"),
+  replaced the assumption with that decision, set the epic to ready and reached
+  green with the grader's reading, `rejected` excluded (`run-1.json`,
+  `accept-1.txt`). It said so in its result, but it set the epic to ready on its
+  own; the re-prompt carries the grader's output, so this green says the arm
+  reads a failing test well, not that it asked the user. **No review ran** in any
+  task-5 session, so no `[spec]` finding was raised; the reading was decided by
+  the grader, not by a review.
+- **Task 3 (refactor): never green.** The plan asked whether `rejectExpense`
+  should refuse a role-less actor (the inconsistency the reference puts out of
+  scope) and stopped at `not ready`. `/flow-run` refused to implement on all four
+  turns, answering each re-prompt "I won't pick a reading from a threshold", so
+  the duplication count stayed at its baseline (`03-refactor-B/run-1..3.json`,
+  `accept-3.txt`). Three re-prompts were spent on the same question; the protocol
+  records it as not reaching green. In the first run, nothing asked about it and
+  the task passed.
+- **Task 2 (CRUD):** two unconfirmed assumptions (case-insensitive names, who may
+  write), `not ready`, nothing written on first pass (0 of 6). The re-prompt was
+  read as "go", both stories were implemented and passed: $0.35 for the plan,
+  $0.48 for the re-prompt. Tasks 3 (+$0.37) and 2 (+$0.25) are the whole cost
+  rise; the other three moved by a few cents.
+- **Task 1 (fix): a red reproduction came before the fix.** The story records
+  "Red before fix (`npm test`): `formatAmount(-1234)` returned `$-12.34`
+  (expected `-$12.34`)" before the fix line, and `formatAmount` changed after
+  (`01-fix-B/run-0.json`; the story file in the workspace, which is the agent's
+  own record — the session transcript was not kept). Cost and time match the
+  first run.
+- **Task 4 (auth):** passed first time; a fresh agent reviewed the STRICT story
+  and found nothing blocking (`04-auth-B/run-0.json`).
+- **Spec lines** fell from 417 to 354: task 3 wrote none (124 in the first run),
+  tasks 2 and 4 wrote more.
+
+**What to build next follows from this, not from the word count.** An
+unattended run that meets an open question has no one to ask; stopping is right
+when a person is there, and a dead end when not. Whether a headless `/flow-run`
+should take the recommended reading and mark it, or keep stopping, is a product
+decision this run cannot make — it only shows the cost of each. Task 3 also
+shows `/flow-plan` asking about something the request did not cover; the
+recommendation was a scope note, not a blocker.
 
 ## The fixture and the prompts
 

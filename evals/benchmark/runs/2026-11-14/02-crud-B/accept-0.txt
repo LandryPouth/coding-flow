@@ -1,0 +1,133 @@
+PASS  regression   17 passed, 0 failed
+FAIL  acceptance   0 passed, 6 failed
+
+TAP version 13
+# Subtest: the router exposes list, create and edit for vendors
+not ok 1 - the router exposes list, create and edit for vendors
+  ---
+  duration_ms: 9.203542
+  type: 'test'
+  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:19:1'
+  failureType: 'testCodeFailure'
+  error: 'missing route: GET /vendors'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'function'
+  actual: 'undefined'
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:23:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: a vendor is created and listed
+not ok 2 - a vendor is created and listed
+  ---
+  duration_ms: 0.63891
+  type: 'test'
+  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:27:1'
+  failureType: 'testCodeFailure'
+  error: 'router.POST /vendors is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:29:19)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: a vendor is edited in place
+not ok 3 - a vendor is edited in place
+  ---
+  duration_ms: 0.729617
+  type: 'test'
+  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:40:1'
+  failureType: 'testCodeFailure'
+  error: 'router.POST /vendors is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:42:19)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a blank name and a missing country are both refused
+not ok 4 - a blank name and a missing country are both refused
+  ---
+  duration_ms: 0.516579
+  type: 'test'
+  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:51:1'
+  failureType: 'testCodeFailure'
+  error: 'router.POST /vendors is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:54:16)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: two vendors cannot share a name
+not ok 5 - two vendors cannot share a name
+  ---
+  duration_ms: 3.630982
+  type: 'test'
+  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:58:1'
+  failureType: 'testCodeFailure'
+  error: 'router.POST /vendors is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:60:3)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: vendors do not leak into the expense report
+not ok 6 - vendors do not leak into the expense report
+  ---
+  duration_ms: 0.659978
+  type: 'test'
+  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:68:1'
+  failureType: 'testCodeFailure'
+  error: 'router.POST /vendors is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:70:3)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 0
+# fail 6
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 260.496446
