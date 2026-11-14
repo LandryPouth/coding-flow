@@ -246,3 +246,57 @@ test('removing one of two identical criteria is reported', (t) => {
   const res = verify(dir);
   assert.deepEqual(res.json.contrary.warnings.criteriaChanged, ['Given X then deny → (removed)']);
 });
+
+// 13-11 review: a criterion's own sub-steps, sub-headings and code are its words.
+const STEPS = ['- [ ] Given a bug fix the steps say, in order:', '      - reproduce the symptom;', '      - see it fail;', '      - fix.'];
+
+test('a sub-step removed from a criterion is criteria-changed, strict fails', (t) => {
+  const dir = repo(t, 'cd-substep', { criteria: STEPS, strict: true });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given a bug fix the steps say, in order:', '      - reproduce the symptom;', '      - fix.']));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.json.contrary.warnings.criteriaChanged[0], /see it fail/);
+});
+
+test('a sub-step reworded is criteria-changed', (t) => {
+  const dir = repo(t, 'cd-substep-word', { criteria: STEPS });
+  write(dir, `${STORY}/spec.md`, spec([STEPS[0], STEPS[1], '      - see it pass;', STEPS[3]]));
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+});
+
+test('a re-wrap that starts a continuation line with a list marker stays silent', (t) => {
+  const dir = repo(t, 'cd-rewrap-dash', { criteria: ['- [ ] Exit code is 0 or 1 - never 2'] });
+  write(dir, `${STORY}/spec.md`, spec(['- [ ] Exit code is 0 or 1', '      - never 2']));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('a sub-heading inside the criteria ends the criterion above it', (t) => {
+  const dir = repo(t, 'cd-subheading', { criteria: [DENY, '', '  ### Later', '', '    an indented note'] });
+  write(dir, `${STORY}/spec.md`, spec([DENY, '', '  ### Later', '', '    another note']));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('a line inside a fenced block of a criterion is part of it', (t) => {
+  const fenced = (word) => ['- [ ] Output is:', '      ```', '      - a', `      ${word}`, '      ```'];
+  const dir = repo(t, 'cd-fence', { criteria: fenced('b') });
+  write(dir, `${STORY}/spec.md`, spec(fenced('b changed')));
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+});
+
+test('a tab-indented continuation is deeper than a two-space nested bullet', (t) => {
+  const tabbed = (word) => ['- [ ] parent', '  - [ ] child must', `\t${word}`];
+  const dir = repo(t, 'cd-tab', { criteria: tabbed('deny') });
+  write(dir, `${STORY}/spec.md`, spec(tabbed('warn')));
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+});
