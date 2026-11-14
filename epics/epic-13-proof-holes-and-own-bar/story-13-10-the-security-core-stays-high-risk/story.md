@@ -26,7 +26,7 @@ the guard or the risk scoring itself runs STANDARD, not STRICT.
       scores high, so the next extraction cannot drop one silently (review
       13-03 P2-1: criterion 2 of 13-03 had no regression test).
 - [x] `## Policy Change` in this story says why the bar rises.
-- [ ] Existing tests stay green, unmodified.
+- [x] Existing tests stay green, unmodified.
 
 ## Policy Change
 
