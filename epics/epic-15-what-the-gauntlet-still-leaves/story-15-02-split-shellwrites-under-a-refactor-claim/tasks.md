@@ -13,6 +13,17 @@ and `7af2cfb`, after a green post-land validation
 `develop`'s recorded fork point `4c7280c`, not this story). The claim's proof
 and the review's evidence lived in the removed worktree's `runs/`.
 
+**Re-proven 2026-11-14 at its own commit.** The claim cannot be re-taken from
+`develop` (later stories edited 5 test files in the window, DOGFOODING
+2026-11-13). It was re-taken where it was made: a throwaway worktree at
+`26d7907` on a temporary branch started from `b56d3b5` (the characterization
+tests and 15-01 already in), `verify --claim refactor --base <that branch>`:
+claim held (129 test files from the base untouched, none skipped or weakened),
+coverage `verified` (100 % of 775 added lines), suite green
+(`.coding-flow/runs/2026-11-14T02-32-04-982Z-verify.json`, copied into the
+primary). Both temporary branches and the worktree were removed. On
+`develop` the story reads "proof is stale", which is true: the tree moved.
+
 ### Rollback Notes
 
 - See `spec.md`.
