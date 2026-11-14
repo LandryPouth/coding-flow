@@ -400,8 +400,28 @@ test('a substitution in the copy\'s own segment, a remote source or a remote she
     'rsync -a rsync://h/m/ .',
     'rsync -a h::m/ .',
     'rsync -a -e /tmp/loc.sh h:/x/ src/',
-    'rsync -avze ssh src/ h:/x/',
     'rsync --rsh=/tmp/loc.sh -a h:/x/ src/',
   ]);
   expectDecisions(dir, 'allow', [`rsync -a ${empty}/ . --exclude='$(x)'`, 'rsync -a src/ build/', 'patch -p1 < /dev/null', 'patch < /dev/null']);
+});
+
+// --- fifth review of 13-09 ---------------------------------------------------------
+
+test('a substitution anywhere in the command line, before the source too, is unchecked', (t) => {
+  const dir = repo(t);
+  const empty = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-before-')));
+  t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
+  expectDecisions(dir, 'unchecked', [
+    `rsync -a --exclude-from=<(mkdir -p ${empty}/.coding-flow/runs; echo x) ${empty}/ .`,
+    `rsync -a --exclude-from <(mkdir -p ${empty}/.coding-flow/runs; echo x) ${empty}/ .`,
+    `rsync -a ${empty}/ . > >(mkdir -p ${empty}/.coding-flow/runs)`,
+    `rsync -a --exclude=$(mkdir -p ${empty}/.coding-flow/runs) ${empty}/ .`,
+  ]);
+  expectDecisions(dir, 'allow', [`rsync -a --exclude='<(x)' ${empty}/ .`]);
+});
+
+test('rsync -e to a remote destination writes nothing here', (t) => {
+  const dir = repo(t);
+  expectDecisions(dir, 'allow', ['rsync -avz -e ssh dist/ deploy@host:/var/www/', 'rsync -avze ssh src/ h:/x/', 'rsync --rsh=ssh -a src/ rsync://h/m/']);
+  expectDecisions(dir, 'unchecked', ['rsync -avz -e ssh deploy@host:/var/www/ src/', 'rsync -e ssh src/ build/']);
 });
