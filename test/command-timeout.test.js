@@ -75,7 +75,9 @@ test('the object form sets a limit for one command, string entries keep working'
 
 test('a per-command limit wins over the global one, in quality too', (t) => {
   const dir = project(t, {
-    commands: ['node fast.js'],
+    // fast.js carries its own room: under load, starting node can take more
+    // than the 500 ms global limit this test is about.
+    commands: [{ command: 'node fast.js', timeoutMs: 5000 }],
     quality: [{ command: 'node slow.js', timeoutMs: 5000 }],
     timeoutMs: 500,
   });
