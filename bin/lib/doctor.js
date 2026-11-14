@@ -407,6 +407,13 @@ function checkStoryLinks(warnings) {
   }
 }
 
+// What `doctor` reads from the epics on disk: size, numbering, story links.
+function checkEpicFiles(warnings) {
+  checkOversizedEpics(warnings);
+  checkDuplicateNumbering(warnings);
+  checkStoryLinks(warnings);
+}
+
 // `--fix` half of checkStoryLinks: rewrites each fixable entry to the canonical
 // link, the rest of its line kept.
 function fixAllStoryLinks() {
@@ -947,12 +954,10 @@ function collectDoctorReport({ strict = false } = {}) {
   // fire on the `doctor` a user actually runs. A warning, never an error —
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
-  checkOversizedEpics(warnings);
+  checkEpicFiles(warnings);
   checkGeneratedDirectories(warnings);
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
-  checkDuplicateNumbering(warnings);
-  checkStoryLinks(warnings);
   checkEvidenceAndRecovery(warnings, notes);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
@@ -988,40 +993,44 @@ function printNotes(report) {
   }
 }
 
-function doctor({ fix = false, json = false, strict = false } = {}) {
-  // `--fix` restores the templates, which a minimal install never had. Silently
-  // laying them down would turn a diagnostic into an unasked-for upgrade.
-  // Epic indexes are the project's own files on either install shape.
-  if (fix) {
-    fixAllStoryLinks();
-  }
+// `doctor --fix`. Epic indexes are the project's own files on either install
+// shape, so their story links are fixed first. `--fix` then restores the
+// templates, which a minimal install never had: silently laying them down would
+// turn a diagnostic into an unasked-for upgrade.
+function applyFix() {
+  fixAllStoryLinks();
 
-  if (fix && readConfig(cwd).install === "minimal") {
+  const fixConfig = readConfig(cwd);
+
+  if (fixConfig.install === "minimal") {
     log("Minimal install: nothing to restore (no templates were laid down).");
     log("Run `ai-flow init` to lay down the full workflow.");
-    fix = false;
+    return;
   }
 
+  const fixPlatforms = activeTargets(fixConfig);
+
+  copyTemplates({
+    force: false,
+    dryRun: false,
+    includeSkills: fixPlatforms.includes("claude") && fixConfig.skills === "project",
+    target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
+  });
+
+  for (const platform of fixPlatforms.filter((p) => COMMAND_PLATFORMS[p])) {
+    copyPlatformCommands(platform, { force: false, dryRun: false });
+  }
+
+  if (fixPlatforms.includes("codex")) {
+    copyCodexSkills({ force: false, dryRun: false });
+  }
+  writeManifest(readManifest());
+  ensureConvenienceFiles({ dryRun: false, force: false });
+}
+
+function doctor({ fix = false, json = false, strict = false } = {}) {
   if (fix) {
-    const fixConfig = readConfig(cwd);
-    const fixPlatforms = activeTargets(fixConfig);
-
-    copyTemplates({
-      force: false,
-      dryRun: false,
-      includeSkills: fixPlatforms.includes("claude") && fixConfig.skills === "project",
-      target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
-    });
-
-    for (const platform of fixPlatforms.filter((p) => COMMAND_PLATFORMS[p])) {
-      copyPlatformCommands(platform, { force: false, dryRun: false });
-    }
-
-    if (fixPlatforms.includes("codex")) {
-      copyCodexSkills({ force: false, dryRun: false });
-    }
-    writeManifest(readManifest());
-    ensureConvenienceFiles({ dryRun: false, force: false });
+    applyFix();
   }
 
   const report = collectDoctorReport({ strict });
