@@ -33,10 +33,6 @@ behavioural tests on throwaway repositories with wrapped criteria.)*
 - [x] Open-criterion detection (`coverage-gate.js`, which also reads
       `criterionItems`) behaves as before. Existing tests stay green,
       unmodified. CHANGELOG `[Unreleased]` → Fixed.
-- Rollback: revert the `fix(spec-drift)` commits; no data or config
-  migrates — the drift check returns to first-line comparison.
-- Verify: green, 100 % of 107 added lines covered; independent review PASS
-  after 3 rounds.
 
 ## Spec Change
 
@@ -63,3 +59,7 @@ criterion.
   block, tab indent), then 2 from the re-review (unclosed fence and a
   four-backtick fence leave the next criterion open). Existing cases unmodified; `test/acceptance-criteria.test.js`
   green.
+- Rollback: revert the `fix(spec-drift)` commits; no data or config
+  migrates — the drift check returns to first-line comparison.
+- Verify: green, 100 % of 107 added lines covered; independent review PASS
+  after 3 rounds.
