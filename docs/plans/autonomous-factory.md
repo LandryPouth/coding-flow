@@ -255,6 +255,9 @@ noise.
 
 Delivery order (revised 2026-11-13):
 
+The unattended run started on 2026-11-14 schedules this order in two lanes
+and records where it stands: [`autonomous-run.md`](autonomous-run.md).
+
 0. **No factory needed, ship any time**: 26-06 (`ai-flow rules`, the
    inconsistencies of `docs/rules-and-limits.md`), 26-03 (`docs check`),
    19-05 (fixers before the checks: lint/format no longer fail a verify),
