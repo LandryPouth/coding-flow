@@ -73,6 +73,8 @@ s8
 s9
 
 s10
+
+s11
 ```
 
 `s1`, `s2`, `s5` are independent. `s4` and `s6` assume s3's lcov command is
@@ -103,6 +105,9 @@ config s3 writes).
 10. **story-13-10-the-security-core-stays-high-risk** — added 2026-11-14
     from 13-03's review: modules extracted from the guard left
     `highRiskPaths`. *(QUICK)*
+11. **story-13-11-a-wrapped-criterion-is-read-whole** — added 2026-11-14
+    from 13-05's review: a criterion wrapped onto two lines is compared on
+    its first line only. *(STANDARD)*
 
 ## Decisions
 
