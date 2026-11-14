@@ -56,6 +56,34 @@
   Both now skip a story directory under `epics/` that no longer exists
   (`storyStillOnDisk`, `bin/lib/audit.js`). The ledger itself keeps every
   entry: it is history.
+- **Independent review (2026-11-14), fixed:**
+  - only `done`, `verified` and `stale` pass the gate; any other written
+    status (`todo`, `draft`, `wip`, …) refuses as "unrecognised status";
+  - the recovery line names the default branch's commit, not `HEAD` (a
+    squash merge and a deleted branch would lose a story-branch commit; the
+    gate already guarantees the two trees are equal);
+  - an ignored `epics/INDEX.md` refuses before anything is written; the
+    write runs `git rm` → entry → `git add` and any failure puts all three
+    back (tested with a read-only INDEX.md and a held `index.lock`);
+  - `audit` skips only the evidence of a story whose epic has an archived
+    entry and whose directory is gone; a story deleted by hand is still
+    judged. `epic-index` became a core module for it (pure fs reader);
+  - with only archived evidence left, `audit --check` keeps failing (no proof
+    for anything on disk) but says so: "no verify runs recorded for a story
+    still on disk (N run(s) belong to archived epics)";
+  - the base is the remote default, then main, master, develop — the first
+    that exists, locally or as last fetched;
+  - `epic-8-x` and `epic-08-x` are the same epic; an unnumbered epic
+    (`epic-misc`) is written with `-` as its number and is idempotent too;
+  - a storage backend other than `local` refuses; a subdirectory that is not
+    `story-*` refuses (the gate cannot read its state).
+- **Review P2s accepted:** the gate reads the proof of the checkout it runs
+  in (story 17-04 must run from the primary, after lands); a linked worktree
+  is found by branch name, as `status` does; the link search covers tracked
+  files under the project root only.
+- **Out of scope, planned separately by the run:** the coverage gate read
+  this story as `not-required` because the risk scored low — a `git rm` is
+  not a structural signal in `risk.js`.
 - **Design-decisions entry 18**, not 16: entry 16 is reserved by story
   16-01, which runs in parallel.
 - **A forced archive is not in this story.** The gate already admits 13 of

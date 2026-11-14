@@ -15,7 +15,7 @@ const LIB = path.join(__dirname, '..', 'bin', 'lib');
 
 const CORE = [
   'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'detect', 'diff-base',
-  'diff-scope', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
+  'diff-scope', 'epic-index', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
   'identity', 'mutation', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk',
   'security-policy', 'shell-writes', 'spec-drift', 'story', 'util', 'validation-run',
 ];
@@ -29,7 +29,7 @@ const PURE = ['shell-writes'];
 // checks with install diagnostics (templates, storage, platforms) that need
 // splitting out before it can be called core.
 const LAYER = [
-  'archive', 'epic-index', 'doctor', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'recover',
+  'archive', 'doctor', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'recover',
   'quality-recipes', 'review', 'run', 'security-recipes', 'ship', 'skills', 'speckit', 'status', 'story-links', 'templates', 'worktree',
   'worktree-plan',
   // install, platform wiring and CLI plumbing: not needed to guard or prove

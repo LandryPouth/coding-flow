@@ -12,7 +12,8 @@ const path = require("path");
 
 const INDEX_FILE = path.join("epics", "INDEX.md");
 const SECTION_MARKER = "<!-- coding-flow:archived-section -->";
-const ENTRY_MARKER = /<!-- coding-flow:archived (\d+) ([^\s]+) -->/g;
+// The number is `-` for an epic directory that carries none (`epic-misc`).
+const ENTRY_MARKER = /<!-- coding-flow:archived (\d+|-) ([^\s]+) -->/g;
 
 const SECTION_HEADER = [
   "## Archived epics",
@@ -30,13 +31,35 @@ function indexPath(root) {
 
 function readIndex(root) {
   const file = indexPath(root);
-  return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+  return fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file, "utf8") : null;
 }
 
 // Every archived entry as { number, slug }, in file order.
 function archivedEpics(root) {
   const text = readIndex(root) || "";
   return [...text.matchAll(ENTRY_MARKER)].map((match) => ({ number: match[1], slug: match[2] }));
+}
+
+// `epic-08-evidence-levels` → { number: "08", slug: "evidence-levels" }; a
+// directory without a number keeps its whole name as the slug.
+function parseEpicName(name) {
+  const match = String(name).match(/^epic-(\d+)-(.+)$/);
+  return match ? { number: match[1], slug: match[2] } : { number: null, slug: name };
+}
+
+// Same epic when the slugs match and the numbers are equal as numbers
+// (`epic-8-x` and `epic-08-x`), or both absent.
+function sameEpic(entry, epic) {
+  const entryNumber = entry.number === "-" ? null : entry.number;
+  if (entry.slug !== epic.slug) return false;
+  if (entryNumber === null || epic.number === null) return entryNumber === epic.number;
+  return Number(entryNumber) === Number(epic.number);
+}
+
+// Whether the index holds an archived entry for this epic directory name.
+function isArchived(root, name) {
+  const epic = parseEpicName(name);
+  return archivedEpics(root).some((entry) => sameEpic(entry, epic));
 }
 
 // The file content once `entry` (Markdown) is appended to the archived section,
@@ -55,4 +78,4 @@ function withArchivedEntry(existing, entry) {
   return `${base}\n${SECTION_HEADER}\n${entry}`;
 }
 
-module.exports = { INDEX_FILE, indexPath, readIndex, archivedEpics, withArchivedEntry };
+module.exports = { INDEX_FILE, indexPath, readIndex, archivedEpics, withArchivedEntry, parseEpicName, sameEpic, isArchived };

@@ -383,7 +383,6 @@ test('a failure halfway rolls back both the deletion and the entry', (t) => {
   write(dir, 'epics/INDEX.md', '# Epics\n');
   commit(dir, 'index');
   fs.chmodSync(path.join(dir, 'epics/INDEX.md'), 0o444);
-  t.after(() => fs.chmodSync(path.join(dir, 'epics/INDEX.md'), 0o644));
   const before = snapshot(dir);
 
   const res = run(dir, ['archive', EPIC]);

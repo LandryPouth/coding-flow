@@ -605,19 +605,22 @@ at MVP stage, read by every agent glob and every `listEpics` walk.
 - **`ai-flow archive <epic-dir | NN>`: `git rm` plus an index entry, not a
   move.** A directory moved to `epics/archive/` is still a directory. The
   text lives on in git history; one append-only entry in `epics/INDEX.md`
-  names each story, the proof state it had, the commit where the text still
-  exists, and the `git checkout <sha> -- epics/<dir>` that brings it back.
+  names each story, the proof state it had, the default branch's commit
+  where the text still exists (a story-branch commit can be lost to a squash
+  merge), and the `git checkout <sha> -- epics/<dir>` that brings it back.
   The deletion is staged, never committed: the user commits.
 - **The gate is "finished and merged", not "proven".** Every story past
   planned / in-progress / blocked, no linked worktree, a clean directory
   (ignored files included: `git rm` would leave them behind) whose tree at
-  `HEAD` is the default branch's. Proof cannot be the gate: almost every
+  `HEAD` is the default branch's, and only `done`, `verified` or `stale`
+  stories (any other written word refuses). Proof cannot be the gate: almost every
   `done` reads `no verify captured` or `proof is stale` (autoland deleted the
   evidence; old proof goes stale as the tree moves). The state is copied as it
   stands and never upgraded (entry 9: signals only lower claims).
 - **Evidence stays.** `.coding-flow/runs/` is history and is not touched;
-  `audit --check` and the review summary judge only the stories still on
-  disk, so an archived story's old red or stale run never fails the gate.
+  `audit --check` and the review summary skip only the stories of an
+  archived epic, so an old red or stale run never fails the gate; a story
+  deleted by hand is still judged.
 - **Freeze.** DX and performance, which the freeze allows, but it adds one
   command. Asked out loud: *if it is not built, does the tool fail at its
   mission?* Not the guard's or the proof's — but the corpus the tool reads
