@@ -190,3 +190,38 @@ test('/flow-plan refreshes the index in its Pipeline and checks it in Verificati
   assert.match(section('Verification'), /ai-flow archive --refresh/);
   assert.match(section('Verification'), /epic_index_stale/);
 });
+
+test('a title holding an HTML comment cannot break the section or forge an archived entry', (t) => {
+  const dir = repo(t);
+  write(dir, 'epics/epic-09-monorepo/index.md', `# Epic 09 — Monorepo ${END} <!-- coding-flow:archived 09 monorepo -->\n`);
+  story(dir, 'epic-09-monorepo', 'story-09-02-tricky', `Tricky ${START} title`, 'planned');
+  assert.equal(run(dir, ['archive', '--refresh']).code, 0);
+
+  const text = index(dir);
+  assert.equal(text.split(START).length, 2, 'one start marker');
+  assert.equal(text.split(END).length, 2, 'one end marker');
+  assert.doesNotMatch(text, /<!-- coding-flow:archived/);
+  const again = run(dir, ['archive', '--refresh']);
+  assert.equal(again.code, 0, again.output);
+  assert.equal(index(dir), text, 'still idempotent');
+
+  // `archive 09` must not read the title as an existing archived entry.
+  const res = run(dir, ['archive', '09', '--dry-run']);
+  assert.doesNotMatch(res.output, /already archived/);
+});
+
+test('a CRLF INDEX.md is compared and written in CRLF', (t) => {
+  const dir = repo(t);
+  assert.equal(run(dir, ['archive', '--refresh']).code, 0);
+  const crlf = index(dir).replace(/\n/g, '\r\n');
+  fs.writeFileSync(path.join(dir, 'epics/INDEX.md'), crlf);
+
+  assert.equal(run(dir, ['archive', '--refresh']).code, 0);
+  assert.equal(index(dir), crlf, 'unchanged content stays byte-identical in CRLF');
+
+  story(dir, 'epic-09-monorepo', 'story-09-02-more', 'More', 'planned');
+  assert.equal(run(dir, ['archive', '--refresh']).code, 0);
+  const text = index(dir);
+  assert.match(text, /09-02[^\r\n]*More/);
+  assert.doesNotMatch(text.replace(/\r\n/g, ''), /\n/, 'every line ends in CRLF');
+});

@@ -89,3 +89,32 @@ test('an epics/ with no epic in it gets no index and no warning', (t) => {
   assert.equal(staleWarning(dir), undefined);
   assert.equal(fs.existsSync(path.join(dir, 'epics/INDEX.md')), false);
 });
+
+test('doctor --fix prints a refusal, and the warning names the broken markers', (t) => {
+  const dir = project(t);
+  writeStory(dir, 'epic-01-checkout', 'story-01-01-cart', 'done');
+  fs.writeFileSync(path.join(dir, 'epics/INDEX.md'), '# Epics\n\n<!-- coding-flow:index:start -->\nno end\n');
+
+  const warning = staleWarning(dir);
+  assert.ok(warning);
+  assert.match(warning.message, /markers by hand/);
+
+  const fixed = run(dir, ['doctor', '--fix']);
+  assert.match(fixed.output, /Refresh refused/);
+  assert.equal(fs.readFileSync(path.join(dir, 'epics/INDEX.md'), 'utf8'), '# Epics\n\n<!-- coding-flow:index:start -->\nno end\n');
+});
+
+test('a CRLF index that is current does not warn', (t) => {
+  const dir = project(t);
+  writeStory(dir, 'epic-01-checkout', 'story-01-01-cart', 'done');
+  assert.equal(run(dir, ['archive', '--refresh']).code, 0);
+  const file = path.join(dir, 'epics/INDEX.md');
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/\n/g, '\r\n'));
+  assert.equal(staleWarning(dir), undefined);
+});
+
+test('a hand-written INDEX.md with no markers and no epic on disk is not judged', (t) => {
+  const dir = project(t);
+  fs.writeFileSync(path.join(dir, 'epics/INDEX.md'), '# My notes\n');
+  assert.equal(staleWarning(dir), undefined);
+});
