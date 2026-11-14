@@ -102,3 +102,19 @@ test('a word ending in rm (confirm, transform) is not a delete', (t) => {
   );
   assert.equal(risk.level, 'low', `got ${risk.level}: ${risk.reason}`);
 });
+
+test('recursive: true on the next call, with no semicolon between, does not flag a single-file rmSync', (t) => {
+  const risk = repoAdding(
+    t,
+    'function tidy(f, d) {\n  fs.rmSync(f, { force: true })\n  fs.mkdirSync(d, { recursive: true })\n}\n',
+  );
+  assert.equal(risk.level, 'low', `got ${risk.level}: ${risk.reason}`);
+});
+
+test('a deletion named in a comment is not a call', (t) => {
+  const risk = repoAdding(
+    t,
+    '// git(root, ["rm", "-r", dir]);\n/**\n * fs.rmSync(dir, { recursive: true });\n */\nfunction noop() {}\n',
+  );
+  assert.equal(risk.level, 'low', `got ${risk.level}: ${risk.reason}`);
+});
