@@ -33,14 +33,14 @@ assumption that efficacy holds. That holds only once a real run shows it.
 
 ## Acceptance Criteria
 
-- [ ] Given `docs/experiments/reliability-benchmark.md`, then a second dated
+- [x] Given `docs/experiments/reliability-benchmark.md`, then a second dated
       run reports first-pass success, cost and time for each task, next to
       the 2026-10-17 numbers, with the N=1 caveat.
-- [ ] Given task 5 of that run, then the document says whether `/flow-plan`
+- [x] Given task 5 of that run, then the document says whether `/flow-plan`
       asked, stopped at `not ready`, or settled the ambiguity, and whether
       the review raised a `[spec]` finding. The DOGFOODING task-5 row is
       updated to match.
-- [ ] Given task 1 of that run, then the document says whether a red
+- [x] Given task 1 of that run, then the document says whether a red
       reproduction came before the fix.
 
 ## Edge Cases
@@ -57,3 +57,5 @@ assumption that efficacy holds. That holds only once a real run shows it.
 
 - A tier-3 behavioural eval suite (refused, entry 5).
 - Re-running the vanilla arm, or running more than one run per cell.
+
+## Status: in-progress
