@@ -57,13 +57,13 @@ notify policy).
 
 ## Stories
 
-1. **story-27-01-a-hold-says-why** *(STANDARD — walking skeleton: one hold reason end to end, state → story line → status → report)*
-2. **story-27-02-failures-are-classified-and-a-broken-machine-stops-the-run** *(STANDARD)*
-3. **story-27-03-commits-are-checkpoints** *(STANDARD)*
-4. **story-27-04-the-critical-path-goes-first-and-the-base-stays-in-sync** *(STRICT — unattended merges of the base)*
-5. **story-27-05-a-run-is-previewed-and-stopped-cleanly** *(STANDARD)*
-6. **story-27-06-questions-arrive-as-decision-packets** *(STANDARD — timed decisions gated by autonomy.md)*
-7. **story-27-07-notifications-have-levels-and-waits-are-measured** *(STANDARD)*
+1. [story-27-01-a-hold-says-why](story-27-01-a-hold-says-why/spec.md) *(STANDARD — walking skeleton: one hold reason end to end, state → story line → status → report)*
+2. [story-27-02-failures-are-classified-and-a-broken-machine-stops-the-run](story-27-02-failures-are-classified-and-a-broken-machine-stops-the-run/spec.md) *(STANDARD)*
+3. [story-27-03-commits-are-checkpoints](story-27-03-commits-are-checkpoints/spec.md) *(STANDARD)*
+4. [story-27-04-the-critical-path-goes-first-and-the-base-stays-in-sync](story-27-04-the-critical-path-goes-first-and-the-base-stays-in-sync/spec.md) *(STRICT — unattended merges of the base)*
+5. [story-27-05-a-run-is-previewed-and-stopped-cleanly](story-27-05-a-run-is-previewed-and-stopped-cleanly/spec.md) *(STANDARD)*
+6. [story-27-06-questions-arrive-as-decision-packets](story-27-06-questions-arrive-as-decision-packets/spec.md) *(STANDARD — timed decisions gated by autonomy.md)*
+7. [story-27-07-notifications-have-levels-and-waits-are-measured](story-27-07-notifications-have-levels-and-waits-are-measured/spec.md) *(STANDARD)*
 
 ## Decisions
 

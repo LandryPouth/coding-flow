@@ -63,11 +63,11 @@ s4
 
 ## Stories
 
-1. **story-10-01-ship-stages-the-story-only** *(STRICT — writes commits)*
-2. **story-10-02-plan-commands-need-a-human** *(STANDARD)*
-3. **story-10-03-ci-on-windows-and-macos** *(STANDARD — fixing what the new
+1. [story-10-01-ship-stages-the-story-only](story-10-01-ship-stages-the-story-only/spec.md) *(STRICT — writes commits)*
+2. [story-10-02-plan-commands-need-a-human](story-10-02-plan-commands-need-a-human/spec.md) *(STANDARD)*
+3. [story-10-03-ci-on-windows-and-macos](story-10-03-ci-on-windows-and-macos/spec.md) *(STANDARD — fixing what the new
    matrix finds is part of the story)*
-4. **story-10-04-tags-and-releases-follow-npm** *(QUICK)*
+4. [story-10-04-tags-and-releases-follow-npm](story-10-04-tags-and-releases-follow-npm/story.md) *(QUICK)*
 
 ## Decisions
 

@@ -81,13 +81,13 @@ story-07-01 (diff base), `s3` needs story-11-01 (the split).
 
 ## Stories
 
-1. **story-12-01-verify-without-a-story-keeps-its-teeth** — coverage and risk
+1. [story-12-01-verify-without-a-story-keeps-its-teeth](story-12-01-verify-without-a-story-keeps-its-teeth/spec.md) — coverage and risk
    on the branch diff when no story is given. *(STRICT — changes verdicts for
    every non-story user)*
-2. **story-12-02-help-never-acts-and-minimal-stays-minimal** *(STANDARD)*
-3. **story-12-03-core-does-not-depend-on-layers** — dependency test.
+2. [story-12-02-help-never-acts-and-minimal-stays-minimal](story-12-02-help-never-acts-and-minimal-stays-minimal/spec.md) *(STANDARD)*
+3. [story-12-03-core-does-not-depend-on-layers](story-12-03-core-does-not-depend-on-layers/story.md) — dependency test.
    *(QUICK, after 11-01)*
-4. **story-12-04-document-core-first** — README/QUICKSTART order, layer
+4. [story-12-04-document-core-first](story-12-04-document-core-first/story.md) — README/QUICKSTART order, layer
    table, open question on the `init` default. *(QUICK)*
 
 ## Decisions

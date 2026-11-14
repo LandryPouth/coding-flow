@@ -59,12 +59,12 @@ Three independent stories.
 
 ## Stories
 
-1. **story-09-01-read-every-package-coverage-report** — globs, merge,
+1. [story-09-01-read-every-package-coverage-report](story-09-01-read-every-package-coverage-report/spec.md) — globs, merge,
    package-relative `SF:`. *(STRICT — it can upgrade a verdict to
    `verified`; a wrong mapping would claim coverage that was not measured)*
-2. **story-09-02-record-cache-replays** — turbo/nx detection, evidence field,
+2. [story-09-02-record-cache-replays](story-09-02-record-cache-replays/spec.md) — turbo/nx detection, evidence field,
    strict option. *(STANDARD)*
-3. **story-09-03-configurable-command-timeout** — `validation.timeoutMs` and
+3. [story-09-03-configurable-command-timeout](story-09-03-configurable-command-timeout/story.md) — `validation.timeoutMs` and
    per-command override. *(QUICK)*
 
 ## Decisions

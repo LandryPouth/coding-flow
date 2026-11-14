@@ -49,8 +49,8 @@ path), so there is no tree.
 
 ## Stories
 
-1. **story-25-01-the-browser-tier-runs-a-command** *(STANDARD)*
-2. **story-25-02-a-fresh-process-walks-the-checklist** *(STRICT — credentials handed to an agent)*
+1. [story-25-01-the-browser-tier-runs-a-command](story-25-01-the-browser-tier-runs-a-command/spec.md) *(STANDARD)*
+2. [story-25-02-a-fresh-process-walks-the-checklist](story-25-02-a-fresh-process-walks-the-checklist/spec.md) *(STRICT — credentials handed to an agent)*
 
 ## Decisions
 

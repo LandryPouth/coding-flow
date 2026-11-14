@@ -136,18 +136,18 @@ its own worktree.
 
 ## Stories
 
-1. **story-04-01-capture-durable-review-evidence** — `/flow-review` writes a
+1. [story-04-01-capture-durable-review-evidence](story-04-01-capture-durable-review-evidence/spec.md) — `/flow-review` writes a
    captured evidence file per pass (verdict, dimensions run, finding counts,
    tree token), readable back with the same freshness rule `verify` evidence
    already uses; surfaced in `ai-flow status`. *(STRICT — a later story gates
    real merges on this evidence; a wrong freshness/verdict computation here
    would silently let a broken story look reviewed)*
-2. **story-04-02-gate-strict-completion-on-a-passing-review** — a STRICT-tier
+2. [story-04-02-gate-strict-completion-on-a-passing-review](story-04-02-gate-strict-completion-on-a-passing-review/spec.md) — a STRICT-tier
    chain member with no fresh, passing review evidence is not "finished":
    auto-land refuses it, and `next`'s ready-to-ship tier names review as the
    missing step. QUICK/STANDARD stories are unaffected. *(STRICT — directly
    gates auto-land and the ready-to-ship recommendation)*
-3. **story-04-03-score-diff-risk-from-structural-git-signals** — `scoreDiffRisk`
+3. [story-04-03-score-diff-risk-from-structural-git-signals](story-04-03-score-diff-risk-from-structural-git-signals/spec.md) — `scoreDiffRisk`
    also reads what a diff *does* (unconditional worktree/branch/merge
    mutation) not just which paths it touches; ships one concrete
    `config.validation.quality` check catching the exact lock/`process.exit()`
@@ -155,7 +155,7 @@ its own worktree.
    2026-08-28 `DOGFOODING.md` row. *(STANDARD — a risk-scoring/tooling
    heuristic, not itself a merge action; a miss here is caught downstream by
    s1/s2's review gate, not shipped silently)*
-4. **story-04-04-require-an-independent-adversarial-review-pass** — `flow-run`'s
+4. [story-04-04-require-an-independent-adversarial-review-pass](story-04-04-require-an-independent-adversarial-review-pass/story.md) — `flow-run`'s
    "Review Before Done" explicitly delegates STRICT self-review to a fresh
    subagent given the artifact and the contract only, adversarially framed;
    `flow-review`'s dimension selection defaults Architecture/Tests/Security to

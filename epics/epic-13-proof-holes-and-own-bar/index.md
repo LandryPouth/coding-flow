@@ -77,21 +77,21 @@ config s3 writes).
 
 ## Stories
 
-1. **story-13-01-migrations-are-behavior** *(STRICT — changes verdicts for
+1. [story-13-01-migrations-are-behavior](story-13-01-migrations-are-behavior/spec.md) *(STRICT — changes verdicts for
    every user with migrations)*
-2. **story-13-02-command-substitution-is-not-a-credential** *(QUICK)*
-3. **story-13-03-coding-flow-proves-itself-at-verified** — lcov in
+2. [story-13-02-command-substitution-is-not-a-credential](story-13-02-command-substitution-is-not-a-credential/story.md) *(QUICK)*
+3. [story-13-03-coding-flow-proves-itself-at-verified](story-13-03-coding-flow-proves-itself-at-verified/spec.md) — lcov in
    validation, the security core in `highRiskPaths`, `.coding-flow/runs/**`
    blocked by default. *(STANDARD)*
-4. **story-13-04-the-bar-does-not-move** — policy-weakening signal.
+4. [story-13-04-the-bar-does-not-move](story-13-04-the-bar-does-not-move/spec.md) — policy-weakening signal.
    *(STANDARD)*
-5. **story-13-05-spec-before-parser** — corpus-first rule, criteria-drift
+5. [story-13-05-spec-before-parser](story-13-05-spec-before-parser/spec.md) — corpus-first rule, criteria-drift
    signal. *(STANDARD)*
-6. **story-13-06-touched-functions-do-not-grow** — size ratchet. *(STANDARD)*
-7. **story-13-07-a-base-branch-has-no-fork-point** — added 2026-11-13: a
+6. [story-13-06-touched-functions-do-not-grow](story-13-06-touched-functions-do-not-grow/spec.md) — size ratchet. *(STANDARD)*
+7. [story-13-07-a-base-branch-has-no-fork-point](story-13-07-a-base-branch-has-no-fork-point/story.md) — added 2026-11-13: a
    `codingFlowBase` recorded on `develop` kept 13-04 and 15-01 from being
    proven. *(QUICK)*
-8. **story-13-08-a-rename-keeps-its-risk** — added 2026-11-13: a file
+8. [story-13-08-a-rename-keeps-its-risk](story-13-08-a-rename-keeps-its-risk/story.md) — added 2026-11-13: a file
    moved out of a high-risk path is scored at its new path only. *(QUICK)*
 
 ## Decisions

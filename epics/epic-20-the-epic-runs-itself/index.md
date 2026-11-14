@@ -70,13 +70,13 @@ module), so there is no tree.
 
 ## Stories
 
-1. **story-20-01-one-story-runs-headless** *(STRICT — walking skeleton: preflight → place/lock → `claude -p` → CLI verify → cost recorded → run report)*
-2. **story-20-02-the-run-owns-its-worktree** *(STRICT — placement, locks, autoland)*
-3. **story-20-03-a-red-story-gets-bounded-retries** *(STANDARD)*
-4. **story-20-04-strict-stories-get-a-second-reviewer** *(STRICT — the tool writes `done`)*
-5. **story-20-05-only-ready-agent-stories-run** *(STANDARD)*
-6. **story-20-06-the-whole-epic-runs-and-resumes** *(STRICT — budget caps, unattended batch)*
-7. **story-20-07-the-epic-ends-with-a-review-and-a-report** *(STANDARD)*
+1. [story-20-01-one-story-runs-headless](story-20-01-one-story-runs-headless/spec.md) *(STRICT — walking skeleton: preflight → place/lock → `claude -p` → CLI verify → cost recorded → run report)*
+2. [story-20-02-the-run-owns-its-worktree](story-20-02-the-run-owns-its-worktree/spec.md) *(STRICT — placement, locks, autoland)*
+3. [story-20-03-a-red-story-gets-bounded-retries](story-20-03-a-red-story-gets-bounded-retries/spec.md) *(STANDARD)*
+4. [story-20-04-strict-stories-get-a-second-reviewer](story-20-04-strict-stories-get-a-second-reviewer/spec.md) *(STRICT — the tool writes `done`)*
+5. [story-20-05-only-ready-agent-stories-run](story-20-05-only-ready-agent-stories-run/spec.md) *(STANDARD)*
+6. [story-20-06-the-whole-epic-runs-and-resumes](story-20-06-the-whole-epic-runs-and-resumes/spec.md) *(STRICT — budget caps, unattended batch)*
+7. [story-20-07-the-epic-ends-with-a-review-and-a-report](story-20-07-the-epic-ends-with-a-review-and-a-report/spec.md) *(STANDARD)*
 
 ## Decisions
 

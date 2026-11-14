@@ -65,9 +65,9 @@ ones only reading the code can find.
 
 ## Stories
 
-1. **story-28-01-ideas-from-the-repo** *(STANDARD — ledger, scan, `next`
+1. [story-28-01-ideas-from-the-repo](story-28-01-ideas-from-the-repo/spec.md) *(STANDARD — ledger, scan, `next`
    block, `idea` commands)*
-2. **story-28-02-ideas-judged-on-demand** *(STANDARD — `/flow-plan --ideas`,
+2. [story-28-02-ideas-judged-on-demand](story-28-02-ideas-judged-on-demand/spec.md) *(STANDARD — `/flow-plan --ideas`,
    provenance enforced)*
 
 ## Decisions

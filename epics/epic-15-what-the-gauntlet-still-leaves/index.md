@@ -70,14 +70,14 @@ start at once.
 
 ## Stories
 
-1. **story-15-01-guard-tests-pin-what-they-claim** *(QUICK — can run now)*
-2. **story-15-02-split-shellwrites-under-a-refactor-claim** *(STRICT)*
-3. **story-15-03-humans-own-boundaries** *(STANDARD)*
-4. **story-15-04-replay-mutation-on-bethl** — go / no-go experiment.
+1. [story-15-01-guard-tests-pin-what-they-claim](story-15-01-guard-tests-pin-what-they-claim/story.md) *(QUICK — can run now)*
+2. [story-15-02-split-shellwrites-under-a-refactor-claim](story-15-02-split-shellwrites-under-a-refactor-claim/spec.md) *(STRICT)*
+3. [story-15-03-humans-own-boundaries](story-15-03-humans-own-boundaries/spec.md) *(STANDARD)*
+4. [story-15-04-replay-mutation-on-bethl](story-15-04-replay-mutation-on-bethl/story.md) — go / no-go experiment.
    *(QUICK)*
-5. **story-15-05-mutation-probe-opt-in** — only if s4 says go. *(STRICT)*
-6. **story-15-06-did-it-work** — re-measure and write it down. *(QUICK)*
-7. **story-15-07-a-recipe-is-present-only-when-it-checks** — follow-up of 15-03's review (three P2s). *(QUICK)*
+5. [story-15-05-mutation-probe-opt-in](story-15-05-mutation-probe-opt-in/spec.md) — only if s4 says go. *(STRICT)*
+6. [story-15-06-did-it-work](story-15-06-did-it-work/story.md) — re-measure and write it down. *(QUICK)*
+7. [story-15-07-a-recipe-is-present-only-when-it-checks](story-15-07-a-recipe-is-present-only-when-it-checks/story.md) — follow-up of 15-03's review (three P2s). *(QUICK)*
 
 ## Decisions
 

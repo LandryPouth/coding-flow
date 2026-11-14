@@ -51,12 +51,12 @@ s4
 
 ## Stories
 
-1. **story-11-01-split-harness-by-responsibility** *(STANDARD — mechanical
+1. [story-11-01-split-harness-by-responsibility](story-11-01-split-harness-by-responsibility/spec.md) *(STANDARD — mechanical
    but wide; epics 05–09 have landed, ready to run)*
-2. **story-11-02-real-host-guard-smoke** *(STANDARD)*
-3. **story-11-03-run-the-benchmark** *(QUICK — protocol exists; this is
+2. [story-11-02-real-host-guard-smoke](story-11-02-real-host-guard-smoke/spec.md) *(STANDARD)*
+3. [story-11-03-run-the-benchmark](story-11-03-run-the-benchmark/story.md) *(QUICK — protocol exists; this is
    execution and a write-up)*
-4. **story-11-04-status-ignores-the-story-description** — a fresh single-file
+4. [story-11-04-status-ignores-the-story-description](story-11-04-status-ignores-the-story-description/story.md) — a fresh single-file
    story reads `planned`, not `in-progress`. *(QUICK — found while writing
    these epics; independent of everything else, can run any time)*
 

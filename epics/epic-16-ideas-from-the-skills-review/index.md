@@ -71,9 +71,9 @@ including the two that s1 and s2 change, so it runs after both.
 
 ## Stories
 
-1. **story-16-01-grilling-rounds-hold-the-request** *(STANDARD)*
-2. **story-16-02-a-bug-fix-starts-red** *(QUICK)*
-3. **story-16-03-writing-for-agents-pass** *(QUICK; the pass has landed, and
+1. [story-16-01-grilling-rounds-hold-the-request](story-16-01-grilling-rounds-hold-the-request/spec.md) *(STANDARD)*
+2. [story-16-02-a-bug-fix-starts-red](story-16-02-a-bug-fix-starts-red/story.md) *(QUICK)*
+3. [story-16-03-writing-for-agents-pass](story-16-03-writing-for-agents-pass/spec.md) *(QUICK; the pass has landed, and
    this story is the one benchmark run)*
 
 ## Decisions
