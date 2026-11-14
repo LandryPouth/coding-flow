@@ -26,6 +26,9 @@ in epic indexes and agent memory and are recalled by hand.
   to-do", "Maintainer cleanup on delivery"]`, unchecked `- [ ]` lines);
   deferred criteria `[~]`; open browser checks; open risks (26-01). Grouped
   by epic, oldest first.
+- The reader behind `ai-flow todo` is one module (`bin/lib/todo.js`) that
+  26-07 extends: the `## Human to-do` shape with `when`, `ai-flow todo done`,
+  and the **We need you** block that `ai-flow next` prints first.
 
 ## Acceptance Criteria
 
@@ -48,6 +51,8 @@ in epic indexes and agent memory and are recalled by hand.
 ## Out of Scope
 
 - Routing to owners, Slack, email (24-06).
+- Capturing human to-dos as they appear, `next`'s We need you block, and
+  ship/land repeating `before: deploy` items: 26-07.
 
 ## Security
 

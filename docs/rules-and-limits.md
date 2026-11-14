@@ -255,6 +255,10 @@ walker, critic and report on a lighter model.
 | `notify.command` | not set (nothing runs) | 10 s timeout; failure never stops the run | user global config only; a project value is ignored | 26-02 |
 | `notify.events` | `needs-you`, `blocked`, `paused`, `run.end`, `epic.landed` | — | user global config | 26-02 |
 | `todo.headings` | `Maintainer to-do`, `Maintainer cleanup on delivery` | — | `config.json` (bethl adds `À faire côté utilisateur`) | 26-02 |
+| `## Human to-do` items | `- [ ] (before: deploy\|next-story\|later) …`; no `when` = `later` (doctor warns) | secret-looking value: doctor error, printed masked | written by `flow-plan`/`flow-run`/`flow-review`; ticked by the maintainer or `ai-flow todo done <id>` | 26-07 |
+| `next` We need you block | printed above the recommendation when anything waits on a human; `deploy` first, then `next-story` and `Needs you`, then `+ N later` | 5 lines plus the count; reads every epic of the checkout, landed ones included | `next --json` → `needsYou` | 26-07 |
+| `todo.uncapturedPatterns` | EN + FR human-action phrases ("the maintainer must", "before (the) deploy", "à faire par l'utilisateur", "avant le déploiement", …) | warning only (`verify`, `doctor`), never a failure | `config.json` | 26-07 |
+| Ship/land repeat | open `before: deploy` items: `Before you deploy` section in the PR body; printed by land, autoland and closure | never blocks | — | 26-07 |
 | `docs.check.include` / `.exclude` / `.ignorePaths` | `docs/**/*.md`, `README.md`, `RULES.md` | warnings only, never fails `doctor` | `config.json` | 26-03 |
 | Closer allowed paths | `epics/<epic>/`, `docs/`, `CHANGELOG.md` | anything else is reverted and listed | — | 26-04 |
 | `run --watch` refresh | 2 s | — | `--once`, `--json` | 26-05 |

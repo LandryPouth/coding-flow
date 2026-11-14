@@ -11,7 +11,8 @@
   `todo.headings`, `notify.failed`.
 - **Search anchors**: `Needs you`, `Owner:`, `[~]`, `withFileLock`.
 - **Scout pre-step**: no.
-- **Areas to avoid**: 24-06's routing.
+- **Areas to avoid**: 24-06's routing; the `## Human to-do` shape and
+  `next`'s block (26-07) — export the reader so 26-07 builds on it.
 
 ## Decisions
 
