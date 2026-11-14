@@ -277,8 +277,8 @@ Stop and report — do not push through — when:
 - the existing architecture conflicts with the requested implementation;
 - the change needs unrelated refactors or files outside the declared scope;
 - the story names stories that must land first, and they have not;
-- the story carries an `Assumption (unconfirmed)` line: it is not implemented until
-  the user confirms it.
+- the story has a line beginning `Assumption (unconfirmed):`: it is not implemented
+  until the user confirms it.
 
 ## Rollback Notes
 

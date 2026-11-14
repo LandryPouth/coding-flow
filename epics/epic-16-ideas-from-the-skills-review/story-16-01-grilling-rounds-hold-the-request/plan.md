@@ -57,6 +57,17 @@
   decisions, not assumptions (the spec's edge case), written into the
   Readiness Gate rule itself.
 
+- **Where the marker lives (review, P1).** The marker is a line of the story
+  file that begins `Assumption (unconfirmed):` (after an optional `- `); a
+  mention in prose or backticks is not the marker. The story is written and is
+  not ready to run; the epic's `## Readiness` is `not ready` and lists the line
+  as its blocking item. The story line is canonical. `not ready`'s "write no
+  stories" carves this out. Epic 16's index, 20-05's spec and plan, and
+  28-01's spec were aligned to it.
+- **The rule holds whether or not Clarify First ran** (review, P2); the Output
+  lists every marker line under Assumptions.
+- **Review P2s 5 and 6 accepted** as the reviewer raised them, without change.
+
 ## Test Plan
 
 Tiers 1 and 2 of the skill evals, plus `test/ceremony.test.js` (the 500-line

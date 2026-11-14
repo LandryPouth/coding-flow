@@ -590,7 +590,8 @@ None adds a command: prose plus its evals, inside the freeze.
   permissions, data modelling); Pocock's grilling is uncapped. The target is the
   benchmark's task 5 (2026-10-17): an ambiguity became acceptance criteria, `verify`
   went green, nobody was asked. A reading the user did not confirm that changes
-  behaviour is now `Assumption (unconfirmed)` and keeps the epic `not ready`; a
+  behaviour is now a story line beginning `Assumption (unconfirmed):`, listed in the
+  epic's `## Readiness`, and keeps the epic `not ready`; a
   headless run stops with the question; `/flow-run` does not implement such a story.
   Enforced by `test/clarify-rounds.test.js`.
 - **`diagnosing-bugs`, phase 1** (story 16-02): a bug fix starts from a loop that can
@@ -610,8 +611,8 @@ None adds a command: prose plus its evals, inside the freeze.
   parallel implementer subagents, uncapped grilling.** Ceremony or orchestration the
   freeze exists to prevent; a router is what `/flow-next` already is, from executed
   proof.
-- **A separate `grill-me` skill.** The 0.4 consolidation removed ours (`c0bb189`); a
-  section in `/flow-plan` is enough.
+- **A separate `grill-me` skill.** The 0.4 consolidation (`c0bb189`) folded ours into
+  `/flow-plan`'s `## Clarify First`; a section there is enough.
 - **`git-guardrails`.** A Claude Code deny rule covers it in one line. As a guard
   feature it would need verifying on every platform (entry 10: a guard that is not
   verified is not claimed).

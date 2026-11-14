@@ -44,15 +44,27 @@ test('an unconfirmed behaviour-changing reading keeps the epic not ready; a head
   assert.match(gate, /accepting the recommendations[^.]*counts as confirming them/i);
 });
 
+test('the gate writes the marked story and lists its line as the blocking item', () => {
+  const gate = section(read(SKILLS, 'flow-plan', 'SKILL.md'), '### Readiness Gate');
+  // `not ready` writes no stories, except the one carrying the marker line.
+  assert.match(gate, /Write no stories \(except the marker below\)/);
+  assert.match(gate, /the story is written, with a line that begins `Assumption \(unconfirmed\):`/);
+  assert.match(gate, /`## Readiness` lists the line as the blocking item/);
+  assert.match(gate, /whether or not Clarify First ran/);
+});
+
 test('/flow-run stops on a story that carries an unconfirmed assumption', () => {
   const stops = section(read(SKILLS, 'flow-run', 'SKILL.md'), '## Stop Conditions');
-  assert.match(stops, /`Assumption \(unconfirmed\)`/);
+  assert.match(stops, /a line beginning `Assumption \(unconfirmed\):`/);
   assert.match(stops, /until the user confirms it/);
 });
 
 test('the plan verification checks no criterion rests on an unconfirmed reading', () => {
   const verification = section(read(SKILLS, 'flow-plan', 'SKILL.md'), '## Verification');
-  assert.match(verification, /Assumption \(unconfirmed\)/);
+  assert.match(verification, /Assumption \(unconfirmed\):/);
+  assert.match(verification, /whether or not Clarify First ran/);
+  const output = section(read(SKILLS, 'flow-plan', 'SKILL.md'), '## Output');
+  assert.match(output, /Assumption \(unconfirmed\):` line, whether or not Clarify First ran/);
 });
 
 test('design decision 16 records what was taken from mattpocock/skills, what was refused, and the unverified Codex claim', () => {
@@ -62,6 +74,7 @@ test('design decision 16 records what was taken from mattpocock/skills, what was
   assert.match(entry, /\*\*Taken:\*\*/);
   assert.match(entry, /\*\*Not taken:\*\*/);
   assert.match(entry, /git-guardrails/);
+  assert.match(entry, /folded ours into `\/flow-plan`'s `## Clarify First`/);
   assert.match(entry, /grilling/);
   assert.match(entry, /Codex/);
   assert.match(entry, /unverified/i);
