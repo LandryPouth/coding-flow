@@ -85,4 +85,4 @@ proves. Without this, a green verify proves the plan, not the request
   section in `/flow-plan` is enough.
 - Any CLI change: readiness stays a recorded verdict that `/flow-run` reads.
 
-## Status: in-progress
+## Status: done

@@ -9,7 +9,7 @@
 - [x] Update the eval cases, then run `node bin/ai-flow.js plugin sync`.
 - [x] Write design-decisions entry 16; point the DOGFOODING task-5 row at
       epic 16.
-- [ ] Run `npm test`, `ai-flow verify`, the review, and add a CHANGELOG
+- [x] Run `npm test`, `ai-flow verify`, the review, and add a CHANGELOG
       entry (Changed).
 
 ## Result
