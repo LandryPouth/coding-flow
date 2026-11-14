@@ -899,3 +899,64 @@ test('ArchUnit counts only through its com.tngtech.archunit coordinate', (t) => 
   fs.writeFileSync(path.join(dir, 'pom.xml'), '<project><artifactId>archunit-free</artifactId></project>\n');
   assert.equal(scanJsonWithPath(dir, []).qualityRecipes[0].present, null);
 });
+
+test('ArchUnit declared through a Gradle version catalog or a Maven property counts', (t) => {
+  const present = (dir) => scanJsonWithPath(dir, []).qualityRecipes[0].present;
+
+  const gradle = project(t, 'quality-recipes-archunit-catalog');
+  fs.writeFileSync(path.join(gradle, 'build.gradle.kts'), 'dependencies { testImplementation(libs.archunit.junit5) }\n');
+  assert.equal(present(gradle), 'build.gradle.kts');
+
+  const catalog = project(t, 'quality-recipes-archunit-toml');
+  fs.writeFileSync(path.join(catalog, 'build.gradle'), 'dependencies { testImplementation libs.bundles.arch }\n');
+  fs.mkdirSync(path.join(catalog, 'gradle'));
+  fs.writeFileSync(
+    path.join(catalog, 'gradle', 'libs.versions.toml'),
+    '[libraries]\narch = { module = "com.tngtech.archunit:archunit-junit5", version = "1.3.0" }\n',
+  );
+  assert.equal(present(catalog), 'gradle/libs.versions.toml');
+
+  const maven = project(t, 'quality-recipes-archunit-property');
+  fs.writeFileSync(
+    path.join(maven, 'pom.xml'),
+    '<project><dependencies><dependency><groupId>${archunit.group}</groupId></dependency></dependencies></project>\n',
+  );
+  assert.equal(present(maven), 'pom.xml');
+});
+
+test('a byte-order mark or an upper-case severity does not change what a JSON ESLint config says', (t) => {
+  const dir = project(t, 'quality-recipes-eslint-bom');
+  const eslint = () => scanJsonWithPath(dir, []).qualityRecipes.find((recipe) => recipe.tool === 'eslint').present;
+  const bom = '﻿';
+
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    bom + JSON.stringify({ name: 'app', eslintConfig: { rules: { complexity: 'error', 'max-lines-per-function': 'error' } } }),
+  );
+  assert.equal(eslint(), 'package.json');
+
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'app' }));
+  fs.writeFileSync(
+    path.join(dir, '.eslintrc.json'),
+    bom + JSON.stringify({ rules: { complexity: 'off', 'max-lines-per-function': 'error' } }),
+  );
+  assert.equal(eslint(), null, 'a BOM does not turn the file into a name match');
+
+  fs.writeFileSync(path.join(dir, '.eslintrc.json'), JSON.stringify({ rules: { complexity: 'OFF', 'max-lines-per-function': 'error' } }));
+  assert.equal(eslint(), null, '"OFF" is off');
+});
+
+test('a rule on only in overrides counts; a .eslintrc.json with comments is a name match', (t) => {
+  const dir = project(t, 'quality-recipes-eslint-overrides');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'app' }));
+  const eslint = () => scanJsonWithPath(dir, []).qualityRecipes.find((recipe) => recipe.tool === 'eslint').present;
+
+  fs.writeFileSync(
+    path.join(dir, '.eslintrc.json'),
+    JSON.stringify({ overrides: [{ files: ['src/**'], rules: { complexity: ['error', 10], 'max-lines-per-function': ['error', 80] } }] }),
+  );
+  assert.equal(eslint(), '.eslintrc.json');
+
+  fs.writeFileSync(path.join(dir, '.eslintrc.json'), '// shared\n{ "rules": { "complexity": "off", "max-lines-per-function": "off" } }\n');
+  assert.equal(eslint(), '.eslintrc.json', 'JSON with comments does not parse: the documented name match applies');
+});
