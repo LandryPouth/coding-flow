@@ -221,7 +221,10 @@ Sites were relocated to that tree by verbatim line match.
 
 Kill rate: 66 % (37 killed of the 56 that were killed or survived). The 2
 timeouts are counted apart: a run past its bound is as likely slow as hung,
-so read either way the rate is 64–67 % (37/58 to 39/58). `ts-jest`
+so read either way the rate is 63–67 % (37/58 to 39/58). The 56 include the
+8 survivors read below as noise (re-indented code, one site moved onto the
+wrong line): without them the rate is 77 % (37/48), assuming none of the 37
+kills sat on a noise line, which was not checked. `ts-jest`
 type-checks, so 22 mutants (28 %) were stopped by TypeScript, not by a
 test — mostly Prisma `select` flags and impossible comparisons (TS2367).
 Counting those as kills would read 75 %.
@@ -269,7 +272,7 @@ The replay also says what 15-05 must not inherit:
   verify loop.
 - **Compiled languages:** 28 % of mutants never reached a test. Reported
   apart (`compile`), never as killed — otherwise the kill rate reads 75 %
-  where the tests earned 66 %.
+  instead of 66 % (77 % once the 8 noise survivors are left out).
 - **Linked dependencies are live.** `--link node_modules` points at the
   source checkout's real directory: a runner can write caches there (`git
   status` does not see ignored files), and a workspace package reached
