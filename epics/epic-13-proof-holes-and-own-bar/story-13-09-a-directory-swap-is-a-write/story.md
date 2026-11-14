@@ -51,28 +51,46 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
 
 ## Decisions
 
+- **The guard is a heuristic reading** (review of 13-09): it REFUSES when it
+  knows a target touches a blocked path, and LOGS `unchecked` when it cannot
+  read the target. A write form it does not model must not exit 0 in silence.
 - **`X/**` names X itself, for every write kind.** `blockedPathHit` also matches
-  the directory a `X/**` entry blocks, so the destination rule needs no special
-  case: an ancestor glob already matched P before, and P equal to X now does.
-- **Moving out is judged at directory level only.** `mv` sources are a new
-  `move` entry, denied when the source *is* a blocked directory or holds one (a
-  literal `X/**` prefix: `mv .coding-flow /tmp/cf`). Moving one file out from
-  under it stays allowed — a deletion, which the guard does not judge
-  (`rm .coding-flow/runs/x.json` is not denied either). A source already read as
-  a write (`mv a ./`) is judged as that write, so `shellWrites` output for the
-  existing forms is unchanged.
-- **Archives: deny into a blocked directory, unchecked elsewhere in the
-  project.** `tar` (`-x`/`--extract`/`--get` or the bare `xf` word, `-C`/
-  `--directory`) and `unzip` (`-d`; listing flags `-l -p -t -v -z -Z` are reads)
-  give an `extract` entry. Its contents cannot be read, so an extraction inside
-  the project that misses every blocked directory is a shell limit, logged to
-  `guard-unchecked.jsonl`; outside the project it is allowed.
-- **Patches are read, not guessed.** `git apply` reads each patch through the
-  guard host (≤ 4 MiB) and judges the `+++ b/…`, `rename|copy to …` and
-  `diff --git … b/…` paths, relative to the cwd with the `b/` prefix assumed
-  (`-p2` or `--directory` are not modelled). `--check/--stat/--numstat/--summary`
-  without `--apply` write nothing. A missing, oversized or stdin patch, and
-  `git stash pop|apply`, are unchecked: strict mode refuses them.
+  the directory a `X/**` entry blocks: an ancestor glob already matched P, and P
+  equal to X now does.
+- **A whole tree is judged on what it holds.** `shellWrites(…, { trees: true })`
+  — the guard's call — adds a `tree` entry for a recursive copy (`cp -r/-R/-a`,
+  `rsync`: DIR itself under `-T` or when DIR is not a directory, DIR when the
+  source's contents are copied — `X/.`, rsync's `X/`, a glob — else DIR/<name>)
+  and for each `git checkout`/`restore` pathspec. A tree is refused when it is or
+  holds a blocked directory (a literal `X/**`). The per-file list without the
+  option is unchanged: its tests pin it entry for entry.
+- **The project root is judged by the source on disk.** `git restore .`,
+  `git checkout -- .` and `cp -r /tmp/x/. .` are pinned as everyday commands
+  (`guard-shell.test.js`), so a tree landing on the root is refused only when its
+  source holds a literal blocked path (`/tmp/cf/.coding-flow/runs`). A source
+  made earlier in the same command, and `git checkout <ref> -- .` / `git reset
+  --hard` (committed content), stay allowed.
+- **Moving out is judged at directory level.** `mv`/`git mv` sources are a
+  `move` entry, refused when the source is a blocked directory or holds one.
+  Moving one file out is a deletion, not judged.
+- **Archives:** `tar`/`bsdtar`/`gtar` (`-x`, `--extract` and its prefixes,
+  every `-C`/`--directory`/`--dir=`, `--one-top-level=`; `-O`/`--to-stdout`
+  write nothing), `unzip` (`-d` read inside a cluster: `-od`, `-qod`, `-dDIR`),
+  `7z x|e -oDIR`, `cpio -i|-p`, `python -m zipfile|tarfile -e` give `extract`
+  entries, judged like a tree; inside the project but outside every blocked
+  directory, unchecked (the contents cannot be read).
+- **Patches are read, not guessed.** `git apply`/`git am`: paths from the
+  repository's top (`host.gitRoot`), `-p1`, both sides of `---`/`+++` (a pair,
+  not a removed `-- x` in a hunk), `rename|copy from|to`, `diff --git`, C-quoted
+  names decoded. `patch`: from the cwd, `-p0`/`-p1`, `-i FILE` or `< FILE`.
+  Another `-p`, `--directory`, `--no-prefix`, `--unsafe-paths`, `patch -d` →
+  unchecked; a missing, oversized (> 4 MiB) or piped patch → unchecked.
+- **Unchecked, not modelled:** `git stash pop|apply` (a DOGFOODING row: strict
+  mode refuses a routine command), brace lists in a copy (`cp -r X{.bak,}`),
+  `find -exec`/`xargs` handing paths to a writer, a verb from a substitution.
 - **Commit check:** a file is exempt when it matches an `EVIDENCE_BLOCKED_PATHS`
   entry, whatever blocked entry covers it — the doctor's equivalence, applied to
   the file instead of the pattern.
+- Two expectations of this story's own first red test moved after the review:
+  `unzip -d .coding-flow` and `git apply < forge.diff` were `unchecked`; both
+  are now refused (the target is known).

@@ -172,6 +172,17 @@ const shellHost = {
   },
   realPathOf: (file) => realPathOf(file),
   home: () => os.homedir(),
+  // The top of the repository holding `dir`: `git apply` reads patch paths from it.
+  gitRoot: (dir) => {
+    for (let at = dir; ; at = path.dirname(at)) {
+      if (fs.existsSync(path.join(at, ".git"))) {
+        return at;
+      }
+      if (path.dirname(at) === at) {
+        return null;
+      }
+    }
+  },
   // A patch `git apply` will read; a large or unreadable one is not guessed at.
   readText: (file) => {
     try {
@@ -442,21 +453,47 @@ function blockedDirectory(pattern) {
   return typeof pattern === "string" && pattern.endsWith("/**") && pattern.length > 3 ? pattern.slice(0, -3) : null;
 }
 
+// The blocked directory (a literal `X/**` entry) that `relative` holds, the
+// project root holding them all.
+function holdsBlocked(relative, policy, caseInsensitive = false) {
+  const fold = (value) => (caseInsensitive ? value.toLowerCase() : value);
+  return policy.blockedPaths.find((pattern) => {
+    const directory = blockedDirectory(pattern);
+    return directory !== null && !/[*?[]/.test(directory) && (relative === "" || fold(directory).startsWith(`${fold(relative)}/`));
+  }) || null;
+}
+
 // Moving a path away takes everything under it: refused when it is a blocked
-// directory itself or holds one (a literal `X/**` entry). Moving a file out from
-// under one is a deletion, which the guard does not judge.
+// directory itself or holds one. Moving a file out from under one is a deletion,
+// which the guard does not judge.
 function movedAwayHit(relative, policy, caseInsensitive = false) {
   const fold = (value) => (caseInsensitive ? value.toLowerCase() : value);
   const ancestors = relative.split("/").slice(0, -1).map((_, index, parts) => parts.slice(0, index + 1).join("/"));
-  return policy.blockedPaths.find((pattern) => {
+  const isDirectory = (pattern) => {
     const directory = blockedDirectory(pattern);
-    if (directory === null) {
-      return false;
+    return directory !== null && matchesPattern(fold(relative), fold(directory)) && !ancestors.some((ancestor) => matchesPattern(fold(ancestor), fold(directory)));
+  };
+  return holdsBlocked(relative, policy, caseInsensitive) || policy.blockedPaths.find(isDirectory) || null;
+}
+
+// A whole tree written at `relative` (a recursive copy, an extraction, a checked-out
+// directory) replaces what it holds. The project root holds everything, and
+// `git restore .` or `cp -r /tmp/x/. .` are everyday commands: there, a copy is
+// judged on what its source holds on disk (`sourceHit`).
+function treeHit(relative, policy, caseInsensitive = false) {
+  return relative === "" ? null : blockedPathHit(relative, policy, caseInsensitive) || holdsBlocked(relative, policy, caseInsensitive);
+}
+
+// The literal blocked path (`.coding-flow/runs`, `.coding-flow/ledger.jsonl`) a
+// tree copied onto the project root would bring in from `source`.
+function sourceHit(source, policy) {
+  for (const pattern of policy.blockedPaths) {
+    const name = blockedDirectory(pattern) ?? pattern;
+    if (typeof name === "string" && !/[*?[]/.test(name) && fs.existsSync(path.join(source, name))) {
+      return { hit: pattern, relative: name };
     }
-    const holds = !/[*?[]/.test(directory) && (relative === "" || fold(directory).startsWith(`${fold(relative)}/`));
-    const isDirectory = matchesPattern(fold(relative), fold(directory)) && !ancestors.some((ancestor) => matchesPattern(fold(ancestor), fold(directory)));
-    return holds || isDirectory;
-  }) || null;
+  }
+  return null;
 }
 
 // First blocked name among everything this target resolves to.
@@ -604,15 +641,22 @@ function grantsPlanCommands(command, depth = 0) {
 // The blocked path one shell target reaches, or null. A move is judged on what it
 // takes away; an extraction on where it lands — and, inside the project, its
 // unreadable contents make the call unchecked.
+const JUDGES = { move: movedAwayHit, tree: treeHit, extract: treeHit };
+
 function judgeShellEntry(ctx, entry, caseInsensitive) {
-  const judge = entry.kind === "move" ? movedAwayHit : blockedPathHit;
+  const judge = JUDGES[entry.kind] || blockedPathHit;
   let found = null;
   let inside = false;
   for (const scope of ctx.scopes) {
     const targets = resolveTargets(ctx, scope, entry.target);
     inside = inside || targets.some((target) => target.inside);
     found = found || firstHit(targets, scope.policy, caseInsensitive, judge);
+    if (!found && entry.kind === "tree" && entry.source && targets.some((target) => target.inside && target.relative === "")) {
+      found = sourceHit(entry.source, scope.policy);
+    }
   }
+  // Heuristic reading: refused when the target is known to touch a blocked path,
+  // logged when it cannot be read.
   if (!found && entry.kind === "extract" && inside && !ctx.issues.includes(ARCHIVE)) {
     ctx.issues.push(ARCHIVE);
   }
@@ -628,6 +672,8 @@ function denialFor(entry, found) {
       return `this inline code names ${where}, which matches a blocked harness path (${found.hit}). An interpreter is not a way around the policy.`;
     case "move":
       return `this command moves ${where} away, which is or holds a blocked harness path (${found.hit}); putting it back would replace what it protects. Moving a directory is not a way around the policy.`;
+    case "tree":
+      return `this command writes the whole directory ${where}, which is or holds a blocked harness path (${found.hit}). A recursive copy is not a way around the policy.`;
     case "extract":
       return `this command extracts an archive into ${where}, which matches a blocked harness path (${found.hit}). An archive is not a way around the policy.`;
     default:
@@ -653,7 +699,7 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
 
   const ctx = context(hook, root);
 
-  for (const entry of shellWrites(command, ctx.cwd)) {
+  for (const entry of readShellWrites(command, ctx.cwd, shellHost, { trees: true })) {
     if (entry.unchecked) {
       ctx.issues.push(entry.unchecked);
       continue;

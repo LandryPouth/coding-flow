@@ -11,8 +11,8 @@
 //
 // One section per form, in the order a segment is read:
 //   words · segments · targets · redirections · the verb · cd/pushd/popd ·
-//   in-place editors · copy/move/link destinations · downloads · git ·
-//   scripts followed · interpreters
+//   in-place editors · copy/move/link destinations · archives · downloads ·
+//   git · patches · commands handed their paths · scripts followed · interpreters
 
 const path = require("node:path");
 
@@ -96,7 +96,10 @@ const SUBSTITUTED_PROGRAM = "an interpreter reads its program from a process sub
 const ARCHIVE = "an archive is extracted here and its contents cannot be read";
 const UNREAD_PATCH = "git applies a patch the guard cannot read";
 const STASH = "git restores a stash the guard cannot read";
-const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH]);
+const SHIFTED_PATCH = "a patch's paths are shifted by an option the guard does not model";
+const FORWARDED = "a write command runs on paths another command hands it";
+const SUBSTITUTED_VERB = "the command itself depends on shell expansion";
+const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH, SHIFTED_PATCH, FORWARDED, SUBSTITUTED_VERB]);
 const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 
 // --- segments -----------------------------------------------------------------
@@ -192,16 +195,16 @@ function splitSegments(command) {
 // One read of one command: what it found so far, and the directory a relative
 // word lands in — null once a `cd` went somewhere no static read can follow.
 
-function reader(startCwd, host) {
+function reader(startCwd, host, options = {}) {
   // The shell resolves `..` physically once a `cd` went through a symlink, so every
   // directory it tracks is the real one when it exists (a missing one stays lexical).
   const start = host.realpath(path.resolve(startCwd));
-  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [] };
+  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees) };
 }
 
 const homeOf = (r, target) => expandHome(target, r.host.home());
 
-function add(r, word, kind) {
+function add(r, word, kind, extra = {}) {
   const token = reduceWord(word);
   const state = classify(token);
   if (state === "skip") {
@@ -225,7 +228,7 @@ function add(r, word, kind) {
   const key = `${entry.kind}\0${entry.target}\0${entry.unchecked || ""}`;
   if (!written && !r.seen.has(key)) {
     r.seen.add(key);
-    r.found.push(entry);
+    r.found.push(Object.assign(entry, extra));
   }
 }
 
@@ -480,54 +483,135 @@ function readCopy(r, command) {
   if (command.name === "mv") {
     destination.sources.forEach((source) => add(r, source, "move"));
   }
+  // `cp -r X{.bak,}` is two words once the shell expands it: which one is the
+  // destination is not in the text.
+  command.files.filter((file) => /\{[^}]*,[^}]*\}/.test(file)).forEach((file) => add(r, file, "write"));
+  copiedTrees(r, command, destination, isDirectory);
+}
+
+// A recursive copy writes a whole tree where it lands: DIR itself when it is not
+// an existing directory (or `-T`), else DIR/<name> — or DIR when the source's
+// contents are copied (`X/.`, rsync's `X/`, a glob whose names are unknown). The
+// source rides along as `source`: copied onto the project root, only what it holds
+// on disk can tell a forged tree from an everyday one.
+function copiedTrees(r, { name, args }, { directory, sources }, isDirectory) {
+  const recursive = name === "rsync" || (name === "cp" && args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || arg === "--recursive" || arg === "--archive"));
+  if (!r.trees || !recursive || typeof directory !== "string") {
+    return;
+  }
+  const from = (source) => (classify(source) === "path" && r.cwd !== null ? { source: path.resolve(r.cwd, homeOf(r, source)) } : {});
+  if (!isDirectory || args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory")) {
+    sources.forEach((source) => add(r, directory, "tree", from(source)));
+    return;
+  }
+  for (const source of sources) {
+    const base = path.posix.basename(source);
+    const contents = base === "." || (name === "rsync" && source.endsWith("/")) || classify(source) !== "path";
+    add(r, contents ? directory : path.posix.join(directory, base), "tree", contents ? from(source) : {});
+  }
 }
 
 // --- archives -----------------------------------------------------------------
 
-// `tar -x … [-C DIR]` and `unzip … [-d DIR]` write wherever their archive says,
-// under DIR (the current directory by default): DIR is the target, kind "extract".
-// Listing, testing, creating or piping to stdout writes nothing here.
-function extractDirectory({ name, operands }) {
-  if (name === "tar") {
-    // `-xf`, `-C dir -xzf`, or the old bare first word (`tar xf a.tar`).
-    const extracts = operands.some((arg) => arg === "--extract" || arg === "--get" || /^-[A-Za-z]*x/.test(arg)) || /^[A-Za-z]*x[A-Za-z]*$/.test(operands[0] || "");
-    if (!extracts) {
-      return null;
-    }
-    return optionValue(operands, "-C", "--directory") || ".";
+// An extraction writes wherever its archive says, under each directory it is
+// given (the current one by default): kind "extract". `[]` when the command reads,
+// lists, creates or pipes to stdout; null when it is no archive tool at all.
+// `null` inside the list is a directory the guard cannot place.
+const TAR = new Set(["tar", "bsdtar", "gtar"]);
+const SEVEN_ZIP = new Set(["7z", "7za", "7zz"]);
+
+// `--extr`, `--dir=X`: GNU long options take any unambiguous prefix.
+function longOption(arg, name, shortest) {
+  const key = arg.split("=")[0];
+  return key.startsWith("--") && key.length - 2 >= shortest && name.startsWith(key.slice(2));
+}
+
+function tarTargets(operands) {
+  const bare = /^[A-Za-z]+$/.test(operands[0] || "") ? operands[0] : "";
+  const extracts = /x/.test(bare) || operands.some((arg) => longOption(arg, "extract", 3) || arg === "--get" || /^-[A-Za-z]*x/.test(arg));
+  if (!extracts) {
+    return null;
   }
-  if (name === "unzip") {
-    if (operands.some((arg) => /^-[A-Za-z]*[lptvzZ]/.test(arg))) {
-      return null;
+  if (/O/.test(bare) || operands.some((arg) => arg === "--to-stdout" || arg.startsWith("--to-command") || /^-[A-Za-z]*O/.test(arg))) {
+    return [];
+  }
+  const directories = [];
+  operands.forEach((arg, i) => {
+    if (arg === "-C" || (longOption(arg, "directory", 3) && !arg.includes("="))) {
+      directories.push(operands[i + 1] ?? null);
+    } else if (longOption(arg, "directory", 3) || arg.startsWith("--one-top-level=")) {
+      directories.push(arg.slice(arg.indexOf("=") + 1));
+    } else if (/^-C./.test(arg)) {
+      directories.push(arg.slice(2));
+    } else if (/^-[A-Za-z]+C/.test(arg)) {
+      directories.push(null); // `-xC DIR`: which word is DIR depends on the cluster
     }
-    return optionValue(operands, "-d", null) || ".";
+  });
+  return directories.length ? directories : ["."];
+}
+
+// `unzip -d DIR`, `-dDIR`, `-od DIR`, `-qod DIR`: the letters before `d` are flags.
+function unzipTargets(operands) {
+  let directory = ".";
+  for (let i = 0; i < operands.length; i += 1) {
+    const arg = operands[i];
+    if (!/^-[A-Za-z]/.test(arg)) {
+      continue;
+    }
+    const letters = arg.slice(1);
+    const at = letters.indexOf("d");
+    if (/[lptvzZ]/.test(at === -1 ? letters : letters.slice(0, at))) {
+      return [];
+    }
+    if (at !== -1) {
+      directory = letters.slice(at + 1) || (operands[i + 1] ?? null);
+    }
+  }
+  return [directory];
+}
+
+function otherArchiveTargets(name, operands) {
+  if (name === "cpio") {
+    if (operands.some((arg) => /^-[A-Za-z]*p/.test(arg) || arg === "--pass-through")) {
+      return [operands.filter((arg) => !arg.startsWith("-")).pop() ?? null];
+    }
+    return operands.some((arg) => /^-[A-Za-z]*i/.test(arg) || arg === "--extract") ? ["."] : [];
+  }
+  if (SEVEN_ZIP.has(name)) {
+    if (!["x", "e"].includes(operands.find((arg) => !arg.startsWith("-")))) {
+      return [];
+    }
+    const out = operands.find((arg) => arg.startsWith("-o"));
+    return [out ? out.slice(2) : "."];
+  }
+  // `python3 -m zipfile -e ARCHIVE DIR`, `-m tarfile -e ARCHIVE [DIR]`
+  const module = operands.indexOf("-m");
+  if (/^python[\d.]*$/.test(name) && module !== -1 && ["zipfile", "tarfile"].includes(operands[module + 1])) {
+    const at = operands.findIndex((arg, i) => i > module && (arg === "-e" || arg === "--extract"));
+    return at === -1 ? [] : [operands[at + 2] ?? "."];
   }
   return null;
 }
 
-// The value of `-C DIR` / `-CDIR` / `--directory DIR` / `--directory=DIR`.
-function optionValue(operands, flag, long) {
-  for (let i = 0; i < operands.length; i += 1) {
-    const arg = operands[i];
-    if (arg === flag || (long && arg === long)) {
-      return operands[i + 1];
-    }
-    if (long && arg.startsWith(`${long}=`)) {
-      return arg.slice(long.length + 1);
-    }
-    if (arg.startsWith(flag) && arg.length > flag.length) {
-      return arg.slice(flag.length);
-    }
+function extractTargets({ name, operands }) {
+  if (TAR.has(name)) {
+    return tarTargets(operands);
   }
-  return null;
+  return name === "unzip" ? unzipTargets(operands) : otherArchiveTargets(name, operands);
 }
 
 function readArchive(r, command) {
-  const directory = extractDirectory(command);
-  if (directory === null) {
+  const directories = extractTargets(command);
+  if (directories === null) {
     return false;
   }
-  add(r, directory, "extract");
+  for (const directory of directories) {
+    if (directory === null) {
+      r.found.push({ target: "(archive)", kind: "extract", unchecked: ARCHIVE });
+    } else {
+      add(r, directory, "extract");
+    }
+  }
   return true;
 }
 
@@ -593,37 +677,87 @@ function gitPaths(args) {
   return result;
 }
 
-// The files a patch names: `+++ b/X`, `rename to X`, `copy to X`, the `b/` side
-// of `diff --git`. Read through the host; null when it cannot be read.
-function patchTargets(r, file) {
+// --- patches ------------------------------------------------------------------
+
+// A C-quoted patch path (`"b/caf\303\251"`), as git writes a name with odd bytes.
+const C_ESCAPES = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
+function patchPath(text) {
+  if (!text.startsWith('"')) {
+    return text.split("\t")[0];
+  }
+  const bytes = [];
+  for (let i = 1; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '"') {
+      return Buffer.from(bytes).toString("utf8");
+    }
+    if (ch !== "\\") {
+      bytes.push(...Buffer.from(ch, "utf8"));
+    } else if (/[0-7]{3}/.test(text.slice(i + 1, i + 4))) {
+      bytes.push(parseInt(text.slice(i + 1, i + 4), 8));
+      i += 3;
+    } else if (C_ESCAPES[text[i + 1]] !== undefined) {
+      bytes.push(C_ESCAPES[text[i + 1]]);
+      i += 1;
+    } else {
+      return null;
+    }
+  }
+  return null;
+}
+
+// `-p1` drops one leading component; a path too short for it is not guessed at.
+function stripped(file, strip) {
+  const parts = file.split("/");
+  return file === "/dev/null" ? "" : parts.length > strip ? parts.slice(strip).join("/") : null;
+}
+
+// What one patch line names, or undefined when it names nothing. A `---`/`+++`
+// line is a header only next to its pair: inside a hunk it is a removed `-- x`.
+function patchLineNames(lines, i, strip) {
+  const line = lines[i];
+  const header = (line.startsWith("--- ") && (lines[i + 1] || "").startsWith("+++ ")) || (line.startsWith("+++ ") && (lines[i - 1] || "").startsWith("--- "));
+  if (header) {
+    const file = patchPath(line.slice(4));
+    return file === null ? [null] : [stripped(file, strip)];
+  }
+  const renamed = line.match(/^(?:rename|copy) (?:from|to) (.+)$/);
+  if (renamed) {
+    return [patchPath(renamed[1])];
+  }
+  const git = line.match(/^diff --git ((?:"(?:\\.|[^"\\])*"|\S)+) ((?:"(?:\\.|[^"\\])*"|\S)+)$/);
+  if (git) {
+    return [git[1], git[2]].map((word) => {
+      const file = patchPath(word);
+      return file === null ? null : stripped(file, strip);
+    });
+  }
+  return undefined;
+}
+
+// The files a patch names, under `base`: null when it cannot be read or a name
+// cannot be placed.
+function patchTargets(r, file, strip, base) {
   const text = r.cwd === null || typeof r.host.readText !== "function" ? null : r.host.readText(path.resolve(r.cwd, homeOf(r, file)));
   if (typeof text !== "string") {
     return null;
   }
+  const lines = text.split("\n");
   const targets = [];
-  for (const line of text.split("\n")) {
-    const match = line.match(/^\+\+\+ b\/(.+?)\t?$/) || line.match(/^(?:rename|copy) to (.+)$/) || line.match(/^diff --git a\/.+ b\/(.+)$/);
-    if (match && match[1] !== "/dev/null") {
-      targets.push(match[1]);
+  for (let i = 0; i < lines.length; i += 1) {
+    const names = patchLineNames(lines, i, strip) || [];
+    if (names.includes(null)) {
+      return null;
     }
+    names.filter(Boolean).forEach((name) => targets.push(portable(path.resolve(base, name))));
   }
   return targets;
 }
 
-// `git apply` writes what its patch names (nothing under --check/--stat/--numstat/
-// --summary without --apply); `git stash pop|apply` writes what the stash holds.
-function readPatchVerbs(r, { args, operands }) {
-  const sub = args.find((arg) => !arg.startsWith("-"));
-  const rest = operands.slice(operands.indexOf(sub) + 1);
-  if (sub === "stash" && (rest[0] === "pop" || rest[0] === "apply")) {
-    r.found.push({ target: "(stash)", kind: "write", unchecked: STASH });
-  }
-  if (sub !== "apply" || (rest.some((arg) => /^--(?:check|stat|numstat|summary)$/.test(arg)) && !rest.includes("--apply"))) {
-    return;
-  }
-  const patches = rest.filter((arg) => !arg.startsWith("-"));
-  for (const patch of patches.length ? patches : ["-"]) {
-    const targets = patch === "-" || classify(patch) !== "path" ? null : patchTargets(r, patch);
+// Each patch (a file, or `-` for an unread stdin) writes what it names.
+function applyPatches(r, patches, strip, base) {
+  for (const patch of patches) {
+    const targets = patch === "-" || classify(patch) !== "path" ? null : patchTargets(r, patch, strip, base);
     if (targets === null) {
       r.found.push({ target: patch, kind: "write", unchecked: UNREAD_PATCH });
     } else {
@@ -632,19 +766,145 @@ function readPatchVerbs(r, { args, operands }) {
   }
 }
 
-function readGit(r, { args, operands }) {
-  readPatchVerbs(r, { args, operands });
-  const git = gitPaths(args);
+// `< FILE` on this segment, unless stdin comes down a pipe.
+function stdinFile({ segment, args }) {
+  if (segment.before === "pipe") {
+    return null;
+  }
+  const at = args.indexOf("<");
+  const glued = args.find((arg) => /^<[^<(]/.test(arg));
+  return at !== -1 ? args[at + 1] ?? null : glued ? glued.slice(1) : null;
+}
+
+const shifted = (reason, r) => r.found.push({ target: "(patch)", kind: "write", unchecked: reason });
+
+// `git apply` / `git am`: paths from the repository's top, `-p1`. Another prefix,
+// `--directory` or `--unsafe-paths` is not modelled: unchecked.
+function readGitPatch(r, command, sub, rest) {
+  if (sub === "apply" && rest.some((arg) => /^--(?:check|stat|numstat|summary)$/.test(arg)) && !rest.includes("--apply")) {
+    return;
+  }
+  if (sub === "am" && rest.some((arg) => arg === "--quit" || arg.startsWith("--show-current-patch"))) {
+    return;
+  }
+  if (rest.some((arg) => (/^-p/.test(arg) && arg !== "-p1") || arg === "--no-prefix" || /^--directory/.test(arg) || arg === "--unsafe-paths")) {
+    shifted(SHIFTED_PATCH, r);
+    return;
+  }
+  const base = r.cwd === null ? null : (typeof r.host.gitRoot === "function" && r.host.gitRoot(r.cwd)) || r.cwd;
+  const files = rest.filter((arg) => !arg.startsWith("-") && !/^<{1,3}/.test(arg) && arg !== stdinFile(command));
+  applyPatches(r, files.length ? files : [stdinFile(command) || "-"], 1, base);
+}
+
+// `patch -p1 [-i FILE | < FILE]`, from the current directory. Without `-p0`/`-p1`
+// patch picks names itself; `-d` moves it; `patch FILE` writes FILE alone.
+const PATCH_VALUE_OPTIONS = /^-[pidoBDFrVYzgx]$/;
+function readPatchCommand(r, command) {
+  const { operands } = command;
+  if (operands.some((arg) => arg === "--dry-run" || arg === "-C" || arg === "--check")) {
+    return;
+  }
+  const strip = (operands.find((arg) => /^(?:-p\d+|--strip=\d+)$/.test(arg)) || "").replace(/\D/g, "") || operands[operands.findIndex((arg) => arg === "-p" || arg === "--strip") + 1];
+  let input = null;
+  const positional = [];
+  operands.forEach((arg, i) => {
+    if (/^-i./.test(arg) || arg.startsWith("--input=")) {
+      input = arg.startsWith("-i") ? arg.slice(2) : arg.slice(8);
+    } else if (arg === "-i" || arg === "--input") {
+      input = operands[i + 1];
+    } else if (!arg.startsWith("-") && !PATCH_VALUE_OPTIONS.test(operands[i - 1] || "") && !/^--(?:input|strip|directory|output)$/.test(operands[i - 1] || "")) {
+      positional.push(arg);
+    }
+  });
+  if (positional.length) {
+    return; // `patch FILE [PATCH]` writes FILE, read as an edited file
+  }
+  if (!["0", "1"].includes(strip) || operands.some((arg) => /^-d/.test(arg) || arg.startsWith("--directory"))) {
+    shifted(SHIFTED_PATCH, r);
+    return;
+  }
+  applyPatches(r, [input || stdinFile(command) || "-"], Number(strip), r.cwd || ".");
+}
+
+// --- git verbs ----------------------------------------------------------------
+
+// The subcommand after git's own options (`-C dir`, `-c k=v`).
+function gitSubcommand(args) {
+  let index = 0;
+  while (index < args.length && args[index].startsWith("-")) {
+    index += args[index] === "-C" || args[index] === "-c" ? 2 : 1;
+  }
+  return { sub: args[index], rest: args.slice(index + 1) };
+}
+
+// `git apply`/`am` write what their patch names, `git stash pop|apply` what the
+// stash holds, `git mv` moves like `mv`.
+function readGitVerbs(r, command) {
+  const { sub, rest } = gitSubcommand(command.args);
+  if (sub === "stash" && (rest[0] === "pop" || rest[0] === "apply")) {
+    r.found.push({ target: "(stash)", kind: "write", unchecked: STASH });
+  } else if (sub === "apply" || sub === "am") {
+    readGitPatch(r, command, sub, rest);
+  } else if (sub === "mv") {
+    const operands = rest.filter((arg) => !/^<{1,3}/.test(arg));
+    const files = operands.filter((arg) => classify(arg) !== "skip");
+    if (files.length >= 1) {
+      readCopy(r, { segment: command.segment, name: "mv", args: rest, operands, files });
+    }
+  }
+}
+
+function readGit(r, command) {
+  const git = gitPaths(command.args);
   const saved = r.cwd;
 
   if (git.dir !== null) {
     r.cwd = classify(git.dir) === "unknown" || (r.cwd === null && !path.isAbsolute(git.dir)) ? null : r.host.realpath(path.resolve(r.cwd || "/", homeOf(r, git.dir)));
   }
+  readGitVerbs(r, command);
   git.paths.forEach((file) => add(r, file, "write"));
+  // A checked-out pathspec may be a whole directory.
+  if (r.trees) {
+    git.paths.forEach((file) => add(r, file, "tree"));
+  }
   if (git.fromFile) {
     r.found.push({ target: "(pathspec file)", kind: "write", unchecked: PATHSPEC_FILE });
   }
   r.cwd = saved;
+}
+
+// --- commands handed their paths ----------------------------------------------
+
+// `find … -exec mv {} …`, `xargs mv`: the paths come from another command's output.
+const FORWARDING_WRITERS = new Set([...DESTINATION_LAST, ...TAR, ...SEVEN_ZIP, ...SHELLS, "unzip", "cpio", "sed", "tee", "dd", "truncate", "patch", "git"]);
+const XARGS_VALUE_OPTIONS = new Set(["-I", "-i", "-n", "-L", "-l", "-P", "-d", "-E", "-e", "-s", "-a"]);
+function forwardedVerb({ name, operands }) {
+  if (name === "find") {
+    const at = operands.findIndex((arg) => /^-(?:exec|execdir|ok|okdir)$/.test(arg));
+    return at === -1 ? null : operands[at + 1];
+  }
+  if (name !== "xargs") {
+    return null;
+  }
+  for (let i = 0; i < operands.length; i += 1) {
+    if (XARGS_VALUE_OPTIONS.has(operands[i])) {
+      i += 1;
+    } else if (!operands[i].startsWith("-")) {
+      return operands[i];
+    }
+  }
+  return null;
+}
+
+function readForwarded(r, command) {
+  const verb = forwardedVerb(command);
+  if (verb === null || verb === undefined) {
+    return false;
+  }
+  if (FORWARDING_WRITERS.has(path.basename(verb))) {
+    r.found.push({ target: verb, kind: "write", unchecked: FORWARDED });
+  }
+  return true;
 }
 
 // --- scripts followed ---------------------------------------------------------
@@ -652,7 +912,7 @@ function readGit(r, { args, operands }) {
 // A script handed to `bash -c` / `eval` runs from the current directory. With the
 // directory unknown, only its absolute targets can still be judged; a relative one is unchecked.
 function followScript(r, program) {
-  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host)) {
+  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees })) {
     if (entry.unchecked) {
       r.found.push(entry);
     } else if (r.cwd === null && !path.isAbsolute(homeOf(r, entry.target))) {
@@ -780,14 +1040,19 @@ function readVerb(r, command) {
   const edited = editedFiles(command);
   if (edited !== null) {
     edited.forEach((file) => add(r, file, "write"));
+    if (name === "patch") {
+      readPatchCommand(r, command);
+    }
   } else if (DESTINATION_LAST.has(name) && command.files.length >= 1) {
     readCopy(r, command);
   } else if (name === "curl" || name === "wget" || name === "dd") {
     downloadFiles(command).forEach((file) => add(r, file, "write"));
   } else if (name === "git") {
     readGit(r, command);
-  } else if (readArchive(r, command)) {
+  } else if (readArchive(r, command) || readForwarded(r, command)) {
     return null;
+  } else if (/[$`]/.test(name)) {
+    r.found.push({ target: name, kind: "write", unchecked: SUBSTITUTED_VERB });
   } else if (!readScript(r, command)) {
     const programs = inlineCode(name, command.args);
     readInline(r, programs);
@@ -806,8 +1071,13 @@ function readVerb(r, command) {
 //
 // `host` answers the disk questions, each falling back rather than throwing:
 // `realpath(dir)` (the dir itself when missing), `isDirectory(file)`,
-// `realPathOf(file)` (through links, for a file that may not exist yet), `home()`.
-function shellWrites(command, startCwd, host) {
+// `realPathOf(file)` (through links, for a file that may not exist yet), `home()`,
+// `readText(file)` (a patch, null when unreadable), `gitRoot(dir)` (null outside one).
+//
+// `options.trees`: also give a "tree" entry for every write of a whole directory
+// (a recursive copy, a checked-out pathspec), judged on what it holds. Off, the
+// list is the per-file one.
+function shellWrites(command, startCwd, host, options = {}) {
   if (typeof command !== "string" || !command.trim()) {
     return [];
   }
@@ -815,7 +1085,7 @@ function shellWrites(command, startCwd, host) {
   // The shell drops a backslash-newline continuation before it reads any word.
   command = command.replace(/\\\n/g, "");
 
-  const r = reader(startCwd, host);
+  const r = reader(startCwd, host, options);
   let left = null;
 
   for (const segment of splitSegments(command)) {

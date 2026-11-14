@@ -100,7 +100,9 @@ test('git apply judges the paths its patch names; an unreadable patch or a stash
   assert.equal(bash(dir, 'git apply ok.diff').decision, 'allow');
   assert.equal(bash(dir, 'git apply --check forge.diff').decision, 'allow');
   assert.equal(bash(dir, 'git apply --stat forge.diff').decision, 'allow');
-  for (const command of ['git apply missing.diff', 'git apply < forge.diff', 'git stash pop', 'git stash apply stash@{1}']) {
+  // `< forge.diff` is read like a named patch (review of 13-09).
+  assert.equal(bash(dir, 'git apply < forge.diff').decision, 'deny');
+  for (const command of ['git apply missing.diff', 'git stash pop', 'git stash apply stash@{1}']) {
     assert.equal(bash(dir, command).decision, 'unchecked', command);
   }
   for (const command of ['git stash', 'git stash list', 'git stash show -p']) {
@@ -190,8 +192,14 @@ test('a copy into a directory that holds a blocked one is refused', (t) => {
     'tar -xf /tmp/a.tar -C .coding-flow',
     'unzip /tmp/a.zip -d .coding-flow',
   ]);
-  // Over the whole project the guard cannot tell what lands: logged, not refused.
-  expectDecisions(dir, 'unchecked', ['rsync -a /tmp/cf/ .', 'git checkout HEAD~1 -- .']);
+  // Onto the project root (`git restore .`, `cp -r /tmp/x/. .` stay everyday
+  // commands), a copy is refused when its source brings a blocked path in.
+  const forged = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-cf-')));
+  t.after(() => fs.rmSync(forged, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(forged, '.coding-flow', 'runs'), { recursive: true });
+  fs.writeFileSync(path.join(forged, '.coding-flow', 'runs', 'x-verify.json'), '{}');
+  expectDecisions(dir, 'deny', [`rsync -a ${forged}/ .`, `cp -r ${forged}/. .`, `cp -rT ${forged} .`, ['src', `rsync -a ${forged}/ ..`]]);
+  expectDecisions(dir, 'allow', ['rsync -a /tmp/cf/ .', `rsync -a ${path.join(forged, '.coding-flow', 'runs')}/ /tmp/elsewhere`]);
   expectDecisions(dir, 'allow', ['cp -r src /tmp/s', 'rsync -a src/ /tmp/s', 'cp -r src lib', 'cp -r /tmp/x .', 'cp -r /tmp/x src/', 'git checkout -- src', 'cp x .coding-flow/']);
 });
 
