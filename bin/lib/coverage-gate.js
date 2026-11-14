@@ -717,7 +717,8 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
 
   const { criteriaChanged, specInDiff } = readSpecDrift(storyDir, currentDiffBase(cwd).mergeBase);
   const storySection = (title) => extractSection(Object.values(readStoryBundle(storyDir || "")).join("\n\n"), title);
-  const specChange = storySection("Spec Change");
+  // As for a Policy Change below: a template comment alone is not a reason.
+  const specChange = storySection("Spec Change").replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim();
 
   const policyChanged = currentTreeToken(cwd) ? readPolicyChanged() : [];
   // A template's `<!-- why -->` placeholder is not a reason; an unclosed one

@@ -159,9 +159,10 @@ function checkSensitivePaths(files, config, report) {
     }
 
     // The evidence entries bar an agent's write, not a commit: `ship` commits the
-    // run files on purpose.
-    const refusedInCommit = config.blockedPaths.filter((pattern) => !EVIDENCE_BLOCKED_PATHS.includes(pattern));
-    if (refusedInCommit.some((pattern) => matchesPattern(relativePath, pattern))) {
+    // run files on purpose — whichever blocked entry covers them (`.coding-flow/**`
+    // too), the same match the doctor's evidence check uses.
+    const isEvidence = EVIDENCE_BLOCKED_PATHS.some((pattern) => matchesPattern(relativePath, pattern));
+    if (!isEvidence && config.blockedPaths.some((pattern) => matchesPattern(relativePath, pattern))) {
       addIssue(
         report.errors,
         "blocked_path_present",
