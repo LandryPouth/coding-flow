@@ -1,6 +1,6 @@
 # Story 15-07 — A recipe is present only when it checks
 
-## Status: in-progress
+## Status: done
 
 Follow-up of story 15-03's independent review (2026-11-14, PASS, three P2s
 left open). `bootstrap --scan` reports a boundary or complexity recipe as
