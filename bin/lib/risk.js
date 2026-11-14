@@ -73,7 +73,9 @@ const STRUCTURAL_GIT_SIGNALS = [
   { name: "git merge", pattern: /\bgit\s*\([^;]*?\[\s*["'`]merge["'`]/ },
   { name: "git rm", pattern: /\bgit\s*\([^;]*?\[\s*["'`]rm["'`]/ },
   { name: "git clean", pattern: /\bgit\s*\([^;]*?\[\s*["'`]clean["'`]/ },
-  { name: "recursive delete", pattern: /\brm(?:dir)?(?:Sync)?\s*\([^;]*?\brecursive\s*:\s*true/ },
+  // The head only: `recursive: true` is then read on the call's own
+  // balanced-paren span (`spanTest`), never on a neighbouring call.
+  { name: "recursive delete", pattern: /\brm(?:dir)?(?:Sync)?\s*\(/, spanTest: /\brecursive\s*:\s*true/ },
 ];
 
 // A call already passing `{ allowFail: true }` (this project's own converted
@@ -136,6 +138,8 @@ function scanStructuralGitSignals(changedFiles, config, root) {
 
   for (const [file, lines] of addedByFile) {
     for (let i = 0; i < lines.length; i += 1) {
+      // A call named in a comment is not a call.
+      if (/^\s*(\/\/|\*|\/\*)/.test(lines[i])) continue;
       const window = lines.slice(i, i + 3).join("\n");
       // Separate from `window` above: `window` only needs to be wide enough
       // to recognize a multi-line call's own opening shape (`git(\n  root,\n
@@ -159,6 +163,7 @@ function scanStructuralGitSignals(changedFiles, config, root) {
           const offset = window.slice(0, match.index).split("\n").length - 1;
           if (offset !== 0) continue;
           const span = callSpanText(spanWindow, match.index);
+          if (signal.spanTest && !signal.spanTest.test(span)) continue;
           if (isGuardedWindow(span)) continue;
           matches.push({ file, signal: signal.name, line: lines[i].trim() });
         }
