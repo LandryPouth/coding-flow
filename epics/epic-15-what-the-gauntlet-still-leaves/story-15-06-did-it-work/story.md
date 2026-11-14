@@ -1,6 +1,6 @@
 # Story 15-06 — Did it work? Re-take the study's measures
 
-## Status: in-progress
+## Status: done
 
 The study ends with five measures "readable from `.coding-flow/runs/`".
 Nothing re-takes them once the work lands; without this story, the study's
