@@ -35,9 +35,10 @@ const ESLINT_CONFIGS = [
 const ESLINT_RULE_NAMES = ["complexity", "max-lines-per-function"];
 const ESLINT_RULES = /^(?=[\s\S]*\bcomplexity\b)(?=[\s\S]*\bmax-lines-per-function\b)/;
 
+// A byte-order mark is valid in the file and refused by `JSON.parse`.
 function parseJson(text) {
   try {
-    return JSON.parse(text);
+    return JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch {
     return undefined;
   }
@@ -45,7 +46,7 @@ function parseJson(text) {
 
 function ruleIsOn(value) {
   const severity = Array.isArray(value) ? value[0] : value;
-  return severity !== undefined && severity !== "off" && severity !== 0 && severity !== "0";
+  return severity !== undefined && !["off", "0"].includes(String(severity).toLowerCase());
 }
 
 function eslintRulesOn(config) {
@@ -80,13 +81,18 @@ const IMPORTLINTER_CONFIGS = [
   { file: "setup.cfg", section: /^\[importlinter\]/m },
 ];
 
-// ArchUnit has no config file: the dependency in the build is the sign, read
-// as its coordinate — a mere mention of "archunit" is not a dependency.
+// ArchUnit has no config file: the dependency in the build is the sign — a mere
+// mention of "archunit" is not one. It is read as its coordinate, as a Maven
+// property reference (`${archunit.group}`, defined in a parent POM), as a Gradle
+// version-catalog accessor (`libs.archunit.junit5`), or in the catalog itself.
 const ARCHUNIT_DEPENDENCY = /com\.tngtech\.archunit/;
+const ARCHUNIT_MAVEN = /com\.tngtech\.archunit|\$\{[\w.-]*archunit[\w.-]*\}/i;
+const ARCHUNIT_GRADLE = /com\.tngtech\.archunit|\blibs\.[\w.]*archunit/i;
 const ARCHUNIT_CONFIGS = [
-  { file: "pom.xml", section: ARCHUNIT_DEPENDENCY },
-  { file: "build.gradle", section: ARCHUNIT_DEPENDENCY },
-  { file: "build.gradle.kts", section: ARCHUNIT_DEPENDENCY },
+  { file: "pom.xml", section: ARCHUNIT_MAVEN },
+  { file: "build.gradle", section: ARCHUNIT_GRADLE },
+  { file: "build.gradle.kts", section: ARCHUNIT_GRADLE },
+  { file: "gradle/libs.versions.toml", section: ARCHUNIT_DEPENDENCY },
 ];
 
 const ECOSYSTEMS = [

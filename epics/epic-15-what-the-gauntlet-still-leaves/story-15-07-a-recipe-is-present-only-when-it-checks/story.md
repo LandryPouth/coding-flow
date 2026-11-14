@@ -46,9 +46,14 @@ throwaway directories.)*
 - **Fallback keeps the old behaviour.** A JS/TS/YAML config, or a
   `.eslintrc.json` with comments that `JSON.parse` refuses, stays a name match:
   reading it would mean running or parsing a language the tool does not ship.
-- **ArchUnit reads its coordinate** (`com.tngtech.archunit`), the form every
-  Maven/Gradle declaration carries; a comment naming the coordinate still
-  counts (accepted: rare, and the flag is advisory).
+- **ArchUnit is read as a declaration, not a mention**: its coordinate
+  (`com.tngtech.archunit`), a Maven property reference naming it
+  (`${archunit.group}`, whose value may live in a parent POM), a Gradle
+  version-catalog accessor (`libs.archunit.junit5`), or the coordinate in
+  `gradle/libs.versions.toml`. A comment naming the coordinate still counts
+  (accepted: rare, and the flag is advisory).
+- **JSON is read as ESLint reads it**: a leading byte-order mark is dropped
+  before parsing, and severities compare case-insensitively (`"OFF"` is off).
 
 ## Result
 
@@ -58,6 +63,10 @@ Three tests added at the end of `test/bootstrap.test.js` (red at `cee7d52`'s
 parent code, green after); the existing recipe tests are untouched and green.
 Ordinary `present` cases (ESLint `overrides`, `.eslintrc.json` with comments,
 YAML, a real Gradle ArchUnit dependency) give the same result as before.
+After the independent review (PASS, four P2s): version catalogs and Maven
+property references count for ArchUnit, a BOM no longer turns a JSON config
+into a name match, upper-case severities are read, and two tests pin a rule
+on only in `overrides` and the commented-`.eslintrc.json` fallback.
 CHANGELOG: a Fixed entry, and the 15-03 entry now names which configs
 `policy-changed` watches and the two gaps.
 
