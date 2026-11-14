@@ -636,8 +636,9 @@ const LOOKS_LIKE_A_START = /\bfunction\b|=>|\)\s*(:[^{]*)?\{\s*$/;
 // through the hunks; an added one is the same function only when its hunk
 // replaced a line starting a function of the same name (a changed signature) —
 // never whatever base function the hunk happened to replace. With no name, the
-// replaced lines must hold exactly one function start, else it is new.
-function baseStartOf(hunks, fn, baseSource) {
+// replaced lines must hold exactly one function start, and only one function of
+// the head claims it (`claimsStart`); the others are new.
+function baseStartOf(hunks, fn, baseSource, functions = [fn]) {
   const mapped = toBaseLine(hunks, fn.line);
 
   if (!mapped.added || mapped.line === null) {
@@ -650,7 +651,7 @@ function baseStartOf(hunks, fn, baseSource) {
 
   if (!starts) {
     const candidates = replaced.filter((line) => LOOKS_LIKE_A_START.test(baseSource.lines[line - 1] || ""));
-    return candidates.length === 1 ? candidates[0] : null;
+    return candidates.length === 1 && claimsStart(hunk, fn, candidates[0], functions) ? candidates[0] : null;
   }
 
   const named = replaced.filter((line) => starts(baseSource.lines[line - 1] || ""));
@@ -658,9 +659,22 @@ function baseStartOf(hunks, fn, baseSource) {
   return named.length === 0 ? null : named.reduce((best, line) => (Math.abs(line - mapped.line) < Math.abs(best - mapped.line) ? line : best));
 }
 
+// Which unnamed head function, of those starting in the hunk's added lines,
+// owns the one base start the hunk replaced: the first whose body runs on past
+// the hunk (the base body kept as context), else the one at the same position
+// in the hunk. A new function inserted above or below it is new.
+function claimsStart(hunk, fn, candidate, functions) {
+  const inHunk = functions.filter((each) => !sourceName(each.name) && each.line >= hunk.newStart && each.line < hunk.newStart + hunk.newCount);
+  const pastHunk = inHunk.find((each) => each.end >= hunk.newStart + hunk.newCount);
+  const position = candidate - hunk.oldStart;
+  const nearest = inHunk.reduce((best, each) => (Math.abs(each.line - hunk.newStart - position) < Math.abs(best.line - hunk.newStart - position) ? each : best), fn);
+
+  return (pastHunk || nearest) === fn;
+}
+
 // The function's span in the base file, measured there; null when it is new.
-function baseSpan(baseSource, fn, hunks) {
-  const start = baseSource ? baseStartOf(hunks, fn, baseSource) : null;
+function baseSpan(baseSource, fn, hunks, functions) {
+  const start = baseSource ? baseStartOf(hunks, fn, baseSource, functions) : null;
 
   if (start === null) {
     return null;
@@ -745,7 +759,7 @@ function grewPastLine(change, fn, data, max) {
     return null;
   }
 
-  const span = baseSpan(change.baseSource, fn, change.hunks) || movedSpan(change.removed, fn);
+  const span = baseSpan(change.baseSource, fn, change.hunks, change.functions) || movedSpan(change.removed, fn);
   // A rewritten `if` is one decision before and after: an added branch line is
   // only new beyond the decision-like lines the diff removed in the function.
   const addedBranches = [...added].filter((line) => data.branchLines.has(line));
@@ -898,8 +912,10 @@ function measureChanges(root, base, byFile, { report, config, max }) {
       continue;
     }
 
-    for (const fn of measureFile(root, change.file, report.files.get(change.file))) {
-      const item = grewPastLine({ ...change, removed }, fn, report.files.get(change.file), max);
+    const functions = measureFile(root, change.file, report.files.get(change.file));
+
+    for (const fn of functions) {
+      const item = grewPastLine({ ...change, removed, functions }, fn, report.files.get(change.file), max);
       if (item) items.push(item);
     }
   }

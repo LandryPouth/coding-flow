@@ -18,7 +18,10 @@ verify under `functionSize.enforce`. Tests on real git repositories
   name also matches `constructor(` (V8 lists a constructor under its class).
   `anonymous_N`, `(anonymous_N)` and `<anonymous>` have no name: the replaced
   lines must hold exactly one line that reads like a function start, else the
-  function is new. A test drives a real `node --test --experimental-test-coverage`
+  function is new. Only one head function claims that start (re-review): the
+  first unnamed one starting in the hunk whose body runs on past it (the base
+  body kept as context), else the one at the same position in the hunk; a new
+  test inserted above or below a renamed one is new. A test drives a real `node --test --experimental-test-coverage`
   lcov through the check (a test title edited, an export parameter added).
 - **Growth by deletion.** A pure deletion hunk inside the function's span marks
   it touched; its base span is then measured as before.
