@@ -548,6 +548,49 @@ function buildAuditMarkdown(entries) {
   return lines.join("\n");
 }
 
+// `audit --check`: the latest verify per story, green and fresh, or exit 1.
+function auditCheck(root, { json, since }) {
+  let all = collectAll(root);
+  if (since) {
+    all = all.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
+  }
+  const entries = all.filter((entry) => !archivedStory(root, entry.story));
+  const currentToken = currentTreeToken(root);
+  const currentPolicy = policyFingerprint(root);
+  const result = gate(entries, { currentToken, currentPolicy });
+  const archivedRuns = all.filter((entry) => entry.type === "verify").length - entries.filter((entry) => entry.type === "verify").length;
+  // Only archived evidence left: still no proof for anything on disk, so the
+  // gate keeps failing — but says why instead of "no runs".
+  if (result.reason && archivedRuns > 0) {
+    result.reason = `no verify runs recorded for a story still on disk (${archivedRuns} run(s) belong to archived epics)`;
+  }
+
+  if (json) {
+    log(JSON.stringify(result, null, 2));
+  } else if (result.ok) {
+    log(`Audit check passed — ${result.latest.length} story/scope(s), latest verify green and fresh.`);
+  } else if (result.reason) {
+    log(`Audit check FAILED — ${result.reason}.`);
+  } else {
+    if (result.failing.length > 0) {
+      log("Audit check FAILED — latest verify is red for:");
+      for (const entry of result.failing) {
+        log(`- ${entry.story || "(repo)"}: ${entry.summary}`);
+      }
+    }
+    if (result.stale.length > 0) {
+      log("Audit check FAILED — latest verify is stale (code or policy changed since the proof); re-run `ai-flow verify --story <dir>` for:");
+      for (const entry of result.stale) {
+        log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree (${staleReason(entry, currentToken, currentPolicy)})`);
+      }
+    }
+  }
+
+  if (!result.ok) {
+    process.exitCode = 1;
+  }
+}
+
 function audit({
   json = false,
   exportMd = false,
@@ -598,45 +641,7 @@ function audit({
 
   // The CI gate is read-only: it must not mutate the ledger.
   if (check) {
-    let all = collectAll(root);
-    if (since) {
-      all = all.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
-    }
-    const entries = all.filter((entry) => !archivedStory(root, entry.story));
-    const currentToken = currentTreeToken(root);
-    const currentPolicy = policyFingerprint(root);
-    const result = gate(entries, { currentToken, currentPolicy });
-    const archivedRuns = all.filter((entry) => entry.type === "verify").length - entries.filter((entry) => entry.type === "verify").length;
-    // Only archived evidence left: still no proof for anything on disk, so the
-    // gate keeps failing — but says why instead of "no runs".
-    if (result.reason && archivedRuns > 0) {
-      result.reason = `no verify runs recorded for a story still on disk (${archivedRuns} run(s) belong to archived epics)`;
-    }
-
-    if (json) {
-      log(JSON.stringify(result, null, 2));
-    } else if (result.ok) {
-      log(`Audit check passed — ${result.latest.length} story/scope(s), latest verify green and fresh.`);
-    } else if (result.reason) {
-      log(`Audit check FAILED — ${result.reason}.`);
-    } else {
-      if (result.failing.length > 0) {
-        log("Audit check FAILED — latest verify is red for:");
-        for (const entry of result.failing) {
-          log(`- ${entry.story || "(repo)"}: ${entry.summary}`);
-        }
-      }
-      if (result.stale.length > 0) {
-        log("Audit check FAILED — latest verify is stale (code or policy changed since the proof); re-run `ai-flow verify --story <dir>` for:");
-        for (const entry of result.stale) {
-          log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree (${staleReason(entry, currentToken, currentPolicy)})`);
-        }
-      }
-    }
-
-    if (!result.ok) {
-      process.exitCode = 1;
-    }
+    auditCheck(root, { json, since });
     return;
   }
 
