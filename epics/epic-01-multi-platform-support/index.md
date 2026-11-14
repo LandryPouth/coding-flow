@@ -62,21 +62,21 @@ each other and with the `s2`→`s3` chain — each can run in its own worktree
 
 ## Stories
 
-1. **story-01-01-detect-and-install-codex-commands** — platform detection,
+1. [story-01-01-detect-and-install-codex-commands](story-01-01-detect-and-install-codex-commands/spec.md) — platform detection,
    `target` config field, Codex command materialization, the new evidence
    `kind` + `## Platform coverage` report section, and the freeze-exception
    bookkeeping (`docs/design-decisions.md`, `docs/plans/multi-agent-install.md`).
-2. **story-01-02-wire-codex-sandbox-guard** — port the OS-sandbox permission
+2. [story-01-02-wire-codex-sandbox-guard](story-01-02-wire-codex-sandbox-guard/spec.md) — port the OS-sandbox permission
    profile from `~/dev/tools/ai-learn`'s `codex-guard.js`, marker-gated,
    non-destructive, mirroring `ensureHookSettings`'s four-state contract.
-3. **story-01-03-verify-codex-guard-automatically** — the live self-test:
+3. [story-01-03-verify-codex-guard-automatically](story-01-03-verify-codex-guard-automatically/spec.md) — the live self-test:
    `codex sandbox --permissions-profile <name> -- <probe>` run inside
    `doctor`/`init`, auto-skipped when `codex` isn't on PATH, always recorded
    as evidence (pass, fail, or skipped).
-4. **story-01-04-install-commands-gemini-opencode-antigravity** —
+4. [story-01-04-install-commands-gemini-opencode-antigravity](story-01-04-install-commands-gemini-opencode-antigravity/spec.md) —
    commands/skills for the three platforms with no verified guard mechanism;
    `doctor`/`report` state the gap explicitly.
-5. **story-01-05-record-unrecognized-platform-signals** — when no `--target`
+5. [story-01-05-record-unrecognized-platform-signals](story-01-05-record-unrecognized-platform-signals/spec.md) — when no `--target`
    and no known signal identifies the host, record what signals *were*
    present as `kind: "unrecognized"` evidence — never wire a guessed
    mechanism.

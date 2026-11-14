@@ -72,13 +72,13 @@ s1
 
 ## Stories
 
-1. **story-07-01-resolve-the-story-diff-base** — `resolveDiffBase`, fork-point
+1. [story-07-01-resolve-the-story-diff-base](story-07-01-resolve-the-story-diff-base/spec.md) — `resolveDiffBase`, fork-point
    recording, all call sites switched, evidence `diffBase`. *(STRICT —
    changes every coverage and risk verdict)*
-2. **story-07-02-ignore-evidence-and-generated-files** — `.coding-flow/**`
+2. [story-07-02-ignore-evidence-and-generated-files](story-07-02-ignore-evidence-and-generated-files/spec.md) — `.coding-flow/**`
    always excluded; `harness.json` `ignoredPaths` (generated clients,
    `openapi.json`) excluded from coverage/risk/weakening. *(STANDARD)*
-3. **story-07-03-show-the-scope** — `verify`, `status`, `ship` print the base
+3. [story-07-03-show-the-scope](story-07-03-show-the-scope/story.md) — `verify`, `status`, `ship` print the base
    and scope; `doctor` suggests `git remote set-head origin -a` when
    `origin/HEAD` is missing. *(QUICK)*
 

@@ -63,13 +63,13 @@ tree.
 
 ## Stories
 
-1. **story-22-01-the-project-says-who-decides** *(STANDARD — walking skeleton: `autonomy.md` → read by `/flow-run` → `ai-flow decide` → event + Decisions line → listed in the epic report)*
-2. **story-22-02-precedents-are-searched-not-loaded** *(STANDARD)*
-3. **story-22-03-a-repeated-finding-climbs-the-ladder** *(STANDARD)*
-4. **story-22-04-agent-memory-moves-into-the-repo** *(STANDARD — dogfooded on bethl)*
-5. **story-22-05-a-run-that-worked-becomes-a-playbook** *(STANDARD)*
-6. **story-22-06-a-personal-taste-is-proposed-to-each-project** *(STANDARD — the vault's `preferences/` offered to each project, accepted line by line; the project wins)*
-7. **story-22-07-the-design-system-is-a-check** *(STANDARD — `validation.conformance`: forbidden patterns on added lines, `warn` then `block`; the ladder's `gate` rung)*
+1. [story-22-01-the-project-says-who-decides](story-22-01-the-project-says-who-decides/spec.md) *(STANDARD — walking skeleton: `autonomy.md` → read by `/flow-run` → `ai-flow decide` → event + Decisions line → listed in the epic report)*
+2. [story-22-02-precedents-are-searched-not-loaded](story-22-02-precedents-are-searched-not-loaded/spec.md) *(STANDARD)*
+3. [story-22-03-a-repeated-finding-climbs-the-ladder](story-22-03-a-repeated-finding-climbs-the-ladder/spec.md) *(STANDARD)*
+4. [story-22-04-agent-memory-moves-into-the-repo](story-22-04-agent-memory-moves-into-the-repo/spec.md) *(STANDARD — dogfooded on bethl)*
+5. [story-22-05-a-run-that-worked-becomes-a-playbook](story-22-05-a-run-that-worked-becomes-a-playbook/spec.md) *(STANDARD)*
+6. [story-22-06-a-personal-taste-is-proposed-to-each-project](story-22-06-a-personal-taste-is-proposed-to-each-project/spec.md) *(STANDARD — the vault's `preferences/` offered to each project, accepted line by line; the project wins)*
+7. [story-22-07-the-design-system-is-a-check](story-22-07-the-design-system-is-a-check/spec.md) *(STANDARD — `validation.conformance`: forbidden patterns on added lines, `warn` then `block`; the ladder's `gate` rung)*
 
 ## Decisions
 

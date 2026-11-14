@@ -103,6 +103,17 @@ exchange → close` for a protocol, `spawn → move → collide → score` for a
 01 is the thinnest path across it; each later story deepens one step. Reordering a
 story means moving it to another point on the journey, never just renumbering.
 
+Each `## Stories` entry, in story order, is a link that opens the story's spec in the
+editor — the folder name as link text, `spec.md` (or `story.md` for a single-file
+story) as target, the outcome and mode after it:
+
+```md
+1. [story-NN-MM-name](story-NN-MM-name/spec.md) — <one-line outcome> *(MODE)*
+```
+
+Keep notes on order outside the list. `ai-flow doctor` warns on any other entry form
+or a missing target; `ai-flow doctor --fix` rewrites the entry, keeping its text.
+
 ### Story dependency tree (optional)
 
 When stories have real dependencies — one lands files or behavior another assumes —
@@ -333,6 +344,9 @@ Before reporting the plan as done:
       criteria are invisible to `verify`.
 - [ ] `ai-flow doctor` ran and reports no duplicate story numbering and no
       oversized epic.
+- [ ] Every `## Stories` entry is `N. [story-…](story-…/spec.md)` (`story.md` for a
+      single-file story) and the target exists — `doctor` reports no
+      `story_entry_not_linked`.
 - [ ] Any dependency tree uses only the shapes above, and each edge is a real
       build-on relationship — checked, not assumed.
 - [ ] An epic that adds a module carries `## Boundaries` with an `approved by:` name

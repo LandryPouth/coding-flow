@@ -128,6 +128,7 @@ Story references point at the story's `spec.md` unless another file is named.
 | Stories per epic (skill) | 2–5 for a normal epic | cap around 5–7 | — | `skills/flow-plan/SKILL.md:42-44` |
 | Stories per epic (doctor) | — | warning `epic_too_large` above 7 | not configurable | `doctor.js:47`, `:113-120` |
 | Duplicate numbering | `duplicate_epic_number`, `duplicate_story_number` | any duplicate | — | `doctor.js:342-376` |
+| `## Stories` entry form | `N. [story-…](story-…/spec.md) — outcome *(MODE)*`, `story.md` for a single-file story; warning `story_entry_not_linked` per entry that is not that link or whose target is missing; `doctor --fix` rewrites the entry, keeping its text | — | — | `flow-plan/SKILL.md:106-116`; `bin/lib/story-links.js`; `doctor.js:385-418` |
 | Dependency tree grammar | `├──` / `└──`, one label per line, 4-character indent per level, or flat chains `s1 ── s2`. The tree is read only inside `## Backbone` | **one parent per story: `┴` or `┤` is refused** | — | `flow-plan/SKILL.md:68-95`; `bin/lib/backbone.js:108-140`, `:190-193` |
 | Generated directory hint | warning `generated_not_ignored` | more than 20 changed files under `generated/`, `__generated__/` or `gen/` in the last verify | `ignoredPaths` | `doctor.js:198-240` |
 | Recovery scan | history of 2 000 commits; 15 hotspots; "large file" = over 500 lines | — | `recover scan --history-limit N` | `bin/lib/recover.js:28-30`, `:979-987` |

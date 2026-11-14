@@ -94,13 +94,13 @@ notify, run watch, rules registry).
 
 ## Stories
 
-1. **story-26-01-findings-travel-to-the-next-story** *(STANDARD)*
-2. **story-26-02-the-run-tells-you-what-it-needs** *(STANDARD — runs a user-declared command)*
-3. **story-26-03-the-docs-are-checked-against-the-code** *(STANDARD)*
-4. **story-26-04-the-epic-closes-itself** *(STRICT — merges into the base)*
-5. **story-26-05-a-run-is-watched-live** *(FAST)*
-6. **story-26-06-the-rules-are-printed-with-their-source** *(STANDARD)*
-7. **story-26-07-we-need-you** *(STANDARD — capture, `next`'s We need you
+1. [story-26-01-findings-travel-to-the-next-story](story-26-01-findings-travel-to-the-next-story/spec.md) *(STANDARD)*
+2. [story-26-02-the-run-tells-you-what-it-needs](story-26-02-the-run-tells-you-what-it-needs/spec.md) *(STANDARD — runs a user-declared command)*
+3. [story-26-03-the-docs-are-checked-against-the-code](story-26-03-the-docs-are-checked-against-the-code/spec.md) *(STANDARD)*
+4. [story-26-04-the-epic-closes-itself](story-26-04-the-epic-closes-itself/spec.md) *(STRICT — merges into the base)*
+5. [story-26-05-a-run-is-watched-live](story-26-05-a-run-is-watched-live/story.md) *(FAST)*
+6. [story-26-06-the-rules-are-printed-with-their-source](story-26-06-the-rules-are-printed-with-their-source/spec.md) *(STANDARD)*
+7. [story-26-07-we-need-you](story-26-07-we-need-you/spec.md) *(STANDARD — capture, `next`'s We need you
    block, ship/land repeat `before: deploy`)*
 
 Seven stories: the cap. Anything more around the maintainer's attention is a

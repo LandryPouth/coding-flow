@@ -174,3 +174,48 @@ test("story lines an agent tends to write still resolve to the same s<N> labels"
 
   assert.deepEqual(parseStoryDirs(text), ["story-01-01-slugify", "story-01-02-plain", "story-01-03-bold", "story-01-04-colon"]);
 });
+
+// A `## Stories` entry that opens with a Markdown link is the canonical form
+// (`/flow-plan`'s contract: `1. [story-…](story-…/spec.md) — outcome`). The dir
+// comes from the link TARGET, so a title as link text still resolves. Real
+// lines from bethl epics 33, 41 and 43 parsed to nothing before, and
+// `ai-flow worktree place` said the story was not listed.
+test("an entry that opens with a Markdown link takes its dir from the link target", () => {
+  const { parseStoryDirs } = require("../bin/lib/backbone");
+  const text = [
+    "## Stories",
+    "",
+    "1. [story-33-01-lock-location-routes](story-33-01-lock-location-routes/spec.md) — Gardes de rôle sur",
+    "2. [41-01 — Demande en plage, heure fixée par l'agent](story-41-01-visit-band-request/) — STRICT",
+    "3. [43-01 — Prix en euros stocké, tri au mois par la base](story-43-01-stored-eur-price-monthly-sort/) — STRICT (migration)",
+    "- [ ] [story-01-04-single](story-01-04-single/story.md) — FAST",
+    "- [story-01-05-dot](./story-01-05-dot/spec.md)",
+    "6. [Title only](story-01-06-folder)",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(parseStoryDirs(text), [
+    "story-33-01-lock-location-routes",
+    "story-41-01-visit-band-request",
+    "story-43-01-stored-eur-price-monthly-sort",
+    "story-01-04-single",
+    "story-01-05-dot",
+    "story-01-06-folder",
+  ]);
+});
+
+test("a bold note bullet inside ## Stories is not a story entry", () => {
+  const { parseStoryDirs } = require("../bin/lib/backbone");
+  const text = [
+    "## Stories",
+    "",
+    "- **s2 à s4** déplacent des routes vers l'API admin.",
+    "- [a link to docs](../docs/x.md) is not a story either",
+    "1. **story-42-01-admin-console-skeleton** ([spec](story-42-01-admin-console-skeleton/spec.md)) —",
+    "   STRICT :",
+    "2. **story-42-02-visit-cases** — STRICT",
+    "",
+  ].join("\n");
+
+  assert.deepEqual(parseStoryDirs(text), ["story-42-01-admin-console-skeleton", "story-42-02-visit-cases"]);
+});
