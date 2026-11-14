@@ -1,6 +1,6 @@
 # Story 13-09 — A directory swap is a write
 
-## Status: in-progress
+## Status: done
 
 Found by the independent review of story 13-03 on `develop` (2026-11-14,
 P1). The guard matches a blocked glob `X/**` against the path a shell
