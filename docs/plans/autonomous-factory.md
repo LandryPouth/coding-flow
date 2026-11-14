@@ -251,6 +251,7 @@ noise.
 | [26 — Nothing left by hand](../../epics/epic-26-nothing-left-by-hand/index.md) | findings travel between stories, notify command and `ai-flow todo`, human to-dos captured and opening `ai-flow next` (We need you), docs checked against the code, the epic closes itself, `run --watch`, `ai-flow rules` | engine + team |
 | [27 — The run knows why it stopped](../../epics/epic-27-the-run-knows-why-it-stopped/index.md) | typed holds, failure taxonomy and circuit breaker, git checkpoints, critical path and base sync, `run --plan/--stop/--abort`, decision packets, notification levels and human latency — design in [orchestration.md](orchestration.md) | engine |
 | [28 — What to build next](../../epics/epic-28-what-to-build-next/index.md) | `docs/ideas.md` ledger with sources, mechanical scan of what the repo already says (deferred criteria, assumptions, roadmap, Later items, declared markers), an Ideas block in `next` only when nothing is left, `idea plan\|park\|kill`, `/flow-plan --ideas` on demand | 1 + learning |
+| [29 — What the agent cannot fake](../../epics/epic-29-what-the-agent-cannot-fake/index.md) | `ai-flow scan` on introduced lines (placeholders, bypassed types, invented imports, `.only`), harness `PostToolUse`/`Stop` hooks with three modes and a feedback cap, changed tests proven collected and removed tests declared, destructive commands refused by the guard, a declared confidence that only lowers — from the 2026-11-14 study of Shipmoor and agentic-os | 0 + engine |
 
 Delivery order (revised 2026-11-13):
 
@@ -263,9 +264,14 @@ Delivery order (revised 2026-11-13):
    found outside any list). Then 28-01 (**Ideas**: what the repo itself says
    could come next, three at most, only when nothing is left to run; added
    2026-11-14 at the maintainer's request, proven first by the `epic-run`
-   workflow on bethl).
+   workflow on bethl). Then 29-04 (**destructive commands wait for the
+   human**) and 29-01 (**`ai-flow scan`**), both added 2026-11-14 after the
+   study of Shipmoor and agentic-os, proven first by the `epic-run`
+   workflow's proof gate.
 1. **First driven run early**: 18-01 (journal) → 19-01 (failing test names)
-   → 19-07 (tests read-only) → 20-01 (one story headless), then 20-01 runs
+   → 29-03 (changed tests proven collected) → 19-07 (tests read-only) →
+   29-02 (the agent is held at Stop) → 20-01 (one story headless, reading
+   29-05's confidence line), then 20-01 runs
    on a real bethl story before the rest of 18 and 19. The factory is
    learned by running it; thirteen stories before the first driven run is
    a cathedral built without a site visit.

@@ -2,7 +2,7 @@
 
 Every rule that governs Coding Flow, with its default, its cap or threshold, how
 to change it, and where it is defined. Part 1 is what the shipped code does
-today. Part 2 is what epics 18–28 plan and is not built yet.
+today. Part 2 is what epics 18–29 plan and is not built yet.
 
 Generated from the sources on 2026-11-13 (commit `e00ff82`). Part 1 is read from
 `bin/lib/` and the shipped skills, not from other docs. Part 2 is read from the
@@ -302,6 +302,22 @@ Design: [`docs/plans/orchestration.md`](plans/orchestration.md).
 | `validation.tiers.browser.startTimeoutSec` (`healthUrl` must return 2xx) | 120 s | past it the result is a tool error, not a red | `config.json` | 25-01 (`spec.md:14-15`) |
 | `serve.ports` | not set | uses the next free port in the range | `config.json` | 25-01 (`spec.md:13-14`), 24-07 (`spec.md:41-43`) |
 | Checklist walker | a fresh `claude -p` with browser tools only; takes an agent slot | a `not confirmed` item costs one attempt (20-03) | `testAccounts` (env var names only, never values) | 25-02 (`spec.md:12-28`) |
+
+### What the agent cannot fake (planned)
+
+| Rule | Default | Max / threshold | Change with | Delivered by / source |
+|---|---|---|---|---|
+| `scan.failOn` | `high` | `none`, `high`, `medium`; only lines the diff added | `config.json`; `scan.rules.<id>`: `off` or a severity; `scan.exclude` | 29-01 |
+| Scan suppression | none | `ai-flow-scan-ignore <rule> -- <reason>` on the line or above; no reason, no suppression; copied into evidence | in the code | 29-01 |
+| `harness.mode` | `feedback` | `observe`, `feedback`, `block`; a tool failure never blocks | `ai-flow harness mode <m>` | 29-02 |
+| `harness.maxFeedbackCycles` | 3 `Stop` blocks per session | past it, findings shown once and the agent is let go | `config.json` | 29-02 |
+| Changed test must be collected | contrary signal `test-not-run` | jest, vitest, node:test list modes; other runners `not examined` | add the file to a validation command, or `## Test Exemption` | 29-03 |
+| Removed test title | contrary signal `test-removed` | a moved or renamed test keeps its title | `## Test Exemption` naming the title, with a reason | 29-03 |
+| `validation.reports` | not set (exit code alone) | when set: report written during the run, ≥ 1 test, 0 failures | `config.json` | 29-03 |
+| `destructiveCommands` | `deny` | `deny`, `warn`, `off`; exact prefixes in `allowDestructive` | `.coding-flow/harness.json` (the agent cannot write it) | 29-04 |
+| `worktrees.primaryLocked` | `false` | `true`: no branch change in the primary checkout | `.coding-flow/harness.json` (bethl: `true`) | 29-04 |
+| `Confidence:` line in `## Result` | absent = nothing (driven: `low-confidence`) | `low` lowers, `high` never raises | `/flow-run` writes it | 29-05 |
+| Criteria verdict | `READY`, `READY WITH GAPS`, `INCONCLUSIVE`, `BLOCKED` | `outside verify:` rows are `declared`, a gap, never `proven` | `## Acceptance Traceability` | 18-06 (amended 2026-11-14) |
 
 ---
 
