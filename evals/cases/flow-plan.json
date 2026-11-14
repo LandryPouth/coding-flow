@@ -29,6 +29,10 @@
       {
         "prompt": "slice a small multiplayer game prototype into stories, core loop first",
         "top_k": 2
+      },
+      {
+        "prompt": "the request is ambiguous, ask me the questions that matter before you write the stories",
+        "top_k": 2
       }
     ],
     "negative": [

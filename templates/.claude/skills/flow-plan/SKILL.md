@@ -212,11 +212,14 @@ ownership and migration when persistence changes. No micro-stories ("create DTO"
 
 When ambiguity could cause rework, pressure-test the request before writing stories:
 the fewest questions that prevent the most rework, in the user's language. **Read
-before asking**: what the repo, the scan or the docs can answer is never a question.
-Give each question a recommended answer, so a "yes" settles it; ask one at a time, or
-up to five per round when they are independent. Stop when the next question would not
-change implementation. Budget: 5–15 questions, 10–20 for auth, migration, billing,
-permissions or data modeling. The highest-value kinds — ask only those that apply:
+before asking**: what the repo, the scan or the docs can answer is looked up, never
+asked. Ask in **rounds of at most 4 questions** that walk the decision frontier: only
+decisions whose answer changes implementation, the ones later answers depend on
+first. Each question opens with its recommended answer, so "yes" or a pick settles
+it. Stop when the next question would not change implementation; a round with
+nothing that would is not asked. Budget: 5–15 questions, 10–20 for auth, migration,
+billing, permissions or data modeling. The highest-value kinds — ask only those that
+apply:
 
 - Scope boundary — what is explicitly out?
 - Actor/permission — who can do this, and who cannot?
@@ -259,13 +262,22 @@ When the questions stop, record a verdict against the stopping rule — *would t
 next question change implementation?* — instead of sliding into writing:
 
 - **`ready`** — no open question would change implementation. Write the stories.
-- **`not ready`** — a blocking question is open. Write no stories: ask the
-  highest-leverage follow-up, put the missing decision to the user as a labeled
-  question, or cut scope until it no longer matters.
+- **`not ready`** — a blocking question is open. Write no stories (except the
+  marker below): ask the highest-leverage follow-up, put the missing decision to
+  the user as a labeled question, or cut scope until it no longer matters.
 - **`stop`** — it should not be built, or not now: say why (already exists,
   assumption refuted, cost beyond the appetite). Write no stories.
 - An epic that adds a module is **`not ready`** while its `## Boundaries` section is
   missing or has no `approved by:` name.
+- A criterion that rests on a reading the user did not confirm, where another
+  plausible reading changes observable behaviour, is confirmed or marked: the
+  story is written, with a line that begins `Assumption (unconfirmed):` (after an
+  optional `- `) naming the reading and the question; that story is not ready to
+  run, the epic stays **`not ready`**, and its `## Readiness` lists the line as the
+  blocking item. Accepting the recommendations ("go", "yes") counts as confirming
+  them: record them as decisions. A headless run, where nobody can answer, stops at
+  `not ready` with the question and never picks the answer. The rule holds whether
+  or not Clarify First ran.
 
 Record the verdict, and the blocking item when `not ready`, in the epic `index.md`.
 
@@ -351,6 +363,9 @@ Before reporting the plan as done:
       build-on relationship — checked, not assumed.
 - [ ] An epic that adds a module carries `## Boundaries` with an `approved by:` name
       the user gave.
+- [ ] No criterion rests on an unconfirmed reading that changes behaviour, unless
+      its story has an `Assumption (unconfirmed):` line and the epic's
+      `## Readiness` is `not ready` and lists it — whether or not Clarify First ran.
 - [ ] No implementation happened: planning writes story files, `/flow-run` writes
       code.
 
@@ -360,6 +375,7 @@ it here, where it is cheap.
 ## Output
 
 `# Plan Result`, then these `##` sections in order: Epic (path, goal, scope),
-Stories, First Story To Run, Generated Files, Assumptions, Risks, Clarification
+Stories, First Story To Run, Generated Files, Assumptions (every `Assumption
+(unconfirmed):` line, whether or not Clarify First ran), Risks, Clarification
 Readiness (`ready` / `not ready` / `stop`, only when Clarify First ran), Recommended Next
 Command (`Use /flow-run for …`).

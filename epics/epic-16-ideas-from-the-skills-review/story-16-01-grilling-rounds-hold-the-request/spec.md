@@ -50,20 +50,20 @@ proves. Without this, a green verify proves the plan, not the request
 
 ## Acceptance Criteria
 
-- [ ] Given `flow-plan/SKILL.md`, when `## Clarify First` is read, then it
+- [x] Given `flow-plan/SKILL.md`, when `## Clarify First` is read, then it
       asks for rounds of at most 4 questions, each opening with a recommended
       answer, and says that facts the codebase can answer are looked up, not
       asked.
-- [ ] Given `### Readiness Gate`, when it is read, then a behaviour-changing
+- [x] Given `### Readiness Gate`, when it is read, then a behaviour-changing
       interpretation the user did not confirm keeps the epic `not ready`, and
       a headless run stops with the question instead of answering it.
-- [ ] Given `flow-run/SKILL.md`, when `## Stop Conditions` is read, then a
+- [x] Given `flow-run/SKILL.md`, when `## Stop Conditions` is read, then a
       story carrying an `Assumption (unconfirmed)` line is not implemented
       until the user confirms it.
-- [ ] Given `npm test`, then the skill evals (tiers 1 and 2), `plugin check`
+- [x] Given `npm test`, then the skill evals (tiers 1 and 2), `plugin check`
       and the 500-line ceiling pass, and the rank-1 routing rate is not lower
       than before the change.
-- [ ] Given `docs/design-decisions.md`, then entry 16 exists, lists the taken
+- [x] Given `docs/design-decisions.md`, then entry 16 exists, lists the taken
       items and the refused ones, and names the unverified Codex-fork claim.
 
 ## Edge Cases
@@ -84,3 +84,5 @@ proves. Without this, a green verify proves the plan, not the request
 - A separate `grill-me` skill. The 0.4 consolidation removed it, and a
   section in `/flow-plan` is enough.
 - Any CLI change: readiness stays a recorded verdict that `/flow-run` reads.
+
+## Status: done
