@@ -247,3 +247,16 @@ test('a forged tar or zip that a lenient lister would read as benign is unchecke
   ]);
 });
 
+test('a directory header that claims a size, or a zip name with a NUL, is unchecked', (t) => {
+  const dir = tmp(t);
+  // T1: GNU tar ignores a directory's size, so a lister that skips it misses the
+  // next header — the forged run file (re-review of 13-13).
+  const forgedHeader = Buffer.concat(member(FORGED));
+  const t1 = Buffer.concat([header('src/', { type: '5', size: 1024 }), forgedHeader, Buffer.alloc(1024 - forgedHeader.length), ending]);
+  fs.writeFileSync(path.join(dir, 'T1.tar'), t1);
+  fs.writeFileSync(path.join(dir, 'T1.tgz'), zlib.gzipSync(t1));
+  fs.writeFileSync(path.join(dir, 'T2.tar'), Buffer.concat([...member('src/', 'xx'), ending]));
+  fs.writeFileSync(path.join(dir, 'nul.zip'), zip([{ name: 'src/a.js\0../../x', body: 'x' }]));
+  expect(dir, 'unchecked', ['tar -xf T1.tar', 'tar -xzf T1.tgz', 'bsdtar -xf T1.tar', 'tar -xf T2.tar', 'unzip nul.zip']);
+});
+
