@@ -1,6 +1,6 @@
 # Story 16-02 — A bug fix starts red, in every mode
 
-## Status: in-progress
+## Status: done
 
 Today the "negative evidence" paragraph in `/flow-run` (`A bug fix carries
 negative evidence`) sits under STRICT, while most bug fixes are routed to
