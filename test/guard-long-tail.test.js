@@ -171,3 +171,79 @@ test('an extraction onto an ancestor of the project is judged by its members too
   assert.equal(bash(dir, 'tar -xf up.tar -C ..').decision, 'deny');
   assert.equal(bash(dir, 'tar -xf clean.tar -C ..').decision, 'allow');
 });
+
+// Forged archives from the review of 13-13: each one lists benign members to a
+// lenient reader while tar or unzip writes the evidence directory. The lister
+// trusts only a strict subset of each format; anything else is unchecked.
+function header(name, { type = '0', size = 0, magic = 'ustar\x0000', at345 = null } = {}) {
+  const block = Buffer.alloc(512);
+  block.write(name, 0, 100, 'utf8');
+  block.write('0000644\0', 100);
+  block.write('0000000\0', 108);
+  block.write('0000000\0', 116);
+  block.write(size.toString(8).padStart(11, '0') + '\0', 124);
+  block.write('00000000000\0', 136);
+  block.write(type, 156);
+  block.write(magic, 257, 'latin1');
+  if (at345 !== null) block.write(at345, 345, 'latin1');
+  block.fill(32, 148, 156);
+  let sum = 0;
+  for (const byte of block) sum += byte;
+  block.write(sum.toString(8).padStart(6, '0') + '\0 ', 148, 'latin1');
+  return block;
+}
+const padded = (buf) => Buffer.concat([buf, Buffer.alloc((512 - (buf.length % 512)) % 512)]);
+const member = (name, body = 'forged\n', options = {}) => [header(name, { ...options, size: Buffer.byteLength(body) }), padded(Buffer.from(body))];
+function paxRecord(key, value) {
+  const body = ` ${key}=${value}\n`;
+  for (let n = 1; n < 1000; n += 1) if (String(n).length + body.length === n) return `${n}${body}`;
+  return null;
+}
+const ending = Buffer.alloc(1024);
+const FORGED = '.coding-flow/runs/x.json';
+const pax = (records) => { const text = Buffer.from(records.join('')); return [header('PaxHeaders/x', { type: 'x', size: text.length }), padded(text)]; };
+
+test('a forged tar or zip that a lenient lister would read as benign is unchecked, never allowed', (t) => {
+  const dir = tmp(t);
+  const write = (name, parts) => fs.writeFileSync(path.join(dir, name), Buffer.concat(parts));
+  write('A.tar', [...pax([paxRecord('path', 'src/ok.txt'), paxRecord('path', FORGED)]), ...member('src/ok.txt'), ending]);
+  write('B.tar', [...pax([paxRecord('comment', 'x\n99 path=src/ok.txt'), paxRecord('path', FORGED)]), ...member('src/ok.txt'), ending]);
+  write('C.tar', [...pax([paxRecord('GNU.sparse.name', FORGED)]), ...member('src/ok.txt'), ending]);
+  write('D.tar', [...member(FORGED, 'forged\n', { magic: 'ustar  \0', at345: 'src\0' }), ending]);
+  write('E.tar', [...member('src/ok.txt'), Buffer.alloc(512), ...member(FORGED), ending]);
+  const longName = Buffer.from(`${FORGED}\0`);
+  write('G.tar', [...pax([paxRecord('path', 'src/ok.txt')]), header('././@LongLink', { type: 'L', size: longName.length }), padded(longName), ...member('src/ok.txt'), ending]);
+  // P: a benign tar with a zip appended whose one member is the forged run file.
+  const tarPart = Buffer.concat([...member('src/ok.txt'), ending]);
+  const name = Buffer.from(FORGED);
+  const data = Buffer.from('forged\n');
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(10, 4);
+  local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(name.length, 26);
+  const localPart = Buffer.concat([local, name, data]);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(10, 4);
+  central.writeUInt16LE(10, 6);
+  central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(data.length, 24);
+  central.writeUInt16LE(name.length, 28);
+  central.writeUInt32LE(tarPart.length, 42);
+  const directory = Buffer.concat([central, name]);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(tarPart.length + localPart.length, 16);
+  write('P.zip', [tarPart, localPart, directory, end]);
+
+  expect(dir, 'unchecked', [
+    'tar -xf A.tar', 'tar -xf B.tar', 'tar -xf C.tar', 'tar -xf D.tar', 'tar -xf E.tar', 'tar -xif E.tar', 'tar --ignore-zeros -xf E.tar', 'tar -xf G.tar',
+    'unzip P.zip', 'tar -xf P.zip', 'bsdtar -xf P.zip',
+  ]);
+});
+
