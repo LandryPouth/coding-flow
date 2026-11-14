@@ -36,6 +36,14 @@ command should pass.
 - Aliases, shell functions, `eval` of built strings, `IFS` games: a
   stateless hook cannot model them; they stay documented limits.
 
+## Policy Change
+
+The bar rises: `.coding-flow/harness.json` `highRiskPaths` gains
+`bin/lib/archive-members.js`, the new module the guard requires to judge an
+extraction by its members. `test/security-core-risk.test.js` (story 13-10)
+requires every local module the guard reaches to be a high-risk path. Nothing
+is loosened.
+
 ## Result
 
 `bin/lib/shell-writes.js` reads git plumbing (`checkout-index`, `read-tree -u`,
