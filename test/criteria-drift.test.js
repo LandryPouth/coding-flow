@@ -300,3 +300,23 @@ test('a tab-indented continuation is deeper than a two-space nested bullet', (t)
   const res = verify(dir);
   assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
 });
+
+// 13-11 re-review: a fence never swallows a later criterion.
+test('an unclosed fence ends at the next criterion, which stays open', (t) => {
+  const criteria = ['- [x] Output is:', '      ```', '      foo', '- [ ] second criterion still open'];
+  const dir = repo(t, 'cd-fence-open', { criteria });
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.openCriteria, ['second criterion still open'], res.output);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('a four-backtick fence holding three backticks closes on its own run', (t) => {
+  const block = (word) => ['- [x] Output is:', '      ````', '      ```', `      ${word}`, '      ````', '- [ ] real criterion'];
+  const dir = repo(t, 'cd-fence-four', { criteria: block('a') });
+  write(dir, `${STORY}/spec.md`, spec(block('b')));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.openCriteria, ['real criterion'], res.output);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+});
