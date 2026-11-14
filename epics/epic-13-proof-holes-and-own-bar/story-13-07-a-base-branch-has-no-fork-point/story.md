@@ -1,6 +1,6 @@
 # Story 13-07 — A base branch has no fork point
 
-## Status: in-progress
+## Status: done
 
 `develop` carried `branch.develop.codingFlowBase = 4c7280c` (a SHA, recorded
 after story 13-04's own commit). `resolveDiffBase` (`bin/lib/diff-base.js`)
