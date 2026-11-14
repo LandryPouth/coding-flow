@@ -312,6 +312,17 @@ function staleReason(entry, currentToken, currentPolicy = null) {
   return isStale(entry, currentToken) ? "code changed" : null;
 }
 
+// A story that left the checkout (`ai-flow archive`, story 17-01) keeps its run
+// files: they are history. Only what still names a story directory on disk is
+// judged or listed by name — evidence alone never brings an archived story back.
+function storyStillOnDisk(root, story) {
+  if (!story) {
+    return true;
+  }
+  const dir = story.endsWith(".md") ? story.split("/").slice(0, -1).join("/") : story;
+  return !dir.startsWith("epics/") || fs.existsSync(path.join(root, dir));
+}
+
 function gate(entries, { currentToken = null, currentPolicy = null } = {}) {
   const verify = entries.filter((entry) => entry.type === "verify");
 
@@ -438,7 +449,7 @@ function summarizeReviews(root) {
     summary.total += 1;
     summary.byReviewer[reviewer] = (summary.byReviewer[reviewer] || 0) + 1;
 
-    if (data.verdict === "pass" && open > 0) {
+    if (data.verdict === "pass" && open > 0 && storyStillOnDisk(root, data.story)) {
       const item = { story: data.story, generatedAt: data.generatedAt || "", p0: Number(counts.p0) || 0, p1: Number(counts.p1) || 0 };
 
       if (data.acceptedRisk) {
@@ -584,7 +595,7 @@ function audit({
 
   // The CI gate is read-only: it must not mutate the ledger.
   if (check) {
-    let entries = collectAll(root);
+    let entries = collectAll(root).filter((entry) => storyStillOnDisk(root, entry.story));
     if (since) {
       entries = entries.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
     }

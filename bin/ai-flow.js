@@ -97,6 +97,7 @@ registerStoryLocator(require("./lib/speckit"));
 const { auditCommand } = require("./lib/audit");
 const { reviewCommand } = require("./lib/review");
 const { traceCommand } = require("./lib/trace");
+const { archiveCommand } = require("./lib/archive");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
 const { worktreeCommand, storyWorkElsewhere } = require("./lib/worktree");
@@ -894,6 +895,8 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   reviewCommand({ commandArgs, getFlagValue, flags });
 } else if (command === "trace") {
   traceCommand({ getFlagValue, flags });
+} else if (command === "archive") {
+  archiveCommand({ commandArgs, flags });
 } else if (command === "ci") {
   ciCommand({ commandArgs, flags });
 } else if (command === "plugin") {

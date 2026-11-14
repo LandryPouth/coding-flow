@@ -61,11 +61,11 @@ function commit(dir, message) {
 }
 
 // Everything a refusal must leave as it was: the files, the index, the status.
-function snapshot(dir) {
+function snapshot(dir, { skip = null } = {}) {
   const files = [];
   const walk = (d) => {
     for (const name of fs.readdirSync(d).sort()) {
-      if (name === '.git') continue;
+      if (name === '.git' || path.join(d, name) === skip) continue;
       const full = path.join(d, name);
       if (fs.statSync(full).isDirectory()) walk(full);
       else files.push(`${path.relative(dir, full)}:${fs.readFileSync(full, 'utf8')}`);
@@ -116,12 +116,11 @@ test('the recovery line brings the epic back byte for byte', (t) => {
   assert.equal(run(dir, ['archive', EPIC]).code, 0);
   commit(dir, 'archive epic 08');
   const index = fs.readFileSync(path.join(dir, 'epics/INDEX.md'), 'utf8');
-  const line = index.match(/git checkout ([0-9a-f]{40}) -- (\S+)/);
+  const line = index.match(/git checkout ([0-9a-f]{40}) -- ([^\s`]+)/);
   assert.ok(line, index);
   git(dir, ['checkout', line[1], '--', line[2]]);
 
-  const after = snapshot(dir).files.split('\n').filter((entry) => !entry.startsWith(path.join('epics', 'INDEX.md'))).join('\n');
-  assert.equal(after, before);
+  assert.equal(snapshot(dir, { skip: path.join(dir, 'epics', 'INDEX.md') }).files, before);
 });
 
 test('a planned story and a dirty file are both named, and nothing changes', (t) => {
@@ -264,7 +263,6 @@ test('evidence left for an archived story is not reported by status, next, audit
   verifyRun(dir, `${EPIC}/story-08-01-coverage-floor`, { ok: false, name: '2026-11-01T00-00-00-000Z' });
   verifyRun(dir, `${EPIC}/story-08-02-policy-fingerprint`, { ok: true, name: '2026-11-01T00-00-01-000Z', treeToken: 'old-tree' });
   verifyRun(dir, live, { ok: true, name: '2026-11-01T00-00-02-000Z' });
-  write(dir, `${EPIC}/story-08-01-coverage-floor/tasks.md`, '## Status: done\n');
 
   assert.equal(run(dir, ['archive', EPIC]).code, 0);
   commit(dir, 'archive epic 08');
@@ -285,9 +283,9 @@ test('tracked files outside the epic that link into it are listed, not edited', 
   const res = run(dir, ['archive', EPIC]);
 
   assert.equal(res.code, 0, res.output);
-  assert.match(res.output, /still links here/);
+  assert.match(res.output, /still links here/i);
   assert.match(res.output, /docs\/plan\.md/);
-  assert.doesNotMatch(res.output.split('still links here')[1], /README\.md/);
+  assert.doesNotMatch(res.output.split('links here')[1], /README\.md/);
   assert.equal(fs.readFileSync(path.join(dir, 'docs/plan.md'), 'utf8'), `See [the epic](../${EPIC}/index.md).\n`);
 });
 
