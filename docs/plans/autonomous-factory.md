@@ -250,6 +250,7 @@ noise.
 | [25 — The journey is seen](../../epics/epic-25-the-journey-is-seen/index.md) | the browser tier runs the project's own command against a served app; in driven runs a separate process walks the checklist and records what it saw | engine |
 | [26 — Nothing left by hand](../../epics/epic-26-nothing-left-by-hand/index.md) | findings travel between stories, notify command and `ai-flow todo`, human to-dos captured and opening `ai-flow next` (We need you), docs checked against the code, the epic closes itself, `run --watch`, `ai-flow rules` | engine + team |
 | [27 — The run knows why it stopped](../../epics/epic-27-the-run-knows-why-it-stopped/index.md) | typed holds, failure taxonomy and circuit breaker, git checkpoints, critical path and base sync, `run --plan/--stop/--abort`, decision packets, notification levels and human latency — design in [orchestration.md](orchestration.md) | engine |
+| [28 — What to build next](../../epics/epic-28-what-to-build-next/index.md) | `docs/ideas.md` ledger with sources, mechanical scan of what the repo already says (deferred criteria, assumptions, roadmap, Later items, declared markers), an Ideas block in `next` only when nothing is left, `idea plan\|park\|kill`, `/flow-plan --ideas` on demand | 1 + learning |
 
 Delivery order (revised 2026-11-13):
 
@@ -259,7 +260,10 @@ Delivery order (revised 2026-11-13):
    then the `ai-flow todo` reader of 26-02 and 26-07 (**We need you**: human
    to-dos captured as they appear, opening `ai-flow next`, repeated by ship
    and land; added 2026-11-14 after bethl's 37-07 and 40-06 to-dos were
-   found outside any list).
+   found outside any list). Then 28-01 (**Ideas**: what the repo itself says
+   could come next, three at most, only when nothing is left to run; added
+   2026-11-14 at the maintainer's request, proven first by the `epic-run`
+   workflow on bethl).
 1. **First driven run early**: 18-01 (journal) → 19-01 (failing test names)
    → 19-07 (tests read-only) → 20-01 (one story headless), then 20-01 runs
    on a real bethl story before the rest of 18 and 19. The factory is
@@ -272,7 +276,7 @@ Delivery order (revised 2026-11-13):
    24 s1, s2, s7 (two chains and two epics at once, machine-sized agent
    slots) → 26-04 (the epic closes itself) → 25 (the browser tier is run,
    not ticked).
-4. 21 → 22 → 23 → 24 s3–s6 (team).
+4. 21 → 22 → 23 → 28-02 (ideas judged on demand) → 24 s3–s6 (team).
 
 Running two at a time is how the maintainer already works by hand; the
 native run should not stay a chain while the learning layers are built.

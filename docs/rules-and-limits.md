@@ -2,7 +2,7 @@
 
 Every rule that governs Coding Flow, with its default, its cap or threshold, how
 to change it, and where it is defined. Part 1 is what the shipped code does
-today. Part 2 is what epics 18–27 plan and is not built yet.
+today. Part 2 is what epics 18–28 plan and is not built yet.
 
 Generated from the sources on 2026-11-13 (commit `e00ff82`). Part 1 is read from
 `bin/lib/` and the shipped skills, not from other docs. Part 2 is read from the
@@ -259,6 +259,10 @@ walker, critic and report on a lighter model.
 | `next` We need you block | printed above the recommendation when anything waits on a human; `deploy` first, then `next-story` and `Needs you`, then `+ N later` | 5 lines plus the count; reads every epic of the checkout, landed ones included | `next --json` → `needsYou` | 26-07 |
 | `todo.uncapturedPatterns` | EN + FR human-action phrases ("the maintainer must", "before (the) deploy", "à faire par l'utilisateur", "avant le déploiement", …) | warning only (`verify`, `doctor`), never a failure | `config.json` | 26-07 |
 | Ship/land repeat | open `before: deploy` items: `Before you deploy` section in the PR body; printed by land, autoland and closure | never blocks | — | 26-07 |
+| `docs/ideas.md` ledger | `- [<status>] <what> — why: … — source: <kind>:<ref> — size: story\|epic — id: <id>`; status `proposed`, `planned → <epic>`, `parked`, `killed: <reason>` | no line without `source:`; `killed` needs a reason and never returns | `ai-flow idea plan\|park\|kill <id>` | 28-01 |
+| `next` Ideas block | only when no tier yields a command, below We need you | 3 lines | `next --json` → `ideas`; order changed by `ai-flow ideas rank` (28-02) | 28-01 |
+| `ideas.markers` | not set (no code scan) | outside tests and generated code | `config.json` (bethl: `À venir`, `not yet produced`, `Pas encore produit`) | 28-01 |
+| `/flow-plan --ideas` | opt-in, never automatic | ≤ 3 new ideas per pass, ~8 searches / ~12 files; each with `repo-observed:<existing path>` or `user-stated:<date>` | skill section | 28-02 |
 | `docs.check.include` / `.exclude` / `.ignorePaths` | `docs/**/*.md`, `README.md`, `RULES.md` | warnings only, never fails `doctor` | `config.json` | 26-03 |
 | Closer allowed paths | `epics/<epic>/`, `docs/`, `CHANGELOG.md` | anything else is reverted and listed | — | 26-04 |
 | `run --watch` refresh | 2 s | — | `--once`, `--json` | 26-05 |
