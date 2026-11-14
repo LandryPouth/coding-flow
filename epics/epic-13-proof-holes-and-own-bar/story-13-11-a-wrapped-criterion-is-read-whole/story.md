@@ -34,6 +34,13 @@ behavioural tests on throwaway repositories with wrapped criteria.)*
       `criterionItems`) behaves as before. Existing tests stay green,
       unmodified. CHANGELOG `[Unreleased]` → Fixed.
 
+## Spec Change
+
+Criterion 1 reworded after the independent review (P1-1): "not itself a list
+item" would have let a criterion's plain sub-steps (story 16-02's "see it
+fail") change unseen; a deeper-indented sub-step now belongs to the
+criterion.
+
 ## Out of Scope
 
 - Criteria written as prose paragraphs rather than list items.
