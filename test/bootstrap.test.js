@@ -851,3 +851,51 @@ test('a Gradle build with an ArchUnit dependency counts as present', (t) => {
   assert.equal(recipe.tool, 'archunit');
   assert.equal(recipe.present, 'build.gradle.kts');
 });
+
+// Story 15-07: a recipe is `present` only when its config really checks.
+test('package.json counts for ESLint only through the rules of its eslintConfig', (t) => {
+  const dir = project(t, 'quality-recipes-eslint-pkg-rules');
+  const eslint = () => scanJsonWithPath(dir, []).qualityRecipes.find((recipe) => recipe.tool === 'eslint').present;
+
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    JSON.stringify({ name: 'app', eslintConfig: {}, scripts: { complexity: 'x --max-lines-per-function' } }),
+  );
+  assert.equal(eslint(), null, 'an empty eslintConfig is not the check, whatever the scripts say');
+
+  fs.writeFileSync(path.join(dir, 'package.json'), '{ "name": "app", "eslintConfig": { "rules": { "complexity": 1, "max-lines-per-function": 1 }');
+  assert.equal(eslint(), null, 'a package.json that does not parse is not the check');
+});
+
+test('an ESLint rule that is turned off does not count', (t) => {
+  const dir = project(t, 'quality-recipes-eslint-off');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'app' }));
+  const eslint = () => scanJsonWithPath(dir, []).qualityRecipes.find((recipe) => recipe.tool === 'eslint').present;
+  const rc = (rules) => fs.writeFileSync(path.join(dir, '.eslintrc.json'), JSON.stringify({ rules }));
+
+  rc({ complexity: 'off', 'max-lines-per-function': ['error', 80] });
+  assert.equal(eslint(), null);
+  rc({ complexity: ['error', 10], 'max-lines-per-function': 0 });
+  assert.equal(eslint(), null);
+  rc({ complexity: ['off', 10], 'max-lines-per-function': 'warn' });
+  assert.equal(eslint(), null);
+
+  rc({ complexity: ['warn', 10], 'max-lines-per-function': 2 });
+  assert.equal(eslint(), '.eslintrc.json');
+
+  fs.writeFileSync(path.join(dir, '.eslintrc.json'), '{}');
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    JSON.stringify({ name: 'app', eslintConfig: { rules: { complexity: 'off', 'max-lines-per-function': 'error' } } }),
+  );
+  assert.equal(eslint(), null, 'the same rule holds in package.json');
+});
+
+test('ArchUnit counts only through its com.tngtech.archunit coordinate', (t) => {
+  const dir = project(t, 'quality-recipes-archunit-mention');
+  fs.writeFileSync(path.join(dir, 'pom.xml'), '<!-- TODO add archunit --><project/>\n');
+  assert.equal(scanJsonWithPath(dir, []).qualityRecipes[0].present, null);
+
+  fs.writeFileSync(path.join(dir, 'pom.xml'), '<project><artifactId>archunit-free</artifactId></project>\n');
+  assert.equal(scanJsonWithPath(dir, []).qualityRecipes[0].present, null);
+});
