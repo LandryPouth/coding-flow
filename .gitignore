@@ -21,3 +21,7 @@ node_modules/
 
 # Native coverage report written by this repository's verify (lcov reporter).
 coverage/
+
+# Local environment files (never committed)
+.env
+.env.*

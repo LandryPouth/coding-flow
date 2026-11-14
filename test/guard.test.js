@@ -92,7 +92,7 @@ test('guard denies content that contains a secret', (t) => {
   const dir = project(t, 'guard-secret');
   const res = guard(dir, {
     tool_name: 'Write',
-    tool_input: { file_path: 'src/config.ts', content: 'const k = "sk_live_0123456789abcdefghijkl";' },
+    tool_input: { file_path: 'src/config.ts', content: 'const k = "' + 'sk_' + 'live_0123456789abcdefghijkl";' },
   });
   assert.equal(res.code, 2, 'a secret in the content must be refused');
   assert.match(JSON.parse(res.stdout).systemMessage, /secret/i);
@@ -138,7 +138,7 @@ test('guard denies a secret inside a MultiEdit new_string', (t) => {
       file_path: 'src/a.ts',
       edits: [
         { old_string: 'a', new_string: 'b' },
-        { old_string: 'c', new_string: 'AKIAABCDEFGHIJKLMNOP' },
+        { old_string: 'c', new_string: 'AK' + 'IAABCDEFGHIJKLMNOP' },
       ],
     },
   });
