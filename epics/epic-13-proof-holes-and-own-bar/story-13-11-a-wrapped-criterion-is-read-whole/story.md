@@ -16,8 +16,9 @@ behavioural tests on throwaway repositories with wrapped criteria.)*
 ## Acceptance Criteria
 
 - [x] A criterion is its bullet line plus every following line indented
-      deeper than the bullet that is not itself a list item or a heading,
-      whitespace-normalised. Rewording a word on a continuation line, or
+      deeper than the bullet — wrapped words, plain sub-steps, a fenced
+      block read whole — up to the next checkbox, a heading, or a line at or
+      left of the bullet, whitespace-normalised. Rewording a word on a continuation line, or
       adding a clause on a new continuation line, raises `criteria-changed`
       (tests with the reworded word on the continuation line).
 - [x] Re-wrapping a criterion without changing its words, and ticking it,
@@ -46,5 +47,7 @@ behavioural tests on throwaway repositories with wrapped criteria.)*
 - Tests: `test/criteria-drift.test.js`, 9 new cases (reworded continuation
   word, added clause, strict failure, re-wrap + tick + CRLF silent, nested item
   and heading not absorbed, comment-only Spec Change, pairing, no-pair, removed
-  duplicate). Existing cases unmodified; `test/acceptance-criteria.test.js`
+  duplicate), then 6 from the review (sub-step removed under strict,
+  sub-step reworded, list-marker re-wrap silent, indented sub-heading, fenced
+  block, tab indent). Existing cases unmodified; `test/acceptance-criteria.test.js`
   green.

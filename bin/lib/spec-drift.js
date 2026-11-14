@@ -15,30 +15,42 @@ const { storyPartPath, extractSection } = require("./story");
 const { normalizePortable } = require("./util");
 
 const CRITERION = /^(\s*)[-*]\s*\[([ xX~])\]\s*(.+?)\s*$/;
-const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s/;
-const HEADING = /^\s*#{1,6}\s/;
-const indentOf = (line) => line.match(/^\s*/)[0].length;
+const HEADING = /^ {0,3}#{1,6}\s/;
+const FENCE = /^\s*(```|~~~)/;
+// A tab counts as four columns, so a tab-indented line is deeper than a
+// two-space nested bullet.
+const indentOf = (line) => line.match(/^\s*/)[0].replace(/\t/g, "    ").length;
 
 // The checklist items of an `## Acceptance Criteria` section, in order. `text`
 // is the bullet line, as the open-criteria count reads it; `whole` adds every
-// continuation line indented deeper than the bullet (blank lines between them
-// included) up to the next list item or heading — a criterion wrapped at 80
-// columns is one criterion, and a word changed on its second line is a change.
+// following line indented deeper than the bullet — wrapped words, sub-steps
+// written as a plain list, a fenced block read whole — up to the next
+// checkbox, a heading, or a line at or left of the bullet. Blank lines are
+// skipped. A criterion wrapped at 80 columns is one criterion, and a word
+// changed on its second line, or a sub-step removed, is a change.
 function criterionItems(specText) {
   const items = [];
   let current = null;
+  let fence = null;
 
   for (const line of extractSection(specText, "Acceptance Criteria").split(/\r?\n/)) {
+    if (fence) {
+      current.whole += ` ${line.trim()}`;
+      fence = line.trim().startsWith(fence) ? null : fence;
+      continue;
+    }
+
     const match = line.match(CRITERION);
 
     if (match) {
       const state = match[2] === "~" ? "deferred" : match[2] === " " ? "open" : "done";
-      current = { state, text: match[3], whole: match[3], indent: match[1].length };
+      current = { state, text: match[3], whole: match[3], indent: indentOf(match[1]) };
       items.push(current);
     } else if (!line.trim()) {
       continue;
-    } else if (current && indentOf(line) > current.indent && !LIST_ITEM.test(line) && !HEADING.test(line)) {
+    } else if (current && indentOf(line) > current.indent && !HEADING.test(line)) {
       current.whole += ` ${line.trim()}`;
+      fence = (line.match(FENCE) || [])[1] || null;
     } else {
       current = null;
     }
