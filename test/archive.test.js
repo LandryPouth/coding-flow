@@ -37,10 +37,10 @@ function story(dir, name, title, status) {
 }
 
 // A repository on `main` holding one finished epic, committed and clean.
-function repo(t, { secondStatus = 'done' } = {}) {
+function repo(t, { secondStatus = 'done', branch = 'main' } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-archive-')));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['init', '-q', '-b', branch]);
   git(dir, ['config', 'user.email', 'test@example.com']);
   git(dir, ['config', 'user.name', 'Test']);
   git(dir, ['config', 'commit.gpgsign', 'false']);
@@ -328,4 +328,135 @@ test('an ambiguous number, a path outside epics/ and a missing repository refuse
   assert.notEqual(res.code, 0);
   assert.match(res.output, /git/);
   assert.ok(fs.existsSync(path.join(bare, EPIC)));
+});
+
+// --- independent review of 17-01 ----------------------------------------------
+
+test('a written status the gate does not know refuses, named as unrecognised', (t) => {
+  for (const status of ['todo', 'draft', 'wip', 'in review', 'abandoned', 'pending']) {
+    const dir = repo(t, { secondStatus: status });
+    const before = snapshot(dir);
+    const res = run(dir, ['archive', EPIC]);
+    assert.notEqual(res.code, 0, `${status}: ${res.output}`);
+    assert.match(res.output, /story-08-02-policy-fingerprint[^\n]*unrecognised status/, status);
+    assert.deepEqual(snapshot(dir), before);
+  }
+});
+
+test('the recovery line names the default branch commit and survives the archiving branch', (t) => {
+  const dir = repo(t);
+  const before = snapshot(dir).files;
+  const mainSha = head(dir);
+  git(dir, ['checkout', '-q', '-b', 'chore']);
+  write(dir, 'notes.txt', 'unrelated\n');
+  commit(dir, 'unrelated on chore');
+
+  assert.equal(run(dir, ['archive', EPIC]).code, 0);
+  commit(dir, 'archive on chore');
+  const line = fs.readFileSync(path.join(dir, 'epics/INDEX.md'), 'utf8').match(/git checkout ([0-9a-f]{40}) -- ([^\s`]+)/);
+  assert.equal(line[1], mainSha, 'the commit is the one on main');
+
+  git(dir, ['checkout', '-q', 'main']);
+  git(dir, ['branch', '-q', '-D', 'chore']);
+  git(dir, ['reflog', 'expire', '--expire=now', '--all']);
+  git(dir, ['gc', '-q', '--prune=now']);
+  git(dir, ['checkout', line[1], '--', line[2]]);
+  assert.equal(snapshot(dir).files, before);
+});
+
+test('an ignored epics/INDEX.md refuses before anything is written', (t) => {
+  const dir = repo(t);
+  write(dir, '.gitignore', '.coding-flow/runs/\nepics/INDEX.md\n');
+  commit(dir, 'ignore the index');
+  const before = snapshot(dir);
+
+  const res = run(dir, ['archive', EPIC]);
+
+  assert.notEqual(res.code, 0);
+  assert.match(res.output, /INDEX\.md[^\n]*ignored/);
+  assert.deepEqual(snapshot(dir), before);
+});
+
+test('a failure halfway rolls back both the deletion and the entry', (t) => {
+  if (typeof process.getuid === 'function' && process.getuid() === 0) return;
+  const dir = repo(t);
+  write(dir, 'epics/INDEX.md', '# Epics\n');
+  commit(dir, 'index');
+  fs.chmodSync(path.join(dir, 'epics/INDEX.md'), 0o444);
+  t.after(() => fs.chmodSync(path.join(dir, 'epics/INDEX.md'), 0o644));
+  const before = snapshot(dir);
+
+  const res = run(dir, ['archive', EPIC]);
+
+  assert.notEqual(res.code, 0, res.output);
+  assert.deepEqual(snapshot(dir), before);
+
+  fs.chmodSync(path.join(dir, 'epics/INDEX.md'), 0o644);
+  fs.writeFileSync(path.join(dir, '.git', 'index.lock'), '');
+  const again = run(dir, ['archive', EPIC]);
+  fs.unlinkSync(path.join(dir, '.git', 'index.lock'));
+  assert.notEqual(again.code, 0, again.output);
+  assert.deepEqual(snapshot(dir), before);
+});
+
+test('audit --check still judges a missing story that was never archived, and names archived-only evidence', (t) => {
+  const dir = repo(t);
+  verifyRun(dir, 'epics/epic-09-monorepo/story-09-02-deleted-by-hand', { ok: false, name: '2026-11-01T00-00-00-000Z' });
+  let res = run(dir, ['audit', '--check']);
+  assert.notEqual(res.code, 0);
+  assert.match(res.output, /story-09-02-deleted-by-hand/);
+
+  const only = repo(t);
+  verifyRun(only, `${EPIC}/story-08-01-coverage-floor`, { ok: true, name: '2026-11-01T00-00-00-000Z' });
+  assert.equal(run(only, ['archive', EPIC]).code, 0);
+  commit(only, 'archive');
+  res = run(only, ['audit', '--check']);
+  assert.match(res.output, /archived/);
+  assert.doesNotMatch(res.output, /epic-08-evidence-levels/);
+});
+
+test('a repository whose base is master is compared with master', (t) => {
+  const dir = repo(t, { branch: 'master' });
+  const res = run(dir, ['archive', EPIC]);
+  assert.equal(res.code, 0, res.output);
+});
+
+test('an unpadded or unnumbered epic is "already archived" on the second run', (t) => {
+  const dir = repo(t);
+  for (const name of ['epic-8-short', 'epic-misc']) {
+    write(dir, `epics/${name}/index.md`, `# ${name}\n`);
+    write(dir, `epics/${name}/story-x-a/tasks.md`, '## Status: done\n');
+  }
+  commit(dir, 'two more epics');
+
+  assert.equal(run(dir, ['archive', 'epics/epic-8-short']).code, 0);
+  assert.equal(run(dir, ['archive', 'epics/epic-misc']).code, 0);
+  commit(dir, 'archive both');
+  const index = fs.readFileSync(path.join(dir, 'epics/INDEX.md'), 'utf8');
+
+  for (const arg of ['epics/epic-8-short', 'epic-08-short', 'epics/epic-misc']) {
+    const res = run(dir, ['archive', arg]);
+    assert.equal(res.code, 0, `${arg}: ${res.output}`);
+    assert.match(res.output, /already archived/, arg);
+  }
+  assert.equal(fs.readFileSync(path.join(dir, 'epics/INDEX.md'), 'utf8'), index);
+});
+
+test('a storage backend other than local, or a subdirectory that is not a story, refuses', (t) => {
+  const dir = repo(t);
+  write(dir, `${EPIC}/research/notes.md`, 'half-done work\n');
+  commit(dir, 'research dir');
+  let before = snapshot(dir);
+  let res = run(dir, ['archive', EPIC]);
+  assert.notEqual(res.code, 0);
+  assert.match(res.output, /research[^\n]*not a story/);
+  assert.deepEqual(snapshot(dir), before);
+
+  const gh = repo(t);
+  write(gh, '.coding-flow/config.json', '{"storage":"github"}\n');
+  before = snapshot(gh);
+  res = run(gh, ['archive', EPIC]);
+  assert.notEqual(res.code, 0);
+  assert.match(res.output, /storage/);
+  assert.deepEqual(snapshot(gh), before);
 });
