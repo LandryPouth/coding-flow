@@ -39,6 +39,24 @@
   it. It is for `/flow-run` and the reviewer to see. A mechanical check comes
   later, only if the benchmark shows the prose is ignored.
 
+- **A behavioural test reads the skill prose.** `test/clarify-rounds.test.js`
+  pins the rules (rounds of at most 4, recommendation first, look up before
+  asking, the `Assumption (unconfirmed)` gate, the headless stop, the `/flow-run`
+  stop condition, entry 16, the task-5 row), the way `test/ceremony.test.js`
+  pins other skill rules. The skill evals score only names and descriptions, so
+  they cannot hold body text.
+- **No line removed from `/flow-run`.** The plan expected it at 474 of 500
+  lines; the `writing-for-agents` pass had already cut it to 324, so the stop
+  condition is added without paying for it elsewhere (326 lines).
+- **Routing cases, not a description change.** `flow-plan` gains a positive
+  prompt ("ask me the questions that matter before you write the stories") and
+  `flow-run` a negative one owned by `flow-plan` ("grill me on this feature
+  request…"). Both route without touching a description; rank-1 goes 84.4% →
+  84.8%.
+- **"Go" is a confirmation.** Accepting the recommendations records them as
+  decisions, not assumptions (the spec's edge case), written into the
+  Readiness Gate rule itself.
+
 ## Test Plan
 
 Tiers 1 and 2 of the skill evals, plus `test/ceremony.test.js` (the 500-line

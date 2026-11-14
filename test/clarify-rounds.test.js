@@ -20,9 +20,9 @@ const flat = (text) => text.replace(/\s+/g, ' ');
 function section(text, heading) {
   const start = text.indexOf(heading);
   assert.notStrictEqual(start, -1, `missing section ${heading}`);
-  const level = heading.match(/^#+/)[0];
+  const level = heading.match(/^#+/)[0].length;
   const rest = text.slice(start + heading.length);
-  const next = rest.search(new RegExp(`\\n${level} `));
+  const next = rest.search(new RegExp(`\\n#{1,${level}} `));
   return flat(next === -1 ? rest : rest.slice(0, next));
 }
 
@@ -41,7 +41,7 @@ test('an unconfirmed behaviour-changing reading keeps the epic not ready; a head
   assert.match(gate, /stays \*\*`not ready`\*\*/);
   assert.match(gate, /headless/i);
   assert.match(gate, /never picks the answer/i);
-  assert.match(gate, /accept(ing|ed)? the recommendations? (counts as|is) confirm/i);
+  assert.match(gate, /accepting the recommendations[^.]*counts as confirming them/i);
 });
 
 test('/flow-run stops on a story that carries an unconfirmed assumption', () => {

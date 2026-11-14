@@ -212,11 +212,14 @@ ownership and migration when persistence changes. No micro-stories ("create DTO"
 
 When ambiguity could cause rework, pressure-test the request before writing stories:
 the fewest questions that prevent the most rework, in the user's language. **Read
-before asking**: what the repo, the scan or the docs can answer is never a question.
-Give each question a recommended answer, so a "yes" settles it; ask one at a time, or
-up to five per round when they are independent. Stop when the next question would not
-change implementation. Budget: 5–15 questions, 10–20 for auth, migration, billing,
-permissions or data modeling. The highest-value kinds — ask only those that apply:
+before asking**: what the repo, the scan or the docs can answer is looked up, never
+asked. Ask in **rounds of at most 4 questions** that walk the decision frontier: only
+decisions whose answer changes implementation, the ones later answers depend on
+first. Each question opens with its recommended answer, so "yes" or a pick settles
+it. Stop when the next question would not change implementation; a round with
+nothing that would is not asked. Budget: 5–15 questions, 10–20 for auth, migration,
+billing, permissions or data modeling. The highest-value kinds — ask only those that
+apply:
 
 - Scope boundary — what is explicitly out?
 - Actor/permission — who can do this, and who cannot?
@@ -266,6 +269,12 @@ next question change implementation?* — instead of sliding into writing:
   assumption refuted, cost beyond the appetite). Write no stories.
 - An epic that adds a module is **`not ready`** while its `## Boundaries` section is
   missing or has no `approved by:` name.
+- A criterion that rests on a reading the user did not confirm, where another
+  plausible reading changes observable behaviour, is confirmed or written in the
+  story as `Assumption (unconfirmed): …`, and the epic stays **`not ready`**.
+  Accepting the recommendations ("go", "yes") counts as confirming them: record
+  them as decisions. A headless run, where nobody can answer, stops at
+  `not ready` with the question and never picks the answer.
 
 Record the verdict, and the blocking item when `not ready`, in the epic `index.md`.
 
@@ -351,6 +360,8 @@ Before reporting the plan as done:
       build-on relationship — checked, not assumed.
 - [ ] An epic that adds a module carries `## Boundaries` with an `approved by:` name
       the user gave.
+- [ ] No criterion rests on an unconfirmed reading that changes behaviour, unless
+      it is marked `Assumption (unconfirmed)` and the epic is `not ready`.
 - [ ] No implementation happened: planning writes story files, `/flow-run` writes
       code.
 
