@@ -291,7 +291,10 @@ test('a move or copy whose destination names a blocked directory is judged as it
     `cp -r .coding-flow /tmp/cf && sed -i s/failed/passed/ /tmp/cf/runs/a.json && rm -rf .coding-flow && mv /tmp/cf .coding-flow`,
     'git mv x .coding-flow',
   ]);
-  expectDecisions(dir, 'allow', [`mv ${forged}/x .coding-flow/`, 'mv src lib', 'cp -r src lib', 'git mv src lib']);
+  // `mv X .coding-flow/` is judged as `.coding-flow` too since the third review:
+  // onto a missing `dst/`, mv creates dst.
+  expectDecisions(dir, 'deny', [`mv ${forged}/x .coding-flow/`]);
+  expectDecisions(dir, 'allow', ['mv src lib', 'cp -r src lib', 'git mv src lib']);
 });
 
 test('a tree copied onto the project root from a source the guard cannot read is unchecked', (t) => {

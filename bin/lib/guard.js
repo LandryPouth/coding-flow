@@ -666,10 +666,11 @@ function judgeShellEntry(ctx, entry, caseInsensitive) {
 
 // A tree or an extraction landing on the project root or one of its ancestors
 // (`-C ..`, `rsync -a X/ ..`) lands on everything the project holds. An
-// extraction there is unchecked; a copy is judged on what its source holds at the
-// project's place (`X/<project>/…` for an ancestor), unchecked when that source
-// is a glob, or missing now but made earlier in the same command. A pathspec
-// with no source (`git restore .`) restores committed content: allowed.
+// extraction there is unchecked. A copy is unchecked when its source is a glob or
+// when an earlier segment of the command ran first (it may have made or filled
+// the source); otherwise it is judged on what the source holds at the project's
+// place (`X/<project>/…` for an ancestor) — a missing one fails, nothing lands. A
+// pathspec has no source (`git restore .`): committed content, allowed.
 function rootLanding(ctx, scope, entry) {
   const landing = path.resolve(ctx.cwd, expandHome(entry.target));
   const lands = [landing, realPathOf(landing)].filter(Boolean);
@@ -681,14 +682,11 @@ function rootLanding(ctx, scope, entry) {
     if (entry.kind === "extract") {
       return { issue: ARCHIVE };
     }
-    if (entry.unread) {
+    if (entry.unread || entry.chained) {
       return { issue: UNREAD_TREE };
     }
-    if (!entry.source) {
+    if (!entry.source || !fs.existsSync(entry.source)) {
       return {};
-    }
-    if (!fs.existsSync(entry.source)) {
-      return entry.made ? { issue: UNREAD_TREE } : {};
     }
     return { found: sourceHit(path.join(entry.source, path.relative(at, root)), scope.policy) };
   }

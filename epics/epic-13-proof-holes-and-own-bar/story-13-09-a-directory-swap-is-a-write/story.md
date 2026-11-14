@@ -71,23 +71,25 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
   and for each `git checkout`/`restore` pathspec. A tree is refused when it is or
   holds a blocked directory (a literal `X/**`). The per-file list without the
   option is unchanged: its tests pin it entry for entry.
-- **A destination named like a blocked directory is judged as itself.** A move
-  (`mv`, `git mv`) or a recursive copy whose destination is not spelled as a
-  directory (no trailing `/`, not `.`/`..`, no `-t`) also gives a `tree` entry
-  for the destination itself, existing or not: `rm -rf .coding-flow && mv
-  /tmp/cf .coding-flow` lands on `.coding-flow` though at hook time the name
-  reads as `.coding-flow/cf`.
-- **The project root and its ancestors are judged by the source.** `git restore
-  .`, `git checkout -- .` and `cp -r /tmp/x/. .` are pinned as everyday commands
-  (`guard-shell.test.js`). A tree landing on the root or an ancestor (`..`, `/`)
-  is refused when its source holds a literal blocked path at the project's place
-  (`X/.coding-flow/runs`, or `X/<project>/.coding-flow/runs` for an ancestor);
-  unchecked when the source is a glob or variable, or missing now but named
-  earlier in the same command (`mkdir -p /tmp/f/… && cp -r /tmp/f/. .`); allowed
-  when it is missing and nothing makes it (the copy fails). A pathspec has no
-  source: `git checkout <ref> -- .` restores committed content and stays allowed,
-  like `git reset --hard`. An extraction onto the root or an ancestor, with
-  `tar -P` or `--to-command`, is unchecked wherever it lands.
+- **A destination is judged as itself.** A move (`mv`, `git mv`), a link (`ln`,
+  `cp -s`) or a recursive copy also gives a `tree` entry for its destination
+  itself, existing or not, spelled with a trailing `/` or not — unless `-t`
+  names it, or it is `.`/`..`: `rm -rf .coding-flow && mv /tmp/cf .coding-flow/`
+  lands on `.coding-flow` (GNU mv/cp onto a missing `dst/` create dst). Cost:
+  `mv x .coding-flow/` is refused even while `.coding-flow` exists (third review).
+- **The project root and its ancestors: unchecked over path-text matching**
+  (third review). A tree landing on the root or an ancestor (`..`, `/`) is
+  unchecked when its source is a glob or variable, or when any earlier segment
+  of the same command ran first (`&&`, `;`, a pipe, an outer segment before
+  `bash -c`) — it may have made, filled or swapped the source under any name.
+  Otherwise the source is read on disk: refused when it holds a literal blocked
+  path at the project's place (`X/.coding-flow/runs`, `X/<project>/…` for an
+  ancestor). A missing source in a one-segment command stays allowed, not
+  unchecked as the coordinator's decision asked: `guard-shell.test.js` pins
+  `cp -r /tmp/x/. .` as allowed, and `/tmp/x` is missing on a fresh machine; the
+  copy fails there, nothing lands. `git restore .` / `git checkout <ref> -- .`
+  have no source (committed content): allowed. An extraction onto the root or an
+  ancestor, with `tar -P` or `--to-command`, is unchecked wherever it lands.
 - **Moving out is judged at directory level.** `mv`/`git mv` sources are a
   `move` entry, refused when the source is a blocked directory or holds one.
   Moving one file out is a deletion, not judged.

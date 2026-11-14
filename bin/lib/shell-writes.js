@@ -201,7 +201,7 @@ function reader(startCwd, host, options = {}) {
   // The shell resolves `..` physically once a `cd` went through a symlink, so every
   // directory it tracks is the real one when it exists (a missing one stays lexical).
   const start = host.realpath(path.resolve(startCwd));
-  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), earlier: [] };
+  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0 };
 }
 
 const homeOf = (r, target) => expandHome(target, r.host.home());
@@ -491,21 +491,22 @@ function readCopy(r, command) {
   copiedTrees(r, command, destination, isDirectory);
 }
 
-// A recursive copy or a move writes a whole tree where it lands: DIR itself when
-// it is not an existing directory (or `-T`), else DIR/<name> — or DIR when the
-// source's contents are copied (`X/.`, rsync's `X/`, a glob). A DIR not spelled as
-// a directory (`.coding-flow`, no `/`, no `-t`) is judged as itself too: an earlier
-// `rm -rf` or `trash` in the same command may have emptied the name.
+// A recursive copy, a move or a link writes a whole tree where it lands: DIR/<name>
+// when DIR is an existing directory, DIR when the source's contents are copied
+// (`X/.`, rsync's `X/`, a glob) — and DIR itself in every case but `-t DIR`, `.` and
+// `..`: an earlier `rm -rf`/`trash` in the same command may have emptied the name,
+// and `mv X dst/` onto a missing `dst/` creates dst.
 function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDirectory) {
-  const recursive = name === "rsync" || name === "mv" || (name === "cp" && args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || arg === "--recursive" || arg === "--archive"));
+  const symbolic = name === "cp" && args.some((arg) => /^-[A-Za-z]*[sl]/.test(arg) || arg === "--symbolic-link" || arg === "--link");
+  const recursive = name === "rsync" || name === "mv" || name === "ln" || symbolic || (name === "cp" && args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || arg === "--recursive" || arg === "--archive"));
   if (!r.trees || !recursive || typeof directory !== "string") {
     return;
   }
-  const spelledAsDirectory = optionAt !== -1 || /(?:^|\/)\.{0,2}\/?$/.test(directory);
+  const itself = optionAt === -1 && !/(?:^|\/)\.{1,2}\/?$/.test(directory);
   const noTarget = args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory");
   for (const source of sources) {
     const from = treeSource(r, source);
-    if (!isDirectory || noTarget || !spelledAsDirectory) {
+    if (!isDirectory || noTarget || itself) {
       add(r, directory, "tree", from);
     }
     if (isDirectory && !noTarget) {
@@ -517,14 +518,14 @@ function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDire
 }
 
 // What a tree's source is, for the guard to judge a landing on the project root:
-// `source` (resolved) and `made` (named earlier in this command), or `unread`
+// `source` (resolved), `chained` when an earlier segment of the command ran
+// first (it may have made or filled the source, under any name), or `unread`
 // when a glob or a variable decides it.
 function treeSource(r, source) {
   if (classify(source) !== "path" || r.cwd === null) {
     return { unread: true };
   }
-  const resolved = path.resolve(r.cwd, homeOf(r, source));
-  return { source: resolved, made: r.earlier.some((word) => word === resolved || word.startsWith(`${resolved}/`)) };
+  return { source: path.resolve(r.cwd, homeOf(r, source)), chained: r.segments > 0 };
 }
 
 // --- archives -----------------------------------------------------------------
@@ -787,6 +788,9 @@ function patchTargets(r, file, strip, base) {
 // Each patch (a file, or `-` for an unread stdin) writes what it names.
 function applyPatches(r, patches, strip, base) {
   for (const patch of patches) {
+    if (patch === "/dev/null") {
+      continue;
+    }
     const targets = patch === "-" || classify(patch) !== "path" ? null : patchTargets(r, patch, strip, base);
     if (targets === null) {
       r.found.push({ target: patch, kind: "write", unchecked: UNREAD_PATCH });
@@ -975,13 +979,14 @@ function readForwarded(r, command) {
 // A script handed to `bash -c` / `eval` runs from the current directory. With the
 // directory unknown, only its absolute targets can still be judged; a relative one is unchecked.
 function followScript(r, program) {
-  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees })) {
+  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees, after: r.segments })) {
     if (entry.unchecked) {
       r.found.push(entry);
     } else if (r.cwd === null && !path.isAbsolute(homeOf(r, entry.target))) {
       r.found.push({ target: entry.target, kind: entry.kind, unchecked: UNKNOWN_CWD });
     } else {
-      add(r, entry.target, entry.kind);
+      const { target, kind, ...tree } = entry;
+      add(r, target, kind, tree);
     }
   }
 }
@@ -1140,20 +1145,6 @@ function readVerb(r, command) {
 // `options.trees`: also give a "tree" entry for every write of a whole directory
 // (a recursive copy, a checked-out pathspec), judged on what it holds. Off, the
 // list is the per-file one.
-// Every path a segment names, resolved: a later copy whose source is missing on
-// disk now may be made by one of them (`mkdir -p /tmp/f/… && cp -r /tmp/f/. .`).
-function rememberPaths(r, text) {
-  if (!r.trees || r.cwd === null) {
-    return;
-  }
-  for (const token of tokenize(text)) {
-    const word = token.replace(/^[\d&]*[<>]+\|?/, "");
-    if (classify(word) === "path") {
-      r.earlier.push(path.resolve(r.cwd, homeOf(r, word)));
-    }
-  }
-}
-
 function shellWrites(command, startCwd, host, options = {}) {
   if (typeof command !== "string" || !command.trim()) {
     return [];
@@ -1177,7 +1168,7 @@ function shellWrites(command, startCwd, host, options = {}) {
 
     readRedirections(r, segment.text);
     left = readVerb(r, commandOf(segment));
-    rememberPaths(r, segment.text);
+    r.segments += 1;
 
     if (resume !== null) {
       r.cwd = resume.cwd;
