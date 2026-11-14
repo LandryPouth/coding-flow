@@ -1,23 +1,35 @@
 "use strict";
 
 // The member names of an archive on disk, read without running anything (story
-// 13-13): a tar (plain or gzip) or a zip. null when the archive cannot be read
-// this way — another compression, zip64, a damaged header, too large — or when a
-// member could land somewhere its plain name does not say (an absolute or `..`
-// path, a link, a device): the guard then logs the extraction unchecked.
+// 13-13). Only a strict subset of each format is trusted — the review of 13-13
+// forged pax records, old GNU headers, data past the end marker and tar/zip
+// polyglots that a lenient reader lists as benign while tar or unzip writes
+// elsewhere. Anything outside the subset is null, and the guard logs the
+// extraction unchecked:
+//
+// - tar (plain or gzip): POSIX ustar headers only (`ustar\0` + `00`), entry
+//   types regular file or directory only — no pax, no GNU extension — and only
+//   zero bytes after the first zero block;
+// - zip: a local header at offset 0, the central directory right before the end
+//   record, each local name equal to its central name, no duplicate names, only
+//   the timestamp and owner extra fields, regular files and directories only,
+//   no zip64.
+//
+// `format`: "tar" (tar, gtar), "zip" (unzip), "any" (bsdtar, which detects the
+// format itself: trusted only when the bytes are exactly one of the subsets).
 
 const fs = require("node:fs");
 const zlib = require("node:zlib");
 
 const MAX_ARCHIVE = 32 * 1024 * 1024;
-const MAX_EXPANDED = 256 * 1024 * 1024;
+const MAX_EXPANDED = 64 * 1024 * 1024;
 const MAX_MEMBERS = 10000;
 
 const cstring = (buf, start, length) => buf.toString("utf8", start, start + length).replace(/\0[\s\S]*$/, "");
 
 function octal(buf, start, length) {
   const text = buf.toString("latin1", start, start + length).replace(/\0[\s\S]*$/, "").trim();
-  return text === "" ? 0 : /^[0-7]+$/.test(text) ? parseInt(text, 8) : NaN;
+  return /^[0-7]+$/.test(text) ? parseInt(text, 8) : NaN;
 }
 
 function checksumHolds(header) {
@@ -28,110 +40,134 @@ function checksumHolds(header) {
   return octal(header, 148, 8) === sum;
 }
 
-const paxPath = (text) => (text.match(/(?:^|\n)\d+ path=([^\n]*)/) || [])[1] ?? null;
+const isZero = (buf) => buf.every((byte) => byte === 0);
 
-// Regular files ("0", NUL, "7", GNU sparse "S") and directories ("5", GNU "D");
-// any other entry type (links, devices, fifos, GNU long link names) is unsafe.
-const FILE_TYPES = new Set(["0", "\0", "7", "S"]);
-const DIRECTORY_TYPES = new Set(["5", "D"]);
-
-function tarMembers(buf) {
+function strictTar(buf) {
   const members = [];
-  let longName = null;
-  let pax = null;
   for (let offset = 0; offset + 512 <= buf.length;) {
     const header = buf.subarray(offset, offset + 512);
-    if (header.every((byte) => byte === 0)) {
-      break;
+    if (isZero(header)) {
+      return isZero(buf.subarray(offset)) ? members : null;
     }
     const size = octal(header, 124, 12);
     const body = offset + 512;
-    if (!checksumHolds(header) || !Number.isFinite(size) || body + size > buf.length) {
+    const type = header[156] === 0 ? "0" : String.fromCharCode(header[156]);
+    if (header.toString("latin1", 257, 265) !== "ustar\u000000" || !checksumHolds(header) || !Number.isFinite(size) || body + size > buf.length || !["0", "5"].includes(type)) {
       return null;
     }
-    const type = String.fromCharCode(header[156]);
-    if (type === "L") {
-      longName = cstring(buf, body, size);
-    } else if (type === "x" || type === "g") {
-      pax = paxPath(buf.toString("utf8", body, body + size)) ?? pax;
-      if (type === "g" && pax !== null) {
-        return null;
-      }
-    } else {
-      const prefix = header.toString("latin1", 257, 262) === "ustar" ? cstring(header, 345, 155) : "";
-      const name = pax ?? longName ?? (prefix ? `${prefix}/` : "") + cstring(header, 0, 100);
-      members.push({ name, directory: DIRECTORY_TYPES.has(type) || name.endsWith("/"), unsafe: !FILE_TYPES.has(type) && !DIRECTORY_TYPES.has(type) });
-      longName = null;
-      pax = null;
+    const prefix = cstring(header, 345, 155);
+    const name = (prefix ? `${prefix}/` : "") + cstring(header, 0, 100);
+    members.push({ name, directory: type === "5" || name.endsWith("/") });
+    if (members.length > MAX_MEMBERS) {
+      return null;
     }
     offset = body + Math.ceil(size / 512) * 512;
   }
-  return members;
+  return null; // no end marker
 }
 
-function zipMembers(buf) {
-  let end = -1;
+// Timestamps (UT 0x5455), Unix owner (ux 0x7875) and NTFS times (0x000a): none
+// of them renames a member. Anything else (Unicode path 0x7075, zip64, unknown)
+// may.
+const PLAIN_EXTRA = new Set([0x5455, 0x7875, 0x000a]);
+
+function plainExtra(buf, start, length) {
+  for (let at = start; at < start + length;) {
+    if (at + 4 > start + length || !PLAIN_EXTRA.has(buf.readUInt16LE(at))) {
+      return false;
+    }
+    at += 4 + buf.readUInt16LE(at + 2);
+  }
+  return true;
+}
+
+function endRecord(buf) {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i -= 1) {
-    if (buf.readUInt32LE(i) === 0x06054b50) {
-      end = i;
-      break;
+    if (buf.readUInt32LE(i) === 0x06054b50 && i + 22 + buf.readUInt16LE(i + 20) === buf.length) {
+      return i;
     }
   }
-  if (end === -1) {
+  return -1;
+}
+
+function localMatches(buf, at, name) {
+  if (at + 30 > buf.length || buf.readUInt32LE(at) !== 0x04034b50) {
+    return false;
+  }
+  const nameLength = buf.readUInt16LE(at + 26);
+  const extraLength = buf.readUInt16LE(at + 28);
+  return nameLength === name.length && buf.subarray(at + 30, at + 30 + nameLength).equals(name) && plainExtra(buf, at + 30 + nameLength, extraLength);
+}
+
+function strictZip(buf) {
+  const end = buf.length >= 22 && buf.readUInt32LE(0) === 0x04034b50 ? endRecord(buf) : -1;
+  if (end === -1 || buf.readUInt16LE(end + 4) !== 0 || buf.readUInt16LE(end + 6) !== 0) {
     return null;
   }
   const count = buf.readUInt16LE(end + 10);
+  const size = buf.readUInt32LE(end + 12);
   let at = buf.readUInt32LE(end + 16);
-  if (count === 0xffff || at === 0xffffffff) {
+  if (count !== buf.readUInt16LE(end + 8) || count === 0xffff || at + size !== end || count > MAX_MEMBERS) {
     return null;
   }
   const members = [];
+  const seen = new Set();
   for (let n = 0; n < count; n += 1) {
-    if (at + 46 > buf.length || buf.readUInt32LE(at) !== 0x02014b50) {
+    if (at + 46 > end || buf.readUInt32LE(at) !== 0x02014b50) {
       return null;
     }
     const nameLength = buf.readUInt16LE(at + 28);
-    const unix = buf.readUInt16LE(at + 4) >> 8 === 3;
+    const extraLength = buf.readUInt16LE(at + 30);
     const mode = (buf.readUInt32LE(at + 38) >>> 16) & 0o170000;
+    const raw = buf.subarray(at + 46, at + 46 + nameLength);
+    if (![0, 0o100000, 0o040000].includes(mode) || !plainExtra(buf, at + 46 + nameLength, extraLength) || !localMatches(buf, buf.readUInt32LE(at + 42), raw)) {
+      return null;
+    }
     // unzip reads a backslash as a separator in names written on Windows.
-    const name = buf.toString("utf8", at + 46, at + 46 + nameLength).replace(/\\/g, "/");
-    members.push({ name, directory: name.endsWith("/"), unsafe: unix && mode !== 0 && mode !== 0o100000 && mode !== 0o040000 });
-    at += 46 + nameLength + buf.readUInt16LE(at + 30) + buf.readUInt16LE(at + 32);
+    const name = raw.toString("utf8").replace(/\\/g, "/");
+    if (seen.has(name.toLowerCase())) {
+      return null;
+    }
+    seen.add(name.toLowerCase());
+    members.push({ name, directory: name.endsWith("/") });
+    at += 46 + nameLength + extraLength + buf.readUInt16LE(at + 32);
   }
-  return members;
+  return at === end ? members : null;
 }
 
-function landsWhereNamed({ name, unsafe }) {
-  return !unsafe && name !== "" && !/^(?:\/|[A-Za-z]:)/.test(name) && !name.split(/[\\/]/).includes("..");
+function landsWhereNamed({ name }) {
+  return name !== "" && !/^(?:\/|[A-Za-z]:)/.test(name) && !name.split(/[\\/]/).includes("..");
 }
 
-function archiveMembers(file) {
-  let data;
+function tarOf(data) {
+  if (data.length >= 2 && data[0] === 0x1f && data[1] === 0x8b) {
+    return strictTar(zlib.gunzipSync(data, { maxOutputLength: MAX_EXPANDED }));
+  }
+  return strictTar(data);
+}
+
+function readMembers(data, format) {
+  if (format === "zip") {
+    return strictZip(data);
+  }
+  if (format === "tar") {
+    return tarOf(data);
+  }
+  return format === "any" ? tarOf(data) || strictZip(data) : null;
+}
+
+function archiveMembers(file, format) {
+  let members;
   try {
     const stat = fs.statSync(file);
     if (!stat.isFile() || stat.size > MAX_ARCHIVE) {
       return null;
     }
-    data = fs.readFileSync(file);
+    members = readMembers(fs.readFileSync(file), format);
   } catch {
     return null;
   }
-  let members;
-  try {
-    if (data.length >= 4 && (data.readUInt32LE(0) === 0x04034b50 || data.readUInt32LE(0) === 0x06054b50)) {
-      members = zipMembers(data);
-    } else if (data.length >= 2 && data[0] === 0x1f && data[1] === 0x8b) {
-      members = tarMembers(zlib.gunzipSync(data, { maxOutputLength: MAX_EXPANDED }));
-    } else {
-      members = tarMembers(data);
-    }
-  } catch {
-    return null;
-  }
-  if (!members || members.length === 0 || members.length > MAX_MEMBERS || !members.every(landsWhereNamed)) {
-    return null;
-  }
-  return members;
+  return members && members.length > 0 && members.every(landsWhereNamed) ? members : null;
 }
 
 module.exports = { archiveMembers };

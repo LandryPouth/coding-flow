@@ -676,7 +676,7 @@ function judgeShellEntry(ctx, entry, caseInsensitive) {
 function judgeMembers(ctx, entry, caseInsensitive) {
   // Required here, not at the top: the guard's module graph stays small on the
   // calls that extract nothing.
-  const members = require("./archive-members").archiveMembers(entry.archive);
+  const members = require("./archive-members").archiveMembers(entry.archive, entry.format);
   if (!members) {
     return null;
   }

@@ -669,15 +669,20 @@ function moreArchiveTargets(name, operands) {
   return null;
 }
 
+// tar and gtar read a tar (gzip by content), unzip a zip; bsdtar detects the
+// format itself.
+const ARCHIVE_FORMAT = { tar: "tar", gtar: "tar", bsdtar: "any", unzip: "zip" };
+
 // The archive file a tar or unzip extraction reads, when the command names one
 // the guard can list by its plain member names: null for stdin, a renaming
 // option (`--strip-components`, `--transform`, bsdtar's `-s`, unzip's `-j`), or
 // any other tool.
 function tarArchiveFile(operands) {
-  if (operands.some((arg) => longOption(arg, "strip-components", 3) || longOption(arg, "transform", 3) || longOption(arg, "xform", 3) || arg === "-s")) {
+  const bare = /^[A-Za-z]+$/.test(operands[0] || "") ? operands[0] : "";
+  // `-i`/`--ignore-zeros` reads past the end marker the lister stops at.
+  if (/i/.test(bare) || operands.some((arg) => longOption(arg, "strip-components", 3) || longOption(arg, "transform", 3) || longOption(arg, "xform", 3) || longOption(arg, "ignore-zeros", 3) || arg === "-s" || /^-[A-Za-z]*i/.test(arg))) {
     return null;
   }
-  const bare = /^[A-Za-z]+$/.test(operands[0] || "") ? operands[0] : "";
   for (let i = 0; i < operands.length; i += 1) {
     const arg = operands[i];
     if (longOption(arg, "file", 3)) {
@@ -715,7 +720,7 @@ function archiveFile(r, { name, operands }) {
     return {};
   }
   // An earlier command (not a `cd`) or a substitution may have made the archive.
-  return { archive: path.resolve(r.cwd, homeOf(r, word)), chained: r.acted > 0 || r.substitutes };
+  return { archive: path.resolve(r.cwd, homeOf(r, word)), format: ARCHIVE_FORMAT[name], chained: r.acted > 0 || r.substitutes };
 }
 
 function extractTargets({ name, operands }) {

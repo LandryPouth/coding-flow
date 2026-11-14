@@ -31,6 +31,22 @@
   `..` path; an option renames members (`--strip-components`, `--transform`,
   bsdtar `-s`, `unzip -j`); or an earlier command on the line (not a `cd`) or
   a substitution may have made the archive.
+- **A strict subset, not the formats (review of 13-13).** The review forged
+  five archives a lenient lister reads as benign (two pax `path=` records, a
+  pax comment carrying a fake record, old GNU magic read as a ustar prefix, a
+  lone zero block read past by `tar -i`, a tar with a zip appended). The
+  lister now trusts only: tar with exact POSIX ustar headers (`ustar\0`+`00`),
+  types regular file or directory, nothing but zeros after the first zero
+  block; zip with a local header at offset 0, the central directory right
+  before the end record, local names equal to central names, no duplicate
+  names (case-insensitive), only timestamp/owner/NTFS extra fields, regular
+  files and directories, no zip64. tar/gtar parse only tar (gzip by content),
+  unzip only zip, bsdtar either subset exactly. `-i`/`--ignore-zeros` →
+  unchecked. Expanded size capped at 64 MB.
+- **Cost of the subset.** GNU tar's default format (`gnu`) and pax archives
+  are outside it, so an archive made by a plain `tar -czf` on Linux stays
+  unchecked; one made with `--format=ustar`, by `git archive`, or as a plain
+  zip is judged. Trusting more is a format to model, not a check to loosen.
 - **Lazy require.** The member lister is required only when an extraction is
   judged, so the guard's module graph stays at its pinned size.
 - **Substitution before the copy source** was already closed by 13-09; a test
