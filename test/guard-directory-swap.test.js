@@ -324,7 +324,10 @@ test('a tree or an extraction landing on an ancestor of the project is judged as
     'tar -x --absolute-names -f /tmp/a.tar',
     'tar -xf /tmp/a.tar --to-command=sh -C /tmp',
   ]);
-  expectDecisions(dir, 'allow', ['tar -xf /tmp/a.tar -C /tmp', 'unzip /tmp/a.zip -d /tmp/out']);
+  // A sibling of the project, not an ancestor (the project itself lives under the temp dir).
+  const sibling = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-sibling-')));
+  t.after(() => fs.rmSync(sibling, { recursive: true, force: true }));
+  expectDecisions(dir, 'allow', [`tar -xf /tmp/a.tar -C ${sibling}`, `unzip /tmp/a.zip -d ${sibling}`]);
 });
 
 test('git pathspec magic, clustered patch flags, cpio -D and context diffs', (t) => {

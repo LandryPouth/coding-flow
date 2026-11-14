@@ -94,12 +94,14 @@ const SUBSTITUTED_PROGRAM = "an interpreter reads its program from a process sub
 // An archive, a patch the guard cannot open, a stash: what they write is inside
 // them, not in the command line (story 13-09).
 const ARCHIVE = "an archive is extracted here and its contents cannot be read";
-const UNREAD_PATCH = "git applies a patch the guard cannot read";
+const UNREAD_PATCH = "a patch is applied that the guard cannot read";
 const STASH = "git restores a stash the guard cannot read";
 const SHIFTED_PATCH = "a patch's paths are shifted by an option the guard does not model";
 const FORWARDED = "a write command runs on paths another command hands it";
+const UNREAD_TREE = "a tree is copied onto the project from a source the guard cannot read";
+const PATHSPEC_MAGIC = "git reads a pathspec magic the guard does not model";
 const SUBSTITUTED_VERB = "the command itself depends on shell expansion";
-const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH, SHIFTED_PATCH, FORWARDED, SUBSTITUTED_VERB]);
+const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH, SHIFTED_PATCH, FORWARDED, UNREAD_TREE, PATHSPEC_MAGIC, SUBSTITUTED_VERB]);
 const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 
 // --- segments -----------------------------------------------------------------
@@ -199,7 +201,7 @@ function reader(startCwd, host, options = {}) {
   // The shell resolves `..` physically once a `cd` went through a symlink, so every
   // directory it tracks is the real one when it exists (a missing one stays lexical).
   const start = host.realpath(path.resolve(startCwd));
-  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees) };
+  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), earlier: [] };
 }
 
 const homeOf = (r, target) => expandHome(target, r.host.home());
@@ -489,26 +491,40 @@ function readCopy(r, command) {
   copiedTrees(r, command, destination, isDirectory);
 }
 
-// A recursive copy writes a whole tree where it lands: DIR itself when it is not
-// an existing directory (or `-T`), else DIR/<name> — or DIR when the source's
-// contents are copied (`X/.`, rsync's `X/`, a glob whose names are unknown). The
-// source rides along as `source`: copied onto the project root, only what it holds
-// on disk can tell a forged tree from an everyday one.
-function copiedTrees(r, { name, args }, { directory, sources }, isDirectory) {
-  const recursive = name === "rsync" || (name === "cp" && args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || arg === "--recursive" || arg === "--archive"));
+// A recursive copy or a move writes a whole tree where it lands: DIR itself when
+// it is not an existing directory (or `-T`), else DIR/<name> — or DIR when the
+// source's contents are copied (`X/.`, rsync's `X/`, a glob). A DIR not spelled as
+// a directory (`.coding-flow`, no `/`, no `-t`) is judged as itself too: an earlier
+// `rm -rf` or `trash` in the same command may have emptied the name.
+function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDirectory) {
+  const recursive = name === "rsync" || name === "mv" || (name === "cp" && args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || arg === "--recursive" || arg === "--archive"));
   if (!r.trees || !recursive || typeof directory !== "string") {
     return;
   }
-  const from = (source) => (classify(source) === "path" && r.cwd !== null ? { source: path.resolve(r.cwd, homeOf(r, source)) } : {});
-  if (!isDirectory || args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory")) {
-    sources.forEach((source) => add(r, directory, "tree", from(source)));
-    return;
-  }
+  const spelledAsDirectory = optionAt !== -1 || /(?:^|\/)\.{0,2}\/?$/.test(directory);
+  const noTarget = args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory");
   for (const source of sources) {
-    const base = path.posix.basename(source);
-    const contents = base === "." || (name === "rsync" && source.endsWith("/")) || classify(source) !== "path";
-    add(r, contents ? directory : path.posix.join(directory, base), "tree", contents ? from(source) : {});
+    const from = treeSource(r, source);
+    if (!isDirectory || noTarget || !spelledAsDirectory) {
+      add(r, directory, "tree", from);
+    }
+    if (isDirectory && !noTarget) {
+      const base = path.posix.basename(source);
+      const contents = base === "." || (name === "rsync" && source.endsWith("/")) || classify(source) !== "path";
+      add(r, contents ? directory : path.posix.join(directory, base), "tree", contents ? from : {});
+    }
   }
+}
+
+// What a tree's source is, for the guard to judge a landing on the project root:
+// `source` (resolved) and `made` (named earlier in this command), or `unread`
+// when a glob or a variable decides it.
+function treeSource(r, source) {
+  if (classify(source) !== "path" || r.cwd === null) {
+    return { unread: true };
+  }
+  const resolved = path.resolve(r.cwd, homeOf(r, source));
+  return { source: resolved, made: r.earlier.some((word) => word === resolved || word.startsWith(`${resolved}/`)) };
 }
 
 // --- archives -----------------------------------------------------------------
@@ -532,7 +548,12 @@ function tarTargets(operands) {
   if (!extracts) {
     return null;
   }
-  if (/O/.test(bare) || operands.some((arg) => arg === "--to-stdout" || arg.startsWith("--to-command") || /^-[A-Za-z]*O/.test(arg))) {
+  // `-P` keeps absolute names, `--to-command` hands each file to a program:
+  // where they land is not in the command line.
+  if (/P/.test(bare) || operands.some((arg) => longOption(arg, "absolute-names", 3) || longOption(arg, "to-command", 4) || /^-[A-Za-z]*P/.test(arg))) {
+    return [null];
+  }
+  if (/O/.test(bare) || operands.some((arg) => arg === "--to-stdout" || /^-[A-Za-z]*O/.test(arg))) {
     return [];
   }
   const directories = [];
@@ -575,7 +596,12 @@ function otherArchiveTargets(name, operands) {
     if (operands.some((arg) => /^-[A-Za-z]*p/.test(arg) || arg === "--pass-through")) {
       return [operands.filter((arg) => !arg.startsWith("-")).pop() ?? null];
     }
-    return operands.some((arg) => /^-[A-Za-z]*i/.test(arg) || arg === "--extract") ? ["."] : [];
+    if (!operands.some((arg) => /^-[A-Za-z]*i/.test(arg) || arg === "--extract")) {
+      return [];
+    }
+    const at = operands.findIndex((arg) => /^-D/.test(arg) || arg.startsWith("--directory"));
+    const option = operands[at] || "";
+    return [at === -1 ? "." : option.includes("=") ? option.slice(option.indexOf("=") + 1) : option.length > 2 && option.startsWith("-D") ? option.slice(2) : operands[at + 1] ?? null];
   }
   if (SEVEN_ZIP.has(name)) {
     if (!["x", "e"].includes(operands.find((arg) => !arg.startsWith("-")))) {
@@ -743,6 +769,10 @@ function patchTargets(r, file, strip, base) {
     return null;
   }
   const lines = text.split("\n");
+  // A context diff (`*** a/x` / `--- b/x`, `***************` hunks) is not read.
+  if (lines.includes("***************")) {
+    return null;
+  }
   const targets = [];
   for (let i = 0; i < lines.length; i += 1) {
     const names = patchLineNames(lines, i, strip) || [];
@@ -798,32 +828,44 @@ function readGitPatch(r, command, sub, rest) {
 
 // `patch -p1 [-i FILE | < FILE]`, from the current directory. Without `-p0`/`-p1`
 // patch picks names itself; `-d` moves it; `patch FILE` writes FILE alone.
-const PATCH_VALUE_OPTIONS = /^-[pidoBDFrVYzgx]$/;
-function readPatchCommand(r, command) {
-  const { operands } = command;
-  if (operands.some((arg) => arg === "--dry-run" || arg === "-C" || arg === "--check")) {
-    return;
-  }
-  const strip = (operands.find((arg) => /^(?:-p\d+|--strip=\d+)$/.test(arg)) || "").replace(/\D/g, "") || operands[operands.findIndex((arg) => arg === "-p" || arg === "--strip") + 1];
-  let input = null;
-  const positional = [];
-  operands.forEach((arg, i) => {
-    if (/^-i./.test(arg) || arg.startsWith("--input=")) {
-      input = arg.startsWith("-i") ? arg.slice(2) : arg.slice(8);
-    } else if (arg === "-i" || arg === "--input") {
-      input = operands[i + 1];
-    } else if (!arg.startsWith("-") && !PATCH_VALUE_OPTIONS.test(operands[i - 1] || "") && !/^--(?:input|strip|directory|output)$/.test(operands[i - 1] || "")) {
-      positional.push(arg);
+// Short options cluster (`-Np1`, `-Ni FILE`): a letter that takes a value takes
+// the rest of the word, or the next one.
+const PATCH_VALUE_LETTERS = "pidoBDFrVYzgx";
+function patchOptions(operands) {
+  const options = { positional: [], values: {}, dryRun: false };
+  for (let i = 0; i < operands.length; i += 1) {
+    const arg = operands[i];
+    const long = arg.match(/^--(input|strip|directory|output)(?:=(.*))?$/);
+    if (long) {
+      options.values[long[1][0] === "s" ? "p" : long[1][0]] = long[2] ?? operands[(i += 1)];
+    } else if (arg === "--dry-run" || arg === "--check") {
+      options.dryRun = true;
+    } else if (/^-[A-Za-z]/.test(arg)) {
+      for (let at = 1; at < arg.length; at += 1) {
+        if (arg[at] === "C") {
+          options.dryRun = true; // BSD patch's --check
+        } else if (PATCH_VALUE_LETTERS.includes(arg[at])) {
+          options.values[arg[at]] = arg.slice(at + 1) || operands[(i += 1)];
+          break;
+        }
+      }
+    } else if (!arg.startsWith("-")) {
+      options.positional.push(arg);
     }
-  });
-  if (positional.length) {
+  }
+  return options;
+}
+
+function readPatchCommand(r, command) {
+  const { positional, values, dryRun } = patchOptions(command.operands);
+  if (dryRun || positional.length) {
     return; // `patch FILE [PATCH]` writes FILE, read as an edited file
   }
-  if (!["0", "1"].includes(strip) || operands.some((arg) => /^-d/.test(arg) || arg.startsWith("--directory"))) {
+  if (!["0", "1"].includes(values.p) || values.d !== undefined) {
     shifted(SHIFTED_PATCH, r);
     return;
   }
-  applyPatches(r, [input || stdinFile(command) || "-"], Number(strip), r.cwd || ".");
+  applyPatches(r, [values.i || stdinFile(command) || "-"], Number(values.p), r.cwd || ".");
 }
 
 // --- git verbs ----------------------------------------------------------------
@@ -854,6 +896,20 @@ function readGitVerbs(r, command) {
   }
 }
 
+// `:/X` and `:(top)X` name X from the repository's top; any other magic
+// (`:(glob)`, `:!X`) is not modelled.
+function gitPathspec(r, pathspec) {
+  if (!pathspec.startsWith(":")) {
+    return pathspec;
+  }
+  const top = pathspec.match(/^:(?:\/|\(top\))(.*)$/);
+  if (!top || r.cwd === null) {
+    return null;
+  }
+  const root = (typeof r.host.gitRoot === "function" && r.host.gitRoot(r.cwd)) || r.cwd;
+  return portable(path.join(root, top[1]));
+}
+
 function readGit(r, command) {
   const git = gitPaths(command.args);
   const saved = r.cwd;
@@ -862,10 +918,17 @@ function readGit(r, command) {
     r.cwd = classify(git.dir) === "unknown" || (r.cwd === null && !path.isAbsolute(git.dir)) ? null : r.host.realpath(path.resolve(r.cwd || "/", homeOf(r, git.dir)));
   }
   readGitVerbs(r, command);
-  git.paths.forEach((file) => add(r, file, "write"));
-  // A checked-out pathspec may be a whole directory.
-  if (r.trees) {
-    git.paths.forEach((file) => add(r, file, "tree"));
+  for (const pathspec of git.paths) {
+    const file = gitPathspec(r, pathspec);
+    if (file === null) {
+      r.found.push({ target: pathspec, kind: "write", unchecked: PATHSPEC_MAGIC });
+      continue;
+    }
+    add(r, file, "write");
+    // A checked-out pathspec may be a whole directory.
+    if (r.trees) {
+      add(r, file, "tree");
+    }
   }
   if (git.fromFile) {
     r.found.push({ target: "(pathspec file)", kind: "write", unchecked: PATHSPEC_FILE });
@@ -1077,6 +1140,20 @@ function readVerb(r, command) {
 // `options.trees`: also give a "tree" entry for every write of a whole directory
 // (a recursive copy, a checked-out pathspec), judged on what it holds. Off, the
 // list is the per-file one.
+// Every path a segment names, resolved: a later copy whose source is missing on
+// disk now may be made by one of them (`mkdir -p /tmp/f/… && cp -r /tmp/f/. .`).
+function rememberPaths(r, text) {
+  if (!r.trees || r.cwd === null) {
+    return;
+  }
+  for (const token of tokenize(text)) {
+    const word = token.replace(/^[\d&]*[<>]+\|?/, "");
+    if (classify(word) === "path") {
+      r.earlier.push(path.resolve(r.cwd, homeOf(r, word)));
+    }
+  }
+}
+
 function shellWrites(command, startCwd, host, options = {}) {
   if (typeof command !== "string" || !command.trim()) {
     return [];
@@ -1100,6 +1177,7 @@ function shellWrites(command, startCwd, host, options = {}) {
 
     readRedirections(r, segment.text);
     left = readVerb(r, commandOf(segment));
+    rememberPaths(r, segment.text);
 
     if (resume !== null) {
       r.cwd = resume.cwd;
@@ -1115,4 +1193,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { shellWrites, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE };
+module.exports = { shellWrites, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };

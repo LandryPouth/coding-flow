@@ -45,15 +45,22 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
 
 ## Out of Scope
 
+- Write forms the guard does not read yet — a follow-up story under the same
+  rule, and a DOGFOODING row: git plumbing (`update-index`, `checkout-index`),
+  `git clone` into a blocked path, `scp`, `busybox` applets, `unrar`/`jar`/`pax`.
+  An extraction inside the project that misses every blocked directory stays
+  `unchecked`, so strict mode refuses it.
 - Case-insensitive filesystems (`.Coding-Flow/runs` on macOS/Windows): a
   DOGFOODING row, its own story.
 - Signing run files.
 
 ## Decisions
 
-- **The guard is a heuristic reading** (review of 13-09): it REFUSES when it
-  knows a target touches a blocked path, and LOGS `unchecked` when it cannot
-  read the target. A write form it does not model must not exit 0 in silence.
+- **The guard is not a complete shell model** (coordinator, re-review of
+  13-09). The rule: a write form that may land a blocked path is REFUSED when
+  the guard knows it does, else LOGGED `unchecked` — never a silent allow. The
+  four re-review P1s are closed by that rule; the long tail of other tools goes
+  to a follow-up story (Out of Scope).
 - **`X/**` names X itself, for every write kind.** `blockedPathHit` also matches
   the directory a `X/**` entry blocks: an ancestor glob already matched P, and P
   equal to X now does.
@@ -64,12 +71,23 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
   and for each `git checkout`/`restore` pathspec. A tree is refused when it is or
   holds a blocked directory (a literal `X/**`). The per-file list without the
   option is unchanged: its tests pin it entry for entry.
-- **The project root is judged by the source on disk.** `git restore .`,
-  `git checkout -- .` and `cp -r /tmp/x/. .` are pinned as everyday commands
-  (`guard-shell.test.js`), so a tree landing on the root is refused only when its
-  source holds a literal blocked path (`/tmp/cf/.coding-flow/runs`). A source
-  made earlier in the same command, and `git checkout <ref> -- .` / `git reset
-  --hard` (committed content), stay allowed.
+- **A destination named like a blocked directory is judged as itself.** A move
+  (`mv`, `git mv`) or a recursive copy whose destination is not spelled as a
+  directory (no trailing `/`, not `.`/`..`, no `-t`) also gives a `tree` entry
+  for the destination itself, existing or not: `rm -rf .coding-flow && mv
+  /tmp/cf .coding-flow` lands on `.coding-flow` though at hook time the name
+  reads as `.coding-flow/cf`.
+- **The project root and its ancestors are judged by the source.** `git restore
+  .`, `git checkout -- .` and `cp -r /tmp/x/. .` are pinned as everyday commands
+  (`guard-shell.test.js`). A tree landing on the root or an ancestor (`..`, `/`)
+  is refused when its source holds a literal blocked path at the project's place
+  (`X/.coding-flow/runs`, or `X/<project>/.coding-flow/runs` for an ancestor);
+  unchecked when the source is a glob or variable, or missing now but named
+  earlier in the same command (`mkdir -p /tmp/f/… && cp -r /tmp/f/. .`); allowed
+  when it is missing and nothing makes it (the copy fails). A pathspec has no
+  source: `git checkout <ref> -- .` restores committed content and stays allowed,
+  like `git reset --hard`. An extraction onto the root or an ancestor, with
+  `tar -P` or `--to-command`, is unchecked wherever it lands.
 - **Moving out is judged at directory level.** `mv`/`git mv` sources are a
   `move` entry, refused when the source is a blocked directory or holds one.
   Moving one file out is a deletion, not judged.
@@ -82,7 +100,9 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
 - **Patches are read, not guessed.** `git apply`/`git am`: paths from the
   repository's top (`host.gitRoot`), `-p1`, both sides of `---`/`+++` (a pair,
   not a removed `-- x` in a hunk), `rename|copy from|to`, `diff --git`, C-quoted
-  names decoded. `patch`: from the cwd, `-p0`/`-p1`, `-i FILE` or `< FILE`.
+  names decoded; `:/X` and `:(top)X` pathspecs read from the top, other magic
+  unchecked. `patch`: from the cwd, `-p0`/`-p1` (clustered too: `-Np1`), `-i
+  FILE` or `< FILE`. A context diff (`***************` hunks) is unchecked.
   Another `-p`, `--directory`, `--no-prefix`, `--unsafe-paths`, `patch -d` →
   unchecked; a missing, oversized (> 4 MiB) or piped patch → unchecked.
 - **Unchecked, not modelled:** `git stash pop|apply` (a DOGFOODING row: strict
@@ -91,6 +111,8 @@ proof. The same gap holds for every `X/**` entry (`cp /tmp/x node_modules`).
 - **Commit check:** a file is exempt when it matches an `EVIDENCE_BLOCKED_PATHS`
   entry, whatever blocked entry covers it — the doctor's equivalence, applied to
   the file instead of the pattern.
-- Two expectations of this story's own first red test moved after the review:
+- Expectations of this story's own red tests moved after a review: `tar -C
+  /tmp` became a sibling directory (the test project lives under the temp dir,
+  so `/tmp` is its ancestor). After the first review:
   `unzip -d .coding-flow` and `git apply < forge.diff` were `unchecked`; both
   are now refused (the target is known).

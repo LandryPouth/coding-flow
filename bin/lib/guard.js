@@ -33,7 +33,7 @@ const { execFileSync } = require("child_process");
 const { defaultHarnessConfig } = require("./harness-config");
 const { getSecretPatterns, findSecretsInContent, isHeuristicAllowlisted } = require("./security-policy");
 const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./util");
-const { shellWrites: readShellWrites, splitSegments, tokenize, expandHome: expandHomeIn, isShellLimit, SHELLS, ARCHIVE } = require("./shell-writes");
+const { shellWrites: readShellWrites, splitSegments, tokenize, expandHome: expandHomeIn, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE } = require("./shell-writes");
 
 // Tools that write to disk through a structured file_path. The others (Read,
 // Grep…) are not our business here: immediate allow.
@@ -646,21 +646,53 @@ const JUDGES = { move: movedAwayHit, tree: treeHit, extract: treeHit };
 function judgeShellEntry(ctx, entry, caseInsensitive) {
   const judge = JUDGES[entry.kind] || blockedPathHit;
   let found = null;
-  let inside = false;
+  let issue = null;
   for (const scope of ctx.scopes) {
     const targets = resolveTargets(ctx, scope, entry.target);
-    inside = inside || targets.some((target) => target.inside);
     found = found || firstHit(targets, scope.policy, caseInsensitive, judge);
-    if (!found && entry.kind === "tree" && entry.source && targets.some((target) => target.inside && target.relative === "")) {
-      found = sourceHit(entry.source, scope.policy);
+    if (!found && JUDGES[entry.kind] === treeHit) {
+      const landing = rootLanding(ctx, scope, entry);
+      found = landing.found || null;
+      issue = issue || landing.issue || (entry.kind === "extract" && targets.some((target) => target.inside) ? ARCHIVE : null);
     }
   }
   // Heuristic reading: refused when the target is known to touch a blocked path,
-  // logged when it cannot be read.
-  if (!found && entry.kind === "extract" && inside && !ctx.issues.includes(ARCHIVE)) {
-    ctx.issues.push(ARCHIVE);
+  // logged when it cannot be read — never a silent allow.
+  if (!found && issue && !ctx.issues.includes(issue)) {
+    ctx.issues.push(issue);
   }
   return found;
+}
+
+// A tree or an extraction landing on the project root or one of its ancestors
+// (`-C ..`, `rsync -a X/ ..`) lands on everything the project holds. An
+// extraction there is unchecked; a copy is judged on what its source holds at the
+// project's place (`X/<project>/…` for an ancestor), unchecked when that source
+// is a glob, or missing now but made earlier in the same command. A pathspec
+// with no source (`git restore .`) restores committed content: allowed.
+function rootLanding(ctx, scope, entry) {
+  const landing = path.resolve(ctx.cwd, expandHome(entry.target));
+  const lands = [landing, realPathOf(landing)].filter(Boolean);
+  for (const root of [scope.root, scope.realRoot].filter(Boolean)) {
+    const at = lands.find((where) => where === root || root.startsWith(where.endsWith(path.sep) ? where : where + path.sep));
+    if (at === undefined) {
+      continue;
+    }
+    if (entry.kind === "extract") {
+      return { issue: ARCHIVE };
+    }
+    if (entry.unread) {
+      return { issue: UNREAD_TREE };
+    }
+    if (!entry.source) {
+      return {};
+    }
+    if (!fs.existsSync(entry.source)) {
+      return entry.made ? { issue: UNREAD_TREE } : {};
+    }
+    return { found: sourceHit(path.join(entry.source, path.relative(at, root)), scope.policy) };
+  }
+  return {};
 }
 
 function denialFor(entry, found) {
