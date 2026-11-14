@@ -646,3 +646,40 @@ it was asked for, and every land deleted the story's proof.
   (story 18-02) before the setting ships (story 18-07): losing it is a defect
   in the proof, whatever the setting.
 
+
+## 18. Finished epics leave the checkout
+
+**Decided 2026-11-10 by the maintainer** (epic 17), built by story 17-01 on
+2026-11-14. `epics/` only grows: 15 epics, 65 stories, 177 files and 1.4 MB
+at MVP stage, read by every agent glob and every `listEpics` walk.
+
+- **`ai-flow archive <epic-dir | NN>`: `git rm` plus an index entry, not a
+  move.** A directory moved to `epics/archive/` is still a directory. The
+  text lives on in git history; one append-only entry in `epics/INDEX.md`
+  names each story, the proof state it had, the default branch's commit
+  where the text still exists (a story-branch commit can be lost to a squash
+  merge), and the `git checkout <sha> -- epics/<dir>` that brings it back.
+  The deletion is staged, never committed: the user commits.
+- **The gate is "finished and merged", not "proven".** Every story past
+  planned / in-progress / blocked, no linked worktree, a clean directory
+  (ignored files included: `git rm` would leave them behind) whose tree at
+  `HEAD` is the default branch's, and only `done`, `verified` or `stale`
+  stories (any other written word refuses). Proof cannot be the gate: almost every
+  `done` reads `no verify captured` or `proof is stale` (autoland deleted the
+  evidence; old proof goes stale as the tree moves). The state is copied as it
+  stands and never upgraded (entry 9: signals only lower claims).
+- **Evidence stays.** `.coding-flow/runs/` is history and is not touched;
+  `audit --check` and the review summary skip only the stories of an
+  archived epic, so an old red or stale run never fails the gate; a story
+  deleted by hand is still judged.
+- **Freeze.** DX and performance, which the freeze allows, but it adds one
+  command. Asked out loud: *if it is not built, does the tool fail at its
+  mission?* Not the guard's or the proof's — but the corpus the tool reads
+  grows without bound, and an archive without collision detection (story
+  17-03) would let one number name two epics. Hence the command, with
+  collision detection in the same epic.
+
+**Refused in the same decision**: a `restore` command (the recovery line is a
+plain `git checkout`), a `--force` past the gate (none found a real case),
+editing documents that link into an archived epic (they are listed as "still
+links here", never rewritten), and archiving several epics in one call.

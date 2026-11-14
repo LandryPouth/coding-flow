@@ -44,28 +44,28 @@ lost, and nothing unfinished can be archived by mistake.
 
 ## Acceptance Criteria
 
-- [ ] Given a temp repository whose epic has every story `done` or `stale`, is
+- [x] Given a temp repository whose epic has every story `done` or `stale`, is
       clean, and is identical on `main`, when `ai-flow archive <epic>` runs,
       then the directory is staged for deletion, `epics/INDEX.md` holds one
       entry naming each story, its status, the HEAD SHA and the `git
       checkout` recovery line, and the exit code is 0.
-- [ ] Given that recovery line, when it runs in the temp repository, then
+- [x] Given that recovery line, when it runs in the temp repository, then
       the epic directory comes back byte for byte.
-- [ ] Given an epic with a `planned`, `in-progress` or `blocked` story, or a
+- [x] Given an epic with a `planned`, `in-progress` or `blocked` story, or a
       linked worktree, or a dirty file, or a tree that differs from `main`,
       when `archive` runs, then it exits non-zero, names each reason, and
       leaves the disk and the git index unchanged.
-- [ ] Given `--dry-run`, then the planned entry and the deletion are
+- [x] Given `--dry-run`, then the planned entry and the deletion are
       printed, and nothing is written or staged.
-- [ ] Given an epic already archived, when `archive` runs again, then it
+- [x] Given an epic already archived, when `archive` runs again, then it
       prints "already archived" and exits 0 without a second entry.
-- [ ] Given a story whose only proof was `no verify captured`, when it is
+- [x] Given a story whose only proof was `no verify captured`, when it is
       archived, then the entry records that state as it stands and never as
       `verified`.
-- [ ] Given evidence in `.coding-flow/runs/` for an archived story, when
+- [x] Given evidence in `.coding-flow/runs/` for an archived story, when
       `status`, `next`, `audit` and `trace` run, then none of them lists that
       story or fails on it.
-- [ ] Given a tracked file outside the epic that links into it, then
+- [x] Given a tracked file outside the epic that links into it, then
       `archive` lists it under "still links here" and does not modify it.
 
 ## Edge Cases
