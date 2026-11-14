@@ -151,6 +151,8 @@ auth/permissions/data involvement.
 2. Implement; run the narrowest useful validation, then `ai-flow verify`.
 3. Update `## Result` only if the change is non-trivial.
 
+A bug fix runs the loop in A Bug Fix Starts Red first.
+
 Scope grows, several modules need changes, or a STRICT trigger appears: switch up.
 
 ### STANDARD — normal feature work
@@ -177,14 +179,24 @@ Everything in STANDARD, plus:
 5. `/flow-review`, required, Deep on security, tests and architecture (Review
    Before Done).
 
-**A bug fix carries negative evidence.** Commit the test and the fix, then run
-`ai-flow verify --story <dir> --red-at-base` besides the ordinary verify: green only
-when the diff's test fails at the merge base and passes at HEAD. A test that passes
-at base, or fails there before reaching its tests (a missing module, a syntax error,
-a failed hook), is `NOT PROVEN`. Declare `redAtBase.command` in
-`.coding-flow/harness.json` as `node --test --test-reporter=tap {files}`
-(`bootstrap --scan` suggests it). Only node's runner is read: a Jest, Vitest, Go or
-pytest fix is proven by the ordinary verify and the review's negative evidence.
+## A Bug Fix Starts Red
+
+Every mode — a QUICK typo-sized fix included — before any hypothesis:
+
+1. Reproduce the symptom with a loop that can go red: a test first, otherwise a
+   command.
+2. See it fail, for the reason the bug report gives.
+3. Fix.
+4. See the same loop go green.
+
+When the project declares `redAtBase.command` in `.coding-flow/harness.json`
+(`node --test --test-reporter=tap {files}`; `bootstrap --scan` suggests it), commit
+the test and the fix, then run `ai-flow verify --story <dir> --red-at-base` besides
+the ordinary verify: green only when the diff's test fails at the merge base and
+passes at HEAD; a test that passes at base, or fails there before reaching its tests,
+is `NOT PROVEN`. Only node's runner is read. Without that command, quote the red
+output in `## Result`. A bug that cannot be reproduced: stop and say so in
+`## Result` — never fix it blind.
 
 ## Context Policy
 
@@ -277,6 +289,7 @@ Stop and report — do not push through — when:
 - the existing architecture conflicts with the requested implementation;
 - the change needs unrelated refactors or files outside the declared scope;
 - the story names stories that must land first, and they have not;
+- a bug that cannot be reproduced (A Bug Fix Starts Red);
 - the story has a line beginning `Assumption (unconfirmed):`: it is not implemented
   until the user confirms it.
 

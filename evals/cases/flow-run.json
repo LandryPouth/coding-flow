@@ -5,7 +5,8 @@
       { "prompt": "implement story-01-02 end to end", "top_k": 1 },
       { "prompt": "build the password reset feature and make sure the tests actually pass", "top_k": 2 },
       { "prompt": "code this story, this one touches permissions so be careful", "top_k": 2 },
-      { "prompt": "fix this copy typo on the pricing page", "top_k": 3 }
+      { "prompt": "fix this copy typo on the pricing page", "top_k": 3 },
+      { "prompt": "the export button crashes when the list is empty, fix it", "top_k": 2 }
     ],
     "negative": [
       { "prompt": "grill me on this feature request before planning the epic", "owner": "flow-plan" },

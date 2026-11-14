@@ -1,6 +1,6 @@
 # Story 16-02 — A bug fix starts red, in every mode
 
-## Status: planned
+## Status: in-progress
 
 Today the "negative evidence" paragraph in `/flow-run` (`A bug fix carries
 negative evidence`) sits under STRICT, while most bug fixes are routed to
@@ -20,20 +20,20 @@ becomes that loop, in every mode (the maintainer's decision, 2026-11-10).
 
 ## Acceptance Criteria
 
-- [ ] Given `flow-run/SKILL.md`, when a story fixes a bug, then the steps
+- [x] Given `flow-run/SKILL.md`, when a story fixes a bug, then the steps
       every mode reads (not the STRICT section) say, in order:
       - reproduce the symptom with a loop that can go red (a test first,
         otherwise a command) before any hypothesis or fix;
       - see it fail;
       - fix;
       - see the same loop go green.
-- [ ] Given a project that declares `redAtBase.command`, when a bug fix of
+- [x] Given a project that declares `redAtBase.command`, when a bug fix of
       any mode is verified, then the skill asks for `ai-flow verify --story
       <dir> --red-at-base` as well as the ordinary verify. Without that
       command, the red output is quoted in `## Result`.
-- [ ] Given a bug that cannot be reproduced, then the skill says to stop and
+- [x] Given a bug that cannot be reproduced, then the skill says to stop and
       say so in `## Result`, never to fix it blind.
-- [ ] Given `npm test`, then the skill evals, `plugin check` and the
+- [x] Given `npm test`, then the skill evals, `plugin check` and the
       500-line ceiling pass.
 
 ## Commands
@@ -43,3 +43,12 @@ npm test
 ```
 
 ## Result
+
+The negative-evidence rule left STRICT and became `## A Bug Fix Starts Red`
+in `templates/.claude/skills/flow-run/SKILL.md`, read in every mode: the
+four-step loop in order, `verify --red-at-base` when `redAtBase.command` is
+declared, the red output quoted in `## Result` otherwise, and an
+unreproducible bug stops the story (also listed under Stop Conditions).
+QUICK / FAST points at it. `test/bug-fix-starts-red.test.js` (4 tests, red
+first) holds the text; `evals/cases/flow-run.json` gains a crash-report case;
+`skills/` regenerated. The skill is 339 lines.
