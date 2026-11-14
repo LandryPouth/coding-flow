@@ -91,7 +91,12 @@ const SUBSTITUTED_PROGRAM = "an interpreter reads its program from a process sub
 // A command too dynamic to read is a limit of reading shell text, met in everyday
 // use (`> "$out"`, `node <<EOF`): `report` counts it, `doctor` does not warn on it.
 // Every other unchecked reason means the guard itself could not do its job.
-const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM]);
+// An archive, a patch the guard cannot open, a stash: what they write is inside
+// them, not in the command line (story 13-09).
+const ARCHIVE = "an archive is extracted here and its contents cannot be read";
+const UNREAD_PATCH = "git applies a patch the guard cannot read";
+const STASH = "git restores a stash the guard cannot read";
+const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH]);
 const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 
 // --- segments -----------------------------------------------------------------
@@ -214,8 +219,11 @@ function add(r, word, kind) {
     entry = { target: portable(path.relative(r.start, path.resolve(r.cwd, token))), kind };
   }
 
+  // A move whose source is already read as a write (`mv a ./` lands on itself) is
+  // judged as that write.
+  const written = kind === "move" && r.found.some((other) => other.kind === "write" && other.target === entry.target);
   const key = `${entry.kind}\0${entry.target}\0${entry.unchecked || ""}`;
-  if (!r.seen.has(key)) {
+  if (!written && !r.seen.has(key)) {
     r.seen.add(key);
     r.found.push(entry);
   }
@@ -468,6 +476,59 @@ function readCopy(r, command) {
   if (command.name === "ln" || (command.name === "cp" && symbolic)) {
     linkAliases(r, command, destination, isDirectory);
   }
+  // `mv X /tmp/x` takes X away: the first half of a swap (story 13-09).
+  if (command.name === "mv") {
+    destination.sources.forEach((source) => add(r, source, "move"));
+  }
+}
+
+// --- archives -----------------------------------------------------------------
+
+// `tar -x … [-C DIR]` and `unzip … [-d DIR]` write wherever their archive says,
+// under DIR (the current directory by default): DIR is the target, kind "extract".
+// Listing, testing, creating or piping to stdout writes nothing here.
+function extractDirectory({ name, operands }) {
+  if (name === "tar") {
+    // `-xf`, `-C dir -xzf`, or the old bare first word (`tar xf a.tar`).
+    const extracts = operands.some((arg) => arg === "--extract" || arg === "--get" || /^-[A-Za-z]*x/.test(arg)) || /^[A-Za-z]*x[A-Za-z]*$/.test(operands[0] || "");
+    if (!extracts) {
+      return null;
+    }
+    return optionValue(operands, "-C", "--directory") || ".";
+  }
+  if (name === "unzip") {
+    if (operands.some((arg) => /^-[A-Za-z]*[lptvzZ]/.test(arg))) {
+      return null;
+    }
+    return optionValue(operands, "-d", null) || ".";
+  }
+  return null;
+}
+
+// The value of `-C DIR` / `-CDIR` / `--directory DIR` / `--directory=DIR`.
+function optionValue(operands, flag, long) {
+  for (let i = 0; i < operands.length; i += 1) {
+    const arg = operands[i];
+    if (arg === flag || (long && arg === long)) {
+      return operands[i + 1];
+    }
+    if (long && arg.startsWith(`${long}=`)) {
+      return arg.slice(long.length + 1);
+    }
+    if (arg.startsWith(flag) && arg.length > flag.length) {
+      return arg.slice(flag.length);
+    }
+  }
+  return null;
+}
+
+function readArchive(r, command) {
+  const directory = extractDirectory(command);
+  if (directory === null) {
+    return false;
+  }
+  add(r, directory, "extract");
+  return true;
 }
 
 // --- downloads ----------------------------------------------------------------
@@ -532,7 +593,47 @@ function gitPaths(args) {
   return result;
 }
 
-function readGit(r, { args }) {
+// The files a patch names: `+++ b/X`, `rename to X`, `copy to X`, the `b/` side
+// of `diff --git`. Read through the host; null when it cannot be read.
+function patchTargets(r, file) {
+  const text = r.cwd === null || typeof r.host.readText !== "function" ? null : r.host.readText(path.resolve(r.cwd, homeOf(r, file)));
+  if (typeof text !== "string") {
+    return null;
+  }
+  const targets = [];
+  for (const line of text.split("\n")) {
+    const match = line.match(/^\+\+\+ b\/(.+?)\t?$/) || line.match(/^(?:rename|copy) to (.+)$/) || line.match(/^diff --git a\/.+ b\/(.+)$/);
+    if (match && match[1] !== "/dev/null") {
+      targets.push(match[1]);
+    }
+  }
+  return targets;
+}
+
+// `git apply` writes what its patch names (nothing under --check/--stat/--numstat/
+// --summary without --apply); `git stash pop|apply` writes what the stash holds.
+function readPatchVerbs(r, { args, operands }) {
+  const sub = args.find((arg) => !arg.startsWith("-"));
+  const rest = operands.slice(operands.indexOf(sub) + 1);
+  if (sub === "stash" && (rest[0] === "pop" || rest[0] === "apply")) {
+    r.found.push({ target: "(stash)", kind: "write", unchecked: STASH });
+  }
+  if (sub !== "apply" || (rest.some((arg) => /^--(?:check|stat|numstat|summary)$/.test(arg)) && !rest.includes("--apply"))) {
+    return;
+  }
+  const patches = rest.filter((arg) => !arg.startsWith("-"));
+  for (const patch of patches.length ? patches : ["-"]) {
+    const targets = patch === "-" || classify(patch) !== "path" ? null : patchTargets(r, patch);
+    if (targets === null) {
+      r.found.push({ target: patch, kind: "write", unchecked: UNREAD_PATCH });
+    } else {
+      targets.forEach((target) => add(r, target, "write"));
+    }
+  }
+}
+
+function readGit(r, { args, operands }) {
+  readPatchVerbs(r, { args, operands });
   const git = gitPaths(args);
   const saved = r.cwd;
 
@@ -685,6 +786,8 @@ function readVerb(r, command) {
     downloadFiles(command).forEach((file) => add(r, file, "write"));
   } else if (name === "git") {
     readGit(r, command);
+  } else if (readArchive(r, command)) {
+    return null;
   } else if (!readScript(r, command)) {
     const programs = inlineCode(name, command.args);
     readInline(r, programs);
@@ -742,4 +845,4 @@ function shellWrites(command, startCwd, host) {
   return r.found;
 }
 
-module.exports = { shellWrites, splitSegments, tokenize, expandHome, isShellLimit, SHELLS };
+module.exports = { shellWrites, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE };

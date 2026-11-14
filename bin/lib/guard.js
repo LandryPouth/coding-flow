@@ -33,7 +33,7 @@ const { execFileSync } = require("child_process");
 const { defaultHarnessConfig } = require("./harness-config");
 const { getSecretPatterns, findSecretsInContent, isHeuristicAllowlisted } = require("./security-policy");
 const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./util");
-const { shellWrites: readShellWrites, splitSegments, tokenize, expandHome: expandHomeIn, isShellLimit, SHELLS } = require("./shell-writes");
+const { shellWrites: readShellWrites, splitSegments, tokenize, expandHome: expandHomeIn, isShellLimit, SHELLS, ARCHIVE } = require("./shell-writes");
 
 // Tools that write to disk through a structured file_path. The others (Read,
 // Grep…) are not our business here: immediate allow.
@@ -153,6 +153,8 @@ function loadPolicy(root) {
 // Reading the shell is `shell-writes.js` (pure: string in, targets out). What it
 // asks of the disk is answered here, each answer falling back rather than throwing.
 
+const PATCH_READ_MAX_BYTES = 4 * 1024 * 1024;
+
 const shellHost = {
   realpath: (dir) => {
     try {
@@ -170,6 +172,14 @@ const shellHost = {
   },
   realPathOf: (file) => realPathOf(file),
   home: () => os.homedir(),
+  // A patch `git apply` will read; a large or unreadable one is not guessed at.
+  readText: (file) => {
+    try {
+      return fs.statSync(file).size <= PATCH_READ_MAX_BYTES ? fs.readFileSync(file, "utf8") : null;
+    } catch {
+      return null;
+    }
+  },
 };
 
 // What a command would write: see `shell-writes.js`.
@@ -423,13 +433,36 @@ function blockedPathHit(relative, policy, caseInsensitive = false) {
 
   const fold = (value) => (caseInsensitive ? value.toLowerCase() : value);
 
-  return policy.blockedPaths.find((pattern) => matchesPattern(fold(relative), fold(pattern))) || null;
+  // `X/**` names X itself too: writing X replaces everything under it (story 13-09).
+  return policy.blockedPaths.find((pattern) => matchesPattern(fold(relative), fold(pattern)) || (blockedDirectory(pattern) !== null && matchesPattern(fold(relative), fold(blockedDirectory(pattern))))) || null;
+}
+
+// The directory a `X/**` entry blocks, or null for a file pattern.
+function blockedDirectory(pattern) {
+  return typeof pattern === "string" && pattern.endsWith("/**") && pattern.length > 3 ? pattern.slice(0, -3) : null;
+}
+
+// Moving a path away takes everything under it: refused when it is a blocked
+// directory itself or holds one (a literal `X/**` entry). Moving a file out from
+// under one is a deletion, which the guard does not judge.
+function movedAwayHit(relative, policy, caseInsensitive = false) {
+  const fold = (value) => (caseInsensitive ? value.toLowerCase() : value);
+  const ancestors = relative.split("/").slice(0, -1).map((_, index, parts) => parts.slice(0, index + 1).join("/"));
+  return policy.blockedPaths.find((pattern) => {
+    const directory = blockedDirectory(pattern);
+    if (directory === null) {
+      return false;
+    }
+    const holds = !/[*?[]/.test(directory) && (relative === "" || fold(directory).startsWith(`${fold(relative)}/`));
+    const isDirectory = matchesPattern(fold(relative), fold(directory)) && !ancestors.some((ancestor) => matchesPattern(fold(ancestor), fold(directory)));
+    return holds || isDirectory;
+  }) || null;
 }
 
 // First blocked name among everything this target resolves to.
-function firstHit(entries, policy, caseInsensitive) {
+function firstHit(entries, policy, caseInsensitive, judge = blockedPathHit) {
   for (const entry of entries) {
-    const hit = blockedPathHit(entry.relative, policy, caseInsensitive);
+    const hit = judge(entry.relative, policy, caseInsensitive);
     if (hit) {
       return { hit, relative: entry.relative };
     }
@@ -568,6 +601,40 @@ function grantsPlanCommands(command, depth = 0) {
   return false;
 }
 
+// The blocked path one shell target reaches, or null. A move is judged on what it
+// takes away; an extraction on where it lands — and, inside the project, its
+// unreadable contents make the call unchecked.
+function judgeShellEntry(ctx, entry, caseInsensitive) {
+  const judge = entry.kind === "move" ? movedAwayHit : blockedPathHit;
+  let found = null;
+  let inside = false;
+  for (const scope of ctx.scopes) {
+    const targets = resolveTargets(ctx, scope, entry.target);
+    inside = inside || targets.some((target) => target.inside);
+    found = found || firstHit(targets, scope.policy, caseInsensitive, judge);
+  }
+  if (!found && entry.kind === "extract" && inside && !ctx.issues.includes(ARCHIVE)) {
+    ctx.issues.push(ARCHIVE);
+  }
+  return found;
+}
+
+function denialFor(entry, found) {
+  const where = `${found.relative}${viaNote(found, entry.target)}`;
+  switch (entry.kind) {
+    case "alias":
+      return `this command aliases ${where} (a link to it would be a way around the policy), which matches a blocked harness path (${found.hit}).`;
+    case "inline":
+      return `this inline code names ${where}, which matches a blocked harness path (${found.hit}). An interpreter is not a way around the policy.`;
+    case "move":
+      return `this command moves ${where} away, which is or holds a blocked harness path (${found.hit}); putting it back would replace what it protects. Moving a directory is not a way around the policy.`;
+    case "extract":
+      return `this command extracts an archive into ${where}, which matches a blocked harness path (${found.hit}). An archive is not a way around the policy.`;
+    default:
+      return `this command writes to ${where}, which matches a blocked harness path (${found.hit}). Shell redirection is not a way around the policy.`;
+  }
+}
+
 function decideBash(toolInput, hook, root, caseInsensitive) {
   // A missing or renamed `command` is not an empty one: only `""` has nothing to check.
   if (!toolInput || typeof toolInput !== "object" || typeof toolInput.command !== "string") {
@@ -592,21 +659,9 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
       continue;
     }
 
-    const target = entry.target;
-    let found = null;
-    for (const scope of ctx.scopes) {
-      found = found || firstHit(resolveTargets(ctx, scope, target), scope.policy, caseInsensitive);
-    }
-
+    const found = judgeShellEntry(ctx, entry, caseInsensitive);
     if (found) {
-      const what =
-        entry.kind === "alias"
-          ? `this command aliases ${found.relative}${viaNote(found, target)} (a link to it would be a way around the policy), which matches a blocked harness path (${found.hit}).`
-          : entry.kind === "inline"
-            ? `this inline code names ${found.relative}${viaNote(found, target)}, which matches a blocked harness path (${found.hit}). An interpreter is not a way around the policy.`
-            : `this command writes to ${found.relative}${viaNote(found, target)}, which matches a blocked harness path (${found.hit}). Shell redirection is not a way around the policy.`;
-
-      return { decision: "deny", reason: what, path: found.relative };
+      return { decision: "deny", reason: denialFor(entry, found), path: found.relative };
     }
   }
 
