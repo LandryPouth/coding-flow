@@ -83,8 +83,11 @@ including the two that s1 and s2 change, so it runs after both.
   budget stays (5–15 questions, 10–20 for auth, migration, billing,
   permissions or data modelling). Pocock's grilling is uncapped; ours is not.
 - **An unconfirmed assumption that changes behaviour makes the story
-  `not ready`.** When nobody can answer, as in a headless run, the plan
-  stops and states the question. It never picks the answer itself.
+  `not ready`.** The story is written with a line beginning
+  `Assumption (unconfirmed):`; the epic's `## Readiness` is `not ready` and
+  lists that line as the blocking item. When nobody can answer, as in a
+  headless run, the plan stops and states the question. It never picks the
+  answer itself.
 - **Free measures first, one paid run last.** Line and word counts plus the
   tier 1 and 2 evals run in CI. Then a single benchmark run of the
   coding-flow arm, on the same five tasks, compared with the 2026-10-17

@@ -18,8 +18,8 @@ regroupée" (bethl bilan P1).
   production, permissions or personal data without the maintainer's say
   (the `ask` topics of 22-01's defaults).
 - Readiness: the driver runs a story only if its epic's `## Readiness` is
-  `ready` and the story carries no `Assumption (unconfirmed)` line (story
-  16-01's marker).
+  `ready` and the story has no line beginning `Assumption (unconfirmed):`
+  (story 16-01's marker; the epic's `## Readiness` lists it too).
 - `## Needs you` section written by a driven agent: one or more questions,
   each with the options considered and a recommendation; the CLI marks the
   story `blocked (needs you)` (hold `needs-decision` once 27-01 ships); dependents `waiting`.

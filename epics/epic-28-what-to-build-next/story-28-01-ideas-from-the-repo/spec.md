@@ -20,7 +20,9 @@ plan, park or kill each in one command.
 - **Scan** (`ai-flow ideas scan`, also run by `next` when it needs it; no
   model, no network):
   - `- [~]` criteria and `## Deferred Criteria` items of done stories;
-  - `Assumption (unconfirmed)` lines of epic indexes;
+  - `Assumption (unconfirmed):` lines (story 16-01's marker: a line of a story
+    file that begins with it, canonical, and the same line listed under the
+    epic index's `## Readiness`), each idea counted once;
   - unchecked `- [ ]` lines of `docs/roadmap.md`;
   - items under `Out of scope`/`Later`/`Hors périmètre`/`Plus tard` headings
     of landed epics' indexes;

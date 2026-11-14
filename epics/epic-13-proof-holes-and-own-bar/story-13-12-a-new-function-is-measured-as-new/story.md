@@ -1,6 +1,6 @@
 # Story 13-12 — A new function is measured as new
 
-## Status: planned
+## Status: done
 
 Found by the independent review of story 13-06 on `develop` (2026-11-14,
 P1). The size ratchet 13-06 shipped now lives in `bin/lib/complexity.js`
@@ -16,28 +16,60 @@ borrows the 121 lines of the `old()` below it and passes under `enforce`.
 
 ## Acceptance Criteria
 
-- [ ] A function whose start line is added is measured as new unless its
+- [x] A function whose start line is added is measured as new unless its
       base line was itself a function start with the same name; a new
       function over the bar fails under `enforce` even when its hunk also
       replaces a base line (the review's `// doc` + `fresh()` case).
-- [ ] A function touched only by deletions (a removed line inside its base
+- [x] A function touched only by deletions (a removed line inside its base
       span, e.g. the closing brace and header between two functions removed
       to inline a helper) is measured, and its growth past the bar fails.
-- [ ] A diff header the parser cannot read (git's C-quoted paths: `"`, `\`,
+- [x] A diff header the parser cannot read (git's C-quoted paths: `"`, `\`,
       tab, newline) is not skipped silently: the path is unquoted, or the
       check reports `unavailable` under `enforce`; a stale path from the
       previous file never carries over.
-- [ ] Under `enforce`, no merge base means the check is `unavailable` (not a
+- [x] Under `enforce`, no merge base means the check is `unavailable` (not a
       pass), or it diffs against the configured `baseBranch`/first parent —
       the module's own rule that a check that could not run is never a pass.
-- [ ] A long function moved unchanged from one existing file to another is
+- [x] A long function moved unchanged from one existing file to another is
       not reported as grown (matched by name among the touched files).
-- [ ] Whether skipping coverage can switch the ratchet off under `enforce`
+- [x] Whether skipping coverage can switch the ratchet off under `enforce`
       (`evidence.js`, `commandsOk && !skipCoverage`) is checked; if it can,
       it reports `unavailable` instead.
-- [ ] Existing tests stay green, unmodified; functions stay ≤ 80 lines.
+- [x] Existing tests stay green, unmodified; functions stay ≤ 80 lines.
       CHANGELOG `[Unreleased]` → Fixed.
 
 ## Out of Scope
 
 - Changing the bar (80 lines, CRAP 30).
+
+## Result
+
+Verified 2026-11-14 in the story's worktree: 3 commands green, coverage 93.5 %
+of 232 added lines, scope story (5 files), evidence
+`.coding-flow/runs/2026-11-14T05-29-59-326Z-verify.json`. Tests:
+`test/complexity-new-function.test.js` (9, red first at `645df3b`, one a
+regression guard); the existing complexity tests are unchanged and green. The
+review's reproduction script now gives the expected verdict for every case
+(B: `fresh 0→100`; J: `a 54→101`; A: the quoted path's growth; D: no report).
+Decisions in `plan.md`.
+
+Review fixes (2026-11-14, review FAIL: one P1, a regression): real Node lcov
+names (`anonymous_0`, `exports.build`, a constructor under its class name) now
+match their replaced start line, and a move borrows only from a function
+removed whole. Tests `e0e3b68` (red first, one driving a real
+`node --test --experimental-test-coverage` lcov), fix `ebdebef`. Re-verified:
+3 commands green, coverage 95.6 % of 252 added lines, evidence
+`.coding-flow/runs/2026-11-14T05-39-41-006Z-verify.json`.
+
+Re-review (FAIL, one P1: two unnamed functions could claim one replaced start)
+fixed: test `86c931a` (red first), fix `27fa19c`. Final verify: 3 commands
+green, coverage 95.9 % of 268 added lines, evidence
+`.coding-flow/runs/2026-11-14T05-48-36-300Z-verify.json`. Review captured:
+pass, 3 P1 and 3 P2 fixed over three rounds, accepted decisions named
+(`.coding-flow/runs/2026-11-14T05-49-01-610Z-review.json`).
+
+### Rollback Notes
+
+Revert the fix commit (`bin/lib/complexity.js`); the check falls back to the
+positional mapping and the HEAD fallback. No data or config changes.
+

@@ -56,16 +56,16 @@ tag must follow npm (story 10-04).
 ### Wave 0 — finish epic 13 · *release 0.15.0*
 
 - [x] 13-03 re-proved at its own commit
-- [ ] 13-09 a directory swap is a write (STRICT)
-- [ ] 13-10 the security core stays high-risk — land
-- [ ] 13-11 a wrapped criterion is read whole
-- [ ] 13-12 a new function is measured as new
-- [ ] reviews of 13-03 / 13-05 / 13-06 captured, naming their follow-ups
+- [x] 13-09 a directory swap is a write (STRICT) — 5 reviews, landed, re-proved
+- [x] 13-10 the security core stays high-risk — landed, re-proved, review re-captured
+- [x] 13-11 a wrapped criterion is read whole — landed, re-proved, review re-captured
+- [x] 13-12 a new function is measured as new — landed, re-proved, review captured
+- [x] reviews of 13-03 / 13-05 / 13-06 captured, naming their follow-ups
 
 ### Wave 1 — before the factory · two lanes
 
 Lane A (skills): epic 16, a chain.
-- [ ] 16-01 grilling rounds hold the request (20-05 reads its marker)
+- [x] 16-01 grilling rounds hold the request — landed, re-proved, review captured (20-05 reads its marker)
 - [ ] 16-02 a bug fix starts red
 - [ ] 16-03 writing-for-agents pass (after s1, s2)
 
@@ -82,6 +82,7 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 
 - [ ] 26-06  - [ ] 26-03  - [ ] 26-07
 - [ ] 19-05  - [ ] 26-02 (todo)  - [ ] 28-01
+- [ ] 13-14 a deletion is a structural signal (QUICK; from 17-01's review)
 - [ ] 13-13 the guard's long tail (STRICT; follow-up of 13-09)
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
 
@@ -117,3 +118,24 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 ## Log
 
 - 2026-11-14 — run handed over; plan written; wave 0 in progress.
+- 2026-11-14 ~07:30 — usage limit reached mid-run. State at stop:
+  - 13-12 and 16-01: done and reviewed, being landed by the scratchpad
+    script `land.sh` (merge develop into the story branch → verify → land
+    fast-forward → re-verify on develop with `--base`). If not landed on
+    resume: run it again per story; then re-capture each review on develop.
+    Never commit to develop while a land is in flight (it breaks the ff).
+  - 17-01: fixing its review (2 P1: unknown statuses archived; recovery SHA
+    may vanish) — then re-review, close, land.
+  - 13-14: implemented, verify green, independent review running.
+  - Still to capture on develop: reviews of 13-03/13-05/13-06 naming their
+    follow-ups (13-09/13-10, 13-11, 13-12).
+  - Then: 16-02, 17-02, … per the order above; release 0.15.0 at the end of
+    wave 0.
+- Later at the stop: 13-14 review PASS (5 P2) — its implementer fixes P2-1
+  and closes; land it with `land.sh`. 17-01 fixed both P1s (verify green at
+  `6ffb2a0`) — needs its re-review (same brief), then close and land.
+  Follow-up worth planning from 13-14's review: deletion signal via
+  `execFileSync("git", …)`/`git -C`, options by variable, `allowFail` should
+  not exempt a deletion, skip lines > 2000 chars in the risk regexes.
+- 2026-11-14 08:30 — resumed: 13-12 and 16-01 landed and re-proved; reviews of
+  13-03/05/06/12 and 16-01 captured on develop. Wave 0 left: 13-14 (closing).

@@ -574,6 +574,57 @@ user machine setting, uncapped, `auto` = 4, or 2 under WSL or below 16 GB — bo
 files beyond short non-standard conventions, and a resident daemon (entry 2
 still stands; the driver is a process per run, not a service).
 
+## 16. What was taken from `mattpocock/skills`, and what was not
+
+Reviewed 2026-11-10, against the same bar as entry 5, with the same verdict: a
+skills layer is a commodity and nothing in that repository can fail. Three ideas
+were worth taking anyway, because each targets a failure measured here (epic 16).
+None adds a command: prose plus its evals, inside the freeze.
+
+**Taken:**
+
+- **`grilling`'s mechanics, not its stance** (story 16-01). `/flow-plan`'s
+  `## Clarify First` asks in rounds of at most 4 questions over the decision
+  frontier, each opening with its recommended answer, and looks facts up instead of
+  asking them. The budget stays (5–15, 10–20 for auth, migration, billing,
+  permissions, data modelling); Pocock's grilling is uncapped. The target is the
+  benchmark's task 5 (2026-10-17): an ambiguity became acceptance criteria, `verify`
+  went green, nobody was asked. A reading the user did not confirm that changes
+  behaviour is now a story line beginning `Assumption (unconfirmed):`, listed in the
+  epic's `## Readiness`, and keeps the epic `not ready`; a
+  headless run stops with the question; `/flow-run` does not implement such a story.
+  Enforced by `test/clarify-rounds.test.js`.
+- **`diagnosing-bugs`, phase 1** (story 16-02): a bug fix starts from a loop that can
+  go red, in every mode, not only STRICT.
+- **`writing-for-agents` as an audit lens** (story 16-03): no-op sentences, negations
+  that name the wrong action, sprawl. The pass landed on all skills and `RULES.md`
+  on 2026-11-10 and cut them by a quarter; story 16-03 is its one benchmark run.
+- **Landed without a story** (2026-11-10, the maintainer's call, being small): in
+  `/flow-review`, from `code-review`, `codebase-design` and `retro`, a `[spec]` pass
+  against the request, "a mechanical finding ships its check", the deletion test and
+  "one adapter is a hypothetical seam", and eight of Fowler's smells; in
+  `/flow-plan`, from `prototype`, one paragraph on throwaway prototypes.
+
+**Not taken:**
+
+- **GLOSSARY/ADR domain modelling, the issue-tracker skills, the `ask-matt` router,
+  parallel implementer subagents, uncapped grilling.** Ceremony or orchestration the
+  freeze exists to prevent; a router is what `/flow-next` already is, from executed
+  proof.
+- **A separate `grill-me` skill.** The 0.4 consolidation (`c0bb189`) folded ours into
+  `/flow-plan`'s `## Clarify First`; a section there is enough.
+- **`git-guardrails`.** A Claude Code deny rule covers it in one line. As a guard
+  feature it would need verifying on every platform (entry 10: a guard that is not
+  verified is not claimed).
+- **Already covered here**: `tdd` (`/flow-run`'s red-first rule and
+  `--red-at-base`), `improve-codebase-architecture` (`/flow-recover`, epic 14),
+  `setup-ts-deep-modules` (the deep-modules rule in `RULES.md`).
+
+**Unverified claim, recorded so it is not lost:** Pocock says Codex forks the parent
+conversation into its subagents by default. If true, the independent STRICT review
+is not independent on Codex. Nobody has checked it here; epic 16 changes nothing in
+the review, and the claim stays open until a Codex run is seen.
+
 ## 17. The worktree layer becomes a setting
 
 **Decided 2026-11-14 by the maintainer**, on the count in story 15-06

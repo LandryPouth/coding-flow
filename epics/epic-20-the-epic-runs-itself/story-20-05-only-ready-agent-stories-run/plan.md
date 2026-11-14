@@ -14,8 +14,10 @@
 
 ## Technical Notes
 
-- Depends on story 16-01 for the marker's wording; if 16-01 has not landed,
-  match the literal `Assumption (unconfirmed)`.
+- The marker (story 16-01) is a line of the story file that begins
+  `Assumption (unconfirmed):`, after an optional `- `; a mention in prose or in
+  backticks is not the marker. The epic's `## Readiness` lists the same line
+  as its blocking item; the story line is canonical.
 
 ## Decisions
 
