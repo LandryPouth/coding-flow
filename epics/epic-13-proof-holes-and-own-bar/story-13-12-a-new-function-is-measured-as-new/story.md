@@ -1,6 +1,6 @@
 # Story 13-12 — A new function is measured as new
 
-## Status: in-progress
+## Status: done
 
 Found by the independent review of story 13-06 on `develop` (2026-11-14,
 P1). The size ratchet 13-06 shipped now lives in `bin/lib/complexity.js`
@@ -60,6 +60,13 @@ removed whole. Tests `e0e3b68` (red first, one driving a real
 `node --test --experimental-test-coverage` lcov), fix `ebdebef`. Re-verified:
 3 commands green, coverage 95.6 % of 252 added lines, evidence
 `.coding-flow/runs/2026-11-14T05-39-41-006Z-verify.json`.
+
+Re-review (FAIL, one P1: two unnamed functions could claim one replaced start)
+fixed: test `86c931a` (red first), fix `27fa19c`. Final verify: 3 commands
+green, coverage 95.9 % of 268 added lines, evidence
+`.coding-flow/runs/2026-11-14T05-48-36-300Z-verify.json`. Review captured:
+pass, 3 P1 and 3 P2 fixed over three rounds, accepted decisions named
+(`.coding-flow/runs/2026-11-14T05-49-01-610Z-review.json`).
 
 ### Rollback Notes
 
