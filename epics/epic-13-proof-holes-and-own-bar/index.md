@@ -69,6 +69,10 @@ s5
 s7
 
 s8
+
+s9
+
+s10
 ```
 
 `s1`, `s2`, `s5` are independent. `s4` and `s6` assume s3's lcov command is
@@ -93,6 +97,12 @@ config s3 writes).
    proven. *(QUICK)*
 8. **story-13-08-a-rename-keeps-its-risk** — added 2026-11-13: a file
    moved out of a high-risk path is scored at its new path only. *(QUICK)*
+9. **story-13-09-a-directory-swap-is-a-write** — added 2026-11-14 from
+   13-03's review: swapping a blocked directory whole rewrites the proof
+   unseen. *(STRICT)*
+10. **story-13-10-the-security-core-stays-high-risk** — added 2026-11-14
+    from 13-03's review: modules extracted from the guard left
+    `highRiskPaths`. *(QUICK)*
 
 ## Decisions
 
