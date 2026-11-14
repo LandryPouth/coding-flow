@@ -160,3 +160,64 @@ test('on the base branch itself, the uncommitted work is what is measured (the s
   assert.deepStrictEqual(grown(result), ['src/a.js build 85→95']);
   assert.equal(result.ok, false);
 });
+
+// --- the review of 13-12: real Node lcov names ------------------------------------
+
+const body = (n, indent = '  ') => Array.from({ length: n }, (_, i) => `${indent}const v${i} = ${i};`).join('\n');
+
+// The lcov a real `node --test --experimental-test-coverage` run writes, not a
+// hand-written one: V8 names a test callback `anonymous_0` and an export
+// `exports.build`.
+function realLcov(dir, testFile) {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  fs.mkdirSync(path.join(dir, 'coverage'), { recursive: true });
+  execFileSync(process.execPath, ['--test', '--experimental-test-coverage', '--test-reporter=lcov',
+    '--test-reporter-destination=coverage/lcov.info', testFile], { cwd: dir, env, stdio: ['ignore', 'ignore', 'ignore'] });
+}
+
+test('with a real Node lcov, editing a long test title or adding an export parameter is not new code', (t) => {
+  const dir = init(t);
+  const exported = (params) => `exports.build = function (${params}) {\n${body(88)}\n  return a;\n};\n`;
+  const suite = (title) => `const { test } = require('node:test');\nconst m = require('../src/e.js');\ntest('${title}', () => {\n${body(88)}\n  m.build(1);\n});\n`;
+  write(dir, 'src/e.js', exported('a'));
+  write(dir, 't/a.test.js', suite('old title'));
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-qm', 'base']);
+  git(dir, ['checkout', '-q', '-b', 'feat']);
+  write(dir, 'src/e.js', exported('a, b'));
+  write(dir, 't/a.test.js', suite('new title'));
+  realLcov(dir, 't/a.test.js');
+  const result = evaluateComplexity({ root: dir, config: ENFORCED });
+
+  assert.match(fs.readFileSync(path.join(dir, 'coverage/lcov.info'), 'utf8'), /FN:\d+,anonymous_0/);
+  assert.deepStrictEqual(grown(result), []);
+  assert.equal(result.ok, true);
+});
+
+test('qualified, default and constructor names are found on their replaced start line', (t) => {
+  const cls = (params) => `class K {\n  constructor(${params}) {\n${body(88, '    ')}\n  }\n}\nmodule.exports.run = function (${params}) {\n${body(88)}\n};\n`;
+  const result = evaluate(t, { 'src/k.js': cls('a') }, (dir) => write(dir, 'src/k.js', cls('a, b')),
+    { 'src/k.js': [[2, 'K'], [93, 'module.exports.run']] });
+
+  assert.deepStrictEqual(grown(result), []);
+});
+
+test('a new anonymous test inserted in a hunk that edits the line above is new, not the test below it', (t) => {
+  const test = (title, n) => `test('${title}', () => {\n${body(n)}\n});\n`;
+  const result = evaluate(t, { 't/b.test.js': `// t\n${test('a', 118)}` },
+    (dir) => write(dir, 't/b.test.js', `// t2\n${test('n', 98)}${test('a', 118)}`),
+    { 't/b.test.js': [[2, 'anonymous_0'], [102, 'anonymous_1']] });
+
+  assert.deepStrictEqual(grown(result), ['t/b.test.js anonymous_0 0→100']);
+});
+
+test('a new function does not borrow the length of a same-named one that was only edited', (t) => {
+  const run = (params, n) => `function run(${params}) {\n${body(n - 2)}\n}\n`;
+  const result = evaluate(t, { 'src/a.js': run('a', 150), 'src/b.js': '// b\n' }, (dir) => {
+    write(dir, 'src/a.js', run('a, b', 150));
+    write(dir, 'src/b.js', `// b\n${run('', 100)}`);
+  }, { 'src/a.js': [[1, 'run']], 'src/b.js': [[2, 'run']] });
+
+  assert.deepStrictEqual(grown(result), ['src/b.js run 0→100']);
+});
