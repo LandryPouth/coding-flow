@@ -1,4 +1,4 @@
-# Plan — 29-03 A changed test runs, and a removed test is declared
+# Plan — 29-02 A changed test runs, and a removed test is declared
 
 ## Implementation Context
 

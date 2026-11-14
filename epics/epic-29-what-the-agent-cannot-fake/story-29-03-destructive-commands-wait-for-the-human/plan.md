@@ -1,4 +1,4 @@
-# Plan — 29-04 Destructive commands wait for the human
+# Plan — 29-03 Destructive commands wait for the human
 
 ## Implementation Context
 

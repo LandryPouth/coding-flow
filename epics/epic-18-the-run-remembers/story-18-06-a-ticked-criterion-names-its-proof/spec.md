@@ -35,7 +35,7 @@ have proven them (P2-4).
     `declared` (bethl 43-01: two ticked criteria proven only by an
     integration test no verify command runs — review P2-7). It is a gap, not
     a proof: it never counts as `proven`.
-  - Whether a named test file ran comes from 29-03's `collected` set when
+  - Whether a named test file ran comes from 29-02's `collected` set when
     present (the runner's own list mode), before runner output or lcov.
   - The story gets one criteria verdict, printed after the outcomes:
     `Criteria: READY` (every ticked criterion `proven`), `READY WITH GAPS`

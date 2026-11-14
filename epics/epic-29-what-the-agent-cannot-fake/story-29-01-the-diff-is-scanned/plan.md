@@ -24,8 +24,8 @@
   workspace package names (`git ls-files '*package.json'`) → `@types/<name>`
   for `import type` → installed (`node_modules/<name>` walking up) → else
   phantom.
-- Severity ladder and `failOn` mirror Shipmoor's gate; exit codes 0/1/2/3.
-- Determinism: same tree, same findings, same order (severity, file, line).
+- Four rules, all defects, no severity ladder; exit codes 0/1/2/3.
+- Determinism: same tree, same findings, same order (file, line).
 
 ## Decisions
 
@@ -36,7 +36,7 @@ _(to fill during execution)_
 - Unit, fixture repos: each rule fires on an added line and not on a base
   line; suppression with and without a reason; tsconfig with `/*` in strings;
   `baseUrl`; workspace package; `import type` with `@types`; installed but
-  undeclared; renamed file; untracked file.
+  undeclared (silent); renamed file; untracked file.
 - Verify integration: strict project → NOT PROVEN with `scan-finding`;
   default project → listed, verdict unchanged; scan tool error → `not
   examined`.

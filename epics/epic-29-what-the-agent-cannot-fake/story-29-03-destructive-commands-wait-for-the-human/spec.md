@@ -1,4 +1,4 @@
-# Story 29-04 — Destructive commands wait for the human
+# Story 29-03 — Destructive commands wait for the human
 
 ## User Value
 

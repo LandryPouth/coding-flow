@@ -3,10 +3,9 @@
 ## Goal
 
 The lines an agent adds are checked by the CLI, not by the agent's word:
-placeholders, bypassed types, invented imports and debug leftovers are found
-in the diff; the agent is held at the moment it declares itself done; a test
-it changed is proven to run and a test it removed is declared; a destructive
-command waits for the human; and a model's opinion can only lower a verdict.
+placeholders, invented imports and a forgotten `.only` are found in the diff;
+a test it changed is proven to run and a test it removed is declared; and a
+destructive command waits for the human.
 Everything is deterministic, zero-dependency, and lives in `ai-flow`, because
 a CLI with an exit code is harder to talk around than a skill paragraph.
 
@@ -50,16 +49,21 @@ a CLI with an exit code is harder to talk around than a skill paragraph.
 
 **In scope**
 
-- `ai-flow scan`: deterministic defect rules on the lines a diff adds, in
-  verify as a contrary signal.
-- Harness hooks `post-edit` and `stop` wired like the guard, with modes and a
-  feedback cap.
+- `ai-flow scan`: four defect rules on the lines a diff adds, in verify as a
+  contrary signal.
 - Changed tests proven collected, removed tests declared.
 - Destructive commands refused by the guard, with the safe alternative.
-- A declared confidence that can only lower the verdict.
 
 **Out of scope (Later)**
 
+- **Cut on 2026-11-14, the maintainer judged the first plan overkill**:
+  `PostToolUse`/`Stop` harness hooks with three modes and a feedback cap
+  (verify and the independent review already hold a story before it is
+  done; a second gate inside the agent's loop is machinery for a solo
+  user), and a declared confidence line (a model's self-assessed certainty
+  is a weak signal). Style rules (`any`, `@ts-ignore`, `console.log`, `TODO`,
+  empty `catch`) stay the linter's job. Reopen the hooks only if a driven run
+  (20-01) is seen declaring itself done on a blocker verify would catch.
 - An attestation export in the SLSA verification-summary format
   (`predicateType: https://slsa.dev/verification_summary/v1`) — useful for
   teams with an attestation pipeline, not before 24.
@@ -76,30 +80,18 @@ a CLI with an exit code is harder to talk around than a skill paragraph.
 
 ## Backbone
 
-The agent edits → each edit is scanned and the findings fed back → when it
-says it is done, the Stop gate holds it until the blockers clear → verify
+The agent's diff is scanned for the defects a linter lets through → verify
 proves the changed tests ran and the removed ones were declared → a
-destructive command never ran without the human → the implementer's own
-doubt can only send the story to a deeper review.
+destructive command never ran without the human.
 
-```text
-s1
-└── s2
-
-s3
-
-s4
-
-s5
-```
+The three stories are independent (disjoint files: `scan.js`,
+`coverage-gate.js` test collection, `guard.js`).
 
 ## Stories
 
-1. [story-29-01-the-diff-is-scanned](story-29-01-the-diff-is-scanned/spec.md) — `ai-flow scan` on introduced lines, in verify and evidence *(STANDARD — walking skeleton)*
-2. [story-29-02-the-agent-is-held-before-it-stops](story-29-02-the-agent-is-held-before-it-stops/spec.md) — `PostToolUse`/`Stop` harness hooks, three modes, three cycles *(STANDARD)*
-3. [story-29-03-a-changed-test-runs-and-a-removed-test-is-declared](story-29-03-a-changed-test-runs-and-a-removed-test-is-declared/spec.md) — collected tests, removed test ids, exit code never trusted alone *(STANDARD)*
-4. [story-29-04-destructive-commands-wait-for-the-human](story-29-04-destructive-commands-wait-for-the-human/spec.md) — guard refuses destructive commands and names the safe one *(STRICT — guard)*
-5. [story-29-05-the-implementer-says-how-sure-it-is](story-29-05-the-implementer-says-how-sure-it-is/story.md) — `Confidence:` in the Result lowers, never raises *(FAST)*
+1. [story-29-01-the-diff-is-scanned](story-29-01-the-diff-is-scanned/spec.md) — `ai-flow scan`: four defect rules on introduced lines, in verify and evidence *(STANDARD — walking skeleton)*
+2. [story-29-02-a-changed-test-runs-and-a-removed-test-is-declared](story-29-02-a-changed-test-runs-and-a-removed-test-is-declared/spec.md) — collected tests, removed test ids, exit code never trusted alone *(STANDARD)*
+3. [story-29-03-destructive-commands-wait-for-the-human](story-29-03-destructive-commands-wait-for-the-human/spec.md) — guard refuses destructive commands and names the safe one *(STRICT — guard)*
 
 ## Decisions
 
@@ -113,8 +105,7 @@ s5
   resolution (what Shipmoor ships for TS/JS). Each finding names its rule;
   `ai-flow scan --explain <rule>` prints what it matches and why it can be
   wrong. Suppression is in the code, with a reason, and copied into evidence.
-- **The tool failing never blocks the agent** (hooks), and never passes a
-  story (verify: `not examined`).
+- **The tool failing never passes a story** (verify: `not examined`).
 - **18-06 keeps the criteria binding.** Its spec gains Claim Check's verdict
   words and a next action per criterion; no second binding is built here.
 - **Proven first by hand.** The `epic-run` workflow runs the prototype on
@@ -123,28 +114,25 @@ s5
 
 ## Dependencies outside this epic
 
-`guard.js` and `settings.js` (hook wiring, managed block), `coverage-gate.js`
+`guard.js` (29-03), `coverage-gate.js`
 (contrary signals, `scanTestWeakening`), `diff-scope.js` (added lines),
-19-01 (parsed runner output, for 29-03), 19-07 (`AI_FLOW_DRIVEN`), 20-01
-(the driver reads 29-05's line).
+19-01 (parsed runner output, for 29-02).
 
 ## Delivery order
 
-29-01 and 29-04 with step 0 of `docs/plans/autonomous-factory.md` (no factory
-needed). 29-02 before 20-01: the first driven run is held at Stop. 29-03
-after 19-01. 29-05 with 20-01.
+29-01 and 29-03 with step 0 of `docs/plans/autonomous-factory.md` (no factory
+needed). 29-02 after 19-01, before the first driven run (20-01).
 
 ## Readiness
 
-`ready`. Assumption (unconfirmed): the default harness mode is `feedback`
-(findings fed back, never blocking) and `block` is opt-in per project.
+`ready`.
 
 ## Maintainer cleanup on delivery
 
 - Remove the proof gate from the `epic-run` workflow and skill
   (`~/.claude/workflows/epic-run.js` "Proof gate", `~/.claude/skills/epic-run/SKILL.md`
   step 2, `~/.claude/docs/skills/epic-run.md` section "Porte de preuve") and
-  `~/.claude/workflows/lib/proof-scan.mjs` once 29-01, 29-03 and 18-06 ship;
+  `~/.claude/workflows/lib/proof-scan.mjs` once 29-01, 29-02 and 18-06 ship;
   the workflow then calls `ai-flow scan` and reads verify.
 
 ## À faire côté utilisateur
