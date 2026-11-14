@@ -1,6 +1,6 @@
 # Story 13-11 — A wrapped criterion is read whole
 
-## Status: planned
+## Status: in-progress
 
 Found by the independent review of story 13-05 on `develop` (2026-11-14,
 P1). `criteria-changed` compares each acceptance criterion on its first line
@@ -15,24 +15,36 @@ behavioural tests on throwaway repositories with wrapped criteria.)*
 
 ## Acceptance Criteria
 
-- [ ] A criterion is its bullet line plus every following line indented
+- [x] A criterion is its bullet line plus every following line indented
       deeper than the bullet that is not itself a list item or a heading,
       whitespace-normalised. Rewording a word on a continuation line, or
       adding a clause on a new continuation line, raises `criteria-changed`
       (tests with the reworded word on the continuation line).
-- [ ] Re-wrapping a criterion without changing its words, and ticking it,
+- [x] Re-wrapping a criterion without changing its words, and ticking it,
       stay silent (CRLF included).
-- [ ] A `## Spec Change` that holds only an HTML comment or whitespace is
+- [x] A `## Spec Change` that holds only an HTML comment or whitespace is
       not a reason, as for `## Policy Change` (`coverage-gate.js`); strict
       still fails.
-- [ ] The report pairs a changed criterion with its most similar old one,
+- [x] The report pairs a changed criterion with its most similar old one,
       or lists removed and added criteria apart when no pair is clear; an
       added criterion with no pair is shown. Removing one of two identical
       criteria is reported.
-- [ ] Open-criterion detection (`coverage-gate.js`, which also reads
+- [x] Open-criterion detection (`coverage-gate.js`, which also reads
       `criterionItems`) behaves as before. Existing tests stay green,
       unmodified. CHANGELOG `[Unreleased]` → Fixed.
 
 ## Out of Scope
 
 - Criteria written as prose paragraphs rather than list items.
+
+## Result
+
+- `bin/lib/spec-drift.js`: `criterionItems` returns `whole` (bullet plus
+  continuation lines); drift compares `whole` as a multiset and pairs by word
+  similarity. `bin/lib/coverage-gate.js`: comment-only `## Spec Change` is no
+  reason.
+- Tests: `test/criteria-drift.test.js`, 9 new cases (reworded continuation
+  word, added clause, strict failure, re-wrap + tick + CRLF silent, nested item
+  and heading not absorbed, comment-only Spec Change, pairing, no-pair, removed
+  duplicate). Existing cases unmodified; `test/acceptance-criteria.test.js`
+  green.
