@@ -23,7 +23,29 @@ const BACKBONE_HEADING = /^##\s+Backbone\s*$/im;
 // `## Stories` is a numbered list; position in it IS the `s<N>` label
 // (`flow-plan`'s own convention — see SKILL.md: "the short s<number> label,
 // matching the numbered ## Stories list"). Index 0 -> s1, index 1 -> s2, ...
-function parseStoryDirs(indexMdText) {
+// The list marker an entry opens with: numbered (`1.`), or a plain/checkbox
+// bullet (`- [ ]`, what older flow-plan templates wrote), optionally followed
+// by an ordinal agents tend to add (`- 01 — `).
+const ENTRY_PREFIX = /^(?:\d+\.|[-*])\s+(?:\[[ xX]\]\s+)?(?:\d+\s*[—–:-]\s*)?/;
+// `[text](target)` at the head of the entry — the canonical form.
+const ENTRY_LINK = /^\[([^\]]*)\]\(\s*([^)\s]+)\s*\)/;
+// The older forms: `**dir**` or a bare/backticked `dir` with an optional slash.
+const ENTRY_NAME = /^(?:\*\*\s*`?(story-[\w.-]+?)\/?`?\s*\*\*|`?(story-[\w.-]+?)\/?`?(?=[\s(—–:,;]|$))/;
+
+// The story dir a link target points at: its first path segment
+// (`story-x/spec.md`, `./story-x/story.md`, `story-x/`, `story-x`).
+function dirFromTarget(target) {
+  const segment = target.replace(/^\.\//, "").split(/[/#?]/)[0];
+  return /^story-[\w.-]+$/.test(segment) ? segment : null;
+}
+
+// One record per `## Stories` entry, in list order: the line index, the story
+// dir, and the head of the line that names it (`head`, the exact text matched
+// after the list marker) plus the link when the entry is one. Only top-level
+// list items that resolve to a `story-…` dir count — a bold note bullet
+// (`- **s2 à s4** …`) or a link to anything else is prose, not an entry, and
+// counting it would shift every s<N> label after it.
+function parseStoryEntries(indexMdText) {
   const lines = indexMdText.split(/\r?\n/);
   const start = lines.findIndex((line) => STORIES_HEADING.test(line.trim()));
 
@@ -31,22 +53,42 @@ function parseStoryDirs(indexMdText) {
     return [];
   }
 
-  const dirs = [];
+  const entries = [];
   for (let i = start + 1; i < lines.length; i += 1) {
     if (/^##\s+/.test(lines[i])) {
       break;
     }
-    // Numbered (`1. **dir**`, the original form) or a plain/checkbox bullet
-    // (`- [ ] dir`, what the shipped example and flow-plan's own template write).
-    // Position in the list is still the s<N> label either way.
-    // Also tolerated, because agents write them: a leading ordinal (`- 01 — dir`),
-    // backticks and a trailing slash around the directory name (`` `dir/` ``).
-    const match = lines[i].match(/^(?:\d+\.|[-*])\s+(?:\[[ xX]\]\s+)?(?:\d+\s*[—–:-]\s*)?(?:\*\*([^*]+)\*\*|`?(story-[\w.-]+))/);
-    if (match) {
-      dirs.push((match[1] || match[2]).trim());
+
+    const prefix = lines[i].match(ENTRY_PREFIX);
+    if (!prefix) {
+      continue;
+    }
+
+    const rest = lines[i].slice(prefix[0].length);
+    const link = rest.match(ENTRY_LINK);
+
+    if (link) {
+      const dir = dirFromTarget(link[2]) || (link[1].trim().match(/^`?(story-[\w.-]+?)\/?`?$/) || [])[1];
+      if (dir) {
+        entries.push({ line: i, dir, prefix: prefix[0], head: link[0], link: { text: link[1], target: link[2] } });
+      }
+      continue;
+    }
+
+    const name = rest.match(ENTRY_NAME);
+    if (name) {
+      entries.push({ line: i, dir: name[1] || name[2], prefix: prefix[0], head: name[0], link: null });
     }
   }
-  return dirs;
+  return entries;
+}
+
+// `## Stories` is the list `/flow-plan` writes; position in it is the s<N>
+// label either way. Accepted entry heads (see parseStoryEntries):
+// `[story-x](story-x/spec.md)` (canonical), `[Title](story-x/)`, `**story-x**`,
+// `` `story-x/` ``, and a bare `story-x`, behind `1.`, `-`, `- [ ]` or `- 01 —`.
+function parseStoryDirs(indexMdText) {
+  return parseStoryEntries(indexMdText).map((entry) => entry.dir);
 }
 
 function labelForDir(storyDirs, dir) {
@@ -297,4 +339,4 @@ function parseBackbone(indexMdText) {
   return { storyDirs, labels, edges, chainId, hasTree: Boolean(treeText) };
 }
 
-module.exports = { parseBackbone, parseStoryDirs, labelForDir, dirForLabel };
+module.exports = { parseBackbone, parseStoryDirs, parseStoryEntries, labelForDir, dirForLabel };

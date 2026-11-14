@@ -78,13 +78,13 @@ both are open (same `worktree.js` edit points).
 
 ## Stories
 
-1. **story-18-01-verify-writes-the-journal** *(STANDARD — walking skeleton: verify writes `verify.start`/`verify.end`, `ai-flow report` shows the last events)*
-2. **story-18-02-proof-survives-the-land** *(STRICT — evidence keys and file moves across checkouts)*
-3. **story-18-03-a-notes-only-edit-keeps-the-proof** *(STRICT — changes what counts as stale)*
-4. **story-18-04-review-findings-are-captured-before-fixes** *(STANDARD)*
-5. **story-18-05-gates-status-and-worktrees-leave-events** *(STANDARD)*
-6. **story-18-06-a-ticked-criterion-names-its-proof** *(STRICT — a claim-binding rule, entry 9)*
-7. **story-18-07-worktrees-are-a-setting** *(STANDARD — design decision 17: the worktree layer becomes optional; after s2, so a land already carries its proof)*
+1. [story-18-01-verify-writes-the-journal](story-18-01-verify-writes-the-journal/spec.md) *(STANDARD — walking skeleton: verify writes `verify.start`/`verify.end`, `ai-flow report` shows the last events)*
+2. [story-18-02-proof-survives-the-land](story-18-02-proof-survives-the-land/spec.md) *(STRICT — evidence keys and file moves across checkouts)*
+3. [story-18-03-a-notes-only-edit-keeps-the-proof](story-18-03-a-notes-only-edit-keeps-the-proof/spec.md) *(STRICT — changes what counts as stale)*
+4. [story-18-04-review-findings-are-captured-before-fixes](story-18-04-review-findings-are-captured-before-fixes/spec.md) *(STANDARD)*
+5. [story-18-05-gates-status-and-worktrees-leave-events](story-18-05-gates-status-and-worktrees-leave-events/spec.md) *(STANDARD)*
+6. [story-18-06-a-ticked-criterion-names-its-proof](story-18-06-a-ticked-criterion-names-its-proof/spec.md) *(STRICT — a claim-binding rule, entry 9)*
+7. [story-18-07-worktrees-are-a-setting](story-18-07-worktrees-are-a-setting/story.md) *(STANDARD — design decision 17: the worktree layer becomes optional; after s2, so a land already carries its proof)*
 
 ## Decisions
 

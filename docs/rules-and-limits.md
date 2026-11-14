@@ -2,7 +2,7 @@
 
 Every rule that governs Coding Flow, with its default, its cap or threshold, how
 to change it, and where it is defined. Part 1 is what the shipped code does
-today. Part 2 is what epics 18–28 plan and is not built yet.
+today. Part 2 is what epics 18–29 plan and is not built yet.
 
 Generated from the sources on 2026-11-13 (commit `e00ff82`). Part 1 is read from
 `bin/lib/` and the shipped skills, not from other docs. Part 2 is read from the
@@ -128,6 +128,7 @@ Story references point at the story's `spec.md` unless another file is named.
 | Stories per epic (skill) | 2–5 for a normal epic | cap around 5–7 | — | `skills/flow-plan/SKILL.md:42-44` |
 | Stories per epic (doctor) | — | warning `epic_too_large` above 7 | not configurable | `doctor.js:47`, `:113-120` |
 | Duplicate numbering | `duplicate_epic_number`, `duplicate_story_number` | any duplicate | — | `doctor.js:342-376` |
+| `## Stories` entry form | `N. [story-…](story-…/spec.md) — outcome *(MODE)*`, `story.md` for a single-file story; warning `story_entry_not_linked` per entry that is not that link or whose target is missing; `doctor --fix` rewrites the entry, keeping its text | — | — | `flow-plan/SKILL.md:106-116`; `bin/lib/story-links.js`; `doctor.js:385-418` |
 | Dependency tree grammar | `├──` / `└──`, one label per line, 4-character indent per level, or flat chains `s1 ── s2`. The tree is read only inside `## Backbone` | **one parent per story: `┴` or `┤` is refused** | — | `flow-plan/SKILL.md:68-95`; `bin/lib/backbone.js:108-140`, `:190-193` |
 | Generated directory hint | warning `generated_not_ignored` | more than 20 changed files under `generated/`, `__generated__/` or `gen/` in the last verify | `ignoredPaths` | `doctor.js:198-240` |
 | Recovery scan | history of 2 000 commits; 15 hotspots; "large file" = over 500 lines | — | `recover scan --history-limit N` | `bin/lib/recover.js:28-30`, `:979-987` |
@@ -302,6 +303,19 @@ Design: [`docs/plans/orchestration.md`](plans/orchestration.md).
 | `validation.tiers.browser.startTimeoutSec` (`healthUrl` must return 2xx) | 120 s | past it the result is a tool error, not a red | `config.json` | 25-01 (`spec.md:14-15`) |
 | `serve.ports` | not set | uses the next free port in the range | `config.json` | 25-01 (`spec.md:13-14`), 24-07 (`spec.md:41-43`) |
 | Checklist walker | a fresh `claude -p` with browser tools only; takes an agent slot | a `not confirmed` item costs one attempt (20-03) | `testAccounts` (env var names only, never values) | 25-02 (`spec.md:12-28`) |
+
+### What the agent cannot fake (planned)
+
+| Rule | Default | Max / threshold | Change with | Delivered by / source |
+|---|---|---|---|---|
+| Scan rules | 4 rules, each a defect (`placeholder.not_implemented`, `import.phantom_dependency`, `import.broken_relative_path`, `test.only`) | only lines the diff added; style stays the linter's job | `config.json` `scan.rules.<id>: off`, `scan.exclude` | 29-01 |
+| Scan suppression | none | `ai-flow-scan-ignore <rule> -- <reason>` on the line or above; no reason, no suppression; copied into evidence | in the code | 29-01 |
+| Changed test must be collected | contrary signal `test-not-run` | jest, vitest, node:test list modes; other runners `not examined` | add the file to a validation command, or `## Test Exemption` | 29-02 |
+| Removed test title | contrary signal `test-removed` | a moved or renamed test keeps its title | `## Test Exemption` naming the title, with a reason | 29-02 |
+| `validation.reports` | not set (exit code alone) | when set: report written during the run, ≥ 1 test, 0 failures | `config.json` | 29-02 |
+| `destructiveCommands` | `deny` | `deny`, `warn`, `off`; exact prefixes in `allowDestructive` | `.coding-flow/harness.json` (the agent cannot write it) | 29-03 |
+| `worktrees.primaryLocked` | `false` | `true`: no branch change in the primary checkout | `.coding-flow/harness.json` (bethl: `true`) | 29-03 |
+| Criteria verdict | `READY`, `READY WITH GAPS`, `INCONCLUSIVE`, `BLOCKED` | `outside verify:` rows are `declared`, a gap, never `proven` | `## Acceptance Traceability` | 18-06 (amended 2026-11-14) |
 
 ---
 

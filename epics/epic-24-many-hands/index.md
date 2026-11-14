@@ -91,13 +91,13 @@ releases s3's shared locks. s5 (CI runner and evidence re-check) and s6
 
 ## Stories
 
-1. **story-24-01-a-worktree-is-ready-and-leaves-nothing** *(STRICT — deletes worktrees and stops processes)*
-2. **story-24-02-two-chains-run-and-their-merge-is-re-verified** *(STRICT — unattended merges)*
-3. **story-24-03-locks-are-seen-across-machines** *(STRICT)*
-4. **story-24-04-a-team-lands-through-pull-requests** *(STANDARD)*
-5. **story-24-05-verify-runs-on-a-trusted-runner** *(STRICT — trust in evidence)*
-6. **story-24-06-a-question-finds-its-owner** *(STANDARD)*
-7. **story-24-07-two-epics-run-at-once** *(STRICT — unattended merges against the base)*
+1. [story-24-01-a-worktree-is-ready-and-leaves-nothing](story-24-01-a-worktree-is-ready-and-leaves-nothing/spec.md) *(STRICT — deletes worktrees and stops processes)*
+2. [story-24-02-two-chains-run-and-their-merge-is-re-verified](story-24-02-two-chains-run-and-their-merge-is-re-verified/spec.md) *(STRICT — unattended merges)*
+3. [story-24-03-locks-are-seen-across-machines](story-24-03-locks-are-seen-across-machines/spec.md) *(STRICT)*
+4. [story-24-04-a-team-lands-through-pull-requests](story-24-04-a-team-lands-through-pull-requests/spec.md) *(STANDARD)*
+5. [story-24-05-verify-runs-on-a-trusted-runner](story-24-05-verify-runs-on-a-trusted-runner/spec.md) *(STRICT — trust in evidence)*
+6. [story-24-06-a-question-finds-its-owner](story-24-06-a-question-finds-its-owner/spec.md) *(STANDARD)*
+7. [story-24-07-two-epics-run-at-once](story-24-07-two-epics-run-at-once/spec.md) *(STRICT — unattended merges against the base)*
 
 ## Decisions
 

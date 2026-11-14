@@ -67,14 +67,14 @@ can run in parallel.
 
 ## Stories
 
-1. **story-06-01-dual-shape-guard-plugin** — the generated plugin carries both
+1. [story-06-01-dual-shape-guard-plugin](story-06-01-dual-shape-guard-plugin/spec.md) — the generated plugin carries both
    entry shapes and maps V2 argument names. *(STRICT — security boundary; a
    mapping mistake allows the write silently, exactly what the V1-only file
    does today)*
-2. **story-06-02-doctor-knows-the-opencode-major** — `doctor` reads
+2. [story-06-02-doctor-knows-the-opencode-major](story-06-02-doctor-knows-the-opencode-major/spec.md) — `doctor` reads
    `opencode --version`, flags a pre-06 plugin on a 2.x host as "guard not
    loaded", and names `ai-flow upgrade` / `upgrade --global`. *(STANDARD)*
-3. **story-06-03-repo-plugin-without-absolute-path** — this checkout's tracked
+3. [story-06-03-repo-plugin-without-absolute-path](story-06-03-repo-plugin-without-absolute-path/story.md) — this checkout's tracked
    plugin resolves `bin/ai-flow.js` relative to itself. *(QUICK)*
 
 ## Decisions

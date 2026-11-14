@@ -160,3 +160,163 @@ test('strict: spec-in-diff fails, and a Spec Change section lets it pass', (t) =
   assert.equal(passed.code, 0, passed.output);
   assert.match(passed.json.contrary.specChange, /one sitting/);
 });
+
+// Story 13-11: a criterion wrapped over several lines is compared whole.
+const WRAPPED = ['- [ ] Given a request from X the guard must', '      deny the write and say why'];
+
+test('a word reworded on a continuation line is criteria-changed', (t) => {
+  const dir = repo(t, 'cd-wrap-word', { criteria: WRAPPED });
+  write(dir, `${STORY}/spec.md`, spec([WRAPPED[0], '      warn on the write and say why']));
+
+  const res = verify(dir);
+  assert.equal(res.code, 0, res.output);
+  const [entry] = res.json.contrary.warnings.criteriaChanged;
+  assert.match(entry, /deny the write/);
+  assert.match(entry, /warn on the write/);
+});
+
+test('a clause added on a new continuation line is criteria-changed', (t) => {
+  const dir = repo(t, 'cd-wrap-clause', { criteria: WRAPPED });
+  write(dir, `${STORY}/spec.md`, spec([...WRAPPED, '      unless the file is in a sandbox']));
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+  assert.match(res.json.contrary.warnings.criteriaChanged[0], /unless the file is in a sandbox/);
+});
+
+test('strict: a continuation-line change fails', (t) => {
+  const dir = repo(t, 'cd-wrap-strict', { criteria: WRAPPED, strict: true });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given a request from X the guard must', '      warn on the write and say why']));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'criteria-changed'));
+});
+
+test('re-wrapping and ticking a wrapped criterion stay silent, CRLF included', (t) => {
+  const dir = repo(t, 'cd-wrap-silent', { criteria: WRAPPED });
+  const rewrapped = ['- [x] Given a request', '  from X the guard must deny', '  the write and say why'];
+  write(dir, `${STORY}/spec.md`, spec(rewrapped).replace(/\n/g, '\r\n'));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('a nested list item and a later heading are not part of the criterion above', (t) => {
+  const nested = [...WRAPPED, '  - [ ] Given Y then allow', '', '## Notes', '', '    indented note'];
+  const dir = repo(t, 'cd-wrap-nested', { criteria: nested });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given a request from X the guard must', '      deny the write and say why', '  - [x] Given Y then allow', '', '## Notes', '', '    another note']));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('strict: a Spec Change holding only a comment is not a reason', (t) => {
+  const dir = repo(t, 'cd-spec-comment', { strict: true });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given X then warn'], '\n## Spec Change\n\n<!-- why the criteria changed -->\n\n'));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.ok(res.json.contrary.failures.some((f) => f.signal === 'criteria-changed'));
+});
+
+test('a changed criterion pairs with its most similar old one, and an added one is shown', (t) => {
+  const dir = repo(t, 'cd-pair', { criteria: ['- [ ] Given Y then allow the read', DENY] });
+  write(dir, `${STORY}/spec.md`, spec([WARN, '- [ ] Given Y then allow the read', '- [ ] Export writes a CSV file']));
+
+  const res = verify(dir);
+  const changed = res.json.contrary.warnings.criteriaChanged;
+  assert.ok(changed.includes('Given X then deny → Given X then warn'), JSON.stringify(changed));
+  assert.ok(changed.includes('(added) → Export writes a CSV file'), JSON.stringify(changed));
+  assert.equal(changed.length, 2);
+});
+
+test('criteria with no clear pair are listed apart', (t) => {
+  const dir = repo(t, 'cd-nopair');
+  write(dir, `${STORY}/spec.md`, spec(['- [ ] Export writes a CSV file']));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged.sort(), ['(added) → Export writes a CSV file', 'Given X then deny → (removed)']);
+});
+
+test('removing one of two identical criteria is reported', (t) => {
+  const dir = repo(t, 'cd-dup', { criteria: [DENY, DENY] });
+  write(dir, `${STORY}/spec.md`, spec([DENY]));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, ['Given X then deny → (removed)']);
+});
+
+// 13-11 review: a criterion's own sub-steps, sub-headings and code are its words.
+const STEPS = ['- [ ] Given a bug fix the steps say, in order:', '      - reproduce the symptom;', '      - see it fail;', '      - fix.'];
+
+test('a sub-step removed from a criterion is criteria-changed, strict fails', (t) => {
+  const dir = repo(t, 'cd-substep', { criteria: STEPS, strict: true });
+  write(dir, `${STORY}/spec.md`, spec(['- [x] Given a bug fix the steps say, in order:', '      - reproduce the symptom;', '      - fix.']));
+
+  const res = verify(dir);
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.json.contrary.warnings.criteriaChanged[0], /see it fail/);
+});
+
+test('a sub-step reworded is criteria-changed', (t) => {
+  const dir = repo(t, 'cd-substep-word', { criteria: STEPS });
+  write(dir, `${STORY}/spec.md`, spec([STEPS[0], STEPS[1], '      - see it pass;', STEPS[3]]));
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+});
+
+test('a re-wrap that starts a continuation line with a list marker stays silent', (t) => {
+  const dir = repo(t, 'cd-rewrap-dash', { criteria: ['- [ ] Exit code is 0 or 1 - never 2'] });
+  write(dir, `${STORY}/spec.md`, spec(['- [ ] Exit code is 0 or 1', '      - never 2']));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('a sub-heading inside the criteria ends the criterion above it', (t) => {
+  const dir = repo(t, 'cd-subheading', { criteria: [DENY, '', '  ### Later', '', '    an indented note'] });
+  write(dir, `${STORY}/spec.md`, spec([DENY, '', '  ### Later', '', '    another note']));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('a line inside a fenced block of a criterion is part of it', (t) => {
+  const fenced = (word) => ['- [ ] Output is:', '      ```', '      - a', `      ${word}`, '      ```'];
+  const dir = repo(t, 'cd-fence', { criteria: fenced('b') });
+  write(dir, `${STORY}/spec.md`, spec(fenced('b changed')));
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+});
+
+test('a tab-indented continuation is deeper than a two-space nested bullet', (t) => {
+  const tabbed = (word) => ['- [ ] parent', '  - [ ] child must', `\t${word}`];
+  const dir = repo(t, 'cd-tab', { criteria: tabbed('deny') });
+  write(dir, `${STORY}/spec.md`, spec(tabbed('warn')));
+
+  const res = verify(dir);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+});
+
+// 13-11 re-review: a fence never swallows a later criterion.
+test('an unclosed fence ends at the next criterion, which stays open', (t) => {
+  const criteria = ['- [x] Output is:', '      ```', '      foo', '- [ ] second criterion still open'];
+  const dir = repo(t, 'cd-fence-open', { criteria });
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.openCriteria, ['second criterion still open'], res.output);
+  assert.deepEqual(res.json.contrary.warnings.criteriaChanged, []);
+});
+
+test('a four-backtick fence holding three backticks closes on its own run', (t) => {
+  const block = (word) => ['- [x] Output is:', '      ````', '      ```', `      ${word}`, '      ````', '- [ ] real criterion'];
+  const dir = repo(t, 'cd-fence-four', { criteria: block('a') });
+  write(dir, `${STORY}/spec.md`, spec(block('b')));
+
+  const res = verify(dir);
+  assert.deepEqual(res.json.contrary.warnings.openCriteria, ['real criterion'], res.output);
+  assert.equal(res.json.contrary.warnings.criteriaChanged.length, 1, res.output);
+});

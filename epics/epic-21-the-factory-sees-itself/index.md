@@ -59,12 +59,12 @@ chain; there is no tree.
 
 ## Stories
 
-1. **story-21-01-insights-from-the-runs-already-recorded** *(STANDARD — walking skeleton: legacy runs + journal → metrics → terminal and `--json`)*
-2. **story-21-02-a-vault-keeps-what-every-project-learned** *(STRICT — writes outside the repository; sanitization)*
-3. **story-21-03-insights-across-projects** *(STANDARD)*
-4. **story-21-04-the-review-and-the-gates-are-priced** *(STANDARD)*
-5. **story-21-05-human-turns-are-counted** *(STANDARD)*
-6. **story-21-06-escaped-defects-are-traced** *(STANDARD)*
+1. [story-21-01-insights-from-the-runs-already-recorded](story-21-01-insights-from-the-runs-already-recorded/spec.md) *(STANDARD — walking skeleton: legacy runs + journal → metrics → terminal and `--json`)*
+2. [story-21-02-a-vault-keeps-what-every-project-learned](story-21-02-a-vault-keeps-what-every-project-learned/spec.md) *(STRICT — writes outside the repository; sanitization)*
+3. [story-21-03-insights-across-projects](story-21-03-insights-across-projects/spec.md) *(STANDARD)*
+4. [story-21-04-the-review-and-the-gates-are-priced](story-21-04-the-review-and-the-gates-are-priced/spec.md) *(STANDARD)*
+5. [story-21-05-human-turns-are-counted](story-21-05-human-turns-are-counted/spec.md) *(STANDARD)*
+6. [story-21-06-escaped-defects-are-traced](story-21-06-escaped-defects-are-traced/spec.md) *(STANDARD)*
 
 ## Decisions
 

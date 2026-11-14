@@ -63,11 +63,11 @@ s3 is `harness.json` and the gate evaluation only, disjoint from the rest.
 
 ## Stories
 
-1. **story-23-01-a-watcher-writes-three-proposals** *(STANDARD — walking skeleton: insights → fresh-context skill → proposal notes in the vault → listed by `ai-flow proposal list`)*
-2. **story-23-02-some-proposals-only-the-maintainer-can-make** *(STRICT — the boundary of what the tool may suggest as routine)*
-3. **story-23-03-a-new-gate-starts-in-shadow** *(STRICT — policy)*
-4. **story-23-04-an-accepted-proposal-is-an-experiment** *(STANDARD)*
-5. **story-23-05-the-watcher-runs-after-every-epic** *(QUICK)*
+1. [story-23-01-a-watcher-writes-three-proposals](story-23-01-a-watcher-writes-three-proposals/spec.md) *(STANDARD — walking skeleton: insights → fresh-context skill → proposal notes in the vault → listed by `ai-flow proposal list`)*
+2. [story-23-02-some-proposals-only-the-maintainer-can-make](story-23-02-some-proposals-only-the-maintainer-can-make/spec.md) *(STRICT — the boundary of what the tool may suggest as routine)*
+3. [story-23-03-a-new-gate-starts-in-shadow](story-23-03-a-new-gate-starts-in-shadow/spec.md) *(STRICT — policy)*
+4. [story-23-04-an-accepted-proposal-is-an-experiment](story-23-04-an-accepted-proposal-is-an-experiment/spec.md) *(STANDARD)*
+5. [story-23-05-the-watcher-runs-after-every-epic](story-23-05-the-watcher-runs-after-every-epic/story.md) *(QUICK)*
 
 ## Decisions
 

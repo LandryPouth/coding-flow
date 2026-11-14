@@ -78,13 +78,13 @@ passing. s4's detached job goes through s3's queue. s6 extends the
 
 ## Stories
 
-1. **story-19-01-a-red-names-its-tests** *(STANDARD — walking skeleton: parsed failures and stop cause in evidence, the terminal and the journal)*
-2. **story-19-02-noise-is-told-apart** *(STRICT — touches the path to a verdict)*
-3. **story-19-03-one-heavy-verify-per-machine** *(STANDARD)*
-4. **story-19-04-a-long-verify-detaches** *(STANDARD)*
-5. **story-19-05-fixers-run-before-the-checks** *(STANDARD)*
-6. **story-19-06-the-risk-picks-the-tiers** *(STRICT — changes which commands prove a story)*
-7. **story-19-07-tests-are-read-only-when-nobody-watches** *(STRICT — guard)*
+1. [story-19-01-a-red-names-its-tests](story-19-01-a-red-names-its-tests/spec.md) *(STANDARD — walking skeleton: parsed failures and stop cause in evidence, the terminal and the journal)*
+2. [story-19-02-noise-is-told-apart](story-19-02-noise-is-told-apart/spec.md) *(STRICT — touches the path to a verdict)*
+3. [story-19-03-one-heavy-verify-per-machine](story-19-03-one-heavy-verify-per-machine/spec.md) *(STANDARD)*
+4. [story-19-04-a-long-verify-detaches](story-19-04-a-long-verify-detaches/spec.md) *(STANDARD)*
+5. [story-19-05-fixers-run-before-the-checks](story-19-05-fixers-run-before-the-checks/spec.md) *(STANDARD)*
+6. [story-19-06-the-risk-picks-the-tiers](story-19-06-the-risk-picks-the-tiers/spec.md) *(STRICT — changes which commands prove a story)*
+7. [story-19-07-tests-are-read-only-when-nobody-watches](story-19-07-tests-are-read-only-when-nobody-watches/spec.md) *(STRICT — guard)*
 
 ## Decisions
 

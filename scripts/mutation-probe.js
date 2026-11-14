@@ -31,6 +31,9 @@
 //   it is touched: the mutants live in a detached worktree under the system
 //   temp directory (made with hooks off, git's location variables cleared),
 //   removed at the end, on Ctrl-C (exit 130), SIGTERM (143) or SIGHUP (129).
+//   The worktree shares the repository's refs, stash and config: a command
+//   that runs `git branch`, `git stash` or `git commit` there writes them
+//   into the user's repository (run the probe on a clone if it might).
 //   A SIGKILL leaves it, and the command's process group, behind: the next
 //   run removes both once the run that made them is gone (the group only
 //   while its leader still works inside that worktree, read from /proc: on a
@@ -47,7 +50,9 @@
 // apart (`compile`), never as killed, but only when the runner prints a TS
 // error or a `SyntaxError:` line the passing baseline did not; a timeout is
 // counted apart too, as a slow run is as likely as a hung one; while cleanup
-// runs, a second Ctrl-C does not interrupt it.
+// runs, a second Ctrl-C does not interrupt it; a command killed by a signal
+// (OOM killer, SIGSEGV) reads as failed, so its mutant counts as killed; a
+// process the command detaches with `setsid` outlives the mutant and the run.
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");

@@ -54,10 +54,10 @@ s4 needs all three.
 
 ## Stories
 
-1. **story-17-01-archive-one-epic** *(STRICT: it deletes tracked files)*
-2. **story-17-02-the-index-lists-every-epic** *(STANDARD)*
-3. **story-17-03-epic-numbers-never-collide** *(STANDARD)*
-4. **story-17-04-archive-coding-flows-own-epics** *(QUICK; dogfooding)*
+1. [story-17-01-archive-one-epic](story-17-01-archive-one-epic/spec.md) *(STRICT: it deletes tracked files)*
+2. [story-17-02-the-index-lists-every-epic](story-17-02-the-index-lists-every-epic/spec.md) *(STANDARD)*
+3. [story-17-03-epic-numbers-never-collide](story-17-03-epic-numbers-never-collide/spec.md) *(STANDARD)*
+4. [story-17-04-archive-coding-flows-own-epics](story-17-04-archive-coding-flows-own-epics/story.md) *(QUICK; dogfooding)*
 
 ## Decisions
 

@@ -129,7 +129,7 @@ the same chain.
 
 ## Stories
 
-1. **story-03-01-route-a-story-to-its-chains-worktree** — parses the epic's
+1. [story-03-01-route-a-story-to-its-chains-worktree](story-03-01-route-a-story-to-its-chains-worktree/spec.md) — parses the epic's
    backbone/dependency tree, decides where a requested story belongs (its
    chain's existing location, or a new worktree), creates it via the existing
    `ai-flow worktree add`, and persists the decision so the next invocation
@@ -137,13 +137,13 @@ the same chain.
    action from parsed text; a wrong placement scatters a user's work, the
    exact class of incident epic-02's rollback exists to bound on the `land`
    side, with nothing equivalent here yet)*
-2. **story-03-02-auto-land-a-finished-chain** — when a chain's last story
+2. [story-03-02-auto-land-a-finished-chain](story-03-02-auto-land-a-finished-chain/spec.md) — when a chain's last story
    reaches the `verified` state, calls `ai-flow worktree land` automatically
    and removes the worktree directory (and the parent `<repo>-worktrees/`
    directory if it was the last one). *(STRICT — merges into the epic branch
    with no separate human trigger; the new trust surface flagged during
    planning)*
-3. **story-03-03-fix-branch-per-epic-policy-hint** — the `branchPerEpic`
+3. [story-03-03-fix-branch-per-epic-policy-hint](story-03-03-fix-branch-per-epic-policy-hint/story.md) — the `branchPerEpic`
    reminder in `ai-flow status` stops suggesting a per-story worktree command
    for a policy that wants one branch per epic. *(QUICK)*
 

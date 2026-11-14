@@ -1,0 +1,43 @@
+# Story 13-12 — A new function is measured as new
+
+## Status: planned
+
+Found by the independent review of story 13-06 on `develop` (2026-11-14,
+P1). The size ratchet 13-06 shipped now lives in `bin/lib/complexity.js`
+(story 14-07 replaced the script). When a hunk both replaces an existing line
+and inserts a new long function, `toBaseLine` maps the new function's start
+onto the replaced base line and `baseSpan` measures whatever base function
+starts there: a new 100-line `fresh()` written after an edited `// doc` line
+borrows the 121 lines of the `old()` below it and passes under `enforce`.
+
+*(STANDARD — the `complexity-grew` check, which fails a verify under
+`functionSize.enforce`; behavioural tests with real git repositories, as
+`test/complexity-signal.test.js` does.)*
+
+## Acceptance Criteria
+
+- [ ] A function whose start line is added is measured as new unless its
+      base line was itself a function start with the same name; a new
+      function over the bar fails under `enforce` even when its hunk also
+      replaces a base line (the review's `// doc` + `fresh()` case).
+- [ ] A function touched only by deletions (a removed line inside its base
+      span, e.g. the closing brace and header between two functions removed
+      to inline a helper) is measured, and its growth past the bar fails.
+- [ ] A diff header the parser cannot read (git's C-quoted paths: `"`, `\`,
+      tab, newline) is not skipped silently: the path is unquoted, or the
+      check reports `unavailable` under `enforce`; a stale path from the
+      previous file never carries over.
+- [ ] Under `enforce`, no merge base means the check is `unavailable` (not a
+      pass), or it diffs against the configured `baseBranch`/first parent —
+      the module's own rule that a check that could not run is never a pass.
+- [ ] A long function moved unchanged from one existing file to another is
+      not reported as grown (matched by name among the touched files).
+- [ ] Whether skipping coverage can switch the ratchet off under `enforce`
+      (`evidence.js`, `commandsOk && !skipCoverage`) is checked; if it can,
+      it reports `unavailable` instead.
+- [ ] Existing tests stay green, unmodified; functions stay ≤ 80 lines.
+      CHANGELOG `[Unreleased]` → Fixed.
+
+## Out of Scope
+
+- Changing the bar (80 lines, CRAP 30).
