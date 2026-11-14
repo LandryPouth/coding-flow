@@ -59,6 +59,21 @@ loosened. Reason: 15-02 moved the guard's shell parser into
   suite runs; without it, fixtures commit into the real repository and the
   verify's proof is about the wrong tree — it decides whether a proof is
   honest, added.
+- **Review 1 (2026-11-14, FAIL, two P1s) widened the rule** to every local
+  module reachable, transitively, from a listed high-risk `bin/lib/` module
+  (subdirectories included). That pulled in:
+  - `diff-base.js` (required by `diff-scope.js` and `claim.js`): it decides
+    the base every risk signal and claim is measured from;
+  - `config.js` (required by `policy.js`): it feeds `baseBranch` to
+    `diff-base.js`;
+  - `spec-drift.js` (required by `coverage-gate.js`): it decides the
+    `criteria-changed` / `spec-in-diff` signals that lower a verdict, the
+    same reason as `policy-drift.js`;
+  - `settings.js` (required by `opencode.js`): it wires the guard hook into a
+    project's settings, so it decides whether denials happen at all.
+  One explicit exclusion, commented in the test: `harness-report.js`, which
+  only prints verdicts computed elsewhere. A required `package.json` is data
+  and is not followed.
 - **`context.js`**: only constants (package root, cwd), but it is a direct
   require of `evidence.js` and decides which project a verify proves; added
   rather than carving an exception into the test.
@@ -67,9 +82,12 @@ loosened. Reason: 15-02 moved the guard's shell parser into
 
 ## Result
 
-- `.coding-flow/harness.json`: 16 paths added to `highRiskPaths`.
-- `test/security-core-risk.test.js`: two tests, red on the previous config
-  (15 modules scored low), green now.
+- `.coding-flow/harness.json`: 20 paths added to `highRiskPaths` (16, then
+  4 after review 1).
+- `test/security-core-risk.test.js`: two tests. The first follows local
+  requires transitively and fails if a listed module gains a local require
+  that is not high-risk; red on `20e3def` (diff-base, config, spec-drift,
+  settings). The second pins the named list.
 
 ## Out of Scope
 

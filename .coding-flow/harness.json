@@ -114,7 +114,11 @@
     "bin/lib/red-at-base.js",
     "bin/lib/complexity.js",
     "bin/lib/mutation.js",
-    "scripts/test-env-guard.js"
+    "scripts/test-env-guard.js",
+    "bin/lib/diff-base.js",
+    "bin/lib/config.js",
+    "bin/lib/spec-drift.js",
+    "bin/lib/settings.js"
   ],
   "testGlobs": [
     "**/*.test.*",
