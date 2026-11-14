@@ -56,5 +56,6 @@ criterion.
   and heading not absorbed, comment-only Spec Change, pairing, no-pair, removed
   duplicate), then 6 from the review (sub-step removed under strict,
   sub-step reworded, list-marker re-wrap silent, indented sub-heading, fenced
-  block, tab indent). Existing cases unmodified; `test/acceptance-criteria.test.js`
+  block, tab indent), then 2 from the re-review (unclosed fence and a
+  four-backtick fence leave the next criterion open). Existing cases unmodified; `test/acceptance-criteria.test.js`
   green.

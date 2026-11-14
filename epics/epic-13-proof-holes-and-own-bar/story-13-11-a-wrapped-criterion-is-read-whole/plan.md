@@ -13,6 +13,11 @@
   criterion; a heading (up to 3 spaces of indent) or a line at or left of the
   bullet's indent ends it. A fenced block (``` or ~~~) inside a criterion is
   read whole up to its closing fence. Tabs count as 4 columns.
+- **A fence never crosses the criterion** (re-review P1-A). A fence closes on
+  a line holding only a run of its own character at least as long as the
+  opening run (CommonMark), so a ```` block may hold ```; a line at or left
+  of the bullet's indent ends an unclosed fence as well as the criterion, so
+  a later `- [ ]` is still counted open.
 - **Accepted limits (review P2-4, P2-6, P2-7).** Lazy (unindented)
   continuation lines are not read — out of scope with prose criteria. An
   indented paragraph after a blank line is merged into the criterion above

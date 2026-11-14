@@ -16,7 +16,15 @@ const { normalizePortable } = require("./util");
 
 const CRITERION = /^(\s*)[-*]\s*\[([ xX~])\]\s*(.+?)\s*$/;
 const HEADING = /^ {0,3}#{1,6}\s/;
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
+
+// A fence closes on a line holding only a run of its own character, at least
+// as long as the run that opened it.
+function closesFence(line, fence) {
+  const run = line.trim();
+
+  return /^(`+|~+)$/.test(run) && run[0] === fence[0] && run.length >= fence.length;
+}
 // A tab counts as four columns, so a tab-indented line is deeper than a
 // two-space nested bullet.
 const indentOf = (line) => line.match(/^\s*/)[0].replace(/\t/g, "    ").length;
@@ -24,7 +32,8 @@ const indentOf = (line) => line.match(/^\s*/)[0].replace(/\t/g, "    ").length;
 // The checklist items of an `## Acceptance Criteria` section, in order. `text`
 // is the bullet line, as the open-criteria count reads it; `whole` adds every
 // following line indented deeper than the bullet — wrapped words, sub-steps
-// written as a plain list, a fenced block read whole — up to the next
+// written as a plain list, a fenced block read whole (up to its closing run,
+// or the first line at or left of the bullet) — up to the next
 // checkbox, a heading, or a line at or left of the bullet. Blank lines are
 // skipped. A criterion wrapped at 80 columns is one criterion, and a word
 // changed on its second line, or a sub-step removed, is a change.
@@ -34,11 +43,16 @@ function criterionItems(specText) {
   let fence = null;
 
   for (const line of extractSection(specText, "Acceptance Criteria").split(/\r?\n/)) {
-    if (fence) {
+    // Inside a fence every line is the criterion's, until the fence closes —
+    // or a line at or left of the bullet, which ends both (an unclosed fence
+    // never swallows the next criterion).
+    if (fence && (!line.trim() || indentOf(line) > current.indent)) {
       current.whole += ` ${line.trim()}`;
-      fence = line.trim().startsWith(fence) ? null : fence;
+      fence = closesFence(line, fence) ? null : fence;
       continue;
     }
+
+    fence = null;
 
     const match = line.match(CRITERION);
 
