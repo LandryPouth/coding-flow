@@ -8,7 +8,7 @@ const { cwd } = require("./context");
 const { readStoryBundle } = require("./story");
 const { matchesPattern } = require("./util");
 const { defaultTestGlobs, defaultHighRiskPaths } = require("./harness-config");
-const { changedFilesForCoverage, addedLinesByFile } = require("./diff-scope");
+const { riskPathsInDiff, addedLinesByFile } = require("./diff-scope");
 
 // Whole words only. A naked `includes` made "auth" fire on "author", "token" on
 // "design tokens", and "migration" on a story titled "color migration" — terms
@@ -229,7 +229,7 @@ function scoreCombinedRisk({ storyDir, config }) {
     ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
     : { level: "low", matchedTerms: [], reason: "no story to read." };
 
-  return combineRisk(storyRisk, scoreDiffRisk(changedFilesForCoverage(), config));
+  return combineRisk(storyRisk, scoreDiffRisk(riskPathsInDiff(), config));
 }
 
 module.exports = {

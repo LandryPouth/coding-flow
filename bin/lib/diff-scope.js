@@ -202,6 +202,44 @@ function changedFilesForCoverage(root = cwd, scope = null) {
   return filterScopedFiles([...files].map(normalizePortable), scope || readHarnessConfig(root).config).sort();
 }
 
+// The paths the diff RISK reads: `changedFilesForCoverage` plus the old side of
+// every rename, pure or not. A path is behavior on its own: moving
+// `middleware.ts` away disables it, a migration moved out of `migrations/` no
+// longer runs, and git may pair a deleted high-risk file with an unrelated
+// identical one as a pure move. So a file moved out of a high-risk directory is
+// scored as if it had not moved, which is also what `diff.renames=false`
+// already gave (the old side listed as a deletion). Coverage keeps measuring
+// the file at its new path only, through `changedFilesForCoverage`.
+function riskPathsInDiff(root = cwd, scope = null) {
+  const config = scope || readHarnessConfig(root).config;
+  const files = new Set(changedFilesForCoverage(root, config));
+  const { mergeBase } = currentDiffBase(root);
+  let raw = "";
+
+  // The working tree against the base (HEAD with none): committed, staged and
+  // unstaged changes in one comparison. `-z` keeps every path byte for byte.
+  try {
+    raw = require("child_process").execFileSync(
+      "git",
+      ["diff", "--find-renames", "--raw", "-z", mergeBase || "HEAD"],
+      { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 },
+    );
+  } catch {
+    raw = "";
+  }
+
+  const fields = raw.split("\0");
+  for (let i = 0; i < fields.length; i += 1) {
+    const header = fields[i].match(/^:\d+ \d+ [0-9a-f.]+ [0-9a-f.]+ ([A-Z])\d*$/);
+    if (!header) continue;
+
+    if (header[1] === "R") files.add(normalizePortable(fields[i + 1]));
+    i += header[1] === "R" || header[1] === "C" ? 2 : 1;
+  }
+
+  return filterScopedFiles([...files], config).sort();
+}
+
 // The lines this change ADDED, per file. Only added lines: a deleted line has no
 // coverage to have, and asking a test to execute code that no longer exists is
 // nonsense. `--unified=0` makes every hunk header exact, so no context line is
@@ -399,6 +437,7 @@ module.exports = {
   isScopedOut,
   filterScopedFiles,
   changedFilesForCoverage,
+  riskPathsInDiff,
   runGitText,
   changedLinesForCoverage,
   renamedFilesInDiff,

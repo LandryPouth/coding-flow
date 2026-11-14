@@ -32,6 +32,7 @@ const {
   currentDiffBase,
   isScopedOut,
   changedFilesForCoverage,
+  riskPathsInDiff,
   runGitText,
   changedLinesForCoverage,
   parseChangedText,
@@ -368,7 +369,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   const storyRisk = storyDir
     ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
     : { level: "low", matchedTerms: [], reason: "no story to read." };
-  const risk = combineRisk(storyRisk, scoreDiffRisk(changedFiles, config));
+  const risk = combineRisk(storyRisk, scoreDiffRisk(riskPathsInDiff(), config));
   ctx.riskLevel = risk.level;
 
   if (risk.level === "low") {
@@ -657,8 +658,7 @@ function mentionsPath(text, target) {
 // (HEAD when there is no merge base) and the tree, and the stricter wins: a diff
 // cannot step down from strict, drop failOnContrarySignals, or lower the risk
 // that arms it — highRiskPaths, testGlobs (which hides structural signals) and
-// ignoredPaths (which hides files) all count at the base. One exception: a file
-// renamed away from a high-risk path is scored at its new path only.
+// ignoredPaths (which hides files) all count at the base.
 const BASE_RISK_KEYS = ["highRiskPaths", "testGlobs", "ignoredPaths"];
 
 // The base's harness. A base commit with none, or an unreadable one, counts as
@@ -681,7 +681,7 @@ function strictestRisk({ storyDir, config, atBase = readBaseConfig() }) {
     if (Array.isArray(atBase[key])) baseRisk[key] = atBase[key];
   }
 
-  const atBaseLevel = scoreDiffRisk(changedFilesForCoverage(cwd, baseRisk), baseRisk).level;
+  const atBaseLevel = scoreDiffRisk(riskPathsInDiff(cwd, baseRisk), baseRisk).level;
   return RISK_RANK[atBaseLevel] > RISK_RANK[tree] ? atBaseLevel : tree;
 }
 

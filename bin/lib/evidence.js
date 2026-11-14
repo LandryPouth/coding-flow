@@ -34,7 +34,7 @@ const {
 const {
   currentDiffBase,
   runGitList,
-  changedFilesForCoverage,
+  riskPathsInDiff,
   setDiffBaseRequest,
   diffBaseFlag,
   publicDiffBase,
@@ -88,7 +88,7 @@ function buildHarnessPreflight({ story = null } = {}) {
   // heading change.
   const risk = combineRisk(
     scoreStoryRisk(storyText, config),
-    scoreDiffRisk(currentTreeToken(cwd) ? changedFilesForCoverage() : [], config),
+    scoreDiffRisk(currentTreeToken(cwd) ? riskPathsInDiff() : [], config),
   );
   const mode = risk.level === "high" ? "strict" : risk.level === "medium" ? "standard" : "fast";
   const requiredChecks = [...config.requiredChecks];

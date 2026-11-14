@@ -57,6 +57,7 @@ const {
   getChangedFiles,
   filterScopedFiles,
   changedFilesForCoverage,
+  riskPathsInDiff,
 } = require("./diff-scope");
 const { scoreStoryRisk, scoreDiffRisk, combineRisk } = require("./risk");
 const {
@@ -578,6 +579,7 @@ module.exports = {
   combineRisk,
   readStoryBundle,
   changedFilesForCoverage,
+  riskPathsInDiff,
   harnessCommand,
   // Reused by `run` (batch orchestration) so it shares the single-story verify
   // execution path instead of duplicating it.
