@@ -85,6 +85,21 @@ function resultNotes(raw, { singleFile = false } = {}) {
 // but stale proof (the code changed since) is not "verified" but "stale". It
 // defaults to true so a caller that cannot assess freshness keeps the old
 // behavior.
+// The `## Status:` a person or an agent wrote, normalised (`in review` →
+// `in-review`), or null when the story carries none. Three forms are accepted:
+// `## Status: done` (what the skill mandates), `## Status done`, and `## Status`
+// with the value on the following line.
+function readWrittenStatus(raw) {
+  const statusMatch = raw.match(/^##[ \t]+Status[ \t]*:?[ \t\r\n]*([a-zA-Z][a-zA-Z -]*)/im);
+  return statusMatch ? statusMatch[1].trim().toLowerCase().replace(/\s+/g, "-") : null;
+}
+
+// What `epics/INDEX.md` prints for a story (story 17-02): the written status
+// only, never the proof-derived one.
+function writtenStatus(storyDir) {
+  return readWrittenStatus(readStoryPart(storyDir, "tasks"));
+}
+
 function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
   // A single-file story answers the "tasks" role from story.md, so `## Status`
   // and `## Result` are read from wherever this story actually keeps them.
@@ -100,10 +115,10 @@ function inferStoryStatus(storyDir, { verify = null, fresh = true } = {}) {
   //    quietly fell through to the prose heuristic.
   //    Three forms are accepted: `## Status: done` (what the skill mandates),
   //    `## Status done`, and `## Status` with the value on the following line.
-  const statusMatch = raw.match(/^##[ \t]+Status[ \t]*:?[ \t\r\n]*([a-zA-Z][a-zA-Z -]*)/im);
+  const written = readWrittenStatus(raw);
 
-  if (statusMatch) {
-    return statusMatch[1].trim().toLowerCase().replace(/\s+/g, "-");
+  if (written) {
+    return written;
   }
 
   // The prose heuristic (step 3) only sees the executed outcome, not the checklist.
@@ -207,4 +222,4 @@ function createLocalStorage(cwd) {
   };
 }
 
-module.exports = { createLocalStorage, inferStoryStatus, storyTitle };
+module.exports = { createLocalStorage, inferStoryStatus, storyTitle, writtenStatus };

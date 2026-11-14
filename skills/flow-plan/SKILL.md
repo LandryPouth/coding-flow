@@ -31,7 +31,8 @@ with minimal ambiguity. Dense artifacts, no ceremony, no document no agent will 
 4. Define the stories as vertical slices, each with a short Implementation Context.
    Story 01 is the walking skeleton; check every story against INVEST.
 5. Write each story's files at the shape its size calls for (Story File Contract).
-6. Recommend the first story to run with `/flow-run`.
+6. Run `ai-flow archive --refresh` so `epics/INDEX.md` lists the new or changed epic.
+7. Recommend the first story to run with `/flow-run`.
 
 ## Planning Heuristics
 
@@ -359,6 +360,8 @@ Before reporting the plan as done:
 - [ ] Every `## Stories` entry is `N. [story-…](story-…/spec.md)` (`story.md` for a
       single-file story) and the target exists — `doctor` reports no
       `story_entry_not_linked`.
+- [ ] `ai-flow archive --refresh` ran after the epic was written or changed —
+      `doctor` reports no `epic_index_stale`.
 - [ ] Any dependency tree uses only the shapes above, and each edge is a real
       build-on relationship — checked, not assumed.
 - [ ] An epic that adds a module carries `## Boundaries` with an `approved by:` name

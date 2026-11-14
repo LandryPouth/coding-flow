@@ -177,3 +177,16 @@ test('a project with no epics/ gets no index', (t) => {
   assert.equal(res.code, 0, res.output);
   assert.equal(fs.existsSync(path.join(dir, 'epics')), false);
 });
+
+test('/flow-plan refreshes the index in its Pipeline and checks it in Verification', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'templates', '.claude', 'skills', 'flow-plan', 'SKILL.md'), 'utf8');
+  const section = (name) => {
+    const start = skill.indexOf(`## ${name}\n`);
+    assert.ok(start >= 0, `## ${name} exists`);
+    const next = skill.indexOf('\n## ', start + 1);
+    return skill.slice(start, next < 0 ? undefined : next);
+  };
+  assert.match(section('Pipeline'), /ai-flow archive --refresh/);
+  assert.match(section('Verification'), /ai-flow archive --refresh/);
+  assert.match(section('Verification'), /epic_index_stale/);
+});

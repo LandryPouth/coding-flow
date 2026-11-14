@@ -33,6 +33,10 @@
       {
         "prompt": "the request is ambiguous, ask me the questions that matter before you write the stories",
         "top_k": 2
+      },
+      {
+        "prompt": "add two stories to epic 05 and keep the epics index current",
+        "top_k": 2
       }
     ],
     "negative": [

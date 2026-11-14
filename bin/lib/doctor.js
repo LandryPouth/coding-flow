@@ -40,6 +40,7 @@ const { servedByClaude } = require("./platforms/opencode");
 const { EXPLICIT_TARGETS } = require("./detect");
 const { inspectOpenCodeInstructions, inspectGlobalCommands, globalOpenCodeDir } = require("./opencode-config");
 const { storyLinkIssues, fixStoryLinks } = require("./story-links");
+const { indexFreshness, refreshIndex } = require("./archive");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -407,11 +408,30 @@ function checkStoryLinks(warnings) {
   }
 }
 
-// What `doctor` reads from the epics on disk: size, numbering, story links.
+// `epics/INDEX.md`'s live section (story 17-02) lists every epic and every
+// story's written status. A new epic, story, title or written status makes it
+// stale; a proof going stale does not, since the file carries none.
+function checkEpicIndex(warnings) {
+  let freshness;
+  try {
+    freshness = indexFreshness();
+  } catch {
+    return; // best-effort only — never block doctor on a storage read failure.
+  }
+  if (!freshness || !freshness.stale) return;
+  warnings.push({
+    code: "epic_index_stale",
+    file: "epics/INDEX.md",
+    message: `${freshness.reason} — run \`ai-flow archive --refresh\` (or \`ai-flow doctor --fix\`)`,
+  });
+}
+
+// What `doctor` reads from the epics on disk: size, numbering, story links, the index.
 function checkEpicFiles(warnings) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
   checkStoryLinks(warnings);
+  checkEpicIndex(warnings);
 }
 
 // `--fix` half of checkStoryLinks: rewrites each fixable entry to the canonical
@@ -732,6 +752,7 @@ function collectMinimalReport({ strict = false } = {}) {
   checkOpenCodeWiring(errors, warnings, notes);
   checkReleaseTag(warnings);
   checkStoryLinks(warnings);
+  checkEpicIndex(warnings);
 
   return {
     ok: errors.length === 0,
@@ -994,11 +1015,13 @@ function printNotes(report) {
 }
 
 // `doctor --fix`. Epic indexes are the project's own files on either install
-// shape, so their story links are fixed first. `--fix` then restores the
-// templates, which a minimal install never had: silently laying them down would
-// turn a diagnostic into an unasked-for upgrade.
+// shape, so their story links and `epics/INDEX.md`'s live section are fixed
+// first. `--fix` then restores the templates, which a minimal install never
+// had: silently laying them down would turn a diagnostic into an unasked-for
+// upgrade.
 function applyFix() {
   fixAllStoryLinks();
+  refreshIndex({ quiet: true });
 
   const fixConfig = readConfig(cwd);
 

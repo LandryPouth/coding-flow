@@ -30,6 +30,25 @@
 - **`status` never writes.** It is read-only, so the refresh goes through
   `archive --refresh`, `doctor --fix` and `/flow-plan`.
 
+- **Tests in their own files** (decided while implementing): `test/epic-index.test.js`
+  for the refresh, `test/doctor-epic-index.test.js` for the doctor half, instead of
+  the existing `doctor.test.js` — the doctor suite is one file per check.
+- **The live section is above the archived one.** Without markers, the refresh
+  inserts it right before `## Archived epics`; `archive <epic>` keeps appending
+  entries at the end, so the two sections never interleave.
+- **Broken markers refuse.** A start without an end, an end before a start, or a
+  repeated marker: `--refresh` exits 1 and `archive` refuses up front, both writing
+  nothing — guessing where the user's text ends could eat it.
+- **A symlinked `INDEX.md` refuses** (as 17-01 decided for the archived section).
+- **`doctor` judges, `--fix` writes, `status` never does.** The check runs on both
+  install shapes, next to the story-link check; `--fix` refreshes before the
+  minimal-install early return, since the index is the project's own file.
+- **Refresh never stages.** `archive <epic>` stages INDEX.md as 17-01 does; a plain
+  refresh leaves the file for the user to commit with the epic change.
+- **Story title** drops a leading `Story NN-NN —` (the archived table's rule).
+- **Written status** comes from the same regex `inferStoryStatus` used, now shared
+  as `writtenStatus()` in `storage/local.js`.
+
 ## Acceptance Traceability
 
 - 1–3, 6 → `test/epic-index.test.js`
