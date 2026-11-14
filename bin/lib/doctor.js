@@ -39,6 +39,7 @@ const { inspectOpenCodePlugin, probeOpenCode, usesOpenCode } = require("./openco
 const { servedByClaude } = require("./platforms/opencode");
 const { EXPLICIT_TARGETS } = require("./detect");
 const { inspectOpenCodeInstructions, inspectGlobalCommands, globalOpenCodeDir } = require("./opencode-config");
+const { storyLinkIssues, fixStoryLinks } = require("./story-links");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -381,6 +382,41 @@ function checkDuplicateNumbering(warnings) {
   }
 }
 
+function listEpicsQuietly() {
+  try {
+    return getStorage(cwd, readConfig(cwd)).listEpics();
+  } catch {
+    return []; // best-effort only — never block doctor on a storage read failure.
+  }
+}
+
+// `/flow-plan` writes each `## Stories` entry as a link that opens the story's
+// spec (`1. [story-…](story-…/spec.md) — …`). Checked on every install shape:
+// the same entries are what `worktree place` reads, minimal install or not.
+function checkStoryLinks(warnings) {
+  for (const epic of listEpicsQuietly()) {
+    const epicDir = path.join(cwd, epic.path);
+    const indexPath = path.join(epicDir, "index.md");
+
+    if (!fs.existsSync(indexPath)) continue;
+
+    const file = `${epic.path}/index.md`;
+    for (const issue of storyLinkIssues(epicDir, fs.readFileSync(indexPath, "utf8"))) {
+      warnings.push({ code: "story_entry_not_linked", file, line: issue.line, message: `${file}:${issue.line}: ${issue.message}` });
+    }
+  }
+}
+
+// `--fix` half of checkStoryLinks: rewrites each fixable entry to the canonical
+// link, the rest of its line kept.
+function fixAllStoryLinks() {
+  let count = 0;
+  for (const epic of listEpicsQuietly()) {
+    count += fixStoryLinks(path.join(cwd, epic.path));
+  }
+  if (count > 0) log(`Rewrote ${count} \`## Stories\` entr${count === 1 ? "y" : "ies"} to link to the story spec.`);
+}
+
 // Calls the guard let through because it could not judge them. Silence there
 // reads as protection; a recent entry says it was not. A shell command too dynamic
 // to read (`> "$out"`, `node <<EOF`) is everyday use, ~100 a day here: `report`
@@ -688,6 +724,7 @@ function collectMinimalReport({ strict = false } = {}) {
   const codexProbe = checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings, notes);
   checkReleaseTag(warnings);
+  checkStoryLinks(warnings);
 
   return {
     ok: errors.length === 0,
@@ -915,6 +952,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
   checkDuplicateNumbering(warnings);
+  checkStoryLinks(warnings);
   checkEvidenceAndRecovery(warnings, notes);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
@@ -953,6 +991,11 @@ function printNotes(report) {
 function doctor({ fix = false, json = false, strict = false } = {}) {
   // `--fix` restores the templates, which a minimal install never had. Silently
   // laying them down would turn a diagnostic into an unasked-for upgrade.
+  // Epic indexes are the project's own files on either install shape.
+  if (fix) {
+    fixAllStoryLinks();
+  }
+
   if (fix && readConfig(cwd).install === "minimal") {
     log("Minimal install: nothing to restore (no templates were laid down).");
     log("Run `ai-flow init` to lay down the full workflow.");

@@ -40,6 +40,7 @@ function project(t, prefix, initArgs = []) {
 // stories: { name: 'spec' | 'story' | 'folder' } — which file the story has.
 function writeEpic(dir, epicName, stories, storiesSection) {
   const epicDir = path.join(dir, 'epics', epicName);
+  fs.mkdirSync(epicDir, { recursive: true });
   for (const [name, shape] of Object.entries(stories)) {
     fs.mkdirSync(path.join(epicDir, name), { recursive: true });
     if (shape === 'spec') fs.writeFileSync(path.join(epicDir, name, 'spec.md'), `# ${name}\n`);
