@@ -9,6 +9,76 @@ is either measured on this checkout (its `.coding-flow/runs/`,
 `docs/DOGFOODING.md`, `git log`) or comes from an experiment run in a
 throwaway worktree.
 
+**Re-measured again 2026-11-14, after epics 13–15** — next section.
+
+## Re-measured 2026-11-14, after epics 13–15
+
+One command, on the primary checkout's runs (story 15-06):
+
+```bash
+node scripts/remeasure-study.js --runs .coding-flow/runs --since 2026-10-18
+```
+
+`2026-10-18` is the day epic 13 started. Everything in the table comes from
+that output and from `docs/DOGFOODING.md`; the caveats under it come from
+the 2026-11-13/14 sessions that ran 13-04, 13-07, 13-08 and 15-01 to 15-05.
+
+| Measure | Before | 2026-11-14 | Target | Reading |
+|---|---|---|---|---|
+| Verifies at `verified` | 0 / 206 | **29 / 105 (27.6 %)**; 36.7 % of the 79 green ones | > 0 | **Met.** 13-03 put lcov in this repository's validation; almost every green story verify since 14-03 reaches the rung. The rest are reds (no tier), storyless runs and re-verifies of older stories. |
+| Review passes per STRICT story | 10–12 (05-01/02/03) | 12-01: 1 · 13-01: 1 · 14-04: 2 · 15-02: 1 · **15-05: 4** (3 STRICT + 1 alignment) | ≤ 3 | **Missed by one on 15-05.** Stories planned below STRICT but run with independent reviews: **13-04: 4**, 13-07: 3, 13-08: 3. Nothing near 10–12. |
+| P1s caught by `verify` rather than review | not measured | **5 gate reds vs 14 review P1s → 26 %** (proxy) | rising | A gate red (coverage, contrary signal, size) whose commands passed, against the P1s reviews recorded. 21 more reds failed on commands: real reds and timing flakes mixed, counted apart. |
+| Surviving mutants per story | — | **not measured: no verify ran the probe** | — | 15-05 shipped the probe opt-in; this repository does not set `mutation` in `harness.json`. **Missed** as a measure, not as a result. |
+| DOGFOODING rows about worktrees | 12 / 38 | **8 / 34 since 2026-10-18 (7 still open)**, and 6 more rows whose problem is a worktree (14 / 34, 41 %) | falling | **Missed.** The share by surface fell (32 % → 24 %); the friction did not. Whole log: 19 / 72 by surface, 16 open. |
+
+**What the numbers under-count, measured in the same sessions:**
+
+- **Evidence dies with the worktree.** `land` and `autoland` remove the
+  story worktree and its `.coding-flow/runs/` (DOGFOODING 2026-11-09, open).
+  The stories of this series were re-verified and their review re-recorded on
+  `develop` afterwards: **one review file for 13-04's 4 passes, 15-05's 4,
+  13-07's 3, 13-08's 3**. The script prints both the files and the passes a
+  review's text states; before this series nothing stated them, so the
+  pass counts of 12-01, 13-01, 14-04 and 15-02 above are floors, not counts.
+  The same loss hides the gate reds of the worktree verifies (13-07's first
+  verify, red on the size ratchet, is not in the primary's runs): the 26 %
+  is a floor too.
+- **Review is still where the P1s come from.** 13-04 (4 P1s: policy globs
+  unlisting themselves, renames, working-tree scope, the base config), 13-07
+  (4: a self-named `baseBranch`, then a regression of its own first fix),
+  13-08 (2: a pure move made verify red, `R100` read as identity) — each
+  found by a fresh reviewer, none by a gate. They are the epic-05 pattern at
+  a smaller scale: missing cases in a resolution rule, not weak tests.
+- **15-02 is NOT PROVEN today.** Its `--claim refactor` cannot be re-taken
+  after land: later stories edited tests in its window (DOGFOODING
+  2026-11-13). The refactor was proven once, in its worktree, and that proof
+  went with it.
+- **Flakes cost verifies.** A first red on a timing test under load was
+  common in this series (`test/mutation.test.js:409` three times, fixed in
+  `cafa6c5`); a verify timeout left 38 processes running (DOGFOODING
+  2026-11-13, open). Those reds are in the 21 counted apart.
+
+**Targets missed:** review passes ≤ 3 (15-05 and 13-04 at 4); surviving
+mutants (not measurable here until `mutation` is configured); worktree
+friction (not falling).
+
+### The open question, answered by the count
+
+The study's rule was: *if the friction persists once epics 02/03 are stable,
+make the layer optional rather than extend it.* It persisted: 8 new rows by
+surface and 6 more caused by a worktree since 2026-10-18, 7 of the 8 open;
+in this series `autoland` refused every land it was asked for (15-01,
+15-05, 13-08 — each then landed by hand with `worktree land`; 13-07 went
+straight to `land`), and every land deleted the story's proof.
+
+**Recommendation (not decided — a product decision for the maintainer):**
+make the worktree layer optional — stories run in the current checkout by
+default, a worktree only when a second chain runs in parallel — and, ahead
+of that, carry a story's verify and review evidence into the primary at land
+(the 2026-11-09 row). The second is a defect in the proof itself, whatever is
+decided about the first. Not recorded in `docs/design-decisions.md` until it
+is decided.
+
 ## Re-measured 2026-10-18, after epics 01–12
 
 | Measure | 2026-10-17 | 2026-10-18 | Reading |
@@ -344,9 +414,11 @@ All readable from `.coding-flow/runs/`:
 The two experiments and the run analysis were scratch scripts, not committed.
 Their method is fully described above; to re-run:
 
-- **Runs:** group `.coding-flow/runs/*.json` by suffix (`-verify`, `-review`),
-  then count `coverage.tier`, `reviewer`, `verdict`, `findingCounts.p1` per
-  `story`.
+- **Runs:** `node scripts/remeasure-study.js --runs .coding-flow/runs --since
+  <YYYY-MM-DD> [--json]` (story 15-06; its header gives what each number
+  means). It groups `*-verify` and `*-review` runs by `story` and counts
+  `coverage.tier`, `reviewer`, `findingCounts.p1`, gate reds and mutation
+  survivors, plus the DOGFOODING rows about worktrees.
 - **Mutation:** now `scripts/mutation-probe.js` (story 15-04; its header
   gives the usage). By hand, as experiment 1 did: `git worktree add --detach <tmp> HEAD`; take the `+` lines of
   `git diff -U0 <base> HEAD -- bin/lib/guard.js`; for each sampled site, apply
