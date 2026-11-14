@@ -102,7 +102,9 @@ const UNREAD_TREE = "a tree is copied onto the project from a source the guard c
 const PATHSPEC_MAGIC = "git reads a pathspec magic the guard does not model";
 const REMOTE_SHELL = "rsync runs a remote shell the guard cannot read";
 const SUBSTITUTED_VERB = "the command itself depends on shell expansion";
-const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH, SHIFTED_PATCH, FORWARDED, UNREAD_TREE, PATHSPEC_MAGIC, SUBSTITUTED_VERB, REMOTE_SHELL]);
+const GIT_INDEX = "git writes the work tree from its index, the guard cannot read which files";
+const SFTP_SESSION = "sftp runs a session whose commands the guard cannot read";
+const SHELL_LIMITS = new Set([EXPANSION, UNKNOWN_CWD, PATHSPEC_FILE, HEREDOC_PROGRAM, PIPED_PROGRAM, SUBSTITUTED_PROGRAM, ARCHIVE, UNREAD_PATCH, STASH, SHIFTED_PATCH, FORWARDED, UNREAD_TREE, PATHSPEC_MAGIC, SUBSTITUTED_VERB, REMOTE_SHELL, GIT_INDEX, SFTP_SESSION]);
 const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 
 // --- segments -----------------------------------------------------------------
@@ -202,7 +204,7 @@ function reader(startCwd, host, options = {}) {
   // The shell resolves `..` physically once a `cd` went through a symlink, so every
   // directory it tracks is the real one when it exists (a missing one stays lexical).
   const start = host.realpath(path.resolve(startCwd));
-  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0, substitutes: Boolean(options.substitutes) };
+  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0, acted: options.after || 0, substitutes: Boolean(options.substitutes) };
 }
 
 const homeOf = (r, target) => expandHome(target, r.host.home());
@@ -300,7 +302,11 @@ function verbAt(tokens) {
 // their operand is not a file the command writes.
 function commandOf(segment) {
   const tokens = tokenize(segment.text.trim());
-  const index = verbAt(tokens);
+  let index = verbAt(tokens);
+  // `busybox cp …` runs the applet it names.
+  if (path.basename(tokens[index] || "") === "busybox" && tokens[index + 1] && !tokens[index + 1].startsWith("-")) {
+    index += 1;
+  }
   const args = tokens.slice(index + 1);
   const operands = args.filter((arg, i) => !/^<{1,3}$/.test(arg) && !/^<{1,3}$/.test(args[i - 1] || "") && !arg.startsWith("<"));
   const files = operands.filter((arg) => classify(arg) !== "skip");
@@ -620,6 +626,10 @@ function otherArchiveTargets(name, operands) {
     const out = operands.find((arg) => arg.startsWith("-o"));
     return [out ? out.slice(2) : "."];
   }
+  const more = moreArchiveTargets(name, operands);
+  if (more !== null) {
+    return more;
+  }
   // `python3 -m zipfile -e ARCHIVE DIR`, `-m tarfile -e ARCHIVE [DIR]`
   const module = operands.indexOf("-m");
   if (/^python[\d.]*$/.test(name) && module !== -1 && ["zipfile", "tarfile"].includes(operands[module + 1])) {
@@ -627,6 +637,90 @@ function otherArchiveTargets(name, operands) {
     return at === -1 ? [] : [operands[at + 2] ?? "."];
   }
   return null;
+}
+
+const positional = (operands) => operands.filter((arg) => !arg.startsWith("-"));
+
+// `unrar x|e ARCHIVE [files…] [DIR/]` (a destination ends in `/`), `jar xf`
+// (here, or `--dir DIR`), `pax -r` (here) and `pax -rw … DIR`; `pax -s` renames
+// what it writes.
+function moreArchiveTargets(name, operands) {
+  if (name === "unrar" || name === "rar") {
+    const [mode, , ...rest] = positional(operands);
+    return mode === "x" || mode === "e" ? [rest.filter((arg) => arg.endsWith("/")).pop() || "."] : [];
+  }
+  if (name === "jar") {
+    if (!/^-?-?[a-z]*x/.test(operands[0] || "") && !operands.includes("--extract")) {
+      return [];
+    }
+    const at = operands.findIndex((arg) => arg === "--dir" || arg.startsWith("--dir="));
+    return [at === -1 ? "." : operands[at].includes("=") ? operands[at].slice(6) : operands[at + 1] ?? null];
+  }
+  if (name === "pax") {
+    const flags = operands.filter((arg) => /^-[A-Za-z]+$/.test(arg)).join("");
+    if (!flags.includes("r")) {
+      return [];
+    }
+    if (flags.includes("s")) {
+      return [null];
+    }
+    return flags.includes("w") ? [positional(operands).pop() ?? null] : ["."];
+  }
+  return null;
+}
+
+// tar and gtar read a tar (gzip by content), unzip a zip; bsdtar detects the
+// format itself.
+const ARCHIVE_FORMAT = { tar: "tar", gtar: "tar", bsdtar: "any", unzip: "zip" };
+
+// The archive file a tar or unzip extraction reads, when the command names one
+// the guard can list by its plain member names: null for stdin, a renaming
+// option (`--strip-components`, `--transform`, bsdtar's `-s`, unzip's `-j`), or
+// any other tool.
+function tarArchiveFile(operands) {
+  const bare = /^[A-Za-z]+$/.test(operands[0] || "") ? operands[0] : "";
+  // `-i`/`--ignore-zeros` reads past the end marker the lister stops at.
+  if (/i/.test(bare) || operands.some((arg) => longOption(arg, "strip-components", 3) || longOption(arg, "transform", 3) || longOption(arg, "xform", 3) || longOption(arg, "ignore-zeros", 3) || arg === "-s" || /^-[A-Za-z]*i/.test(arg))) {
+    return null;
+  }
+  for (let i = 0; i < operands.length; i += 1) {
+    const arg = operands[i];
+    if (longOption(arg, "file", 3)) {
+      return arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : operands[i + 1] ?? null;
+    }
+    const cluster = arg === bare && i === 0 ? arg : /^-[A-Za-z]+$/.test(arg) ? arg.slice(1) : null;
+    if (cluster !== null && cluster.includes("f")) {
+      return cluster.endsWith("f") ? operands[i + 1] ?? null : null;
+    }
+    if (/^-f./.test(arg)) {
+      return arg.slice(2);
+    }
+  }
+  return null;
+}
+
+function unzipArchiveFile(operands) {
+  for (let i = 0; i < operands.length; i += 1) {
+    const arg = operands[i];
+    if (/^-[A-Za-z]*j/.test(arg)) {
+      return null;
+    }
+    if (arg.startsWith("-")) {
+      i += /^-[A-Za-z]*d$/.test(arg) || ["-P", "-I", "-O", "-x"].includes(arg) ? 1 : 0;
+      continue;
+    }
+    return arg;
+  }
+  return null;
+}
+
+function archiveFile(r, { name, operands }) {
+  const word = TAR.has(name) ? tarArchiveFile(operands) : name === "unzip" ? unzipArchiveFile(operands) : null;
+  if (word === null || word === "-" || classify(word) !== "path" || r.cwd === null) {
+    return {};
+  }
+  // An earlier command (not a `cd`) or a substitution may have made the archive.
+  return { archive: path.resolve(r.cwd, homeOf(r, word)), format: ARCHIVE_FORMAT[name], chained: r.acted > 0 || r.substitutes };
 }
 
 function extractTargets({ name, operands }) {
@@ -641,11 +735,12 @@ function readArchive(r, command) {
   if (directories === null) {
     return false;
   }
+  const members = archiveFile(r, command);
   for (const directory of directories) {
     if (directory === null) {
       r.found.push({ target: "(archive)", kind: "extract", unchecked: ARCHIVE });
     } else {
-      add(r, directory, "extract");
+      add(r, directory, "extract", members);
     }
   }
   return true;
@@ -900,6 +995,8 @@ function readGitVerbs(r, command) {
     r.found.push({ target: "(stash)", kind: "write", unchecked: STASH });
   } else if (sub === "apply" || sub === "am") {
     readGitPatch(r, command, sub, rest);
+  } else if (readGitPlumbing(r, sub, rest)) {
+    return;
   } else if (sub === "mv") {
     const operands = rest.filter((arg) => !/^<{1,3}/.test(arg));
     const files = operands.filter((arg) => classify(arg) !== "skip");
@@ -907,6 +1004,63 @@ function readGitVerbs(r, command) {
       readCopy(r, { segment: command.segment, name: "mv", args: rest, operands, files });
     }
   }
+}
+
+const CLONE_VALUE_OPTIONS = new Set(["-b", "--branch", "-o", "--origin", "-c", "--config", "--depth", "--reference", "--reference-if-able", "--separate-git-dir", "-u", "--upload-pack", "--template", "-j", "--jobs", "--filter", "--shallow-since", "--shallow-exclude", "--server-option", "--bundle-uri"]);
+const WORKTREE_VALUE_OPTIONS = new Set(["-b", "-B", "--reason", "--orphan"]);
+
+function operandsOf(args, valueOptions) {
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === "--") {
+      out.push(...args.slice(i + 1));
+      break;
+    }
+    if (args[i].startsWith("-")) {
+      i += valueOptions.has(args[i]) ? 1 : 0;
+    } else if (!/^<{1,3}/.test(args[i])) {
+      out.push(args[i]);
+    }
+  }
+  return out;
+}
+
+// A directory git makes whole: judged on what it is and holds, its source unread.
+function gitTree(r, dir) {
+  add(r, dir, "write");
+  if (r.trees) {
+    add(r, dir, "tree", { unread: true });
+  }
+}
+
+// Plumbing that writes the work tree: `checkout-index` (named paths; the whole
+// index, a prefix or stdin are unchecked), `read-tree -u`, and the directory
+// `clone` or `worktree add` makes. Returns whether `sub` was one of them.
+function readGitPlumbing(r, sub, rest) {
+  if (sub === "checkout-index") {
+    if (rest.some((arg) => /^-[A-Za-z]*a$/.test(arg) || arg === "--all" || arg === "--stdin" || arg.startsWith("--prefix"))) {
+      r.found.push({ target: "(index)", kind: "write", unchecked: GIT_INDEX });
+    }
+    operandsOf(rest, new Set()).forEach((file) => add(r, file, "write"));
+  } else if (sub === "read-tree") {
+    if (rest.some((arg) => arg === "-u")) {
+      r.found.push({ target: "(index)", kind: "write", unchecked: GIT_INDEX });
+    }
+  } else if (sub === "clone") {
+    const [repository, dir] = operandsOf(rest, CLONE_VALUE_OPTIONS);
+    const named = dir ?? (repository ? path.posix.basename(repository.replace(/^[^/]*:/, "").replace(/\/?$/, "")).replace(/\.git$/, "") : null);
+    if (named) {
+      gitTree(r, named);
+    }
+  } else if (sub === "worktree" && rest[0] === "add") {
+    const [dir] = operandsOf(rest.slice(1), WORKTREE_VALUE_OPTIONS);
+    if (dir) {
+      gitTree(r, dir);
+    }
+  } else {
+    return false;
+  }
+  return true;
 }
 
 // `:/X` and `:(top)X` name X from the repository's top; any other magic
@@ -947,6 +1101,40 @@ function readGit(r, command) {
     r.found.push({ target: "(pathspec file)", kind: "write", unchecked: PATHSPEC_FILE });
   }
   r.cwd = saved;
+}
+
+// --- scp / sftp -----------------------------------------------------------------
+
+const SCP_VALUE_LETTERS = "cDFiJloPSX";
+const SFTP_VALUE_LETTERS = "BbcDFiJloPRSsX";
+
+// `scp SRC… DEST` copies like `cp` when DEST is local; `sftp HOST:PATH LOCAL`
+// downloads like it. A bare `sftp HOST` (or `-b batch`) is a session of
+// commands the guard does not read.
+function readSecureCopy(r, command) {
+  const letters = command.name === "scp" ? SCP_VALUE_LETTERS : SFTP_VALUE_LETTERS;
+  const flags = [];
+  const words = [];
+  for (let i = 0; i < command.operands.length; i += 1) {
+    const arg = command.operands[i];
+    if (/^-[A-Za-z0-9]+$/.test(arg)) {
+      flags.push(arg);
+      i += letters.includes(arg[arg.length - 1]) && arg.length === 2 ? 1 : 0;
+    } else if (!arg.startsWith("-")) {
+      words.push(arg);
+    }
+  }
+  const destination = words[words.length - 1];
+  if (command.name === "sftp" && (words.length < 2 || flags.some((flag) => flag.includes("b")))) {
+    r.found.push({ target: words[0] || "(sftp)", kind: "write", unchecked: SFTP_SESSION });
+    return;
+  }
+  if (words.length < 2 || REMOTE.test(destination)) {
+    return;
+  }
+  const recursive = flags.some((flag) => flag.includes("r"));
+  const args = recursive ? ["-r", ...words] : words;
+  readCopy(r, { segment: command.segment, name: "cp", args, operands: args, files: words.filter((arg) => classify(arg) !== "skip") });
 }
 
 // --- commands handed their paths ----------------------------------------------
@@ -1126,6 +1314,8 @@ function readVerb(r, command) {
     downloadFiles(command).forEach((file) => add(r, file, "write"));
   } else if (name === "git") {
     readGit(r, command);
+  } else if (name === "scp" || name === "sftp") {
+    readSecureCopy(r, command);
   } else if (readArchive(r, command) || readForwarded(r, command)) {
     return null;
   } else if (/[$`]/.test(name)) {
@@ -1240,8 +1430,13 @@ function shellWrites(command, startCwd, host, options = {}) {
     }
 
     readRedirections(r, segment.text);
-    left = readVerb(r, commandOf(segment));
+    const command = commandOf(segment);
+    left = readVerb(r, command);
     r.segments += 1;
+    // A `cd` moves the read but makes no file: what follows it reads the disk as it is.
+    if (!["cd", "pushd", "popd"].includes(command.name)) {
+      r.acted += 1;
+    }
 
     if (resume !== null) {
       r.cwd = resume.cwd;
