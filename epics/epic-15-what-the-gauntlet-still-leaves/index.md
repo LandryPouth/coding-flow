@@ -47,6 +47,7 @@ s1
 s2
 
 s3
+└── s7
 
 s4
 └── s5
@@ -76,6 +77,7 @@ start at once.
    *(QUICK)*
 5. **story-15-05-mutation-probe-opt-in** — only if s4 says go. *(STRICT)*
 6. **story-15-06-did-it-work** — re-measure and write it down. *(QUICK)*
+7. **story-15-07-a-recipe-is-present-only-when-it-checks** — follow-up of 15-03's review (three P2s). *(QUICK)*
 
 ## Decisions
 
