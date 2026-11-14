@@ -347,3 +347,38 @@ test('git pathspec magic, clustered patch flags, cpio -D and context diffs', (t)
   expectDecisions(dir, 'unchecked', ["git checkout HEAD~1 -- ':(glob).coding-flow/**'", "git checkout HEAD~1 -- ':!src'", 'patch -p1 < p_context.patch', 'patch -p1 < p_context_ok.patch']);
   expectDecisions(dir, 'allow', ['patch -Np1 < p_ok.patch', 'patch -Np1 --dry-run < p_plain.patch', "git checkout -- ':/src'", 'cpio -idm -D /tmp/out < /tmp/a.cpio']);
 });
+
+// --- third review of 13-09: prefer unchecked over path-text matching -------------
+
+test('a tree copied onto the root after another segment of the same command is unchecked', (t) => {
+  const dir = repo(t);
+  const forged = forgedTree(t, dir);
+  const empty = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-empty-')));
+  t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
+  const missing = path.join(os.tmpdir(), `coding-flow-dir-swap-missing-${process.pid}`);
+  expectDecisions(dir, 'unchecked', [
+    `mkdir -p ${empty}/.coding-flow/runs && echo '{}' > ${empty}/.coding-flow/runs/a.json && rsync -a ${empty}/ .`,
+    `rm -rf ${empty} && mv ${forged} ${empty} && cp -r ${empty}/. .`,
+    `unzip /tmp/forge.zip -d /var/tmp && rsync -a ${missing}/f/ .`,
+    `D=${missing}; mkdir -p $D/.coding-flow/runs && cp -r ${missing}/. .`,
+    `mkdir -p ${missing} && bash -c 'cp -r ${missing}/. .'`,
+    `true; rsync -a ${empty}/ ..`,
+  ]);
+  // One segment: the source is read on disk as it is.
+  expectDecisions(dir, 'allow', [`cp -r ${empty}/. .`, 'git checkout -- src', 'git restore --staged .']);
+});
+
+test('a trailing slash or a link does not bring the swap back', (t) => {
+  const dir = repo(t);
+  const forged = forgedTree(t, dir);
+  expectDecisions(dir, 'deny', [
+    `rm -rf .coding-flow && mv ${forged}/.coding-flow .coding-flow/`,
+    `rm -rf .coding-flow && cp -r ${forged}/.coding-flow .coding-flow/`,
+    `rm -rf .coding-flow && mv ${forged}/.coding-flow ./.coding-flow/`,
+    `rm -rf .coding-flow && ln -s ${forged}/.coding-flow .coding-flow`,
+    `ln -sfn ${forged}/.coding-flow .coding-flow`,
+  ]);
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a');
+  fs.mkdirSync(path.join(dir, 'build'));
+  expectDecisions(dir, 'allow', ['mv build dist', 'mv a.txt src', 'mv a.txt src/', `cp -r ${forged}/x src/`, 'ln -s ../a.txt src/a', 'tar -xf /tmp/a.tar -C /opt', 'unzip /tmp/a.zip -d ~/Downloads', 'patch -p1 < /dev/null']);
+});
