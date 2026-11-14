@@ -656,12 +656,41 @@ function judgeShellEntry(ctx, entry, caseInsensitive) {
       issue = issue || landing.issue || (entry.kind === "extract" && targets.some((target) => target.inside) ? ARCHIVE : null);
     }
   }
+  if (!found && issue === ARCHIVE && entry.archive && !entry.chained) {
+    const judged = judgeMembers(ctx, entry, caseInsensitive);
+    if (judged) {
+      found = judged.found;
+      issue = null;
+    }
+  }
   // Heuristic reading: refused when the target is known to touch a blocked path,
   // logged when it cannot be read — never a silent allow.
   if (!found && issue && !ctx.issues.includes(issue)) {
     ctx.issues.push(issue);
   }
   return found;
+}
+
+// An extraction whose archive is on disk and listable is judged by where each
+// member lands (story 13-13). null when the members cannot be read.
+function judgeMembers(ctx, entry, caseInsensitive) {
+  // Required here, not at the top: the guard's module graph stays small on the
+  // calls that extract nothing.
+  const members = require("./archive-members").archiveMembers(entry.archive);
+  if (!members) {
+    return null;
+  }
+  const landing = path.resolve(ctx.cwd, expandHome(entry.target));
+  for (const member of members) {
+    const where = path.join(landing, member.name);
+    for (const scope of ctx.scopes) {
+      const found = firstHit(resolveTargets(ctx, scope, where), scope.policy, caseInsensitive, member.directory ? treeHit : blockedPathHit);
+      if (found) {
+        return { found };
+      }
+    }
+  }
+  return { found: null };
 }
 
 // A tree or an extraction landing on the project root or one of its ancestors
