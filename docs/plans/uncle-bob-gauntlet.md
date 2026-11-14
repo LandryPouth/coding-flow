@@ -22,14 +22,18 @@ node scripts/remeasure-study.js --runs .coding-flow/runs --since 2026-10-18
 `2026-10-18` is the day epic 13 started. Everything in the table comes from
 that output and from `docs/DOGFOODING.md`; the caveats under it come from
 the 2026-11-13/14 sessions that ran 13-04, 13-07, 13-08 and 15-01 to 15-05.
+The window is a date, not a set of stories: it also holds 33 runs with no
+story, re-verifies of stories from epics 01–12 (their STRICT ones print "no
+review recorded" — their reviews predate the window), and DOGFOODING rows of
+2026-10-18/19 written before epic 13's first story landed.
 
 | Measure | Before | 2026-11-14 | Target | Reading |
 |---|---|---|---|---|
 | Verifies at `verified` | 0 / 206 | **29 / 105 (27.6 %)**; 36.7 % of the 79 green ones | > 0 | **Met.** 13-03 put lcov in this repository's validation; almost every green story verify since 14-03 reaches the rung. The rest are reds (no tier), storyless runs and re-verifies of older stories. |
-| Review passes per STRICT story | 10–12 (05-01/02/03) | 12-01: 1 · 13-01: 1 · 14-04: 2 · 15-02: 1 · **15-05: 4** (3 STRICT + 1 alignment) | ≤ 3 | **Missed by one on 15-05.** Stories planned below STRICT but run with independent reviews: **13-04: 4**, 13-07: 3, 13-08: 3. Nothing near 10–12. |
-| P1s caught by `verify` rather than review | not measured | **5 gate reds vs 14 review P1s → 26 %** (proxy) | rising | A gate red (coverage, contrary signal, size) whose commands passed, against the P1s reviews recorded. 21 more reds failed on commands: real reds and timing flakes mixed, counted apart. |
+| Review passes per STRICT story (epics 13–15) | 10–12 (05-01/02/03) | 13-01: 1 · 14-04: 2 · 15-02: 1 · **15-05: 4** (3 STRICT + 1 alignment) · 14-03: no review recorded | ≤ 3 | **Missed by one on 15-05.** Stories planned below STRICT, reviewed independently: 13-04 (STANDARD): 4, 13-07 and 13-08 (QUICK): 3 each — not STRICT, so not a miss of this target. Nothing near 10–12. 26 review files counted of 27 (one identical re-record). |
+| P1s caught by `verify` rather than review | not measured | **0 defects caught by a gate.** 5 gate reds over 4 stories: 3 size-ratchet reds (13-04, 14-07, 15-01 twice on `shell-writes.js`) and 1 claim misuse (15-02, `base-not-shared`: a wrong `--base`) | no baseline | **Neither met nor missed**: there was no earlier number. No coverage or contrary-signal red; the 14 P1s reviews recorded are where the defects were found. 21 more reds failed on commands — real reds and timing flakes mixed, counted apart. |
 | Surviving mutants per story | — | **not measured: no verify ran the probe** | — | 15-05 shipped the probe opt-in; this repository does not set `mutation` in `harness.json`. **Missed** as a measure, not as a result. |
-| DOGFOODING rows about worktrees | 12 / 38 | **8 / 34 since 2026-10-18 (7 still open)**, and 6 more rows whose problem is a worktree (14 / 34, 41 %) | falling | **Missed.** The share by surface fell (32 % → 24 %); the friction did not. Whole log: 19 / 72 by surface, 16 open. |
+| DOGFOODING rows about worktrees | 12 / 38 (whole log, 2026-10-17) | whole log **19 / 72**; rows dated since 2026-10-18: **8 / 34 by surface (7 still open)**, plus 6 rows whose problem is a worktree | falling | **Missed.** Same denominator, the whole log: 31.6 % → 26.4 %, a share diluted by other new rows, not fewer worktree rows — 7 to 8 new ones in four weeks, nearly all open. No conclusion that it fell. |
 
 **What the numbers under-count, measured in the same sessions:**
 
@@ -39,10 +43,10 @@ the 2026-11-13/14 sessions that ran 13-04, 13-07, 13-08 and 15-01 to 15-05.
   `develop` afterwards: **one review file for 13-04's 4 passes, 15-05's 4,
   13-07's 3, 13-08's 3**. The script prints both the files and the passes a
   review's text states; before this series nothing stated them, so the
-  pass counts of 12-01, 13-01, 14-04 and 15-02 above are floors, not counts.
-  The same loss hides the gate reds of the worktree verifies (13-07's first
-  verify, red on the size ratchet, is not in the primary's runs): the 26 %
-  is a floor too.
+  pass counts of 13-01, 14-04 and 15-02 above are floors, not counts, and
+  14-03's review is not in the runs at all. The same loss hides the reds of
+  the worktree verifies (13-07's first verify, red on the size ratchet, is
+  not in the primary's runs).
 - **Review is still where the P1s come from.** 13-04 (4 P1s: policy globs
   unlisting themselves, renames, working-tree scope, the base config), 13-07
   (4: a self-named `baseBranch`, then a regression of its own first fix),
@@ -58,15 +62,17 @@ the 2026-11-13/14 sessions that ran 13-04, 13-07, 13-08 and 15-01 to 15-05.
   `cafa6c5`); a verify timeout left 38 processes running (DOGFOODING
   2026-11-13, open). Those reds are in the 21 counted apart.
 
-**Targets missed:** review passes ≤ 3 (15-05 and 13-04 at 4); surviving
-mutants (not measurable here until `mutation` is configured); worktree
-friction (not falling).
+**Targets missed:** review passes ≤ 3 on one STRICT story (15-05 at 4);
+surviving mutants (not measurable here until `mutation` is configured);
+worktree friction (not falling). **No baseline:** P1s caught by `verify`
+(0 defects caught by a gate this time; the next re-measure compares to it).
 
 ### The open question, answered by the count
 
 The study's rule was: *if the friction persists once epics 02/03 are stable,
-make the layer optional rather than extend it.* It persisted: 8 new rows by
-surface and 6 more caused by a worktree since 2026-10-18, 7 of the 8 open;
+make the layer optional rather than extend it.* It persisted: 8 rows by
+surface dated since 2026-10-18 and 6 more caused by a worktree, 7 of the 8
+open;
 in this series `autoland` refused every land it was asked for (15-01,
 15-05, 13-08 — each then landed by hand with `worktree land`; 13-07 went
 straight to `land`), and every land deleted the story's proof.
