@@ -373,6 +373,7 @@ current machine.
 | `ai-flow report` | Collect what went wrong into one file you can send: guard denials, verify failures, risk/coverage distribution, install health. Redacted by default (`--raw` keeps absolute paths, `--json`, `--out FILE`). |
 | `ai-flow audit [--export\|--check\|--decisions]` | Aggregate the append-only ledger; export `docs/AUDIT.md`; CI gate on the latest verify; `--decisions` is the cross-epic `## Decisions` view instead (`--export` → `docs/DECISIONS.md`). |
 | `ai-flow trace [--story <path>]` | Story → commits → PR → evidence → tests chain, with missing links. |
+| `ai-flow archive <epic-dir \| NN> [--dry-run]` | A finished, merged epic leaves the checkout: staged `git rm` plus an `epics/INDEX.md` entry with its stories' proof state and the `git checkout` that brings it back. |
 | `ai-flow ci init` | Scaffold a clean-room GitHub Actions workflow (per-story `run` or `verify`, then `audit --check`). |
 | `ai-flow hook install\|uninstall\|status` | Opt-in local pre-push gate running `audit --check`. |
 | `ai-flow worktree add\|list\|remove` | Optional Git worktrees for parallel work. |
