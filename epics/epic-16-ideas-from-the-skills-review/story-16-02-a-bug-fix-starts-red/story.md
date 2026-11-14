@@ -51,4 +51,4 @@ declared, the red output quoted in `## Result` otherwise, and an
 unreproducible bug stops the story (also listed under Stop Conditions).
 QUICK / FAST points at it. `test/bug-fix-starts-red.test.js` (4 tests, red
 first) holds the text; `evals/cases/flow-run.json` gains a crash-report case;
-`skills/` regenerated. The skill is 339 lines.
+`skills/` regenerated. The skill is 345 lines. Review (PASS, 5 P2) fixed: STRICT keeps its red-at-base bar, a copy or typo change is not a bug fix, TDD names the mandatory loop, an unreproducible bug is `blocked`.

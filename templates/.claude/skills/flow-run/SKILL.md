@@ -149,7 +149,8 @@ auth/permissions/data involvement.
 1. Find the edit point with 1–3 targeted searches (at most ~5 files read before
    deciding it is still small).
 2. Implement; run the narrowest useful validation, then `ai-flow verify`.
-3. Update `## Result` only if the change is non-trivial.
+3. Update `## Result` only if the change is non-trivial — or a bug fix without
+   `redAtBase.command`, whose red output is quoted there.
 
 A bug fix runs the loop in A Bug Fix Starts Red first.
 
@@ -181,7 +182,8 @@ Everything in STANDARD, plus:
 
 ## A Bug Fix Starts Red
 
-Every mode — a QUICK typo-sized fix included — before any hypothesis:
+Every mode — a one-line QUICK bug fix included; a copy or typo change is not a bug
+fix — before any hypothesis:
 
 1. Reproduce the symptom with a loop that can go red: a test first, otherwise a
    command.
@@ -193,10 +195,13 @@ When the project declares `redAtBase.command` in `.coding-flow/harness.json`
 (`node --test --test-reporter=tap {files}`; `bootstrap --scan` suggests it), commit
 the test and the fix, then run `ai-flow verify --story <dir> --red-at-base` besides
 the ordinary verify: green only when the diff's test fails at the merge base and
-passes at HEAD; a test that passes at base, or fails there before reaching its tests,
-is `NOT PROVEN`. Only node's runner is read. Without that command, quote the red
-output in `## Result`. A bug that cannot be reproduced: stop and say so in
-`## Result` — never fix it blind.
+passes at HEAD. A test that passes at base, or fails there before reaching its tests
+(a missing module, a syntax error, a failed hook), is `NOT PROVEN`. Under STRICT, a
+Node project without `redAtBase.command` declares it first. Only node's runner is
+read: a Jest, Vitest, Go or pytest fix is proven by the ordinary verify and the
+review's negative evidence. Without that command, quote the red output in
+`## Result`. A bug that cannot be reproduced: stop, set `## Status: blocked` and
+write "not reproduced" in `## Result` — never fix it blind.
 
 ## Context Policy
 
@@ -211,7 +216,8 @@ validation and notes together.
 ## TDD (opt-in, for complex logic)
 
 For business logic, permissions, validation, transformations, workflows and bug
-fixes — not trivial UI, static content or glue.
+fixes (whose red loop is mandatory: A Bug Fix Starts Red) — not trivial UI, static
+content or glue.
 
 1. State the behavior in Given/When/Then.
 2. Write one failing test; confirm it fails for the expected reason.

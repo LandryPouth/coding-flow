@@ -30,7 +30,7 @@ test('the bug-fix loop is its own section, outside STRICT, with its four steps i
   const steps = [
     /reproduce the symptom with a loop that can go red/i,
     /see it fail/i,
-    /fix/i,
+    /\b3\. Fix\b/,
     /see the same loop go green/i,
   ];
   let from = 0;
@@ -53,12 +53,14 @@ test('QUICK / FAST points a bug fix at the loop', () => {
 test('red-at-base is asked when redAtBase.command is declared; otherwise the red output is quoted in ## Result', () => {
   const bugFix = section(skill(), '## A Bug Fix Starts Red');
   assert.match(bugFix, /redAtBase\.command/);
+  assert.match(bugFix, /Under STRICT, a Node project without `redAtBase\.command` declares it first/);
+  assert.match(bugFix, /Jest, Vitest, Go or pytest fix is proven by the ordinary verify/);
   assert.match(bugFix, /ai-flow verify --story <dir> --red-at-base/);
   assert.match(bugFix, /without (that|it)[^.]*, quote the red output in `## Result`/i);
 });
 
 test('a bug that cannot be reproduced stops the story instead of being fixed blind', () => {
   const text = skill();
-  assert.match(section(text, '## A Bug Fix Starts Red'), /cannot be reproduced[^.]*stop[^.]*`## Result`[^.]*never fix it blind/i);
+  assert.match(section(text, '## A Bug Fix Starts Red'), /cannot be reproduced[^.]*stop[^.]*`## Status: blocked`[^.]*not reproduced[^.]*`## Result`[^.]*never fix it blind/i);
   assert.match(section(text, '## Stop Conditions'), /bug that cannot be reproduced/i);
 });
