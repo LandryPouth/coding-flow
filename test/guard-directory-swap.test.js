@@ -70,7 +70,8 @@ test('an archive extracted into a blocked directory is refused; elsewhere in the
   for (const command of ['tar -xf a.tar -C .coding-flow/runs', 'tar --directory=.coding-flow/runs -xzf a.tgz', 'tar xf a.tar --directory .coding-flow/runs', 'unzip a.zip -d .coding-flow/runs', 'unzip -o a.zip -d node_modules']) {
     assert.equal(bash(dir, command).decision, 'deny', command);
   }
-  for (const command of ['tar -xf a.tar', 'unzip a.zip -d .coding-flow', 'cd src && tar -xzf ../a.tgz']) {
+  // `.coding-flow` holds `.coding-flow/runs`: extracting there is refused (review of 13-09).
+  for (const command of ['tar -xf a.tar', 'cd src && tar -xzf ../a.tgz']) {
     const result = bash(dir, command);
     assert.equal(result.decision, 'unchecked', command);
     assert.match(result.reason, /archive/, command);
@@ -143,4 +144,117 @@ test('verify still writes its run file with the default blocked paths', (t) => {
   assert.equal(runs.length, 1);
   const { blockedPaths } = require('../bin/lib/harness-config').readHarnessConfig(dir).config;
   for (const entry of EVIDENCE_BLOCKED_PATHS) assert.ok(blockedPaths.includes(entry), entry);
+});
+
+// --- review of 13-09: the spellings the reviewer forged proof with ---------------
+// The guard reads heuristically: it refuses when it knows a target touches a blocked
+// path, and logs `unchecked` when it cannot read the target — never a silent allow
+// for a write form it does not model.
+
+function repo(t) {
+  const dir = tmp(t);
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+  fs.mkdirSync(path.join(dir, 'src'));
+  const patch = (name, text) => fs.writeFileSync(path.join(dir, name), text);
+  const created = (header) => `${header}\nnew file mode 100644\n--- /dev/null\n`;
+  patch('p_plain.patch', `${created('diff --git a/.coding-flow/runs/x.json b/.coding-flow/runs/x.json')}+++ b/.coding-flow/runs/x.json\n@@ -0,0 +1 @@\n+forged\n`);
+  patch('p_quoted.patch', `${created('diff --git "a/.coding-flow/runs/q.json" "b/.coding-flow/runs/q.json"')}+++ "b/.coding-flow/runs/q.json"\n@@ -0,0 +1 @@\n+forged\n`);
+  patch('p_dir.patch', `${created('diff --git a/runs/d.json b/runs/d.json')}+++ b/runs/d.json\n@@ -0,0 +1 @@\n+forged\n`);
+  patch('p_p2.patch', `${created('diff --git a/z/.coding-flow/runs/p2.json b/z/.coding-flow/runs/p2.json')}+++ b/z/.coding-flow/runs/p2.json\n@@ -0,0 +1 @@\n+forged\n`);
+  patch('p_noprefix.patch', '--- /dev/null\n+++ .coding-flow/runs/np.json\n@@ -0,0 +1 @@\n+forged\n');
+  patch('p_ok.patch', 'diff --git a/src/a.txt b/src/a.txt\n--- a/src/a.txt\n+++ b/src/a.txt\n@@ -1 +1 @@\n-hi\n+ho\n');
+  return dir;
+}
+
+const at = (dir, sub, command) => decide({ tool_name: 'Bash', cwd: path.join(dir, sub), tool_input: { command } }, dir);
+
+function expectDecisions(dir, decision, commands) {
+  for (const command of commands) {
+    const [sub, text] = Array.isArray(command) ? command : ['.', command];
+    assert.equal(at(dir, sub, text).decision, decision, `${sub}: ${text}`);
+  }
+}
+
+test('a copy into a directory that holds a blocked one is refused', (t) => {
+  const dir = repo(t);
+  expectDecisions(dir, 'deny', [
+    'rsync -a /tmp/cf/ .coding-flow/',
+    'rsync -a /tmp/cf/ .coding-flow',
+    'cp -rT /tmp/cf .coding-flow',
+    'cp -r /tmp/cf/. .coding-flow/',
+    'cp -r /tmp/cf/. .coding-flow',
+    'cp -r /tmp/cf/runs .coding-flow/',
+    'git checkout HEAD~1 -- .coding-flow',
+    'git restore --source HEAD~1 -- .coding-flow',
+    'git restore --source=HEAD~1 .coding-flow',
+    'tar -xf /tmp/a.tar -C .coding-flow',
+    'unzip /tmp/a.zip -d .coding-flow',
+  ]);
+  // Over the whole project the guard cannot tell what lands: logged, not refused.
+  expectDecisions(dir, 'unchecked', ['rsync -a /tmp/cf/ .', 'git checkout HEAD~1 -- .']);
+  expectDecisions(dir, 'allow', ['cp -r src /tmp/s', 'rsync -a src/ /tmp/s', 'cp -r src lib', 'cp -r /tmp/x .', 'cp -r /tmp/x src/', 'git checkout -- src', 'cp x .coding-flow/']);
+});
+
+test('a patch names its paths from the repository top, quoted or not; a shifted prefix is unchecked', (t) => {
+  const dir = repo(t);
+  const p = (name) => path.join(dir, name);
+  expectDecisions(dir, 'deny', [
+    `git apply ${p('p_plain.patch')}`,
+    `git apply -p1 ${p('p_plain.patch')}`,
+    `git apply ${p('p_quoted.patch')}`,
+    ['.coding-flow', `git apply ${p('p_plain.patch')}`],
+    ['src', `git apply ${p('p_plain.patch')}`],
+    `cd .coding-flow && git apply ${p('p_plain.patch')}`,
+    'git apply < p_plain.patch',
+  ]);
+  expectDecisions(dir, 'unchecked', [
+    `git apply -p2 ${p('p_p2.patch')}`,
+    `git apply -p0 ${p('p_noprefix.patch')}`,
+    `git apply --directory=.coding-flow ${p('p_dir.patch')}`,
+    `git apply --directory .coding-flow ${p('p_dir.patch')}`,
+    `git apply --no-prefix ${p('p_noprefix.patch')}`,
+    `git apply --unsafe-paths ${p('p_plain.patch')}`,
+    `cat ${p('p_plain.patch')} | git apply`,
+  ]);
+  expectDecisions(dir, 'allow', [`git apply ${p('p_ok.patch')}`, `git apply --check ${p('p_plain.patch')}`]);
+});
+
+test('patch and git am are read like git apply', (t) => {
+  const dir = repo(t);
+  expectDecisions(dir, 'deny', ['patch -p1 < p_plain.patch', 'patch -p1 -i p_plain.patch', 'patch -p1 --input=p_plain.patch', 'git am p_plain.patch', 'git am < p_plain.patch', ['src', 'git am ../p_plain.patch']]);
+  expectDecisions(dir, 'unchecked', ['patch < p_plain.patch', 'patch -p2 < p_plain.patch', 'cat p_plain.patch | patch -p1', 'patch -p1 < missing.patch', 'git am -p2 p_plain.patch']);
+  expectDecisions(dir, 'allow', ['patch -p1 < p_ok.patch', 'git am p_ok.patch', 'patch --dry-run -p1 < p_plain.patch']);
+});
+
+test('archive options as they are really spelled', (t) => {
+  const dir = repo(t);
+  expectDecisions(dir, 'deny', [
+    'unzip -od .coding-flow/runs /tmp/a.zip',
+    'unzip -qd .coding-flow/runs /tmp/a.zip',
+    'unzip -qod .coding-flow/runs /tmp/a.zip',
+    'unzip -d.coding-flow/runs /tmp/a.zip',
+    `tar -x -f /tmp/a.tar -C /tmp -C ${path.join(dir, '.coding-flow', 'runs')}`,
+    'tar --extr -f /tmp/a.tar -C .coding-flow/runs',
+    'tar -x -f /tmp/a.tar --dir=.coding-flow/runs',
+    'tar -xf /tmp/a.tar --one-top-level=.coding-flow/runs',
+    'bsdtar -xf /tmp/a.tar -C .coding-flow',
+    'gtar -xf /tmp/a.tar -C .coding-flow',
+    '7z x /tmp/a.7z -o.coding-flow',
+    'python3 -m zipfile -e /tmp/a.zip .coding-flow',
+    ['.coding-flow/runs', 'cpio -idm < /tmp/a.cpio'],
+  ]);
+  expectDecisions(dir, 'unchecked', ['cpio -idm < /tmp/a.cpio', 'bsdtar -xf /tmp/a.tar', '7z x /tmp/a.7z']);
+  expectDecisions(dir, 'allow', ['tar -xOf /tmp/a.tar f', 'tar -x --to-stdout -f /tmp/a.tar', 'tar -czf /tmp/o.tgz .coding-flow/runs', 'tar -tf /tmp/a.tar', 'unzip -l /tmp/a.zip', 'unzip -o /tmp/a.zip -d /tmp/out']);
+});
+
+test('git mv is a move; braces, find -exec, xargs and a substituted verb are unchecked', (t) => {
+  const dir = repo(t);
+  expectDecisions(dir, 'deny', ['git mv .coding-flow/runs x', 'git mv x .coding-flow/runs', 'git mv src/a.txt .coding-flow/runs/a.json']);
+  expectDecisions(dir, 'unchecked', [
+    'cp -r .coding-flow/runs{.bak,}',
+    'find .coding-flow -name runs -exec mv {} /tmp/r \;',
+    'echo .coding-flow/runs | xargs -I{} mv {} /tmp/r',
+    '$(echo mv) .coding-flow/runs /tmp/r',
+  ]);
+  expectDecisions(dir, 'allow', ['git mv src lib', 'git mv src/a.txt src/b.txt', 'find . -name "*.js" -exec grep x {} +', 'ls | xargs echo', 'git stash', 'git stash list']);
 });
