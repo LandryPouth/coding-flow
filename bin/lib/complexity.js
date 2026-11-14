@@ -594,33 +594,49 @@ function addedLines(hunks, start, end) {
 
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// A test for a line that starts the function `name`: a declaration, an
-// assignment of a function or arrow, a method, `def`/`func`/`fn`. An anonymous
-// function (`(anonymous_3)`) has no name to find: any line that reads like a
-// function start.
-function startsFunction(name) {
+// The name to look for in source: the last segment of a qualified lcov name
+// (`exports.build`, `module.exports.run`, `K.m`), or null for a function V8 or
+// another tool lists without one (`anonymous_0`, `(anonymous_3)`, `<anonymous>`).
+function sourceName(name) {
   const short = String(name).split(/[.#:]/).pop();
 
-  if (!/^[\w$]+$/.test(short)) {
-    return (line) => /\bfunction\b|=>|\)\s*(:[^{]*)?\{\s*$/.test(line);
+  return /^[\w$]+$/.test(short) && !/^anonymous(_\d+)?$/.test(short) ? short : null;
+}
+
+// A test for a line that starts the function `name`: a declaration, an
+// assignment of a function or arrow (`exports.build = function`), a method,
+// `def`/`func`/`fn`; `default` is `export default`, and a class's name is also
+// its constructor (V8 lists `constructor()` under the class name). Null when
+// the function has no name to find.
+function startsFunction(name) {
+  const short = sourceName(name);
+
+  if (!short) {
+    return null;
   }
 
   const n = escapeRegex(short);
   const forms = [
     `\\bfunction\\s*\\*?\\s*${n}\\b`,
     `\\b(def|func|fn|fun|sub)\\s+(\\([^)]*\\)\\s*)?${n}\\b`,
-    `(^|[^\\w$.])${n}\\s*[:=]\\s*(async\\s+)?(function\\b|\\([^)]*\\)\\s*(:[^=]*)?=>|[\\w$]+\\s*=>)`,
+    `(^|[^\\w$])${n}\\s*[:=]\\s*(async\\s+)?(function\\b|\\([^)]*\\)\\s*(:[^=]*)?=>|[\\w$]+\\s*=>)`,
     `^\\s*([\\w$<>\\[\\],]+\\s+)*${n}\\s*(<[^>]*>)?\\s*\\([^;]*$`,
+    ...(short === "default" ? ["\\bexport\\s+default\\b"] : []),
+    ...(/^[A-Z]/.test(short) ? ["^\\s*constructor\\s*\\("] : []),
   ];
   const pattern = new RegExp(forms.join("|"));
 
   return (line) => pattern.test(line) && !/^\s*(return|if|while|for|switch|throw|await|yield|new)\b/.test(line);
 }
 
+// Any line that reads like a function start, for a function with no name.
+const LOOKS_LIKE_A_START = /\bfunction\b|=>|\)\s*(:[^{]*)?\{\s*$/;
+
 // The base line `fn` started at, or null when it is new. An unchanged start maps
 // through the hunks; an added one is the same function only when its hunk
 // replaced a line starting a function of the same name (a changed signature) —
-// never whatever base function the hunk happened to replace.
+// never whatever base function the hunk happened to replace. With no name, the
+// replaced lines must hold exactly one function start, else it is new.
 function baseStartOf(hunks, fn, baseSource) {
   const mapped = toBaseLine(hunks, fn.line);
 
@@ -630,17 +646,16 @@ function baseStartOf(hunks, fn, baseSource) {
 
   const hunk = hunks.find(({ newStart, newCount }) => fn.line >= newStart && fn.line < newStart + newCount);
   const starts = startsFunction(fn.name);
-  let found = null;
+  const replaced = Array.from({ length: hunk.oldCount }, (_, index) => hunk.oldStart + index);
 
-  for (let line = hunk.oldStart; line < hunk.oldStart + hunk.oldCount; line++) {
-    const closer = found === null || Math.abs(line - mapped.line) < Math.abs(found - mapped.line);
-
-    if (closer && starts(baseSource.lines[line - 1] || "")) {
-      found = line;
-    }
+  if (!starts) {
+    const candidates = replaced.filter((line) => LOOKS_LIKE_A_START.test(baseSource.lines[line - 1] || ""));
+    return candidates.length === 1 ? candidates[0] : null;
   }
 
-  return found;
+  const named = replaced.filter((line) => starts(baseSource.lines[line - 1] || ""));
+
+  return named.length === 0 ? null : named.reduce((best, line) => (Math.abs(line - mapped.line) < Math.abs(best - mapped.line) ? line : best));
 }
 
 // The function's span in the base file, measured there; null when it is new.
@@ -660,33 +675,38 @@ function baseSpan(baseSource, fn, hunks) {
   return { start, end: Math.max(start, end) };
 }
 
-// A function that reads as new may have moved: a line starting a function of
-// that name, removed by the diff from any touched file, is where it came from.
-// Its span there is its length before. Null when nothing of that name left.
+// A function that reads as new may have moved: a function of that name that the
+// diff removed whole (every line of its base span), from any touched file, is
+// where it came from, and its span there is its length before. One only edited
+// (a changed signature) is still in place, so nothing is borrowed from it.
 function movedSpan(removed, fn) {
   const starts = startsFunction(fn.name);
 
-  if (!/^[\w$]+$/.test(String(fn.name).split(/[.#:]/).pop())) {
-    return null;
-  }
-
-  for (const { baseSource, line } of removed) {
+  for (const { baseSource, line, lines } of starts ? removed : []) {
     if (starts(baseSource.lines[line - 1] || "")) {
-      return { start: line, end: Math.max(line, functionEnd(baseSource, { line }, baseSource.lineCount + 1)), moved: true };
+      const end = Math.max(line, functionEnd(baseSource, { line }, baseSource.lineCount + 1));
+
+      if (Array.from({ length: end - line + 1 }, (_, index) => line + index).every((each) => lines.has(each))) {
+        return { start: line, end, moved: true };
+      }
     }
   }
 
   return null;
 }
 
-// Every line the diff removed, with its base file: where moved functions came from.
+// Every line the diff removed, with its base file and the file's other removed
+// lines: where moved functions came from.
 function removedLines(changes) {
   const removed = [];
 
   for (const { baseSource, hunks } of changes) {
+    const lines = new Set();
+
     for (const { oldStart, oldCount } of baseSource ? hunks : []) {
       for (let line = oldStart; line < oldStart + oldCount; line++) {
-        removed.push({ baseSource, line });
+        lines.add(line);
+        removed.push({ baseSource, line, lines });
       }
     }
   }
