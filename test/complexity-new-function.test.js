@@ -221,3 +221,13 @@ test('a new function does not borrow the length of a same-named one that was onl
 
   assert.deepStrictEqual(grown(result), ['src/b.js run 0→100']);
 });
+
+test('two anonymous functions never claim the same replaced start: the new one above is new', (t) => {
+  const test = (title, n) => `test('${title}', () => {\n${body(n)}\n});\n`;
+  const result = evaluate(t, { 't/c.test.js': test('a', 118) },
+    (dir) => write(dir, 't/c.test.js', `${test('n', 98)}${test('a2', 118)}`),
+    { 't/c.test.js': [[1, 'anonymous_0'], [101, 'anonymous_1']] });
+
+  assert.deepStrictEqual(grown(result), ['t/c.test.js anonymous_0 0→100']);
+  assert.equal(result.ok, false);
+});
