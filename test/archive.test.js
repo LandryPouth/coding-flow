@@ -459,3 +459,39 @@ test('a storage backend other than local, or a subdirectory that is not a story,
   assert.match(res.output, /storage/);
   assert.deepEqual(snapshot(gh), before);
 });
+
+// --- re-review of 17-01 -------------------------------------------------------
+
+test('a tracked INDEX.md deleted or edited in the work tree refuses, and nothing changes', (t) => {
+  for (const change of ['delete', 'edit']) {
+    const dir = repo(t);
+    write(dir, 'epics/INDEX.md', '# Epics\n\n## Archived epics\n\n<!-- coding-flow:archived-section -->\n\n### Epic 07 — Old <!-- coding-flow:archived 07 old -->\n');
+    commit(dir, 'index with an earlier entry');
+    if (change === 'delete') fs.unlinkSync(path.join(dir, 'epics/INDEX.md'));
+    else fs.appendFileSync(path.join(dir, 'epics/INDEX.md'), 'my own note\n');
+    const before = snapshot(dir);
+
+    const res = run(dir, ['archive', EPIC]);
+
+    assert.notEqual(res.code, 0, `${change}: ${res.output}`);
+    assert.match(res.output, /INDEX\.md/);
+    assert.deepEqual(snapshot(dir), before, change);
+  }
+});
+
+test('a symlinked INDEX.md refuses and the file it points to is untouched', (t) => {
+  const dir = repo(t);
+  const outside = `${dir}-outside.md`;
+  t.after(() => fs.rmSync(outside, { force: true }));
+  fs.writeFileSync(outside, '# Not in the repository\n');
+  fs.symlinkSync(outside, path.join(dir, 'epics/INDEX.md'));
+  commit(dir, 'symlinked index');
+  const before = snapshot(dir);
+
+  const res = run(dir, ['archive', EPIC]);
+
+  assert.notEqual(res.code, 0, res.output);
+  assert.match(res.output, /INDEX\.md[^\n]*(symbolic link|symlink)/);
+  assert.equal(fs.readFileSync(outside, 'utf8'), '# Not in the repository\n');
+  assert.deepEqual(snapshot(dir), before);
+});
