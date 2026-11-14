@@ -42,7 +42,9 @@
   names (case-insensitive), only timestamp/owner/NTFS extra fields, regular
   files and directories, no zip64. tar/gtar parse only tar (gzip by content),
   unzip only zip, bsdtar either subset exactly. `-i`/`--ignore-zeros` →
-  unchecked. Expanded size capped at 64 MB.
+  unchecked. Expanded size capped at 64 MB. A directory header with a non-zero
+  size (GNU tar ignores it, so a lister that skipped it missed the next header)
+  and a zip name holding a NUL are outside the subset too (re-review).
 - **Cost of the subset.** GNU tar's default format (`gnu`) and pax archives
   are outside it, so an archive made by a plain `tar -czf` on Linux stays
   unchecked; one made with `--format=ustar`, by `git archive`, or as a plain

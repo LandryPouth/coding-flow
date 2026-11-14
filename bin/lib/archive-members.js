@@ -57,7 +57,12 @@ function strictTar(buf) {
     }
     const prefix = cstring(header, 345, 155);
     const name = (prefix ? `${prefix}/` : "") + cstring(header, 0, 100);
-    members.push({ name, directory: type === "5" || name.endsWith("/") });
+    const directory = type === "5" || name.endsWith("/");
+    // GNU tar ignores a directory's size: the lister must not skip what follows.
+    if (directory && size !== 0) {
+      return null;
+    }
+    members.push({ name, directory });
     if (members.length > MAX_MEMBERS) {
       return null;
     }
@@ -125,7 +130,7 @@ function strictZip(buf) {
     }
     // unzip reads a backslash as a separator in names written on Windows.
     const name = raw.toString("utf8").replace(/\\/g, "/");
-    if (seen.has(name.toLowerCase())) {
+    if (name.includes("\0") || seen.has(name.toLowerCase())) {
       return null;
     }
     seen.add(name.toLowerCase());
