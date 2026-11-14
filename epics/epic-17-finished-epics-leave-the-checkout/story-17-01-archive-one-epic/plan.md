@@ -37,11 +37,13 @@
 - **Stage, do not commit.** The user sees the deletion in `git status` and
   commits it with their own message. This is also how the command stays
   undoable before the commit (`git restore --staged --worktree`).
-- **`epics/INDEX.md` is staged with the deletion when it was clean** (or
-  new), so one commit carries both; when it holds the user's own
-  uncommitted edits it is written but left unstaged, and the output says so
-  (staging it would sweep their edits into the archive commit). *(Decided by
-  the unattended run, 2026-11-14.)*
+- **`epics/INDEX.md` is staged with the deletion** when it is absent,
+  committed as is, or staged with nothing more in the work tree (a previous
+  archive of the same uncommitted batch, as 17-04 will run). An untracked
+  INDEX.md is written and left unstaged. A deleted copy (it would be
+  recreated without its earlier entries), unstaged edits, or a symbolic link
+  (the write would leave the repository) refuse; a rollback restores the
+  previously staged blob. *(Re-review, 2026-11-14.)*
 - **Ignored files refuse too.** `git status --porcelain --ignored`: `git rm`
   would leave them behind, so the directory would not leave the checkout.
 - **The recovery line names the full SHA;** the entry shows the short one.

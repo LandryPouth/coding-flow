@@ -18,7 +18,7 @@ const { log, toPortable } = require("./util");
 const { readConfig } = require("./config");
 const { defaultBranch } = require("./policy");
 const { buildStatusModel } = require("./status");
-const { INDEX_FILE, indexPath, readIndex, archivedEpics, withArchivedEntry, parseEpicName, sameEpic } = require("./epic-index");
+const { INDEX_FILE, indexPath, indexKind, readIndex, archivedEpics, withArchivedEntry, parseEpicName, sameEpic } = require("./epic-index");
 
 // The only states that mean "finished". `## Status:` accepts any written word,
 // so anything else — planned, in-progress, blocked, but also todo, draft, wip —
@@ -135,9 +135,27 @@ function refusals(name, epic) {
   if (git(["check-ignore", "-q", "--", INDEX_FILE], { allowFail: true }) !== null) {
     reasons.push(`${toPortable(INDEX_FILE)} is ignored by git: the archive entry could never be committed`);
   }
+  reasons.push(...indexRefusals());
 
   const merge = mergeCheck(rel);
   return { reasons: [...reasons, ...merge.reasons], baseSha: merge.baseSha };
+}
+
+// INDEX.md is written only when it is a plain file (or absent) that git sees
+// as committed as is, or as new and untracked. A deleted copy would be
+// recreated without its earlier entries; an edited one would mix the user's
+// edits into the archive.
+function indexRefusals() {
+  const file = toPortable(INDEX_FILE);
+  const kind = indexKind(cwd);
+  if (kind === "symlink") return [`${file} is a symbolic link: the entry would be written outside the repository`];
+  if (kind === "other") return [`${file} is not a regular file`];
+  const state = git(["status", "--porcelain", "--", INDEX_FILE]).replace(/\n$/, "");
+  // Clean, untracked, or staged with nothing more in the work tree (a previous
+  // archive in the same uncommitted batch) is fine.
+  if (!state || state.startsWith("??") || (state[1] === " " && state[0] !== "D")) return [];
+  const deleted = state.slice(0, 2).includes("D");
+  return [`${file} has ${deleted ? "been deleted" : "unstaged changes"} in the work tree: commit or restore it first`];
 }
 
 // The first base that exists, locally or as last fetched: the configured
@@ -245,18 +263,22 @@ function plan(name) {
 // directory, the index and INDEX.md back as they were.
 function writeArchive(state) {
   const existing = readIndex(cwd);
-  const indexWasClean = existing === null || !git(["status", "--porcelain", "--", INDEX_FILE]).trim();
+  // Committed or staged as is, or absent: stage the entry with the deletion.
+  // An untracked INDEX.md is the user's own new file: written, left unstaged.
+  const indexWasClean = existing === null || !git(["status", "--porcelain", "--", INDEX_FILE]).startsWith("??");
+  // What the git index held for INDEX.md before, so a rollback restores a
+  // previous archive's staged entry instead of dropping it.
+  const stagedBlob = (git(["rev-parse", "-q", "--verify", `:./${toPortable(INDEX_FILE)}`], { allowFail: true }) || "").trim();
 
   try {
     git(["rm", "-r", "-q", "--", state.rel]);
     fs.mkdirSync(path.dirname(indexPath(cwd)), { recursive: true });
     fs.writeFileSync(indexPath(cwd), withArchivedEntry(existing, state.entry));
-    // An INDEX.md holding the user's own uncommitted edits is left unstaged:
-    // staging it would sweep their edits into the archive commit.
     if (indexWasClean) git(["add", "--", INDEX_FILE]);
   } catch (error) {
     git(["checkout", "HEAD", "--", state.rel], { allowFail: true });
-    if (indexWasClean) git(["reset", "-q", "--", INDEX_FILE], { allowFail: true });
+    if (stagedBlob) git(["update-index", "--cacheinfo", `100644,${stagedBlob},${toPortable(INDEX_FILE)}`], { allowFail: true });
+    else git(["rm", "-q", "--cached", "--ignore-unmatch", "--", INDEX_FILE], { allowFail: true });
     try {
       if (existing === null) {
         if (fs.existsSync(indexPath(cwd))) fs.unlinkSync(indexPath(cwd));
@@ -293,7 +315,7 @@ function report(state, { json, dryRun }) {
     log(state.entry.trimEnd().split("\n").map((line) => `       ${line}`).join("\n"));
   } else {
     log(`Archived ${state.rel}: ${state.files} file(s) staged for deletion.`);
-    log(`  Entry appended to ${toPortable(INDEX_FILE)}${state.indexStaged ? " (staged)" : " (not staged: the file has your own uncommitted edits)"}.`);
+    log(`  Entry appended to ${toPortable(INDEX_FILE)}${state.indexStaged ? " (staged)" : " (not staged: the file is new and untracked — add it with the deletion)"}.`);
     log(`  Recover: git checkout ${state.sha} -- ${state.rel}`);
     log("  Nothing is committed: review `git status`, then commit.");
   }

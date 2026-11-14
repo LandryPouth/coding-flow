@@ -29,9 +29,21 @@ function indexPath(root) {
   return path.join(root, INDEX_FILE);
 }
 
+// "absent", "file", "symlink" or "other", without following a link: a
+// symlinked INDEX.md would make a write land outside the repository.
+function indexKind(root) {
+  let stat;
+  try {
+    stat = fs.lstatSync(indexPath(root));
+  } catch {
+    return "absent";
+  }
+  if (stat.isSymbolicLink()) return "symlink";
+  return stat.isFile() ? "file" : "other";
+}
+
 function readIndex(root) {
-  const file = indexPath(root);
-  return fs.existsSync(file) && fs.statSync(file).isFile() ? fs.readFileSync(file, "utf8") : null;
+  return indexKind(root) === "file" ? fs.readFileSync(indexPath(root), "utf8") : null;
 }
 
 // Every archived entry as { number, slug }, in file order.
@@ -78,4 +90,4 @@ function withArchivedEntry(existing, entry) {
   return `${base}\n${SECTION_HEADER}\n${entry}`;
 }
 
-module.exports = { INDEX_FILE, indexPath, readIndex, archivedEpics, withArchivedEntry, parseEpicName, sameEpic, isArchived };
+module.exports = { INDEX_FILE, indexPath, indexKind, readIndex, archivedEpics, withArchivedEntry, parseEpicName, sameEpic, isArchived };
