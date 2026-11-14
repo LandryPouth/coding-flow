@@ -53,6 +53,14 @@ review's reproduction script now gives the expected verdict for every case
 (B: `fresh 0→100`; J: `a 54→101`; A: the quoted path's growth; D: no report).
 Decisions in `plan.md`.
 
+Review fixes (2026-11-14, review FAIL: one P1, a regression): real Node lcov
+names (`anonymous_0`, `exports.build`, a constructor under its class name) now
+match their replaced start line, and a move borrows only from a function
+removed whole. Tests `e0e3b68` (red first, one driving a real
+`node --test --experimental-test-coverage` lcov), fix `ebdebef`. Re-verified:
+3 commands green, coverage 95.6 % of 252 added lines, evidence
+`.coding-flow/runs/2026-11-14T05-39-41-006Z-verify.json`.
+
 ### Rollback Notes
 
 Revert the fix commit (`bin/lib/complexity.js`); the check falls back to the
