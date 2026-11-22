@@ -48,6 +48,12 @@
   carries it and says to `git fetch --prune` or delete a stale branch.
 - **`refs` lists only the refs that hold an epic (P2-4)**; `refsScanned`
   counts them all.
+- **Re-review (PASS, 3 P2, fixed).** A failed batch read is visible:
+  `refsRead: false` and doctor's `epic_refs_unread`. A corrupt object makes
+  `cat-file --batch` print `missing` and exit 0, so any stderr counts as a
+  failed read. A collision names at most 3 refs, then "and N more". A
+  symlinked `epics/` is followed on disk but skipped on a ref (it is a blob
+  there); the module says so.
 
 ## Acceptance Traceability
 

@@ -9,7 +9,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const { execFileSync, spawnSync } = require("child_process");
 
 const { archivedEpics, parseEpicName, sameEpic } = require("./epic-index");
 
@@ -17,15 +17,9 @@ const REF_LIMIT = 200;
 
 // Ref names come from `git for-each-ref` and reach git as argument-array
 // entries or as lines on `cat-file --batch`'s stdin, never through a shell.
-function git(root, args, { input = null, encoding = "utf8" } = {}) {
+function git(root, args) {
   try {
-    return execFileSync("git", args, {
-      cwd: root,
-      ...(encoding ? { encoding } : {}),
-      input: input === null ? undefined : input,
-      stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
-      maxBuffer: 64 * 1024 * 1024,
-    });
+    return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch {
     return null;
   }
@@ -63,11 +57,19 @@ function treeDirectories(body, hashLength) {
 
 // The `epic-*` trees directly under `epics/` at each ref, in one `git cat-file
 // --batch` for all of them (one process per ref cost ~2.5 ms each). Refs whose
-// `epics/` is the same tree are parsed once.
+// `epics/` is the same tree are parsed once. null when the read failed: a
+// corrupt object still exits 0 and prints `missing`, so any stderr counts.
+// On disk a symlinked `epics/` is followed (readdir); on a ref it is a blob,
+// not a tree, so it is skipped.
 function epicsAtRefs(root, refs, prefix) {
   if (refs.length === 0) return [];
-  const out = git(root, ["cat-file", "--batch"], { input: refs.map((ref) => `${ref}:${prefix}epics\n`).join(""), encoding: null });
-  if (!out) return refs.map(() => []);
+  const run = spawnSync("git", ["cat-file", "--batch"], {
+    cwd: root,
+    input: refs.map((ref) => `${ref}:${prefix}epics\n`).join(""),
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (run.error || run.status !== 0 || (run.stderr && run.stderr.length > 0)) return null;
+  const out = run.stdout;
   const trees = new Map();
   const result = [];
   let at = 0;
@@ -137,7 +139,7 @@ function epicNumbers(root, { refLimit = REF_LIMIT } = {}) {
   const scanned = (allRefs || []).slice(0, refLimit);
   const paths = allRefs === null ? { prefix: "", fetchHead: "" } : repoPaths(root);
   const trees = epicsAtRefs(root, scanned, paths.prefix);
-  const refs = scanned.map((ref, i) => ({ ref: shortRef(ref), remote: ref.startsWith("refs/remotes/"), epics: trees[i] }));
+  const refs = scanned.map((ref, i) => ({ ref: shortRef(ref), remote: ref.startsWith("refs/remotes/"), epics: trees ? trees[i] : [] }));
 
   const numbers = [...disk, ...archived, ...refs.flatMap((entry) => entry.epics)].map((epic) => epic.number);
   const width = numbers.reduce((max, number) => Math.max(max, number.length), 2);
@@ -156,6 +158,8 @@ function epicNumbers(root, { refLimit = REF_LIMIT } = {}) {
       // Only the refs that hold at least one numbered epic; the rest are counted.
       refs: refs.filter((entry) => entry.epics.length > 0).map((entry) => entry.ref),
       refsScanned: refs.length,
+      // false when git could not read the refs' trees: their numbers are missing.
+      refsRead: allRefs !== null && trees !== null,
       refLimit,
       refsCapped: Boolean(allRefs) && allRefs.length > refLimit,
       remoteRefsAsOfLastFetch: remote,
@@ -195,13 +199,22 @@ function epicNumberCollisions(root, scan = epicNumbers(root)) {
       }
     }
     for (const [name, refs] of refsByEpic) {
+      const named = refs.length > 3 ? `${refs.slice(0, 3).join(", ")} and ${refs.length - 3} more` : refs.join(", ");
       found.push({
         code: "epic_number_on_other_branch",
         message:
-          `${own.name} uses number ${own.number}, which ${refs.join(", ")} ${refs.length > 1 ? "use" : "uses"} for ${name} — ` +
+          `${own.name} uses number ${own.number}, which ${named} ${refs.length > 1 ? "use" : "uses"} for ${name} — ` +
           `renumber one before merging (next free: ${scan.next}); if a ref is stale, \`git fetch --prune\` or delete the branch`,
       });
     }
+  }
+  if (scan.sources.git && !scan.sources.refsRead) {
+    found.push({
+      code: "epic_refs_unread",
+      message:
+        "git could not read the epics of the other branches (`git cat-file --batch` failed) — " +
+        "`nextEpicNumber` counts only the disk and the index; run `git fsck`",
+    });
   }
   return found;
 }

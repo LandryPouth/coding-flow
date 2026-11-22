@@ -29,6 +29,8 @@
   `--json`); `doctor --fix` stays quiet.
 - `doctor`: `archived_epic_number_reused`, `epic_number_on_other_branch`.
 - `/flow-plan` Conventions names `nextEpicNumber`; eval case added; plugin synced.
-- Tests: `test/epic-numbers.test.js` (20), red first at `24b753c` and `afb819e`.
+- Re-review (PASS, 3 P2), fixed, red first at `bdcdc43`: `refsRead` and
+  `epic_refs_unread`, at most 3 refs named per warning, the symlink comment.
+- Tests: `test/epic-numbers.test.js` (23), red first at `24b753c`, `afb819e`, `bdcdc43`.
 
 ### Rollback Notes
