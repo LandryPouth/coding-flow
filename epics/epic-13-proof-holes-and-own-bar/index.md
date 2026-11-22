@@ -105,22 +105,22 @@ config s3 writes).
    proven. *(QUICK)*
 8. [story-13-08-a-rename-keeps-its-risk](story-13-08-a-rename-keeps-its-risk/story.md) — added 2026-11-13: a file
    moved out of a high-risk path is scored at its new path only. *(QUICK)*
-9. **story-13-09-a-directory-swap-is-a-write** — added 2026-11-14 from
+9. [story-13-09-a-directory-swap-is-a-write](story-13-09-a-directory-swap-is-a-write/story.md) — added 2026-11-14 from
    13-03's review: swapping a blocked directory whole rewrites the proof
    unseen. *(STRICT)*
-10. **story-13-10-the-security-core-stays-high-risk** — added 2026-11-14
+10. [story-13-10-the-security-core-stays-high-risk](story-13-10-the-security-core-stays-high-risk/story.md) — added 2026-11-14
     from 13-03's review: modules extracted from the guard left
     `highRiskPaths`. *(QUICK)*
-11. **story-13-11-a-wrapped-criterion-is-read-whole** — added 2026-11-14
+11. [story-13-11-a-wrapped-criterion-is-read-whole](story-13-11-a-wrapped-criterion-is-read-whole/story.md) — added 2026-11-14
     from 13-05's review: a criterion wrapped onto two lines is compared on
     its first line only. *(STANDARD)*
-12. **story-13-12-a-new-function-is-measured-as-new** — added 2026-11-14
+12. [story-13-12-a-new-function-is-measured-as-new](story-13-12-a-new-function-is-measured-as-new/story.md) — added 2026-11-14
     from 13-06's review: a new long function borrows the length of the base
     function its hunk replaced. *(STANDARD)*
-13. **story-13-13-the-guards-long-tail** — added 2026-11-14 from 13-09's
+13. [story-13-13-the-guards-long-tail](story-13-13-the-guards-long-tail/story.md) — added 2026-11-14 from 13-09's
     five reviews: git plumbing, scp, busybox, other archivers, and in-project
     extraction judged by its members. *(STRICT)*
-14. **story-13-14-a-deletion-is-a-structural-signal** — added 2026-11-14
+14. [story-13-14-a-deletion-is-a-structural-signal](story-13-14-a-deletion-is-a-structural-signal/story.md) — added 2026-11-14
     from 17-01's review: new code that runs `git rm` scored low risk, so
     coverage was not asked. *(QUICK)*
 
