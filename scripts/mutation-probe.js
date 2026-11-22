@@ -532,7 +532,7 @@ function cwdOf(pid) {
   if (fs.existsSync("/proc/self/cwd")) {
     return fs.readlinkSync("/proc/" + pid + "/cwd");
   }
-  const out = execFileSync("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const out = execFileSync("lsof", ["-w", "-a", "-p", String(pid), "-d", "cwd", "-Fn"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
   const line = out.split("\n").find((l) => l.startsWith("n"));
   if (!line) {
     throw new Error("no cwd for " + pid);
@@ -545,8 +545,11 @@ function cwdOf(pid) {
 function killLeftGroup(tmp) {
   try {
     const pgid = Number(fs.readFileSync(path.join(tmp, "running"), "utf8"));
+    if (!(pgid > 0)) {
+      return;
+    }
     const cwd = cwdOf(pgid);
-    if (pgid > 0 && (cwd + "/").startsWith(tmp + "/")) {
+    if ((cwd + "/").startsWith(tmp + "/")) {
       process.kill(-pgid, "SIGKILL");
     }
   } catch {
