@@ -458,6 +458,29 @@ function runFixers({ resolution, cleaned }) {
   return { results, fixedFiles };
 }
 
+// A fixer from plan.md is a plan command: refused unattended on the same terms.
+function planCommandsRefusal({ resolution, unattended, allowPlanCommands }) {
+  const planCommands = [...planFixers(resolution), ...(resolution.source === "plan.md" ? resolution.commands : [])];
+
+  return planCommands.length > 0 && unattended && !allowPlanCommands && !planCommands.every(isProjectScriptInvocation)
+    ? PLAN_COMMANDS_REFUSAL
+    : null;
+}
+
+const planFixers = (resolution) => (resolution.fixSource === "plan.md" ? resolution.fix : []);
+
+function announcePlanCommands({ announce, refused, resolution }) {
+  if (!announce || refused || resolution.source !== "plan.md") {
+    return;
+  }
+
+  log("Running commands from plan.md (not from .coding-flow/config.json):");
+
+  for (const command of [...planFixers(resolution), ...resolution.commands]) {
+    log(`  ${command}`);
+  }
+}
+
 function evaluateClaimFor({ refused, storyDir, config, claim, resolution, commandsOk, startedAt }) {
   return refused
     ? null
@@ -490,10 +513,7 @@ function verifyStoryOnce({
   skipCoverage = false,
   unattended = isUnattended(),
   allowPlanCommands = false,
-  cleanEnv = false, redAtBase = false, announce = false,
-  // `land` re-verifies the merge commit on the target checkout: a fixer there
-  // would leave the target dirty and prove a tree nobody committed.
-  runFix = true,
+  cleanEnv = false, redAtBase = false, announce = false, runFix = true,
 } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
@@ -501,34 +521,17 @@ function verifyStoryOnce({
   const { config } = readHarnessConfig();
   const freshRequired = freshTestsRequired({ storyDir, config });
   const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
-  // A fixer from plan.md is a plan command: refused unattended on the same terms.
-  const planCommands = [
-    ...(resolution.source === "plan.md" ? resolution.commands : []),
-    ...(resolution.fixSource === "plan.md" ? resolution.fix : []),
-  ];
-  const refused =
-    planCommands.length > 0 && unattended && !allowPlanCommands && !planCommands.every(isProjectScriptInvocation)
-      ? PLAN_COMMANDS_REFUSAL
-      : null;
+  const refused = planCommandsRefusal({ resolution, unattended, allowPlanCommands });
   const cleaned = cleanEnv ? cleanEnvironment() : null;
-
-  if (announce && !refused && resolution.source === "plan.md") {
-    log("Running commands from plan.md (not from .coding-flow/config.json):");
-
-    for (const command of [...(resolution.fixSource === "plan.md" ? resolution.fix : []), ...resolution.commands]) {
-      log(`  ${command}`);
-    }
-  }
-
+  announcePlanCommands({ announce, refused, resolution });
+  // `land` passes runFix: false: on the target checkout a fixer would leave it dirty.
   const fixing = runFix && !refused && resolution.fix.length > 0 ? runFixers({ resolution, cleaned }) : null;
 
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const results = [
-    ...(fixing ? fixing.results : []),
-    ...executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" }),
-  ];
+  const checks = executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" });
+  const results = fixing ? [...fixing.results, ...checks] : checks;
   const commandsOk = results.length > 0 && results.every((item) => item.ok);
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.

@@ -332,6 +332,44 @@ function claimKindOf(story, claim) {
   return resolved ? resolved.kind : null;
 }
 
+// `verify --dry-run`: the commands verify would run, fixers first; none executed.
+function printVerifyDryRun({ story, resolvedStory, json }) {
+  const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
+  const plan = {
+    root: cwd,
+    story: resolvedStory ? resolvedStory.relativePath : null,
+    commandSource: resolution.source,
+    commands: resolution.commands,
+    ...(resolution.fix.length > 0 ? { fix: resolution.fix, fixSource: resolution.fixSource } : {}),
+  };
+
+  if (json) {
+    log(JSON.stringify(plan, null, 2));
+    return;
+  }
+
+  log("Harness verify — dry run (no command executed).");
+  log(`Source: ${resolution.source || "none"}`);
+
+  if (resolution.commands.length === 0) {
+    log("No validation commands found.");
+  }
+
+  if (resolution.fix.length > 0) {
+    log(`Fixers (run first): from ${resolution.fixSource}`);
+
+    for (const command of resolution.fix) {
+      log(`- ${command}`);
+    }
+
+    log("Checks:");
+  }
+
+  for (const command of resolution.commands) {
+    log(`- ${command}`);
+  }
+}
+
 function harnessVerify({
   json = false,
   dryRun = false,
@@ -370,41 +408,7 @@ function harnessVerify({
   }
 
   if (dryRun) {
-    const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
-    const plan = {
-      root: cwd,
-      story: resolvedStory ? resolvedStory.relativePath : null,
-      commandSource: resolution.source,
-      commands: resolution.commands,
-      ...(resolution.fix.length > 0 ? { fix: resolution.fix, fixSource: resolution.fixSource } : {}),
-    };
-
-    if (json) {
-      log(JSON.stringify(plan, null, 2));
-      return;
-    }
-
-    log("Harness verify — dry run (no command executed).");
-    log(`Source: ${resolution.source || "none"}`);
-
-    if (resolution.commands.length === 0) {
-      log("No validation commands found.");
-    }
-
-    if (resolution.fix.length > 0) {
-      log(`Fixers (run first): from ${resolution.fixSource}`);
-
-      for (const command of resolution.fix) {
-        log(`- ${command}`);
-      }
-
-      log("Checks:");
-    }
-
-    for (const command of resolution.commands) {
-      log(`- ${command}`);
-    }
-
+    printVerifyDryRun({ story, resolvedStory, json });
     return;
   }
 
