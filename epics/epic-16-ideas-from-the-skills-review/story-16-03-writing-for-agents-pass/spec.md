@@ -58,4 +58,4 @@ assumption that efficacy holds. That holds only once a real run shows it.
 - A tier-3 behavioural eval suite (refused, entry 5).
 - Re-running the vanilla arm, or running more than one run per cell.
 
-## Status: in-progress
+## Status: done
