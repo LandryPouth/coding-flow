@@ -287,7 +287,7 @@ test('an exemption inside an HTML comment excuses nothing', (t) => {
   assert.equal(evidence.mutation.exemption, undefined);
 });
 
-test('the probe stops at its budget, says so, and leaves no worktree', (t) => {
+test('the probe stops at its budget, says so, and leaves no worktree', { skip: process.platform === 'win32' && 'the command uses POSIX sleep' }, (t) => {
   const dir = project(t, 'mutation-budget');
   harness(dir, { mutation: { command: 'sleep 5; node --test {files}', maxMutants: 5, timeoutMs: 1500 } });
   const started = Date.now();

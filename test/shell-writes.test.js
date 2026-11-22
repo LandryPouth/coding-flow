@@ -32,6 +32,10 @@ function fixture(t) {
   return dir;
 }
 
+// An absolute alias as the guard reports it: the real path (long names on
+// Windows, not RUNNER~1), with forward slashes.
+const abs = (dir, ...parts) => [fs.realpathSync.native(dir), ...parts].join('/').split(path.sep).join('/');
+
 function expectReads(t, cases) {
   const dir = fixture(t);
   for (const [command, expected] of cases) {
@@ -103,8 +107,8 @@ test('copy, move and link destinations, into a directory when it is one', (t) =>
     ['rsync -a src/ dst', [write('dst')]],
     ['cd keys && cp a b', [write('keys/b')]],
     // `-tkeys` spells an `s`: read as symbolic, so the source is also an alias.
-    ['cp -tkeys a', (dir) => [write('keys'), write('keys/a'), alias('a'), alias('keys/a'), alias(path.join(dir, 'keys', 'a'))]],
-    ['cp -s a b', (dir) => [write('b'), alias('a'), alias('b/a'), alias(path.join(dir, 'b', 'a'))]],
+    ['cp -tkeys a', (dir) => [write('keys'), write('keys/a'), alias('a'), alias('keys/a'), alias(abs(dir, 'keys', 'a'))]],
+    ['cp -s a b', (dir) => [write('b'), alias('a'), alias('b/a'), alias(abs(dir, 'b', 'a'))]],
   ]);
 });
 
@@ -113,12 +117,12 @@ test('a link aliases its source, read from the link\'s real directory', (t) => {
     ['ln a', [write('a'), alias('a')]],
     ['ln -sf /tmp/x/.env', [write('.env'), alias('/tmp/x/.env')]],
     ['ln -s ../.env a/x', (dir) => [
-      write('a/x'), alias('../.env'), alias('a/.env'), alias(path.join(dir, 'real', 'deep', '.env')),
-      alias('.env'), alias(path.join(dir, 'real', '.env')),
+      write('a/x'), alias('../.env'), alias('a/.env'), alias(abs(dir, 'real', 'deep', '.env')),
+      alias('.env'), alias(abs(dir, 'real', '.env')),
     ]],
-    ['ln -s ../.env keys', (dir) => [write('keys'), write('keys/.env'), alias('../.env'), alias('.env'), alias(path.join(dir, '.env'))]],
-    ['ln -sT ../.env keys', (dir) => [write('keys'), write('keys/.env'), alias('../.env'), alias('.env'), alias(path.join(dir, '.env'))]],
-    ['ln -s ../x keys/', (dir) => [write('keys/'), write('keys/x'), alias('../x'), alias('x'), alias(path.join(dir, 'x'))]],
+    ['ln -s ../.env keys', (dir) => [write('keys'), write('keys/.env'), alias('../.env'), alias('.env'), alias(abs(dir, '.env'))]],
+    ['ln -sT ../.env keys', (dir) => [write('keys'), write('keys/.env'), alias('../.env'), alias('.env'), alias(abs(dir, '.env'))]],
+    ['ln -s ../x keys/', (dir) => [write('keys/'), write('keys/x'), alias('../x'), alias('x'), alias(abs(dir, 'x'))]],
   ]);
 });
 
@@ -208,7 +212,8 @@ test('cd, pushd, popd and subshells move where a relative write lands', (t) => {
     ['pushd sub && echo > l', [write('sub/l')]],
     ['popd; echo > m', [unchecked('m', UNKNOWN_CWD)]],
     ['cd a && echo > ../n', [write('real/n')]],
-    ['cd /abs && echo > o', (dir) => [write(path.relative(dir, '/abs/o'))]],
+    // `/abs` is on the drive of the shell's directory (Windows), not of this process.
+    ['cd /abs && echo > o', (dir) => [write(path.relative(dir, path.resolve(dir, '/abs/o')).split(path.sep).join('/'))]],
     ['cd $X && cd rel && echo > p', [unchecked('p', UNKNOWN_CWD)]],
     ['cd && echo > h', (dir) => [write(path.relative(dir, path.join(fs.realpathSync(os.homedir()), 'h')))]],
   ]);

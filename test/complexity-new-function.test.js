@@ -92,7 +92,7 @@ test('a function grown by deletions alone (a helper inlined) is measured', (t) =
   assert.equal(result.ok, false);
 });
 
-test('a path git prints quoted is read, and its growth reported', (t) => {
+test('a path git prints quoted is read, and its growth reported', { skip: process.platform === 'win32' && 'Windows forbids a double quote in a file name' }, (t) => {
   const result = evaluate(t, { 'src/z.js': fn('z', 10), 'src/a"b.js': fn('build', 85) }, (dir) => {
     write(dir, 'src/z.js', fn('z', 11));
     write(dir, 'src/a"b.js', fn('build', 95));
@@ -102,7 +102,7 @@ test('a path git prints quoted is read, and its growth reported', (t) => {
   assert.equal(result.ok, false);
 });
 
-test("a quoted path's hunks never land on the file before it", (t) => {
+test("a quoted path's hunks never land on the file before it", { skip: process.platform === 'win32' && 'Windows forbids a double quote in a file name' }, (t) => {
   const result = evaluate(t, { 'src/a.js': `${fn('long', 85)}// end\n`, 'src/b"c.js': 'x\n'.repeat(5) }, (dir) => {
     write(dir, 'src/a.js', `${fn('long', 85)}// end2\n`);
     write(dir, 'src/b"c.js', 'y\n'.repeat(120));

@@ -241,7 +241,7 @@ test('--link names only paths inside the worktree, and links what it names', asy
   assert.equal(fs.readFileSync(path.join(deps, 'vendor', 'marker'), 'utf8'), 'kept');
 });
 
-test('a timeout stops every process the command started', async (t) => {
+test('a timeout stops every process the command started', { skip: process.platform === 'win32' && 'POSIX signals and process groups' }, async (t) => {
   const dir = fixture(t);
   // The baseline passes at once; a mutant (the worktree differs from HEAD) sleeps
   // in a child of `sh` that holds its output.
@@ -252,7 +252,7 @@ test('a timeout stops every process the command started', async (t) => {
   assert.ok(Date.now() - started < 20000, 'the sleeping child was killed with its group');
 });
 
-test('Ctrl-C ends the run with 130, counts no interrupted mutant, and removes the worktree', async (t) => {
+test('Ctrl-C ends the run with 130, counts no interrupted mutant, and removes the worktree', { skip: process.platform === 'win32' && 'POSIX signals and process groups' }, async (t) => {
   const dir = fixture(t);
   // The baseline passes at once; the first mutant sleeps until interrupted.
   const command = 'git diff --quiet || sleep 31.7';
@@ -318,7 +318,7 @@ test('--link refuses overlapping links and a link holding a site or test file', 
   assert.equal(git(dir, 'worktree', 'list').trim().split('\n').length, 1);
 });
 
-test("git's location variables never point the probe at the user's repository", async (t) => {
+test("git's location variables never point the probe at the user's repository", { skip: process.platform === 'win32' && 'a POSIX sh command and chmod' }, async (t) => {
   const dir = fixture(t);
   // A read-only directory in the worktree makes `git worktree remove` fail.
   // The command checks it sees the worktree, not the user's repository, as its git tree.
@@ -358,7 +358,7 @@ test("the repository's hooks do not run for the probe's worktree", async (t) => 
   assert.equal(fs.existsSync(marker), false);
 });
 
-test('a worktree an earlier SIGKILLed run left is removed by the next run', async (t) => {
+test('a worktree an earlier SIGKILLed run left is removed by the next run', { skip: process.platform === 'win32' && 'POSIX signals and process groups' }, async (t) => {
   const dir = fixture(t);
   const dead = deadPid();
   const left = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `mutation-probe-${dead}-`));
@@ -374,7 +374,7 @@ test('a worktree an earlier SIGKILLed run left is removed by the next run', asyn
 });
 
 for (const [signal, code, sleep] of [['SIGTERM', 143, '30.3'], ['SIGHUP', 129, '30.4']]) {
-  test(`${signal} ends the run with ${code}, stops the command's group and removes the worktree`, async (t) => {
+  test(`${signal} ends the run with ${code}, stops the command's group and removes the worktree`, { skip: process.platform === 'win32' && 'POSIX signals and process groups' }, async (t) => {
     const dir = fixture(t);
     const pattern = '^sleep ' + sleep.replace('.', '\\.') + '$';
     t.after(() => spawnSync('pkill', ['-9', '-f', pattern]));
@@ -429,7 +429,7 @@ test('added lines keep their numbers when git merges hunks (diff.interHunkContex
   assert.deepEqual(report.mutants.map((m) => m.line).sort(), [1, 4]);
 });
 
-test("a later run kills a SIGKILLed run's process group only while it still works in that run's worktree", async (t) => {
+test("a later run kills a SIGKILLed run's process group only while it still works in that run's worktree", { skip: process.platform === 'win32' && 'POSIX signals and process groups' }, async (t) => {
   const dir = fixture(t);
   let dead = 999999;
   while (spawnSync('kill', ['-0', String(dead)]).status === 0) {
@@ -526,7 +526,7 @@ test('{files} gets test files by name, never a helper under a test directory', a
   assert.deepEqual(report.tests, ['lib.test.js']);
 });
 
-test('a TMPDIR inside the repository is refused before any worktree is added', async (t) => {
+test('a TMPDIR inside the repository is refused before any worktree is added', { skip: process.platform === 'win32' && 'Windows takes its temp directory from TEMP, not TMPDIR' }, async (t) => {
   const dir = fixture(t);
   fs.mkdirSync(path.join(dir, 'tmp'));
   withEnv(t, { TMPDIR: path.join(dir, 'tmp') });
@@ -626,7 +626,7 @@ test('--json refuses a dangling symlink too', (t) => {
   assert.throws(() => parseArgs(['--base', 'x', '--dry-run', '--json', out]), /exists: pass --force/);
 });
 
-test('a leftover that cannot be removed is logged, and the run goes on', async (t) => {
+test('a leftover that cannot be removed is logged, and the run goes on', { skip: process.platform === 'win32' && 'chmod 555 does not make a directory unremovable on Windows' }, async (t) => {
   const dir = fixture(t);
   const left = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `mutation-probe-${deadPid()}-`));
   t.after(() => {

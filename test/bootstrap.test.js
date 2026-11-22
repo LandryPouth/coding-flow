@@ -721,8 +721,9 @@ test('a pnpm workspace gets the pnpm audit recipe, and gitleaks only when it is 
   assert.equal(without.securityRecipes[0].command, 'pnpm audit --prod --audit-level high');
   assert.ok(!fs.existsSync(path.join(dir, '.coding-flow', 'config.json')), 'the scan never writes the config');
 
-  const gitleaks = path.join(emptyBin, 'gitleaks');
-  fs.writeFileSync(gitleaks, '#!/bin/sh\nexit 0\n');
+  // Windows finds a binary through PATHEXT: the fake needs an extension there.
+  const gitleaks = path.join(emptyBin, process.platform === 'win32' ? 'gitleaks.cmd' : 'gitleaks');
+  fs.writeFileSync(gitleaks, process.platform === 'win32' ? '@exit 0\r\n' : '#!/bin/sh\nexit 0\n');
   fs.chmodSync(gitleaks, 0o755);
 
   const withGitleaks = scanJsonWithPath(dir, [emptyBin]);

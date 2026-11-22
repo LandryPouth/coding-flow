@@ -17,6 +17,10 @@ const { decide } = require('../bin/lib/guard');
 const { checkSensitivePaths } = require('../bin/lib/security-policy');
 const { EVIDENCE_BLOCKED_PATHS } = require('../bin/lib/harness-config');
 
+// A path as a POSIX shell command spells it: on Windows, backslashes would be
+// read as escapes (an agent there writes C:/… in Git Bash).
+const shellPath = (p) => p.split(path.sep).join('/');
+
 function tmp(t) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-')));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -80,7 +84,7 @@ test('an archive extracted into a blocked directory is refused; elsewhere in the
 
 test('reading or making an archive, or extracting outside the project, is not a write here', (t) => {
   const dir = tmp(t);
-  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-out-')));
+  const outside = shellPath(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-out-'))));
   t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
   for (const command of ['tar -cf /tmp/a.tar .', 'tar -tf a.tar', `tar -xf a.tar -C ${outside}`, 'unzip -l a.zip', `unzip a.zip -d ${outside}`, 'unzip -p a.zip x > /dev/null']) {
     assert.equal(bash(dir, command).decision, 'allow', command);
@@ -194,18 +198,18 @@ test('a copy into a directory that holds a blocked one is refused', (t) => {
   ]);
   // Onto the project root (`git restore .`, `cp -r /tmp/x/. .` stay everyday
   // commands), a copy is refused when its source brings a blocked path in.
-  const forged = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-cf-')));
+  const forged = shellPath(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-cf-'))));
   t.after(() => fs.rmSync(forged, { recursive: true, force: true }));
   fs.mkdirSync(path.join(forged, '.coding-flow', 'runs'), { recursive: true });
   fs.writeFileSync(path.join(forged, '.coding-flow', 'runs', 'x-verify.json'), '{}');
   expectDecisions(dir, 'deny', [`rsync -a ${forged}/ .`, `cp -r ${forged}/. .`, `cp -rT ${forged} .`, ['src', `rsync -a ${forged}/ ..`]]);
-  expectDecisions(dir, 'allow', ['rsync -a /tmp/cf/ .', `rsync -a ${path.join(forged, '.coding-flow', 'runs')}/ /tmp/elsewhere`]);
+  expectDecisions(dir, 'allow', ['rsync -a /tmp/cf/ .', `rsync -a ${forged}/.coding-flow/runs/ /tmp/elsewhere`]);
   expectDecisions(dir, 'allow', ['cp -r src /tmp/s', 'rsync -a src/ /tmp/s', 'cp -r src lib', 'cp -r /tmp/x .', 'cp -r /tmp/x src/', 'git checkout -- src', 'cp x .coding-flow/']);
 });
 
 test('a patch names its paths from the repository top, quoted or not; a shifted prefix is unchecked', (t) => {
   const dir = repo(t);
-  const p = (name) => path.join(dir, name);
+  const p = (name) => shellPath(path.join(dir, name));
   expectDecisions(dir, 'deny', [
     `git apply ${p('p_plain.patch')}`,
     `git apply -p1 ${p('p_plain.patch')}`,
@@ -241,7 +245,7 @@ test('archive options as they are really spelled', (t) => {
     'unzip -qd .coding-flow/runs /tmp/a.zip',
     'unzip -qod .coding-flow/runs /tmp/a.zip',
     'unzip -d.coding-flow/runs /tmp/a.zip',
-    `tar -x -f /tmp/a.tar -C /tmp -C ${path.join(dir, '.coding-flow', 'runs')}`,
+    `tar -x -f /tmp/a.tar -C /tmp -C ${shellPath(path.join(dir, '.coding-flow', 'runs'))}`,
     'tar --extr -f /tmp/a.tar -C .coding-flow/runs',
     'tar -x -f /tmp/a.tar --dir=.coding-flow/runs',
     'tar -xf /tmp/a.tar --one-top-level=.coding-flow/runs',
@@ -271,7 +275,7 @@ test('git mv is a move; braces, find -exec, xargs and a substituted verb are unc
 // when known, else unchecked — never a silent allow.
 
 function forgedTree(t, dir) {
-  const forged = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-forged-')));
+  const forged = shellPath(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-forged-'))));
   t.after(() => fs.rmSync(forged, { recursive: true, force: true }));
   fs.mkdirSync(path.join(forged, '.coding-flow', 'runs'), { recursive: true });
   fs.mkdirSync(path.join(forged, path.basename(dir), '.coding-flow', 'runs'), { recursive: true });
@@ -300,7 +304,7 @@ test('a move or copy whose destination names a blocked directory is judged as it
 test('a tree copied onto the project root from a source the guard cannot read is unchecked', (t) => {
   const dir = repo(t);
   const forged = forgedTree(t, dir);
-  const made = path.join(os.tmpdir(), `coding-flow-dir-swap-made-${process.pid}`);
+  const made = shellPath(path.join(os.tmpdir(), `coding-flow-dir-swap-made-${process.pid}`));
   expectDecisions(dir, 'unchecked', [
     `mkdir -p ${made}/.coding-flow/runs && echo '{}' > ${made}/.coding-flow/runs/a.json && rsync -a ${made}/ .`,
     `mkdir -p ${made}/.coding-flow/runs && cp .coding-flow/runs/a.json ${made}/.coding-flow/runs/ && cp -r ${made}/. .`,
@@ -356,9 +360,9 @@ test('git pathspec magic, clustered patch flags, cpio -D and context diffs', (t)
 test('a tree copied onto the root after another segment of the same command is unchecked', (t) => {
   const dir = repo(t);
   const forged = forgedTree(t, dir);
-  const empty = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-empty-')));
+  const empty = shellPath(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-empty-'))));
   t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
-  const missing = path.join(os.tmpdir(), `coding-flow-dir-swap-missing-${process.pid}`);
+  const missing = shellPath(path.join(os.tmpdir(), `coding-flow-dir-swap-missing-${process.pid}`));
   expectDecisions(dir, 'unchecked', [
     `mkdir -p ${empty}/.coding-flow/runs && echo '{}' > ${empty}/.coding-flow/runs/a.json && rsync -a ${empty}/ .`,
     `rm -rf ${empty} && mv ${forged} ${empty} && cp -r ${empty}/. .`,
@@ -390,7 +394,7 @@ test('a trailing slash or a link does not bring the swap back', (t) => {
 
 test('a substitution in the copy\'s own segment, a remote source or a remote shell is unchecked', (t) => {
   const dir = repo(t);
-  const empty = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-subst-')));
+  const empty = shellPath(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-subst-'))));
   t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
   expectDecisions(dir, 'unchecked', [
     `rsync -a ${empty}/ . --exclude=$(mkdir -p ${empty}/.coding-flow/runs; echo zz)`,
@@ -409,7 +413,7 @@ test('a substitution in the copy\'s own segment, a remote source or a remote she
 
 test('a substitution anywhere in the command line, before the source too, is unchecked', (t) => {
   const dir = repo(t);
-  const empty = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-before-')));
+  const empty = shellPath(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-before-'))));
   t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
   expectDecisions(dir, 'unchecked', [
     `rsync -a --exclude-from=<(mkdir -p ${empty}/.coding-flow/runs; echo x) ${empty}/ .`,

@@ -1405,9 +1405,11 @@ test('the command runner hands red-at-base the whole output and the signal', { s
 test('{files} is substituted with the quoted test paths', () => {
   const { expandCommand } = require('../bin/lib/red-at-base');
 
-  assert.equal(expandCommand('node --test {files}', ['-danger.test.js']), 'node --test ./-danger.test.js');
-  assert.equal(expandCommand('node --test {files}', ['test/a b.test.js']), "node --test 'test/a b.test.js'");
-  assert.equal(expandCommand('node --test {files} {packages}', ['x.test.js']), 'node --test x.test.js {packages}');
+  // cmd.exe has no single quotes: on Windows every path is double-quoted.
+  const win = process.platform === 'win32';
+  assert.equal(expandCommand('node --test {files}', ['-danger.test.js']), win ? 'node --test "./-danger.test.js"' : 'node --test ./-danger.test.js');
+  assert.equal(expandCommand('node --test {files}', ['test/a b.test.js']), win ? 'node --test "test/a b.test.js"' : "node --test 'test/a b.test.js'");
+  assert.equal(expandCommand('node --test {files} {packages}', ['x.test.js']), win ? 'node --test "x.test.js" {packages}' : 'node --test x.test.js {packages}');
 });
 
 test('bootstrap --scan suggests a red-at-base command for a node project only', (t) => {
