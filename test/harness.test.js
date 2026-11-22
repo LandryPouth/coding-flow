@@ -53,7 +53,7 @@ test('harness check passes on a clean project', (t) => {
 test('harness check detects a secret and fails', (t) => {
   const dir = freshProject(t);
   // Fake live Stripe key: the pattern must spot it.
-  fs.writeFileSync(path.join(dir, 'config.js'), 'const k = "sk_live_51H8xYzABCDEFGHIJKLMNOP";\n');
+  fs.writeFileSync(path.join(dir, 'config.js'), 'const k = "' + 'sk_' + 'live_51H8xYzABCDEFGHIJKLMNOP";\n');
   const { code, output } = run(dir, ['harness', 'check']);
   assert.notEqual(code, 0, 'a detected secret must fail the check');
   assert.match(output, /secret|Stripe/i, 'the output must mention the secret');

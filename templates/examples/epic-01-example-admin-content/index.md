@@ -26,8 +26,8 @@ Excluded:
 
 Backbone: audit the hardcoded section → render it from a real content source
 
-- [ ] story-01-01-audit-hardcoded-content
-- [ ] story-01-02-render-dynamic-content
+1. [story-01-01-audit-hardcoded-content](story-01-01-audit-hardcoded-content/spec.md) — one hardcoded section is picked and mapped, safe to migrate first *(FAST)*
+2. [story-01-02-render-dynamic-content](story-01-02-render-dynamic-content/spec.md) — the section renders from a typed content source *(STANDARD)*
 
 ## Context Strategy
 

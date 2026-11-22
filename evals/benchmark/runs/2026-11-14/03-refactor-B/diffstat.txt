@@ -1,0 +1,25 @@
+ .claude/settings.json                              |  16 ++
+ .coding-flow/COMMANDS.md                           |  50 +++++
+ .coding-flow/config.json                           |  14 ++
+ .coding-flow/harness.json                          | 202 +++++++++++++++++++++
+ .coding-flow/manifest.json                         |  86 +++++++++
+ .../2026-11-14T09-13-50-432Z-platform-claude.json  |   8 +
+ CLAUDE.md                                          |  23 +++
+ RULES.md                                           | 111 +++++++++++
+ docs/DOGFOODING.md                                 |  71 ++++++++
+ docs/architecture.md                               | 114 ++++++++++++
+ docs/conventions.md                                | 113 ++++++++++++
+ docs/project-context.md                            | 113 ++++++++++++
+ docs/roadmap.md                                    |  41 +++++
+ epics/.gitkeep                                     |   1 +
+ epics/epic-01-single-actor-check/index.md          |  22 +++
+ .../story-01-01-require-actor/story.md             |  37 ++++
+ examples/epic-01-example-admin-content/index.md    |  57 ++++++
+ .../story-01-01-audit-hardcoded-content/plan.md    |  57 ++++++
+ .../story-01-01-audit-hardcoded-content/spec.md    |  42 +++++
+ .../story-01-01-audit-hardcoded-content/tasks.md   |  28 +++
+ .../story-01-02-render-dynamic-content/plan.md     |  74 ++++++++
+ .../story-01-02-render-dynamic-content/spec.md     |  46 +++++
+ .../story-01-02-render-dynamic-content/tasks.md    |  34 ++++
+ package.json                                       |  18 +-
+ 24 files changed, 1376 insertions(+), 2 deletions(-)

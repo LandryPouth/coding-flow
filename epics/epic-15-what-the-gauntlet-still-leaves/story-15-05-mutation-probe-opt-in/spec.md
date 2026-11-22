@@ -30,12 +30,12 @@ As the study's wave 5, unchanged unless 15-04's numbers say otherwise:
 
 ## Acceptance Criteria
 
-- [ ] Given a throwaway repo with a high-risk diff and a test that misses a
+- [x] Given a throwaway repo with a high-risk diff and a test that misses a
       `<` → `<=` change, then the survivor is listed with file and line.
-- [ ] Given a `medium` diff and no claim, then no mutation runs.
-- [ ] Given the same tree twice, then the same sites are sampled.
-- [ ] Given a `## Mutation Exemption` naming a survivor, then the signal is
+- [x] Given a `medium` diff and no claim, then no mutation runs.
+- [x] Given the same tree twice, then the same sites are sampled.
+- [x] Given a `## Mutation Exemption` naming a survivor, then the signal is
       excused and the reason recorded.
-- [ ] No worktree remains after any run; the user's tree token is unchanged.
+- [x] No worktree remains after any run; the user's tree token is unchanged.
 
 ## Result

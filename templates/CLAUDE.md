@@ -16,7 +16,8 @@ small, flat set. Five follow the workflow stage by stage:
 Depth (STRICT mode, deep validators, context scout, TDD) lives as opt-in sections
 inside `/flow-run` and `/flow-review` — you do not chain separate skills by hand.
 
-Two more are read-only and not tied to a stage — reach for them any time:
+Three more are read-only and not tied to a stage — reach for them any time:
 
 - `/flow-status` — where every epic and story actually stands (proof, not prose)
 - `/flow-next` — the one command worth running right now
+- `/flow-recover` — assess an existing codebase into a ranked, traced dossier

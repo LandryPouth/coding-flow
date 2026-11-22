@@ -23,6 +23,7 @@ const { spawnSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { loadPolicy } = require("./guard");
+const { EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
 const { PROFILE_NAME } = require("./codex-settings");
 
 // Insurance against a hung subprocess, not a tight budget (same reasoning as the
@@ -52,7 +53,7 @@ function checkCodexBinary(timeoutMs = PROBE_TIMEOUT_MS) {
 // The first denied path that is a plain directory (`dir/**` with no glob in `dir`).
 function probeDirectory(root) {
   for (const glob of loadPolicy(root).blockedPaths) {
-    if (typeof glob === "string" && glob.endsWith("/**")) {
+    if (typeof glob === "string" && !EVIDENCE_BLOCKED_PATHS.includes(glob) && glob.endsWith("/**")) {
       const dir = glob.slice(0, -3);
 
       if (dir && !/[*?[\]{}]/.test(dir) && !path.isAbsolute(dir) && !dir.split("/").includes("..")) {

@@ -373,3 +373,16 @@ test('a git pinned to one work tree (GIT_DIR, GIT_WORK_TREE) does not hang the g
   assert.equal(guard(dir, write('.env'), env).code, 2);
   assert.equal(guard(dir, write('src.js'), env).code, 0);
 });
+
+test('the proof is not writable by an agent: Write and a shell redirect into runs/ and the ledger are refused', (t) => {
+  const dir = tmp(t);
+  execFileSync(process.execPath, [CLI, 'init'], { cwd: dir, stdio: 'ignore' });
+  fs.mkdirSync(path.join(dir, '.coding-flow', 'runs'), { recursive: true });
+
+  const run = '.coding-flow/runs/x-verify.json';
+  assert.equal(guard(dir, write(run)).code, 2);
+  assert.equal(guard(dir, write('.coding-flow/ledger.jsonl')).code, 2);
+  assert.equal(guard(dir, bash('echo {} > .coding-flow/ledger.jsonl')).code, 2);
+  assert.equal(guard(dir, bash(`echo {} > ${run}`)).code, 2);
+  assert.equal(guard(dir, write('src/ok.js')).code, 0);
+});

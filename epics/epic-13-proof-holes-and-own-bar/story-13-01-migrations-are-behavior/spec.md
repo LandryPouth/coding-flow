@@ -10,10 +10,12 @@ constraint gets the same demand for proof as one whose branch touches
 
 ## Requirements
 
-- A changed file that matches `highRiskPaths` is a behavior file, even when it
-  also matches `nonBehaviorGlobs`. The default overlap today:
-  `**/migrations/**`, `**/migrate/**` (high-risk) and `**/migrations/**`,
-  `**/*.sql` (non-behavior).
+- A changed file that matches a migration glob in `nonBehaviorGlobs`
+  (`**/migrations/**`, `**/*.sql`, or any pattern also listed in
+  `highRiskPaths`) and any `highRiskPaths` pattern is a behavior file. The
+  high-risk pattern can be a default one or the project's own
+  (`db/migrations/**`). Other non-behavior files under a high-risk directory
+  (config, lockfiles, generated code) stay excluded.
 - The `mode: "none"` reason names what was excluded instead of the fixed
   *"docs, story, or lockfile only"*: e.g. `no behavior file changed (3 file(s)
   excluded by nonBehaviorGlobs: docs/a.md, …)`.
@@ -56,11 +58,12 @@ constraint gets the same demand for proof as one whose branch touches
 
 ## Result
 
-A file matching a pattern listed in both `highRiskPaths` and
-`nonBehaviorGlobs` (by default migrations and `.sql`), other than `*.md`, is
-behavior in the coverage gate. Config, lockfiles and generated code under a
+A file matching a migration glob (`**/migrations/**`, `**/*.sql`, or a
+`nonBehaviorGlobs` pattern also in `highRiskPaths`) and any `highRiskPaths`
+pattern, other than `*.md`, is behavior in the coverage gate — including under
+a project's own `highRiskPaths` (`db/migrations/**`). Config, lockfiles and generated code under a
 high-risk directory stay excluded. The `not-required` reason lists the
 excluded files; a failing gate names the behavior files. Tests: 5 for the
-criteria (red on the old code), 3 boundary tests in `coverage-gate.test.js`;
+criteria plus one for a project's own high-risk path (red on the old code), 3 boundary tests in `coverage-gate.test.js`;
 the old "a migration is not asked for a unit test" is reversed. Each rule was
 mutated both ways (too broad, absent) and the suite went red.

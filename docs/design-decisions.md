@@ -492,3 +492,194 @@ bundled scanners, scoring the developer, persona prompts.
 Entry 6's precedent is reaffirmed, not loosened: three exceptions in two
 months, each on a premise named and measured, not a pattern of arguments
 accumulating.
+
+## 14. The secret heuristic stops at a single shell expansion
+
+Story 13-02. `password="$(aws secretsmanager get-random-password …)"` is a
+secret fetched at run time, not written. A heuristic match is dropped only when
+its quoted value is, as a whole, ONE expansion (`$VAR`, `${VAR:-x}`, a balanced
+`$(…)`, one backtick pair), and every match on the line is judged: `a="$(x)"
+b="literal…"` still reports `b`. Exact formats are never exempt.
+
+What this deliberately lets through, because syntax cannot tell it from the
+case it must allow:
+
+- a literal inside the expansion (`$(echo hunter2…)`): what a command receives
+  as an argument is not inspected;
+- a literal default inside the expansion (`"${PW:-RealLiteral…}"`): the
+  criterion requires `"${DB_PASSWORD:-changeme-placeholder-x}"` to pass, and the
+  two are the same shape;
+- a bare variable-looking value (`"$realsecret1234567890"`) — identical in shape
+  to `"$DB_PASSWORD_FROM_THE_VAULT_X"`.
+
+A quoted argument inside the expansion (`$(aws ssm get --name 'x' …)`) is still
+reported: a single quote in the value fails the whole-expansion test. That is a
+false positive, the safe direction.
+
+A literal around the expansion (`$2b$10$<hash>`, `${HOME}secret…`) is reported,
+and so is a single-quoted value (`'$(…)'`, `'$secret…'`), which a shell, YAML and
+`.env` do not expand, and a custom pattern whose match holds several quoted values.
+The detector is a net for accidents, not a proof of absence; exact patterns are
+the guarantee.
+
+## 15. The proof-driven factory — the fourth freeze exception
+
+**Decided 2026-11-12 by the maintainer.** Designed in
+[`docs/plans/autonomous-factory.md`](plans/autonomous-factory.md), grounded in
+[`docs/research/reports/Usines à code IA.md`](research/reports/Usines%20à%20code%20IA.md),
+planned as epics 18 to 24. (Entry 16 is story 16-01's, written when it lands.)
+
+The standing test is entry 6's. The refusal being reopened is the deferral of
+"Batch 4b" on 2026-07-31: `ai-flow run` would drive an agent per story. Its
+two premises were a $20 subscription that could not carry token-heavy runs, and
+a personal tool with no second project. **Both changed, and the change was
+measured, not argued:**
+
+- the maintainer runs on a $100 plan and drives whole epics, not stories;
+- three projects use the tool daily (bethl, ai-learn, coding-flow): 1 063
+  recorded verify runs, 274 stories, 58 hours of machine time in verify;
+- on bethl's epics 37 and 38 the maintainer was the orchestrator: about 20
+  process interventions ("continue", "run the review", "land") against about 6
+  product decisions (bethl `docs/DOGFOODING.md`, 2026-11-12). The tool proved
+  each story; nothing chained them.
+
+And one premise the deferral never had to face: the judge itself is noisy.
+23 % of bethl's red trees and 33 % of ai-learn's went green with no change.
+An unattended loop on that signal would "fix" healthy code. So the exception
+is ordered judge first, engine second, learning last.
+
+**What keeps it narrow.**
+
+- **The front door does not grow.** `/flow-plan` → `/flow-run` → `/flow-ship`
+  stay the path. The engine is a driver behind the existing `ai-flow run`
+  seam (`bin/lib/run.js`, `RUN_DRIVERS`), not a new orchestrator skill.
+  Everything else is machinery.
+- **Zero runtime dependencies.** The driver shells out to the agent CLI the
+  user already has, as `ship` shells out to `gh`.
+- **The tool never edits itself.** The watcher proposes; the maintainer
+  accepts; an experiment confirms or reverts. A proposal that relaxes a gate,
+  deletes a test, raises a budget or touches production is a question, never
+  a change.
+- **Two human gates stay, by design:** validating what to build (the plan) and
+  what ships (production). Everything between them is the tool's job.
+- **The vault is a storage seam, not a product.** Cross-project learning is
+  written one way, sanitized, into a Markdown vault the maintainer chooses,
+  until a real backend is justified.
+
+**Refused in the same decision**: a "dark factory" (no human review of what
+ships), self-modifying rules, swarms of more parallel agents than the judge
+can keep honest (chains: default 2 once parallel chains ship, cap 2; agent processes: a
+user machine setting, uncapped, `auto` = 4, or 2 under WSL or below 16 GB — both set by the maintainer on
+2026-11-13), always-loaded memory
+files beyond short non-standard conventions, and a resident daemon (entry 2
+still stands; the driver is a process per run, not a service).
+
+## 16. What was taken from `mattpocock/skills`, and what was not
+
+Reviewed 2026-11-10, against the same bar as entry 5, with the same verdict: a
+skills layer is a commodity and nothing in that repository can fail. Three ideas
+were worth taking anyway, because each targets a failure measured here (epic 16).
+None adds a command: prose plus its evals, inside the freeze.
+
+**Taken:**
+
+- **`grilling`'s mechanics, not its stance** (story 16-01). `/flow-plan`'s
+  `## Clarify First` asks in rounds of at most 4 questions over the decision
+  frontier, each opening with its recommended answer, and looks facts up instead of
+  asking them. The budget stays (5–15, 10–20 for auth, migration, billing,
+  permissions, data modelling); Pocock's grilling is uncapped. The target is the
+  benchmark's task 5 (2026-10-17): an ambiguity became acceptance criteria, `verify`
+  went green, nobody was asked. A reading the user did not confirm that changes
+  behaviour is now a story line beginning `Assumption (unconfirmed):`, listed in the
+  epic's `## Readiness`, and keeps the epic `not ready`; a
+  headless run stops with the question; `/flow-run` does not implement such a story.
+  Enforced by `test/clarify-rounds.test.js`.
+- **`diagnosing-bugs`, phase 1** (story 16-02): a bug fix starts from a loop that can
+  go red, in every mode, not only STRICT.
+- **`writing-for-agents` as an audit lens** (story 16-03): no-op sentences, negations
+  that name the wrong action, sprawl. The pass landed on all skills and `RULES.md`
+  on 2026-11-10 and cut them by a quarter; story 16-03 is its one benchmark run.
+- **Landed without a story** (2026-11-10, the maintainer's call, being small): in
+  `/flow-review`, from `code-review`, `codebase-design` and `retro`, a `[spec]` pass
+  against the request, "a mechanical finding ships its check", the deletion test and
+  "one adapter is a hypothetical seam", and eight of Fowler's smells; in
+  `/flow-plan`, from `prototype`, one paragraph on throwaway prototypes.
+
+**Not taken:**
+
+- **GLOSSARY/ADR domain modelling, the issue-tracker skills, the `ask-matt` router,
+  parallel implementer subagents, uncapped grilling.** Ceremony or orchestration the
+  freeze exists to prevent; a router is what `/flow-next` already is, from executed
+  proof.
+- **A separate `grill-me` skill.** The 0.4 consolidation (`c0bb189`) folded ours into
+  `/flow-plan`'s `## Clarify First`; a section there is enough.
+- **`git-guardrails`.** A Claude Code deny rule covers it in one line. As a guard
+  feature it would need verifying on every platform (entry 10: a guard that is not
+  verified is not claimed).
+- **Already covered here**: `tdd` (`/flow-run`'s red-first rule and
+  `--red-at-base`), `improve-codebase-architecture` (`/flow-recover`, epic 14),
+  `setup-ts-deep-modules` (the deep-modules rule in `RULES.md`).
+
+**Unverified claim, recorded so it is not lost:** Pocock says Codex forks the parent
+conversation into its subagents by default. If true, the independent STRICT review
+is not independent on Codex. Nobody has checked it here; epic 16 changes nothing in
+the review, and the claim stays open until a Codex run is seen.
+
+## 17. The worktree layer becomes a setting
+
+**Decided 2026-11-14 by the maintainer**, on the count in story 15-06
+([`docs/plans/uncle-bob-gauntlet.md`](plans/uncle-bob-gauntlet.md),
+*Re-measured 2026-11-14*). The study's rule was: *if the friction persists
+once epics 02/03 are stable, make the layer optional rather than extend it.*
+It persisted: 8 DOGFOODING rows by surface since 2026-10-18 and 6 more caused
+by a worktree, 7 of the 8 open; in epic 15's run `autoland` refused every land
+it was asked for, and every land deleted the story's proof.
+
+- **Optional, not removed.** A `worktrees` setting (`on` / `off`), a user
+  machine setting overridable per project. The worktree commands stay, for
+  parallel chains and for the users who keep them on.
+- **The maintainer keeps them on**, for this repository and their own
+  projects: other sessions work in the primary checkout, and a story's
+  worktree keeps them apart. For other users the lean is `off` ("maybe not
+  for others"); the default is fixed when story 18-07 lands.
+- **Proof first.** A land must carry the story's proof into the primary
+  (story 18-02) before the setting ships (story 18-07): losing it is a defect
+  in the proof, whatever the setting.
+
+
+## 18. Finished epics leave the checkout
+
+**Decided 2026-11-10 by the maintainer** (epic 17), built by story 17-01 on
+2026-11-14. `epics/` only grows: 15 epics, 65 stories, 177 files and 1.4 MB
+at MVP stage, read by every agent glob and every `listEpics` walk.
+
+- **`ai-flow archive <epic-dir | NN>`: `git rm` plus an index entry, not a
+  move.** A directory moved to `epics/archive/` is still a directory. The
+  text lives on in git history; one append-only entry in `epics/INDEX.md`
+  names each story, the proof state it had, the default branch's commit
+  where the text still exists (a story-branch commit can be lost to a squash
+  merge), and the `git checkout <sha> -- epics/<dir>` that brings it back.
+  The deletion is staged, never committed: the user commits.
+- **The gate is "finished and merged", not "proven".** Every story past
+  planned / in-progress / blocked, no linked worktree, a clean directory
+  (ignored files included: `git rm` would leave them behind) whose tree at
+  `HEAD` is the default branch's, and only `done`, `verified` or `stale`
+  stories (any other written word refuses). Proof cannot be the gate: almost every
+  `done` reads `no verify captured` or `proof is stale` (autoland deleted the
+  evidence; old proof goes stale as the tree moves). The state is copied as it
+  stands and never upgraded (entry 9: signals only lower claims).
+- **Evidence stays.** `.coding-flow/runs/` is history and is not touched;
+  `audit --check` and the review summary skip only the stories of an
+  archived epic, so an old red or stale run never fails the gate; a story
+  deleted by hand is still judged.
+- **Freeze.** DX and performance, which the freeze allows, but it adds one
+  command. Asked out loud: *if it is not built, does the tool fail at its
+  mission?* Not the guard's or the proof's — but the corpus the tool reads
+  grows without bound, and an archive without collision detection (story
+  17-03) would let one number name two epics. Hence the command, with
+  collision detection in the same epic.
+
+**Refused in the same decision**: a `restore` command (the recovery line is a
+plain `git checkout`), a `--force` past the gate (none found a real case),
+editing documents that link into an archived epic (they are listed as "still
+links here", never rewritten), and archiving several epics in one call.

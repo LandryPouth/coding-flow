@@ -80,15 +80,17 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
   if (config.validation) {
     // Correctness (`commands`) and deterministic quality (`quality`) both flow
     // through the same executed-and-captured proof; a red quality command blocks
-    // exactly like a red test. Tests run first, then quality.
+    // exactly like a red test. Tests run first, then quality, then security.
     // `fresh`: the story's risk asks for tests that really ran, so the project's
     // cache-bypassing commands stand in for the usual ones when it declared any.
     const freshCommands = Array.isArray(config.validation.freshCommands) ? config.validation.freshCommands : [];
     const entries = (value) => (Array.isArray(value) ? value : []);
     const quality = entries(config.validation.quality);
+    const security = entries(config.validation.security);
     const declared = [
       ...(fresh && freshCommands.length > 0 ? freshCommands : entries(config.validation.commands)),
       ...quality,
+      ...security,
     ];
 
     if (declared.length > 0) {
@@ -108,11 +110,13 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
         return command;
       };
 
-      // `quality` is returned so a cached lint is not refused as stale tests.
+      // `quality` is returned so a cached lint is not refused as stale tests;
+      // `security` so a scanner that could not run is judged as not examined.
       return {
         source: "config",
         commands: declared.map(commandOf),
         quality: quality.map(commandOf),
+        security: security.map(commandOf),
         timeouts,
       };
     }
@@ -258,11 +262,14 @@ function isUnattended() {
   return !(process.stdin.isTTY && process.stdout.isTTY);
 }
 
-function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env } = {}) {
+function runValidationCommand(
+  command,
+  { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env, cwd: runCwd = cwd, keepOutput = false } = {},
+) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
   const result = spawnSync(command, [], {
-    cwd,
+    cwd: runCwd,
     shell: true,
     encoding: "utf8",
     timeout: timeoutMs,
@@ -305,6 +312,11 @@ function runValidationCommand(command, { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
     // only on a failure — a green run has nothing to name, and the evidence
     // ledger is append-only.
     ...(ok ? {} : { failureLines: selectFailureLines(`${result.stdout || ""}\n${result.stderr || ""}`) }),
+    // A signal kill has no exit status; the 1 above is a stand-in, not a result.
+    ...(result.signal ? { signal: result.signal } : {}),
+    // Only for a caller that reads it right away (red-at-base); never written
+    // to the evidence, which keeps the tails above.
+    ...(keepOutput ? { output: `${result.stdout || ""}\n${result.stderr || ""}` } : {}),
   };
 }
 
@@ -315,7 +327,95 @@ function commandTimeout(resolution, command) {
   return timeoutMs ? { timeoutMs } : {};
 }
 
+// A security scanner has three outcomes, not two. One that could not run — the
+// harness could not observe it, the binary is missing, it timed out, or it could
+// not reach its advisory database — found nothing because it looked at nothing:
+// that is "not examined", never a pass. Calling it a failure instead would teach
+// people to delete the command.
+//
+// The network test is the one a scanned codebase could game: findings echo the
+// flagged source line and advisory titles, so a token anywhere in the output
+// would let `err.code === "ENOTFOUND"` on a flagged line turn a red scan into a
+// warning. So each pattern is a whole line, anchored at its start, in the shape
+// the scanner's own HTTP client prints — npm and pnpm (Node fetch), pip-audit
+// (Python requests), govulncheck (Go) — read from the last lines of either
+// stream (pnpm prints its failure on stdout, npm on stderr), stack frames
+// skipped. An echoed source line starts with its line number, not with these.
+const NETWORK_FAILURES = [
+  // npm (`npm warn audit request to … failed`), pnpm (` ENOTFOUND  request to …`,
+  // `FetchError: request to …`) and a bare Node fetch error.
+  /^\s*(?:npm (?:warn|error|ERR!)\s+(?:audit\s+)?|(?:ENOTFOUND|EAI_AGAIN)\s+|FetchError:\s+)?request (?:to \S+ )?failed, reason: getaddrinfo (?:ENOTFOUND|EAI_AGAIN) \S+\s*$/,
+  // pip-audit, semgrep: `requests.exceptions.ConnectionError: … NameResolutionError …`
+  /^[\w.]*ConnectionError: .*(?:NameResolutionError|Temporary failure in name resolution|Name or service not known|nodename nor servname)/,
+  // govulncheck: `govulncheck: fetching vulnerabilities: … dial tcp: lookup vuln.go.dev: no such host`
+  /^govulncheck: .*\bdial tcp: lookup \S+.*: (?:no such host|server misbehaving|i\/o timeout)\s*$/,
+];
+const NETWORK_TAIL_LINES = 5;
+
+function streamEnd(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !/^\s+at\s/.test(line))
+    .slice(-NETWORK_TAIL_LINES);
+}
+
+// cmd.exe has no exit 127: a command it cannot find exits 1, prints nothing on
+// stdout, and ends stderr with exactly these two lines. Only that, on Windows,
+// is a scanner that did not run: a scanner may quote the phrase in a finding,
+// and a finding must stay a failure. A localized Windows prints another
+// sentence; it does not match and stays a failure (it fails safe).
+const CMD_NOT_FOUND = [/^'[^']+' is not recognized as an internal or external command,$/, /^operable program or batch file\.$/];
+
+function cmdNotFound(item, platform) {
+  if (platform !== "win32" || item.exitCode !== 1 || String(item.stdoutTail || "").trim() !== "") {
+    return false;
+  }
+  const lines = String(item.stderrTail || "").split(/\r?\n/).filter((line) => line.trim() !== "");
+  const last = lines.slice(-CMD_NOT_FOUND.length);
+
+  return last.length === CMD_NOT_FOUND.length && CMD_NOT_FOUND.every((pattern, index) => pattern.test(last[index]));
+}
+
+// `platform` is injectable for the tests; it defaults to this process's.
+function securityOutcome(item, platform = process.platform) {
+  if (item.ok) {
+    return { outcome: "pass" };
+  }
+
+  const notExamined = (reason) => ({ outcome: "not-examined", notExamined: reason });
+
+  if (item.toolError) {
+    return notExamined(item.toolError);
+  }
+
+  if (item.timedOut) {
+    return notExamined(`timed out after ${Number((item.timeoutMs / 1000).toFixed(1))} s`);
+  }
+
+  if (item.exitCode === 127) {
+    return notExamined("command not found (exit 127)");
+  }
+
+  if (item.exitCode === 126) {
+    return notExamined("command found but not executable (exit 126)");
+  }
+
+  if (cmdNotFound(item, platform)) {
+    return notExamined("command not found (not recognized by cmd.exe)");
+  }
+
+  const network = [...streamEnd(item.stdoutTail), ...streamEnd(item.stderrTail)].find((line) =>
+    NETWORK_FAILURES.some((pattern) => pattern.test(line)),
+  );
+
+  return network ? notExamined(`network unavailable (${network.trim()})`) : { outcome: "fail" };
+}
+
 function resultStatus(item) {
+  if (item.outcome === "not-examined") {
+    return "not examined";
+  }
+
   if (item.ok) {
     return "ok";
   }
@@ -390,6 +490,7 @@ module.exports = {
   isProjectScriptInvocation,
   runValidationCommand,
   commandTimeout,
+  securityOutcome,
   resultStatus,
   captureEnvironment,
 };

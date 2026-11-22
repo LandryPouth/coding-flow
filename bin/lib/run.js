@@ -33,6 +33,7 @@ const {
   harnessRunsDir,
 } = require("./harness");
 const { coverageTier } = require("./coverage");
+const { describeMutation } = require("./mutation");
 
 // Executors. "none" is the only one implemented; the rest are reserved names for
 // the pluggable-driver seam (an agent that implements each story before verify).
@@ -122,6 +123,20 @@ function printDryRun(target, driver, json) {
   }
 }
 
+// What a passing or blocked story did not prove: a security scanner that could
+// not run, and the mutation probe's line when it ran or could not.
+function printUnexamined(entry) {
+  for (const item of entry.results.filter((result) => result.outcome === "not-examined")) {
+    log(`    security not examined: ${item.command} — ${item.notExamined}`);
+  }
+
+  const mutation = describeMutation(entry.mutation);
+
+  if (mutation) {
+    log(`    mutation: ${mutation}`);
+  }
+}
+
 function printReport(report, reportPath) {
   const { target } = report;
   log(`Run report — driver: ${report.driver}, target: ${target.kind}${target.ref ? ` ${target.ref}` : ""}`);
@@ -137,23 +152,35 @@ function printReport(report, reportPath) {
     // calling that "FAIL" would send someone looking for a broken test.
     const coverageBlocked = entry.commandsOk && entry.coverage && !entry.coverage.ok;
     const contraryBlocked = entry.commandsOk && !coverageBlocked && entry.contrary && !entry.contrary.ok;
-    const label = entry.ok ? "pass" : coverageBlocked || contraryBlocked ? "no proof" : "FAIL";
+    const claimBlocked = entry.commandsOk && entry.claim && !entry.claim.ok;
+    const label = entry.ok ? "pass" : coverageBlocked || contraryBlocked || claimBlocked || (entry.commandsOk && entry.mutation && !entry.mutation.ok) ? "no proof" : "FAIL";
     // Ten stories that all say "pass" hide which of them were measured and which
     // merely moved a test file. Over a batch that difference is the whole report.
     const tier = entry.coverage ? entry.coverage.tier || coverageTier(entry.coverage) : "not-required";
     const proof = entry.ok && tier !== "not-required" ? ` — coverage: ${tier}` : "";
     log(`- [${label}] ${entry.story} (${entry.commandsFound} cmd(s), ${duration}ms)${proof}`);
 
+    printUnexamined(entry);
+
+    // Every reason at once: naming only the first sends someone to fix it and
+    // run again just to meet the next one.
     if (coverageBlocked) {
       log(`    ${entry.coverage.reason}`);
-      continue;
     }
 
     if (contraryBlocked) {
       for (const failure of entry.contrary.failures) {
         log(`    ${failure.detail}`);
       }
+    }
 
+    if (claimBlocked) {
+      for (const failure of entry.claim.failures) {
+        log(`    ${entry.claim.kind} claim: ${failure.detail}`);
+      }
+    }
+
+    if (coverageBlocked || contraryBlocked || claimBlocked) {
       continue;
     }
 
@@ -162,7 +189,9 @@ function printReport(report, reportPath) {
 
       if (firstFail) {
         // A command the harness could not observe is not a command that failed.
-        const why = firstFail.toolError
+        const why = firstFail.outcome === "not-examined"
+          ? `not examined (strict): ${firstFail.notExamined}`
+          : firstFail.toolError
           ? `tool error: ${firstFail.toolError}`
           : firstFail.timedOut
             ? "timeout"
@@ -183,6 +212,32 @@ function printReport(report, reportPath) {
         "config.validation.commands or each plan.md '## Commands'.",
     );
   }
+}
+
+// One story's line in the run report, its evidence written only when something
+// actually ran: recording a not-yet-ready story as a failed verify would wrongly
+// mark it blocked.
+function verifyStoryEntry(entry, json) {
+  const evidence = verifyStoryOnce({ story: entry.path, announce: !json });
+  const executed = evidence.commandsFound > 0 && !evidence.refused;
+  const evidencePath = executed ? writeVerifyEvidence(evidence) : null;
+
+  return {
+    story: entry.path,
+    title: entry.title,
+    implemented: false,
+    commandSource: evidence.commandSource,
+    commandsFound: evidence.commandsFound,
+    executed,
+    commandsOk: evidence.commandsOk,
+    ...(evidence.refused ? { refused: evidence.refused } : {}),
+    coverage: evidence.coverage,
+    contrary: evidence.contrary,
+    ...(evidence.claim ? { claim: evidence.claim } : {}), ...(evidence.mutation ? { mutation: evidence.mutation } : {}),
+    ok: evidence.ok,
+    results: evidence.results,
+    evidencePath: evidencePath ? normalizePortable(path.relative(cwd, evidencePath)) : null,
+  };
 }
 
 function run({ story = null, epic = null, driver = "none", json = false, dryRun = false } = {}) {
@@ -211,27 +266,7 @@ function run({ story = null, epic = null, driver = "none", json = false, dryRun 
   for (const entry of target.stories) {
     // Driver "none" implements nothing — it verifies work already done. A future
     // driver would implement the story here, before it is verified.
-    const evidence = verifyStoryOnce({ story: entry.path, announce: !json });
-    const executed = evidence.commandsFound > 0 && !evidence.refused;
-    // Only persist an auditable verify when something actually ran: recording a
-    // not-yet-ready story as a failed verify would wrongly mark it blocked.
-    const evidencePath = executed ? writeVerifyEvidence(evidence) : null;
-
-    stories.push({
-      story: entry.path,
-      title: entry.title,
-      implemented: false,
-      commandSource: evidence.commandSource,
-      commandsFound: evidence.commandsFound,
-      executed,
-      commandsOk: evidence.commandsOk,
-      ...(evidence.refused ? { refused: evidence.refused } : {}),
-      coverage: evidence.coverage,
-      contrary: evidence.contrary,
-      ok: evidence.ok,
-      results: evidence.results,
-      evidencePath: evidencePath ? normalizePortable(path.relative(cwd, evidencePath)) : null,
-    });
+    stories.push(verifyStoryEntry(entry, json));
   }
 
   const executed = stories.filter((entry) => entry.executed);

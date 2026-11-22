@@ -47,11 +47,11 @@ s1
 s2
 
 s3
+└── s7
 
 s4
 └── s5
-
-s6
+    └── s6
 ```
 
 External prerequisites: `s2` needs 13-06 (size ratchet) and 14-04
@@ -60,15 +60,24 @@ boundary rule is reported); `s5` needs 14-03 (throwaway-worktree runner) and
 14-04 (its first consumer is a refactor claim). `s6` runs last, after
 everything else in epics 13–15 has landed.
 
+The tree cannot draw that last rule. The real shape is a join: every other
+story feeds `s6`, and `backbone.js` rejects a story with more than one parent
+(`docs/DOGFOODING.md`, 2026-11-10). So `s6` hangs under `s5`, the last story
+still open when this was corrected. `s1`–`s3` were already on `develop` by
+then. If `s4` says no-go, `s5` closes as "not built", and that releases `s6`.
+Until 2026-11-10, `s6` was drawn as a root, which told the tool it could
+start at once.
+
 ## Stories
 
-1. **story-15-01-guard-tests-pin-what-they-claim** *(QUICK — can run now)*
-2. **story-15-02-split-shellwrites-under-a-refactor-claim** *(STRICT)*
-3. **story-15-03-humans-own-boundaries** *(STANDARD)*
-4. **story-15-04-replay-mutation-on-bethl** — go / no-go experiment.
+1. [story-15-01-guard-tests-pin-what-they-claim](story-15-01-guard-tests-pin-what-they-claim/story.md) *(QUICK — can run now)*
+2. [story-15-02-split-shellwrites-under-a-refactor-claim](story-15-02-split-shellwrites-under-a-refactor-claim/spec.md) *(STRICT)*
+3. [story-15-03-humans-own-boundaries](story-15-03-humans-own-boundaries/spec.md) *(STANDARD)*
+4. [story-15-04-replay-mutation-on-bethl](story-15-04-replay-mutation-on-bethl/story.md) — go / no-go experiment.
    *(QUICK)*
-5. **story-15-05-mutation-probe-opt-in** — only if s4 says go. *(STRICT)*
-6. **story-15-06-did-it-work** — re-measure and write it down. *(QUICK)*
+5. [story-15-05-mutation-probe-opt-in](story-15-05-mutation-probe-opt-in/spec.md) — only if s4 says go. *(STRICT)*
+6. [story-15-06-did-it-work](story-15-06-did-it-work/story.md) — re-measure and write it down. *(QUICK)*
+7. [story-15-07-a-recipe-is-present-only-when-it-checks](story-15-07-a-recipe-is-present-only-when-it-checks/story.md) — follow-up of 15-03's review (three P2s). *(QUICK)*
 
 ## Decisions
 

@@ -6,6 +6,10 @@ decided and refused, with the measurements, is
 [`docs/design-decisions.md`](docs/design-decisions.md) — read it before proposing
 a daemon, a rewrite, or policy in skill frontmatter.
 
+An unattended run of the backlog is in progress (from 2026-11-14): its order,
+rules and state are in [`docs/plans/autonomous-run.md`](docs/plans/autonomous-run.md).
+Read it before starting any story.
+
 ## Hard rules
 
 - **Zero runtime dependencies.** `node:*` only; `git`/`gh` are optional shell-outs.

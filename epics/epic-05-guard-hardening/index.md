@@ -79,17 +79,17 @@ One chain, one worktree: every story edits `bin/lib/guard.js`.
 
 ## Stories
 
-1. **story-05-01-resolve-paths-like-the-filesystem** — root, symlinks,
+1. [story-05-01-resolve-paths-like-the-filesystem](story-05-01-resolve-paths-like-the-filesystem/spec.md) — root, symlinks,
    outside-root, `~`. *(STRICT)*
-2. **story-05-02-unchecked-is-not-allowed** — the third decision, logged and
+2. [story-05-02-unchecked-is-not-allowed](story-05-02-unchecked-is-not-allowed/spec.md) — the third decision, logged and
    surfaced; exceptions and unknown write-shaped tools become `unchecked`.
    *(STRICT)*
-3. **story-05-03-follow-the-shell** — `cd`, `ln`, `git checkout --`,
+3. [story-05-03-follow-the-shell](story-05-03-follow-the-shell/spec.md) — `cd`, `ln`, `git checkout --`,
    interpreters, variables. *(STRICT)*
-4. **story-05-04-strict-mode-fails-closed** — `mode: strict` refuses
+4. [story-05-04-strict-mode-fails-closed](story-05-04-strict-mode-fails-closed/spec.md) — `mode: strict` refuses
    `unchecked`, on Claude and OpenCode, including "guard module could not
    load". *(STRICT)*
-5. **story-05-05-adversarial-corpus-and-honest-limits** — one table-driven
+5. [story-05-05-adversarial-corpus-and-honest-limits](story-05-05-adversarial-corpus-and-honest-limits/story.md) — one table-driven
    test file holding every case above; README "What the guard does not see".
    *(QUICK)*
 

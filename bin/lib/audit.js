@@ -16,6 +16,7 @@ const { log, normalizePortable, readJson } = require("./util");
 const { currentTreeToken } = require("./identity");
 const { policyFingerprint, policyChanged } = require("./policy-fingerprint");
 const { coverageTier } = require("./coverage");
+const { isArchived } = require("./epic-index");
 
 function runsDir(root) {
   return path.join(root, ".coding-flow", "runs");
@@ -312,6 +313,19 @@ function staleReason(entry, currentToken, currentPolicy = null) {
   return isStale(entry, currentToken) ? "code changed" : null;
 }
 
+// A story that left the checkout with `ai-flow archive` (story 17-01) keeps its
+// run files: they are history. Its epic has an entry in `epics/INDEX.md` and its
+// directory is gone, so it is neither judged nor listed by name. A story removed
+// any other way is still judged: its evidence is all that is left of it.
+function archivedStory(root, story) {
+  if (!story) {
+    return false;
+  }
+  const dir = story.endsWith(".md") ? story.split("/").slice(0, -1).join("/") : story;
+  const parts = dir.split("/");
+  return parts[0] === "epics" && parts.length >= 2 && !fs.existsSync(path.join(root, dir)) && isArchived(root, parts[1]);
+}
+
 function gate(entries, { currentToken = null, currentPolicy = null } = {}) {
   const verify = entries.filter((entry) => entry.type === "verify");
 
@@ -438,7 +452,7 @@ function summarizeReviews(root) {
     summary.total += 1;
     summary.byReviewer[reviewer] = (summary.byReviewer[reviewer] || 0) + 1;
 
-    if (data.verdict === "pass" && open > 0) {
+    if (data.verdict === "pass" && open > 0 && !archivedStory(root, data.story)) {
       const item = { story: data.story, generatedAt: data.generatedAt || "", p0: Number(counts.p0) || 0, p1: Number(counts.p1) || 0 };
 
       if (data.acceptedRisk) {
@@ -534,6 +548,49 @@ function buildAuditMarkdown(entries) {
   return lines.join("\n");
 }
 
+// `audit --check`: the latest verify per story, green and fresh, or exit 1.
+function auditCheck(root, { json, since }) {
+  let all = collectAll(root);
+  if (since) {
+    all = all.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
+  }
+  const entries = all.filter((entry) => !archivedStory(root, entry.story));
+  const currentToken = currentTreeToken(root);
+  const currentPolicy = policyFingerprint(root);
+  const result = gate(entries, { currentToken, currentPolicy });
+  const archivedRuns = all.filter((entry) => entry.type === "verify").length - entries.filter((entry) => entry.type === "verify").length;
+  // Only archived evidence left: still no proof for anything on disk, so the
+  // gate keeps failing — but says why instead of "no runs".
+  if (result.reason && archivedRuns > 0) {
+    result.reason = `no verify runs recorded for a story still on disk (${archivedRuns} run(s) belong to archived epics)`;
+  }
+
+  if (json) {
+    log(JSON.stringify(result, null, 2));
+  } else if (result.ok) {
+    log(`Audit check passed — ${result.latest.length} story/scope(s), latest verify green and fresh.`);
+  } else if (result.reason) {
+    log(`Audit check FAILED — ${result.reason}.`);
+  } else {
+    if (result.failing.length > 0) {
+      log("Audit check FAILED — latest verify is red for:");
+      for (const entry of result.failing) {
+        log(`- ${entry.story || "(repo)"}: ${entry.summary}`);
+      }
+    }
+    if (result.stale.length > 0) {
+      log("Audit check FAILED — latest verify is stale (code or policy changed since the proof); re-run `ai-flow verify --story <dir>` for:");
+      for (const entry of result.stale) {
+        log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree (${staleReason(entry, currentToken, currentPolicy)})`);
+      }
+    }
+  }
+
+  if (!result.ok) {
+    process.exitCode = 1;
+  }
+}
+
 function audit({
   json = false,
   exportMd = false,
@@ -584,38 +641,7 @@ function audit({
 
   // The CI gate is read-only: it must not mutate the ledger.
   if (check) {
-    let entries = collectAll(root);
-    if (since) {
-      entries = entries.filter((entry) => entry.generatedAt && entry.generatedAt >= since);
-    }
-    const currentToken = currentTreeToken(root);
-    const currentPolicy = policyFingerprint(root);
-    const result = gate(entries, { currentToken, currentPolicy });
-
-    if (json) {
-      log(JSON.stringify(result, null, 2));
-    } else if (result.ok) {
-      log(`Audit check passed — ${result.latest.length} story/scope(s), latest verify green and fresh.`);
-    } else if (result.reason) {
-      log(`Audit check FAILED — ${result.reason}.`);
-    } else {
-      if (result.failing.length > 0) {
-        log("Audit check FAILED — latest verify is red for:");
-        for (const entry of result.failing) {
-          log(`- ${entry.story || "(repo)"}: ${entry.summary}`);
-        }
-      }
-      if (result.stale.length > 0) {
-        log("Audit check FAILED — latest verify is stale (code or policy changed since the proof); re-run `ai-flow verify --story <dir>` for:");
-        for (const entry of result.stale) {
-          log(`- ${entry.story || "(repo)"}: verified at ${entry.commit || "?"}, no longer matches the working tree (${staleReason(entry, currentToken, currentPolicy)})`);
-        }
-      }
-    }
-
-    if (!result.ok) {
-      process.exitCode = 1;
-    }
+    auditCheck(root, { json, since });
     return;
   }
 

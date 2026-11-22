@@ -142,3 +142,9 @@ test('init --minimal --target codex wires the profile', (t) => {
   assert.equal(cli(dir, ['init', '--minimal', '--target', 'codex']).code, 0);
   assert.ok(fs.readFileSync(tomlPath(dir), 'utf8').startsWith(MARKER));
 });
+
+test('the proof entries are the guard\'s: the sandbox profile does not deny them, or verify could not write its own run', () => {
+  const toml = renderConfig(['.env', '.coding-flow/runs/**', '.coding-flow/ledger.jsonl']);
+  assert.match(toml, /\.env/);
+  assert.doesNotMatch(toml, /\.coding-flow\/(runs|ledger)/);
+});

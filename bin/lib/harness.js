@@ -57,6 +57,7 @@ const {
   getChangedFiles,
   filterScopedFiles,
   changedFilesForCoverage,
+  riskPathsInDiff,
 } = require("./diff-scope");
 const { scoreStoryRisk, scoreDiffRisk, combineRisk } = require("./risk");
 const {
@@ -66,6 +67,7 @@ const {
   captureEnvironment,
 } = require("./validation-run");
 const { evaluateCoverage } = require("./coverage-gate");
+const { resolveClaim } = require("./claim");
 const {
   buildHarnessPreflight,
   checkStoryEvidence,
@@ -322,22 +324,29 @@ function detectStoryScope() {
     : null;
 }
 
+// The kind of proof this run is asked for. A proof made under another claim (or
+// none) answered a different question and must not be replayed for this one.
+function claimKindOf(story, claim) {
+  const resolved = resolveClaim({ storyDir: resolveStoryDir(story), flagClaim: claim });
+  return resolved ? resolved.kind : null;
+}
+
 function harnessVerify({
   json = false,
   dryRun = false,
   story = null,
   noCache = false,
   exemption = null,
+  policyChange = null,
+  claim = null,
   base = null,
-  allowPlanCommands = false,
-  cleanEnv = false,
+  allowPlanCommands = false, cleanEnv = false, redAtBase = false,
 } = {}) {
   if (story !== null) {
     requireStoryScope(story);
   }
 
   setDiffBaseRequest({ flagBase: base, story });
-
   // No --story, but a Spec Kit project knows which feature is active. Scoping to
   // it is what lets a Spec Kit user run `ai-flow verify` and get the spec's risk
   // read and plan.md's commands, with no epics/ directory anywhere.
@@ -345,7 +354,6 @@ function harnessVerify({
 
   if (story === null) {
     const detected = detectStoryScope();
-
     if (detected) {
       story = detected.story;
       scopeNote = `Story: ${detected.story} (Spec Kit feature, from ${detected.source})`;
@@ -403,6 +411,7 @@ function harnessVerify({
       storyDir: resolveStoryDir(story),
       commands: resolution.commands,
       timeouts: resolution.timeouts,
+      claimKind: claimKindOf(story, claim), redAtBase,
     });
 
     if (reusable) {
@@ -419,7 +428,7 @@ function harnessVerify({
     }
   }
 
-  const evidence = verifyStoryOnce({ story, exemption, allowPlanCommands, cleanEnv, announce: !json });
+  const evidence = verifyStoryOnce({ story, exemption, policyChange, claim, allowPlanCommands, cleanEnv, redAtBase, announce: !json });
 
   // A refusal executed nothing: it says who may run these commands, not whether the
   // code passes. Recording it would overwrite an earlier green proof and turn a
@@ -447,6 +456,17 @@ function harnessVerify({
   if (!evidence.ok) {
     process.exitCode = 1;
   }
+}
+
+function claimFlag(flags, getFlagValue) {
+  const present = [...flags].some((flag) => flag === "--claim" || flag.startsWith("--claim="));
+  const claim = getFlagValue("--claim", null);
+
+  if (present && !String(claim || "").trim()) {
+    fail("--claim requires a kind, e.g. --claim refactor.");
+  }
+
+  return claim;
 }
 
 // The request is per command: ship, doctor and status read the same helpers in
@@ -512,15 +532,26 @@ function harnessCommandInner({ commandArgs, getFlagValue, flags }) {
       fail('--test-exemption requires a reason, e.g. --test-exemption "vendor SDK bump, no behavior change".');
     }
 
+    const policyChange = getFlagValue("--policy-change", null);
+
+    if (flags.has("--policy-change") && !policyChange) {
+      fail('--policy-change requires a reason, e.g. --policy-change "raised the lint level".');
+    }
+
+    const claim = claimFlag(flags, getFlagValue);
+
     harnessVerify({
       json: flags.has("--json"),
       dryRun: flags.has("--dry-run"),
       story,
       noCache: flags.has("--no-cache"),
       exemption,
+      policyChange,
+      claim,
       base,
       allowPlanCommands: flags.has("--allow-plan-commands"),
       cleanEnv: flags.has("--clean-env"),
+      redAtBase: flags.has("--red-at-base"),
     });
   } else {
     fail(`unknown harness command "${subcommand}". Use init, preflight, check, verify, or evidence.`);
@@ -548,6 +579,7 @@ module.exports = {
   combineRisk,
   readStoryBundle,
   changedFilesForCoverage,
+  riskPathsInDiff,
   harnessCommand,
   // Reused by `run` (batch orchestration) so it shares the single-story verify
   // execution path instead of duplicating it.

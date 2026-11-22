@@ -7,11 +7,15 @@ description: Push the current branch and open or update one pull request against
 
 ## Overview
 
-`ship` takes the verified work on the current branch and turns it into one pull
-request: it commits whatever is dirty, pushes the branch, and opens (or updates) a
-single PR against the base, attaching the latest `verify` evidence so a reviewer
-sees the proof, not a promise. It is the last step of a story — run it after a
-green verify.
+The last step of a story, after a green verify: `ship` commits whatever is dirty,
+pushes the branch, and opens or updates one PR against the base with the latest
+`verify` evidence attached, so the reviewer sees the proof, not a promise.
+
+## Before Shipping
+
+- A green `ai-flow verify` for this story exists — checked, not assumed. `ship` does
+  not refuse a red or unproven story, so never run it on one.
+- You are on the story's feature branch, not the base branch.
 
 ## Command
 
@@ -19,86 +23,56 @@ green verify.
 ai-flow ship
 ```
 
-> If bare `ai-flow` is not on `PATH`, use `npx @landry_pouth/coding-flow ship`. Uses
-> `gh` when available; without it, `ship` pushes and prints the compare URL to open
-> the PR by hand.
+> If bare `ai-flow` is not on `PATH`, use `npx @landry_pouth/coding-flow ship`. With
+> no `gh`, `ship` pushes and prints the compare URL to open the PR by hand.
 
-Useful flags:
+Flags:
 
 - `--base <ref>` — target branch (default: the remote's default branch).
 - `--title <text>` — PR title (default: derived from the commits).
-- `--draft` — open the PR as a draft (never auto-merged).
-- `--web` — open the PR in the browser afterward.
-- `--no-evidence` — do not attach the latest verify evidence.
-- `--no-commit` — do not auto-commit a dirty tree; push existing commits only.
-- `--all` — commit the whole dirty tree. By default, outside a story worktree,
-  only the story's files are committed (its directory, files the branch already
-  touched, new files beside them) and the rest is listed as left out.
-- `--auto-merge` / `--no-auto-merge` — override the project's `autoMergeEpic`
-  config for this run (see Auto-Merge below).
-- `--merge-method <merge|squash|rebase>` — merge strategy when auto-merging
-  (default: `merge`).
+- `--draft` — open as a draft (never auto-merged). `--web` — open it in the browser.
+- `--no-evidence` — attach no verify evidence.
+- `--no-commit` — push existing commits only.
+- `--all` — commit the whole dirty tree. By default, outside a story worktree, only
+  the story's files are committed (its directory, files the branch already touched,
+  new files beside them); the rest is listed as left out.
+- `--auto-merge` / `--no-auto-merge` — override `autoMergeEpic` for this run;
+  `--merge-method <merge|squash|rebase>` (default `merge`).
 - `--dry-run` — show what would happen without pushing.
 
 ## Behavior
 
-- **One feature = one branch = one PR.** Idempotent: if the PR already exists, the
-  push updates it — nothing is recreated.
-- It keys off the current **branch**, so it works the same inside a worktree or a
-  normal checkout.
+- **One feature = one branch = one PR**, keyed off the current branch, worktree or
+  not. Re-running updates the PR; nothing is recreated.
 - The evidence section of the PR body sits between hidden markers and is replaced on
-  each run; the human-written text around it is never overwritten.
-
-## Auto-Commit
-
-A dirty tree is committed before it is pushed, so `ship` really is the last step of
-a story instead of requiring a manual commit first. The commit message is generic:
-the title of the story linked to the current branch, or the branch name otherwise.
-Before committing, `ship` runs the same secret/sensitive-file scan as
-`ai-flow harness check --quick` on the files it is about to commit; if that scan finds an issue, `ship` stops without
-committing or pushing — fix it (or commit by hand) and ship again. Skip this with
-`--no-commit`.
-
-## Auto-Merge
-
-Off by default (`autoMergeEpic: false` in `.coding-flow/config.json`). When on,
-`ship` merges the PR itself via GitHub's native auto-merge, but only once every
-story of the current branch's epic has an actual captured **green verify** — a
-single unfinished or unproven story keeps the whole epic's PR open. This checks
-recorded evidence directly, not the story's `## Status` line: a written "done"
-normally overrides the machine signal everywhere else in the tool (a human
-override must stick), but a PR merging itself into the base branch is the one
-decision that must not rest on prose alone — an agent that writes "done" without
-having run anything does not clear this gate. Auto-merge is also never attempted
-on a draft PR or a PR that conflicts with the base: conflicts are a human's call,
-not something `ship` resolves. Nor is it attempted while an earlier story in the
-same epic (by directory name, e.g. `story-01-01-...` before `story-01-02-...`)
-still has an open PR: story branches are cut independently from the base, so
-GitHub would happily merge a later, enriching story before the foundation it
-builds on has landed — `ship` waits for that earlier PR to merge first instead.
-`--auto-merge` / `--no-auto-merge` override the config for one run.
-
-## Before Shipping
-
-- Confirm the story is verified: a green `ai-flow verify` should exist, so the
-  attached evidence reflects a passing run. Do not ship a red or unproven story.
-- Confirm you are on the feature branch for this work, not the base branch.
+  each run; the human text around it is never touched.
+- **Auto-commit:** the message is the title of the story linked to the branch, or
+  the branch name. The files about to be committed first go through the same
+  secret/sensitive-file scan as `ai-flow harness check --quick`; a finding stops
+  `ship` before it commits or pushes.
+- **Auto-merge** is off by default (`autoMergeEpic: false` in
+  `.coding-flow/config.json`). When on, GitHub's native auto-merge is armed only
+  once every story of the branch's epic has a captured **green verify** — recorded
+  evidence, never a `## Status` line, since a PR merging itself into the base must
+  not rest on prose. It is never armed on a draft, on a PR that conflicts with the
+  base (a human's call), or while an earlier story of the same epic (by directory
+  order) still has an open PR: a later story must not land before the foundation it
+  builds on.
 
 ## Verification
 
 Before reporting the story as shipped:
 
-- [ ] A green `ai-flow verify` for this story exists — checked, not assumed.
+- [ ] The two Before Shipping checks held before `ship` ran.
 - [ ] `ai-flow ship` ran and its output was read.
 - [ ] The PR URL was reported, or the compare URL when `gh` was unavailable.
-- [ ] Whether verify evidence was attached was stated either way, rather than
-      left for the reviewer to notice.
+- [ ] Whether verify evidence was attached was stated either way.
 
-If the secret scan stopped the auto-commit, the story is **not** shipped. Report
-the finding; committing by hand to get around the scan defeats the only check
-standing between a secret and a public branch.
+If the secret scan stopped the auto-commit, the story is **not** shipped. Report the
+finding: committing by hand to get around the scan defeats the only check between a
+secret and a public branch.
 
 ## Output
 
-Report what happened: the branch pushed, the PR URL (opened or updated), and whether
-verify evidence was attached. If `gh` was unavailable, surface the printed compare URL.
+The branch pushed, the PR URL (opened or updated) or the compare URL, and whether
+verify evidence was attached.

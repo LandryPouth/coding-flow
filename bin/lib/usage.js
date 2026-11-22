@@ -10,9 +10,11 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow status [--json]
   ai-flow next [--all] [--json]
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
-  ai-flow verify --story path [--json] [--dry-run] [--test-exemption "reason"]
-               [--allow-plan-commands] [--clean-env]
+  ai-flow verify --story path [--json] [--dry-run] [--claim refactor] [--test-exemption "reason"]
+               [--policy-change "reason"] [--allow-plan-commands] [--clean-env] [--red-at-base]
+  ai-flow verify [--json] [--dry-run] [--clean-env] [--red-at-base]   (no --story: active feature or no story)
   ai-flow bootstrap --scan [--force] [--dry-run] [--json]
+  ai-flow recover scan [--history-limit N] [--json]
   ai-flow harness init|preflight|check|verify|evidence [--story path] [--json]
   ai-flow guard [--input file] [--json]   (PreToolUse hook: reads a tool call on stdin)
   ai-flow audit [--export] [--check] [--since iso] [--decisions] [--json] [--dry-run]
@@ -21,6 +23,8 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
                 [--architecture|--tests|--security|--quality|--e2e quick|deep|skipped]
                 [--p0 n] [--p1 n] [--p2 n] [--p3 n] [--json]
   ai-flow trace [--story path] [--json]
+  ai-flow archive <epic-dir | NN> [--dry-run] [--json]   (a finished, merged epic leaves the checkout)
+  ai-flow archive --refresh [--dry-run] [--json]   (rewrite epics/INDEX.md's live section: every epic, every story's written status)
   ai-flow report [--raw] [--json] [--out file]
   ai-flow ci init [--force] [--dry-run]
   ai-flow plugin sync|check [--json] [--dry-run]

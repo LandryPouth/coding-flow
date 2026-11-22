@@ -24,14 +24,14 @@ against a lower bar.
 
 ## Acceptance Criteria
 
-- [ ] Given a branch lowering `minPatchCoverage` in `.coding-flow/harness.json`,
+- [x] Given a branch lowering `minPatchCoverage` in `.coding-flow/harness.json`,
       then the evidence carries `policy-changed` naming the file (warning).
-- [ ] Given the same under strict, then verify fails; with a `## Policy
+- [x] Given the same under strict, then verify fails; with a `## Policy
       Change` section it passes and the reason is in the evidence.
-- [ ] Given a branch adding a rule to `.eslintrc.json`, then the same signal
+- [x] Given a branch adding a rule to `.eslintrc.json`, then the same signal
       (direction is not judged: tightening is also reported, and costs one
       sentence).
-- [ ] Given no policy file in the diff, then no signal and no change to any
+- [x] Given no policy file in the diff, then no signal and no change to any
       existing verdict.
 
 ## Edge Cases

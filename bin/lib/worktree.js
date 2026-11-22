@@ -21,6 +21,7 @@ const path = require("path");
 const { hasStoryContent } = require("./story");
 const { readJson, writeJson, canonicalPath, relativePath, samePath } = require("./util");
 const { readConfig } = require("./config");
+const { baseBranchNames } = require("./diff-base");
 const { getStorage } = require("./storage");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
@@ -204,6 +205,21 @@ function installCommand(pm) {
   return null;
 }
 
+// The fork point travels with the branch in the repository's own config, so
+// verify can measure the story from where it forked, not from main. The ref is
+// a branch name, re-resolved on every run: a rebase keeps it valid. A base
+// branch (develop, main…) has none: verify would read it as a story scope
+// (story 13-07).
+function recordForkPoint(root, name, from) {
+  if (baseBranchNames(root, readConfig(root).baseBranch).includes(name)) return;
+
+  const forkRef = from || git(root, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }).stdout.trim();
+
+  if (forkRef && forkRef !== "HEAD" && !forkRef.startsWith("-")) {
+    git(root, ["config", `branch.${name}.codingFlowBase`, forkRef], { allowFail: true });
+  }
+}
+
 // quiet: suppresses every progress line this function (and applyDeps) would
 // otherwise print — for a caller that presents its own summary instead (e.g.
 // worktree-plan.js's decidePlacement, whose CLI wrapper prints a consolidated
@@ -262,16 +278,7 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   git(root, addArgs);
-  if (!branchExists) {
-    // The fork point travels with the branch in the repository's own config, so
-    // verify can measure the story from where it forked, not from main. The ref
-    // is a branch name, re-resolved on every run: a rebase keeps it valid.
-    const forkRef =
-      from || git(root, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFail: true }).stdout.trim();
-    if (forkRef && forkRef !== "HEAD" && !forkRef.startsWith("-")) {
-      git(root, ["config", `branch.${name}.codingFlowBase`, forkRef], { allowFail: true });
-    }
-  }
+  if (!branchExists) recordForkPoint(root, name, from);
   if (!quiet) {
     log(`Worktree created: ${dest}`);
     log(`Branch: ${name}${branchExists ? " (existing)" : ""}`);

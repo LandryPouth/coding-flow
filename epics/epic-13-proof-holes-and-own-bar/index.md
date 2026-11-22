@@ -65,6 +65,22 @@ s3
 └── s6
 
 s5
+
+s7
+
+s8
+
+s9
+
+s10
+
+s11
+
+s12
+
+s13
+
+s14
 ```
 
 `s1`, `s2`, `s5` are independent. `s4` and `s6` assume s3's lcov command is
@@ -73,17 +89,40 @@ config s3 writes).
 
 ## Stories
 
-1. **story-13-01-migrations-are-behavior** *(STRICT — changes verdicts for
+1. [story-13-01-migrations-are-behavior](story-13-01-migrations-are-behavior/spec.md) *(STRICT — changes verdicts for
    every user with migrations)*
-2. **story-13-02-command-substitution-is-not-a-credential** *(QUICK)*
-3. **story-13-03-coding-flow-proves-itself-at-verified** — lcov in
+2. [story-13-02-command-substitution-is-not-a-credential](story-13-02-command-substitution-is-not-a-credential/story.md) *(QUICK)*
+3. [story-13-03-coding-flow-proves-itself-at-verified](story-13-03-coding-flow-proves-itself-at-verified/spec.md) — lcov in
    validation, the security core in `highRiskPaths`, `.coding-flow/runs/**`
    blocked by default. *(STANDARD)*
-4. **story-13-04-the-bar-does-not-move** — policy-weakening signal.
+4. [story-13-04-the-bar-does-not-move](story-13-04-the-bar-does-not-move/spec.md) — policy-weakening signal.
    *(STANDARD)*
-5. **story-13-05-spec-before-parser** — corpus-first rule, criteria-drift
+5. [story-13-05-spec-before-parser](story-13-05-spec-before-parser/spec.md) — corpus-first rule, criteria-drift
    signal. *(STANDARD)*
-6. **story-13-06-touched-functions-do-not-grow** — size ratchet. *(STANDARD)*
+6. [story-13-06-touched-functions-do-not-grow](story-13-06-touched-functions-do-not-grow/spec.md) — size ratchet. *(STANDARD)*
+7. [story-13-07-a-base-branch-has-no-fork-point](story-13-07-a-base-branch-has-no-fork-point/story.md) — added 2026-11-13: a
+   `codingFlowBase` recorded on `develop` kept 13-04 and 15-01 from being
+   proven. *(QUICK)*
+8. [story-13-08-a-rename-keeps-its-risk](story-13-08-a-rename-keeps-its-risk/story.md) — added 2026-11-13: a file
+   moved out of a high-risk path is scored at its new path only. *(QUICK)*
+9. [story-13-09-a-directory-swap-is-a-write](story-13-09-a-directory-swap-is-a-write/story.md) — added 2026-11-14 from
+   13-03's review: swapping a blocked directory whole rewrites the proof
+   unseen. *(STRICT)*
+10. [story-13-10-the-security-core-stays-high-risk](story-13-10-the-security-core-stays-high-risk/story.md) — added 2026-11-14
+    from 13-03's review: modules extracted from the guard left
+    `highRiskPaths`. *(QUICK)*
+11. [story-13-11-a-wrapped-criterion-is-read-whole](story-13-11-a-wrapped-criterion-is-read-whole/story.md) — added 2026-11-14
+    from 13-05's review: a criterion wrapped onto two lines is compared on
+    its first line only. *(STANDARD)*
+12. [story-13-12-a-new-function-is-measured-as-new](story-13-12-a-new-function-is-measured-as-new/story.md) — added 2026-11-14
+    from 13-06's review: a new long function borrows the length of the base
+    function its hunk replaced. *(STANDARD)*
+13. [story-13-13-the-guards-long-tail](story-13-13-the-guards-long-tail/story.md) — added 2026-11-14 from 13-09's
+    five reviews: git plumbing, scp, busybox, other archivers, and in-project
+    extraction judged by its members. *(STRICT)*
+14. [story-13-14-a-deletion-is-a-structural-signal](story-13-14-a-deletion-is-a-structural-signal/story.md) — added 2026-11-14
+    from 17-01's review: new code that runs `git rm` scored low risk, so
+    coverage was not asked. *(QUICK)*
 
 ## Decisions
 

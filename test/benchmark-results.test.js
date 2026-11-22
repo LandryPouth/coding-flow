@@ -16,6 +16,7 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const RUN = path.join(ROOT, 'evals', 'benchmark', 'run.js');
 const RUNS = path.join(ROOT, 'evals', 'benchmark', 'runs', '2026-10-17');
+const SECOND = path.join(ROOT, 'evals', 'benchmark', 'runs', '2026-11-14');
 const DOC = path.join(ROOT, 'docs', 'experiments', 'reliability-benchmark.md');
 
 function summarize(dir) {
@@ -39,6 +40,18 @@ test('the results table in the experiment document is the summary of the committ
 
   assert.ok(block, 'the document has no summarize:begin/end block');
   assert.strictEqual(block[1], summarize(RUNS).output, 'regenerate it with: node evals/benchmark/run.js summarize evals/benchmark/runs/2026-10-17');
+});
+
+test('the second run (coding-flow arm only) is quoted from its own raw runs', () => {
+  const doc = fs.readFileSync(DOC, 'utf8');
+  const block = doc.match(/<!-- summarize-2026-11-14:begin -->\n([\s\S]*?)<!-- summarize-2026-11-14:end -->/);
+  const { code, output } = summarize(SECOND);
+
+  assert.ok(block, 'the document has no summarize-2026-11-14:begin/end block');
+  assert.strictEqual(code, 0);
+  assert.strictEqual(block[1], output, 'regenerate it with: node evals/benchmark/run.js summarize evals/benchmark/runs/2026-11-14');
+  assert.match(output, /^\| \*\*Total\*\* \| coding-flow \| 2\/5 \| 5 \| .* \| \$3\.98 \| 575s \| 354 \|$/m);
+  assert.doesNotMatch(output, /vanilla/);
 });
 
 test('the summary reports first-pass, round-trips, cost and spec lines from the raw files', () => {

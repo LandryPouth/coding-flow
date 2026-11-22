@@ -15,7 +15,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const CLI = path.join(__dirname, '..', 'bin', 'ai-flow.js');
-const NAMES = ['flow-next', 'flow-plan', 'flow-review', 'flow-run', 'flow-setup', 'flow-ship', 'flow-status'];
+const NAMES = ['flow-next', 'flow-plan', 'flow-recover', 'flow-review', 'flow-run', 'flow-setup', 'flow-ship', 'flow-status'];
 
 function setup(t, extraEnv = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-slash-'));
@@ -36,7 +36,7 @@ function commandFiles(dir) {
 test('init --target opencode adds one /flow-* command per skill, handing over to the skill', (t) => {
   const { project, run } = setup(t);
   const out = run(['init', '--target', 'opencode']);
-  assert.match(out, /Slash commands \(opencode\): 7 written — \.opencode\/commands/);
+  assert.match(out, /Slash commands \(opencode\): 8 written — \.opencode\/commands/);
   assert.deepEqual(commandFiles(path.join(project, '.opencode', 'commands')), NAMES.map((n) => `${n}.md`));
 
   const run_ = fs.readFileSync(path.join(project, '.opencode', 'commands', 'flow-run.md'), 'utf8');
@@ -55,7 +55,7 @@ test('the commands are written even when the skills come from .claude/skills', (
   const out = run(['init', '--target', 'opencode']);
   assert.match(out, /served from \.claude\/skills/);
   assert.equal(fs.existsSync(path.join(project, '.opencode', 'skills')), false);
-  assert.equal(commandFiles(path.join(project, '.opencode', 'commands')).length, 7);
+  assert.equal(commandFiles(path.join(project, '.opencode', 'commands')).length, 8);
 });
 
 test('doctor flags a missing /flow-* command and upgrade restores it', (t) => {
@@ -78,8 +78,8 @@ test('the global install adds the commands beside the skills, and uninstall --gl
       encoding: 'utf8',
     });
   const out = runGlobal(['init', '--global', '--target', 'opencode']);
-  assert.match(out, /Skills: 7 written/);
-  assert.match(out, /Slash commands: 7 written/);
+  assert.match(out, /Skills: 8 written/);
+  assert.match(out, /Slash commands: 8 written/);
   assert.deepEqual(commandFiles(path.join(xdg, 'opencode', 'commands')), NAMES.map((n) => `${n}.md`));
   runGlobal(['uninstall', '--global']);
   assert.deepEqual(commandFiles(path.join(xdg, 'opencode', 'commands')), []);
@@ -99,7 +99,7 @@ test('doctor points an older global OpenCode install at upgrade --global', (t) =
 
   fs.rmSync(path.join(xdg, 'opencode', 'commands'), { recursive: true });
   const out = cli(['doctor']).stdout;
-  assert.match(out, /OpenCode install for every project .* is behind this version \(7 file\(s\) missing, e\.g\. commands\/flow-next\.md\) — run `ai-flow upgrade --global`/);
+  assert.match(out, /OpenCode install for every project .* is behind this version \(8 file\(s\) missing, e\.g\. commands\/flow-next\.md\) — run `ai-flow upgrade --global`/);
 
   cli(['upgrade', '--global']);
   assert.doesNotMatch(cli(['doctor']).stdout, /behind this version/);

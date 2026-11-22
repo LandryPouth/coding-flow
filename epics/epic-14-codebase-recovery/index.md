@@ -64,16 +64,16 @@ a time, or expect a trivial merge in that file. `s2`'s "fixed (proven)" needs
 
 ## Stories
 
-1. **story-14-01-assess-an-mvp-end-to-end** — `recover scan`, the skill's
+1. [story-14-01-assess-an-mvp-end-to-end](story-14-01-assess-an-mvp-end-to-end/spec.md) — `recover scan`, the skill's
    assess mode, the dossier format, the fixture app, eval case. *(STANDARD —
    walking skeleton)*
-2. **story-14-02-status-reads-the-findings** *(STANDARD)*
-3. **story-14-03-a-fix-is-red-at-base** *(STRICT — new proof semantics,
+2. [story-14-02-status-reads-the-findings](story-14-02-status-reads-the-findings/spec.md) *(STANDARD)*
+3. [story-14-03-a-fix-is-red-at-base](story-14-03-a-fix-is-red-at-base/spec.md) *(STRICT — new proof semantics,
    throwaway worktrees)*
-4. **story-14-04-a-refactor-keeps-its-tests** *(STRICT)*
-5. **story-14-05-learn-pins-a-flow** *(QUICK — skill section)*
-6. **story-14-06-security-tools-are-declared-commands** *(STANDARD)*
-7. **story-14-07-crap-and-size-from-lcov** *(STANDARD — Uncle Bob wave 4)*
+4. [story-14-04-a-refactor-keeps-its-tests](story-14-04-a-refactor-keeps-its-tests/spec.md) *(STRICT)*
+5. [story-14-05-learn-pins-a-flow](story-14-05-learn-pins-a-flow/story.md) *(QUICK — skill section)*
+6. [story-14-06-security-tools-are-declared-commands](story-14-06-security-tools-are-declared-commands/spec.md) *(STANDARD)*
+7. [story-14-07-crap-and-size-from-lcov](story-14-07-crap-and-size-from-lcov/spec.md) *(STANDARD — Uncle Bob wave 4)*
 
 ## Decisions
 

@@ -17,12 +17,16 @@
 - **Overlap rule in code, lists untouched.** "High-risk ⇒ behavior" fixes
   every existing install without rewriting their `harness.json`; editing the
   defaults would only fix new installs.
-- **Only the exact overlap is overridden.** A file is behavior despite
-  `nonBehaviorGlobs` when it matches a pattern listed, verbatim, in both lists
-  (by default `**/migrations/**`, `**/*.sql`), and is not `*.md`. A first
-  version overrode any high-risk match except an "inert" list; the independent
-  review reproduced the regression (`packages/auth/tsconfig.json`,
-  `src/payments/generated/client.ts` demanded a test). Pinned both ways.
+- **Only migration globs yield.** A file is behavior despite
+  `nonBehaviorGlobs` when it matches a migration glob (`**/migrations/**`,
+  `**/*.sql`, or a non-behavior pattern also listed in `highRiskPaths`) and
+  any `highRiskPaths` pattern, and is not `*.md`. A first version overrode any
+  high-risk match except an "inert" list; the independent review reproduced
+  the regression (`packages/auth/tsconfig.json`,
+  `src/payments/generated/client.ts` demanded a test). A second version
+  required the same pattern, verbatim, in both lists; `/flow-review` showed a
+  project with its own `highRiskPaths: ["db/migrations/**"]` still verified a
+  `DROP COLUMN` green. Pinned all three ways.
 - **Other migration layouts are out of scope** (`src/migration/`, EF Core
   `Migrations/`, `alembic/versions/`, Liquibase changelogs): adding them to
   `highRiskPaths` changes risk levels for every user, which this story's edge
@@ -40,4 +44,5 @@ code.
 
 ## Acceptance Traceability
 
-- criteria 1–5 → `test/migrations-are-behavior.test.js`
+- criteria 1–5 → `test/migrations-are-behavior.test.js`, plus one test for a
+  project's own high-risk migration path

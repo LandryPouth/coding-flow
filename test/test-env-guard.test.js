@@ -44,6 +44,22 @@ test('the guard deletes every git-hook environment variable it targets', () => {
   assert.deepEqual(JSON.parse(out), POISONED_NAMES.map(() => false));
 });
 
+test('the guard pins the platform to Claude, even when the suite runs inside OpenCode', () => {
+  const env = { ...process.env, OPENCODE: '1', OPENCODE_PID: '12345', CLAUDECODE: '' };
+  const out = execFileSync(
+    process.execPath,
+    [
+      '--require',
+      GUARD,
+      '-e',
+      'console.log(JSON.stringify({ claude: process.env.CLAUDECODE, opencode: "OPENCODE" in process.env, pid: "OPENCODE_PID" in process.env }))',
+    ],
+    { env, encoding: 'utf8' },
+  );
+
+  assert.deepEqual(JSON.parse(out), { claude: '1', opencode: false, pid: false });
+});
+
 test('a poisoned GIT_DIR would otherwise hijack a fixture repo (negative control)', (t) => {
   // Without the guard, this is exactly what broke: a hook sets GIT_DIR (not
   // GIT_WORK_TREE) in its own process environment. With GIT_WORK_TREE unset

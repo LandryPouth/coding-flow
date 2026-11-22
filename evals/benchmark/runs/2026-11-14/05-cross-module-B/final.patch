@@ -1,0 +1,54 @@
+diff --git a/spec/report.spec.js b/spec/report.spec.js
+index 1097d87..f296359 100644
+--- a/spec/report.spec.js
++++ b/spec/report.spec.js
+@@ -47,3 +47,33 @@ test('the summary renders each category once, sorted', () => {
+ 
+   assert.equal(reporter.summary(), 'meals: $5.00\ntravel: $10.00');
+ });
++
++test('a rejected expense is left out of the totals', () => {
++  const { router } = app();
++  file(router, { amount: '10.00' });
++  const refused = file(router, { amount: '25.50' }).body;
++
++  router['POST /rejections']({ actorId: 'dinah', expenseId: refused.id, reason: 'no receipt' });
++
++  assert.deepEqual(router['GET /report']({}).body, { travel: 1000 });
++});
++
++test('a category with only rejected expenses is absent', () => {
++  const { router } = app();
++  const refused = file(router, { amount: '25.50', category: 'meals' }).body;
++
++  router['POST /rejections']({ actorId: 'dinah', expenseId: refused.id, reason: 'duplicate' });
++
++  assert.deepEqual(router['GET /report']({}).body, {});
++});
++
++test('rejecting after the report was read lowers the total', () => {
++  const { router } = app();
++  file(router, { amount: '10.00' });
++  const refused = file(router, { amount: '25.50' }).body;
++  assert.deepEqual(router['GET /report']({}).body, { travel: 3550 });
++
++  router['POST /rejections']({ actorId: 'dinah', expenseId: refused.id, reason: 'no receipt' });
++
++  assert.deepEqual(router['GET /report']({}).body, { travel: 1000 });
++});
+diff --git a/src/report.js b/src/report.js
+index 3f9e18e..b7bb8dc 100644
+--- a/src/report.js
++++ b/src/report.js
+@@ -11,6 +11,11 @@ function createReporter(store) {
+     const grouped = new Map();
+ 
+     for (const expense of store.all()) {
++      // A rejected expense is never paid out, so it must not reach the totals.
++      if (expense.status === 'rejected') {
++        continue;
++      }
++
+       const bucket = grouped.get(expense.category) || [];
+       bucket.push(expense.amountCents);
+       grouped.set(expense.category, bucket);

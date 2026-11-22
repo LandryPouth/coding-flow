@@ -19,16 +19,27 @@ const {
 } = require("./coverage");
 const { readStoryPart, readStoryBundle, extractSection } = require("./story");
 const { matchesPattern } = require("./util");
+const { criterionItems, readSpecDrift } = require("./spec-drift");
+const { readPolicyChanged, readBaseHarness } = require("./policy-drift");
+const { defaultHighRiskPaths, defaultNonBehaviorGlobs, defaultHarnessConfig } = require("./harness-config");
+
+// The default non-behavior entries that are also default high-risk paths: the
+// migration and `.sql` globs (story 13-01).
+const DEFAULT_MIGRATION_GLOBS = defaultNonBehaviorGlobs().filter((pattern) =>
+  defaultHighRiskPaths().includes(pattern),
+);
 const {
   currentDiffBase,
   isScopedOut,
   changedFilesForCoverage,
+  riskPathsInDiff,
   runGitText,
   changedLinesForCoverage,
   parseChangedText,
   deletedFilesInDiff,
 } = require("./diff-scope");
 const {
+  RISK_RANK,
   scoreStoryRisk,
   scoreDiffRisk,
   combineRisk,
@@ -75,15 +86,7 @@ function readAcceptanceCriteria(storyDir) {
     return null;
   }
 
-  const items = [];
-
-  for (const line of section.split(/\r?\n/)) {
-    const match = line.match(/^\s*[-*]\s*\[([ xX~])\]\s*(.+?)\s*$/);
-
-    if (match) {
-      items.push({ state: match[1] === "~" ? "deferred" : match[1] === " " ? "open" : "done", text: match[2] });
-    }
-  }
+  const items = criterionItems(readStoryPart(storyDir, "spec"));
 
   // A criteria section written as prose rather than as a checklist is not a
   // defect to report — there is simply nothing countable in it.
@@ -234,6 +237,7 @@ const ASSERTION_MARKERS = [
 
 const countMatching = (lines, patterns) =>
   lines.filter((line) => patterns.some((pattern) => pattern.test(line))).length;
+const countSkipMarkers = (lines) => countMatching(lines, SKIP_MARKERS);
 
 // Per test file: did this diff make it stronger, weaker, or neither?
 function scanTestWeakening(config) {
@@ -307,6 +311,39 @@ function listFiles(files, max = 3) {
   return files.slice(0, max).join(", ") + (files.length > max ? ` (+${files.length - max} more)` : "");
 }
 
+// What the diff changed, split the way every gate reads it: test files (proof),
+// behavior files (what proof is owed for), and excluded files (prose,
+// generated output). Shared with `claim.js` so a refactor claim and the coverage
+// gate never disagree about which file is which.
+function classifyChangedFiles(config) {
+  const changedFiles = changedFilesForCoverage();
+  const testFiles = changedFiles.filter((file) =>
+    config.testGlobs.some((pattern) => matchesPattern(file, pattern)),
+  );
+  // A migration is behavior: letting non-behavior win made `DROP COLUMN` read as
+  // "docs only". The non-behavior patterns that yield are the ones listed in
+  // `highRiskPaths` too, plus the default overlap (`**/migrations/**`,
+  // `**/*.sql`) so that a project's own `highRiskPaths` (`db/migrations/**`)
+  // still catches them. A file matching a yielding pattern is behavior when it
+  // also matches a high-risk path. A file merely sitting under a high-risk
+  // directory (`packages/auth/tsconfig.json`, `docs/auth/setup.md`) stays
+  // excluded, a `.sql` matching no high-risk path stays excluded, and prose is
+  // never behavior, even inside `migrations/`.
+  const riskPatterns = Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaultHighRiskPaths();
+  const yielding = new Set([...riskPatterns, ...DEFAULT_MIGRATION_GLOBS]);
+  const yieldingNonBehavior = config.nonBehaviorGlobs.filter((pattern) => yielding.has(pattern));
+  const isMigration = (file) =>
+    yieldingNonBehavior.some((pattern) => matchesPattern(file, pattern)) &&
+    riskPatterns.some((pattern) => matchesPattern(file, pattern));
+  const isExcluded = (file) =>
+    config.nonBehaviorGlobs.some((pattern) => matchesPattern(file, pattern)) &&
+    (matchesPattern(file, "**/*.md") || !isMigration(file));
+  const excluded = changedFiles.filter((file) => !testFiles.includes(file) && isExcluded(file));
+  const behaviorFiles = changedFiles.filter((file) => !excluded.includes(file) && !testFiles.includes(file));
+
+  return { changedFiles, testFiles, excluded, behaviorFiles };
+}
+
 // `ctx.riskLevel` is null until the risk is scored: a result returned before that
 // point (coverage off, no diff) has no level, so no floor applies to it.
 function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt = null }, ctx = { riskLevel: null }) {
@@ -332,30 +369,14 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   const storyRisk = storyDir
     ? scoreStoryRisk(Object.values(readStoryBundle(storyDir)).join("\n"), config)
     : { level: "low", matchedTerms: [], reason: "no story to read." };
-  const risk = combineRisk(storyRisk, scoreDiffRisk(changedFiles, config));
+  const risk = combineRisk(storyRisk, scoreDiffRisk(riskPathsInDiff(), config));
   ctx.riskLevel = risk.level;
 
   if (risk.level === "low") {
     return skip(`risk is low (${risk.reason})`);
   }
 
-  const testFiles = changedFiles.filter((file) =>
-    config.testGlobs.some((pattern) => matchesPattern(file, pattern)),
-  );
-  // A pattern listed in both `highRiskPaths` and `nonBehaviorGlobs` (the
-  // defaults overlap on `**/migrations/**` and `**/*.sql`) counts as behavior:
-  // letting non-behavior win made `DROP COLUMN` read as "docs only". Only that
-  // overlap changes. A file merely sitting under a high-risk directory
-  // (`packages/auth/tsconfig.json`, `docs/auth/setup.md`) stays excluded, and a
-  // project's own non-behavior glob that is not high-risk wins. Prose is never
-  // behavior, even inside `migrations/`.
-  const highRisk = new Set(Array.isArray(config.highRiskPaths) ? config.highRiskPaths : []);
-  const riskyNonBehavior = config.nonBehaviorGlobs.filter((pattern) => highRisk.has(pattern));
-  const isExcluded = (file) =>
-    config.nonBehaviorGlobs.some((pattern) => matchesPattern(file, pattern)) &&
-    (matchesPattern(file, "**/*.md") || !riskyNonBehavior.some((pattern) => matchesPattern(file, pattern)));
-  const excluded = changedFiles.filter((file) => !testFiles.includes(file) && isExcluded(file));
-  const behaviorFiles = changedFiles.filter((file) => !excluded.includes(file) && !testFiles.includes(file));
+  const { testFiles, excluded, behaviorFiles } = classifyChangedFiles(config);
 
   if (behaviorFiles.length === 0) {
     const parts = [];
@@ -602,7 +623,14 @@ const NO_CONTRARY = Object.freeze({
   enforced: false,
   ok: true,
   failures: Object.freeze([]),
-  warnings: Object.freeze({ deletedTests: Object.freeze([]), openCriteria: Object.freeze([]), assertionsRemoved: Object.freeze([]) }),
+  warnings: Object.freeze({
+    deletedTests: Object.freeze([]),
+    openCriteria: Object.freeze([]),
+    assertionsRemoved: Object.freeze([]),
+    criteriaChanged: Object.freeze([]),
+    specInDiff: false,
+    policyChanged: Object.freeze([]),
+  }),
 });
 
 // What the verdict depends on besides the tree: the mode, the flag, and the risk
@@ -614,6 +642,7 @@ function contraryPolicy(config) {
     failOnContrarySignals: config.failOnContrarySignals === true,
     riskTerms: config.highRiskTerms || null,
     riskPaths: config.highRiskPaths || null,
+    policyGlobs: config.policyGlobs || null,
   };
 }
 
@@ -625,7 +654,49 @@ function mentionsPath(text, target) {
   return new RegExp(`(^|[^\\w./-])${escaped}($|[^\\w-]|\\.(?!\\w))`).test(text);
 }
 
-function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null }) {
+// The settings that decide whether the signals fail are read from both the base
+// (HEAD when there is no merge base) and the tree, and the stricter wins: a diff
+// cannot step down from strict, drop failOnContrarySignals, or lower the risk
+// that arms it — highRiskPaths, testGlobs (which hides structural signals) and
+// ignoredPaths (which hides files) all count at the base.
+const BASE_RISK_KEYS = ["highRiskPaths", "testGlobs", "ignoredPaths"];
+
+// The base's harness. A base commit with none, or an unreadable one, counts as
+// the defaults (`{}`), as `policyGlobs` does; null only when there is no base
+// commit at all.
+function readBaseConfig() {
+  const base = currentDiffBase(cwd).mergeBase || "HEAD";
+  if (!runGitText(["rev-parse", "--verify", "--quiet", `${base}^{commit}`]).trim()) return null;
+
+  return readBaseHarness(base) || {};
+}
+
+// The higher of the tree's risk and the diff scored with the base's risk keys.
+function strictestRisk({ storyDir, config, atBase = readBaseConfig() }) {
+  const tree = scoreCombinedRisk({ storyDir, config }).level;
+  if (tree === "high" || !atBase) return tree;
+
+  const baseRisk = { ...defaultHarnessConfig() };
+  for (const key of BASE_RISK_KEYS) {
+    if (Array.isArray(atBase[key])) baseRisk[key] = atBase[key];
+  }
+
+  const atBaseLevel = scoreDiffRisk(riskPathsInDiff(cwd, baseRisk), baseRisk).level;
+  return RISK_RANK[atBaseLevel] > RISK_RANK[tree] ? atBaseLevel : tree;
+}
+
+// A caller that already scored the risk passes `atBase` and `risk`, so neither
+// is read twice.
+function contraryEnforced({ storyDir, config, policy, atBase = readBaseConfig(), risk = null }) {
+  const basePolicy = atBase ? contraryPolicy(atBase) : { strict: false, failOnContrarySignals: false };
+
+  if (policy.strict || basePolicy.strict) return true;
+  if (!policy.failOnContrarySignals && !basePolicy.failOnContrarySignals) return false;
+
+  return (risk || strictestRisk({ storyDir, config, atBase })) === "high";
+}
+
+function evaluateContrarySignals({ storyDir, config, exemption = null, criteria = null, policyChange = null }) {
   const policy = contraryPolicy(config);
   const weakening = currentTreeToken(cwd) ? scanTestWeakening(config) : { findings: [] };
   const declared = [readTestExemption(storyDir), exemption && exemption.trim()].filter(Boolean).join("\n");
@@ -644,14 +715,50 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     .map((finding) => finding.file);
   const openCriteria = criteria ? criteria.unchecked : [];
 
-  if (deletedTests.length === 0 && openCriteria.length === 0 && assertionsRemoved.length === 0) {
+  const { criteriaChanged, specInDiff } = readSpecDrift(storyDir, currentDiffBase(cwd).mergeBase);
+  const storySection = (title) => extractSection(Object.values(readStoryBundle(storyDir || "")).join("\n\n"), title);
+  // As for a Policy Change below: a template comment alone is not a reason.
+  const specChange = storySection("Spec Change").replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim();
+
+  const policyChanged = currentTreeToken(cwd) ? readPolicyChanged() : [];
+  // A template's `<!-- why -->` placeholder is not a reason; an unclosed one
+  // hides everything after it, as it would in rendered Markdown.
+  const policySection = storySection("Policy Change").replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim();
+  const declaredPolicy = [policySection, policyChange && policyChange.trim()].filter(Boolean).join("\n");
+
+  if (
+    policyChanged.length === 0 &&
+    deletedTests.length === 0 &&
+    openCriteria.length === 0 &&
+    assertionsRemoved.length === 0 &&
+    criteriaChanged.length === 0 &&
+    !specInDiff
+  ) {
     return NO_CONTRARY;
   }
 
-  const enforced = policy.strict || (policy.failOnContrarySignals && scoreCombinedRisk({ storyDir, config }).level === "high");
+  const enforced = contraryEnforced({ storyDir, config, policy });
+  const drift = criteriaChanged.length > 0 || specInDiff;
+  const failures = enforced
+    ? contraryFailures({ deletedTests, openCriteria, criteriaChanged, specInDiff, specChange, policyChanged, declaredPolicy })
+    : [];
+
+  return {
+    enforced,
+    ok: failures.length === 0,
+    failures,
+    warnings: { deletedTests, openCriteria, assertionsRemoved, criteriaChanged, specInDiff, policyChanged },
+    ...(drift && specChange ? { specChange } : {}),
+    ...(policyChanged.length > 0 && declaredPolicy ? { policyChange: declaredPolicy } : {}),
+  };
+}
+
+// The signals that fail an enforced run; each one a written section can lower
+// to a claim says which section.
+function contraryFailures({ deletedTests, openCriteria, criteriaChanged, specInDiff, specChange, policyChanged, declaredPolicy }) {
   const failures = [];
 
-  if (enforced && deletedTests.length > 0) {
+  if (deletedTests.length > 0) {
     failures.push({
       signal: "deleted-tests",
       detail: `${deletedTests.length} test file(s) deleted, and no Test Exemption names them: ${deletedTests.slice(0, 5).join(", ")}`,
@@ -659,7 +766,7 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     });
   }
 
-  if (enforced && openCriteria.length > 0) {
+  if (openCriteria.length > 0) {
     failures.push({
       signal: "open-criteria",
       detail:
@@ -669,14 +776,43 @@ function evaluateContrarySignals({ storyDir, config, exemption = null, criteria 
     });
   }
 
-  return { enforced, ok: failures.length === 0, failures, warnings: { deletedTests, openCriteria, assertionsRemoved } };
+  // A written reason lowers the claim and is accepted, and is kept in the evidence.
+  if ((criteriaChanged.length > 0 || specInDiff) && !specChange) {
+    const what = specInDiff
+      ? "the story's spec is born in this diff, so the specifier is the coder"
+      : `${criteriaChanged.length} acceptance criterion(a) changed since the diff base: ${criteriaChanged.slice(0, 5).join("; ")}`;
+
+    failures.push({
+      signal: specInDiff ? "spec-in-diff" : "criteria-changed",
+      detail: `${what}. Explain it in a '## Spec Change' section`,
+      items: criteriaChanged,
+    });
+  }
+
+  if (policyChanged.length > 0 && !declaredPolicy) {
+    failures.push({
+      signal: "policy-changed",
+      detail:
+        `${policyChanged.length} policy file(s) changed: ${policyChanged.slice(0, 5).join(", ")}. ` +
+        "Say why in a '## Policy Change' section (or --policy-change \"reason\")",
+      items: policyChanged,
+    });
+  }
+
+  return failures;
 }
 
 module.exports = {
   readAcceptanceCriteria,
+  classifyChangedFiles,
+  scanTestWeakening,
+  countSkipMarkers,
   evaluateCoverage,
   freshTestsRequired,
   NO_CONTRARY,
   contraryPolicy,
+  contraryEnforced,
+  readBaseConfig,
+  strictestRisk,
   evaluateContrarySignals,
 };

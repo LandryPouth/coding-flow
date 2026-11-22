@@ -34,7 +34,7 @@ const { currentTreeToken } = require("./identity");
 const { policyFingerprint } = require("./policy-fingerprint");
 const {
   readHarnessConfig,
-  changedFilesForCoverage,
+  riskPathsInDiff,
   readStoryBundle,
   scoreStoryRisk,
   scoreDiffRisk,
@@ -245,7 +245,7 @@ function findRootStoryPath(cwd, epicName, worktreeName) {
 // QUICK/STANDARD members are unaffected — the pre-existing done/verified +
 // green-verify check is still the only one applied to them.
 //
-// The diff-risk half of the score is computed ONCE per chain (`changedFilesForCoverage`
+// The diff-risk half of the score is computed ONCE per chain (`riskPathsInDiff`
 // reads the whole worktree's current diff against its base branch — every
 // member of a chain shares that one worktree/branch, so the diff is the same
 // input `ai-flow harness preflight` would see run from here right now), not
@@ -276,7 +276,7 @@ function chainIsFinished(cwd, epicPath, chainIdOf, storyDirs, chainId) {
   const storyByName = new Map(epic.stories.map((story) => [story.name, story]));
   const verifyByDir = latestVerifyByStoryDir(cwd);
   const { config: harnessConfig } = readHarnessConfig(cwd);
-  const diffFiles = changedFilesForCoverage(cwd);
+  const diffFiles = riskPathsInDiff(cwd);
   const diffRisk = scoreDiffRisk(diffFiles, harnessConfig, cwd);
 
   for (const [label, id] of chainIdOf.entries()) {

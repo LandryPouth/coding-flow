@@ -14,6 +14,8 @@ const path = require("path");
 
 const { cwd } = require("./context");
 const { log, toPortable, readJson, findDirectories } = require("./util");
+const { detectSecurityRecipes } = require("./security-recipes");
+const { detectQualityRecipes } = require("./quality-recipes");
 
 // Directories Coding Flow itself installs, plus the usual noise. They say nothing
 // about whether the repo holds code — and `init` runs the scan *after* laying
@@ -159,6 +161,19 @@ function detectProjectPackageJson() {
   }
 
   return { pkg, unreadable: false };
+}
+
+// A starting `redAtBase.command` for a Node project. It is a suggestion, not a
+// written policy: `verify --red-at-base` still fails with the example until the
+// project declares one in `.coding-flow/harness.json`. Only node's own test
+// runner is read; a project on Jest, Vitest or Mocha gets none, since its
+// suite would always be refused.
+function suggestRedAtBase(scan) {
+  if (scan.foreignStack || ["Vitest", "Jest", "Mocha"].some((name) => scan.detectedFrameworks.includes(name))) {
+    return null;
+  }
+
+  return scan.hasProjectPackageJson ? "node --test --test-reporter=tap {files}" : null;
 }
 
 // `rich`/`thin`/`empty` is the answer to "did the scan understand this project?".
@@ -690,7 +705,7 @@ function scanProject() {
     recommendedNextPrompt: RECOMMENDED_NEXT_PROMPT,
   };
 
-  scan.classification = classifyScan(scan);
+  scan.classification = classifyScan(scan); scan.redAtBaseSuggestion = suggestRedAtBase(scan);
 
   return scan;
 }
@@ -740,6 +755,23 @@ function formatScanMarkdown(scan) {
     ...scan.testDirectories.map((name) => `- ${name}/`),
     ...(scan.testDirectories.length === 0 ? ["- none detected"] : []),
     "",
+    "## Red At Base",
+    "",
+    ...(scan.redAtBaseSuggestion
+      ? [
+          `- Suggested \`redAtBase.command\`: \`${scan.redAtBaseSuggestion}\``,
+          "",
+          "Declare it in `.coding-flow/harness.json` so `ai-flow verify --red-at-base`",
+          "can prove a fix with a test that failed before it.",
+        ]
+      : [
+          "- No command detected for this stack.",
+          "",
+          "Declare `redAtBase.command` in `.coding-flow/harness.json` yourself",
+          "(only node's test runner is read: `node --test --test-reporter=tap {files}`).",
+        ]),
+    "",
+    ...formatRecipeSections(scan),
     "## Recommended Next Prompt",
     "",
     "```txt",
@@ -747,6 +779,33 @@ function formatScanMarkdown(scan) {
     "```",
     "",
   ].join("\n");
+}
+
+function recipeSection(heading, intro, lines) {
+  return [heading, "", intro, "", ...(lines.length === 0 ? ["- none detected"] : lines), ""];
+}
+
+function formatRecipeSections(scan) {
+  return [
+    ...recipeSection(
+      "## Security Recipes",
+      "Candidates for `validation.security` in `.coding-flow/config.json` — not declared by this scan.",
+      (scan.securityRecipes || []).map((recipe) => `- ${recipe.tool}: \`${recipe.command}\``),
+    ),
+    ...recipeSection(
+      "## Quality Recipes",
+      "Boundary and complexity checks for `validation.quality` — not declared by this scan. Read from the root manifests only: a workspace package needs its own.",
+      (scan.qualityRecipes || []).map(formatQualityRecipe),
+    ),
+  ];
+}
+
+function formatQualityRecipe(recipe) {
+  // A present config is not a declared check: the command stays on the line.
+  const how = [recipe.command && `\`${recipe.command}\``, recipe.note].filter(Boolean).join(" ");
+  return recipe.present
+    ? `- ${recipe.tool} (${recipe.kind}): present (\`${recipe.present}\`) — ${how}`
+    : `- ${recipe.tool} (${recipe.kind}): ${how}`;
 }
 
 const ECOSYSTEM_LABELS = { go: "Go", rust: "Rust", python: "Python", java: "Java" };
@@ -861,8 +920,19 @@ function printProjectScanSummary(scan, { dryRun = false } = {}) {
   );
 }
 
+// Scanners worth declaring in validation.security, and boundary/complexity
+// checks for validation.quality: suggested by the explicit scan, never written,
+// and not computed on every `init`.
+function withRecipes(scan) {
+  return {
+    ...scan,
+    securityRecipes: detectSecurityRecipes(cwd).map(({ tool, ecosystem, command }) => ({ tool, ecosystem, command })),
+    qualityRecipes: detectQualityRecipes(cwd),
+  };
+}
+
 function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
-  const scan = scanProject();
+  const scan = withRecipes(scanProject());
 
   // --json is the machine path (skills, CI): it returns the data and writes
   // nothing. The document is for humans who explicitly asked for one.
@@ -912,6 +982,22 @@ function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
   } else if (!hasAnyRecognizedSignal(scan) && scan.looksLikeCode) {
     log("No recognized signal found in a repository that holds code — the detectors");
     log("cover JavaScript, Go, Rust, Python, and Java. Expect to fill the docs by hand.");
+  }
+
+  if (scan.redAtBaseSuggestion) {
+    log("");
+    log(
+      `Red at base: declare redAtBase.command as \`${scan.redAtBaseSuggestion}\` in .coding-flow/harness.json`,
+    );
+  }
+
+  if (scan.securityRecipes.length > 0) {
+    log(`Security recipes for validation.security: ${scan.securityRecipes.map((recipe) => recipe.tool).join(", ")}.`);
+  }
+
+  if (scan.qualityRecipes.length > 0) {
+    const label = (recipe) => (recipe.present ? `${recipe.tool} (present)` : recipe.tool);
+    log(`Quality recipes for validation.quality: ${scan.qualityRecipes.map(label).join(", ")}.`);
   }
 
   log("");

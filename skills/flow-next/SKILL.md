@@ -7,20 +7,17 @@ description: Rank the current project state into the one command worth running r
 
 ## Overview
 
-`status` describes state; `next` decides. It reads the exact same proof-derived
-state as `/flow-status` and ranks it into a single recommendation, highest
-priority first:
+`status` describes; `next` decides. From the same proof-derived state as
+`/flow-status`, it ranks one recommendation, highest priority first:
 
-1. **blocked** — a story marked blocked. Needs a human call, not a command.
-2. **unproven** — a story claims `done`/`verified` in its file but has no captured
-   green verify (or the last one failed). A written status is not proof.
-3. **stale** — a story has a captured green verify, but the code changed since.
-4. **ready-to-ship** — a story is proven and has unshipped work (commits or a
-   dirty tree) on its branch or worktree.
-5. **planned** — a story has nothing started yet and no worktree.
-
-This is not a workflow stage — run it any time you'd otherwise ask "what should I
-do now?".
+1. **blocked** — a story marked blocked: a human call, not a command.
+2. **unproven** — the file claims `done`/`verified` with no captured green verify
+   (or the last one failed). A written status is not proof, and never reaches
+   `ready-to-ship` on its own.
+3. **stale** — a captured green verify, but the code changed since.
+4. **ready-to-ship** — proven, with unshipped work (commits or a dirty tree) on its
+   branch or worktree.
+5. **planned** — nothing started, no worktree.
 
 ## Command
 
@@ -30,33 +27,24 @@ ai-flow next
 
 > If bare `ai-flow` is not on `PATH`, use `npx @landry_pouth/coding-flow next`.
 
-Useful flags:
-
-- `--all` — print the whole ranked queue instead of just the top item.
-- `--json` — machine-readable output.
+`--all` prints the whole ranked queue; `--json` is machine-readable.
 
 ## Behavior
 
-- Read-only: never runs verify, commits, ships, or creates a worktree itself — it
-  only tells you the command that would do that.
-- Scoped to the checkout it runs from (like `git status`): with several worktrees
-  or terminals open in parallel, each one's `next` answers for *that* checkout,
-  not a global view across all of them. Run it again after switching worktrees.
-- Proof-based like `/flow-ship`'s auto-merge gate: a story's own `## Status: done`
-  text is not enough to reach tier 4 (`ready-to-ship`) — it needs an actual
-  captured green verify first, otherwise it surfaces as tier 2 (`unproven`).
+- Read-only: it never verifies, commits, ships or creates a worktree — it names the
+  command that would.
+- Scoped to the checkout it runs from, like `git status`: with several worktrees
+  open, each answers for itself. Run it again after switching.
 
 ## Verification
 
-- [ ] `ai-flow next` actually ran. The recommendation is its output, not your own
-      reading of the project.
-- [ ] The tier and the reason it ranked there were reported, not just the command
-      to run.
-- [ ] The recommended command was **not** run without asking first. `next`
-      recommends; acting on it is a separate decision.
+- [ ] `ai-flow next` ran: the recommendation is its output, not your reading of the
+      project.
+- [ ] The tier and the reason it ranked there were reported, not only the command.
+- [ ] The recommended command was **not** run without asking first.
 
 ## Output
 
-Report the top recommendation (or the full ranked queue with `--all`): what it is,
-why it ranked there, and the exact command to run next. Ask before running that
-command yourself — `next` recommends, it does not act.
+The top recommendation (or the queue with `--all`): what it is, why it ranked there,
+and the exact command to run. Ask before running it yourself — `next` recommends, it
+does not act.

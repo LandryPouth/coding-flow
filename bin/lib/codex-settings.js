@@ -18,6 +18,7 @@ const path = require("path");
 
 const { cwd } = require("./context");
 const { loadPolicy } = require("./guard");
+const { EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
 
 const PROFILE_NAME = "coding-flow-guard";
 const MARKER =
@@ -31,7 +32,9 @@ function denyEntries(blockedPaths) {
   const entries = new Set();
 
   // harness.json is hand-editable; a non-string entry must not crash upgrade/doctor.
-  for (const glob of blockedPaths.filter((g) => typeof g === "string" && g)) {
+  // The evidence entries are the guard's: a sandbox profile binds every process in
+  // it, so `ai-flow verify` could no longer write its own proof.
+  for (const glob of blockedPaths.filter((g) => typeof g === "string" && g && !EVIDENCE_BLOCKED_PATHS.includes(g))) {
     entries.add(glob);
     if (glob.endsWith("/**")) {
       entries.add(glob.slice(0, -3));

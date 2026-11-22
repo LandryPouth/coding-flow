@@ -11,7 +11,11 @@
   ],
   "validation": {
     "commands": [
-      "npm test"
+      "node -e \"require('fs').mkdirSync('coverage',{recursive:true})\"",
+      {
+        "command": "node --require ./scripts/test-env-guard.js --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info",
+        "timeoutMs": 1200000
+      }
     ],
     "quality": [
       "node scripts/check-lock-exit-reachability.js"

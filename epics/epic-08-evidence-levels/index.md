@@ -73,14 +73,14 @@ and can run in parallel with the `s1 → s3` chain.
 
 ## Stories
 
-1. **story-08-01-coverage-floor-gates-ok** — `coverageFloor` by risk;
+1. [story-08-01-coverage-floor-gates-ok](story-08-01-coverage-floor-gates-ok/spec.md) — `coverageFloor` by risk;
    `ok` false below it; rung shown in `status`, `ship`, `audit`. *(STRICT)*
-2. **story-08-02-policy-fingerprint** — evidence stores a hash of the
+2. [story-08-02-policy-fingerprint](story-08-02-policy-fingerprint/spec.md) — evidence stores a hash of the
    effective policy; reuse and `audit`/`status` freshness require it.
    *(STRICT)*
-3. **story-08-03-contrary-signals-fail-strict-runs** — deleted tests and open
+3. [story-08-03-contrary-signals-fail-strict-runs](story-08-03-contrary-signals-fail-strict-runs/spec.md) — deleted tests and open
    criteria fail in strict / on high risk, unless exempted. *(STRICT)*
-4. **story-08-04-review-verdicts-that-hold** — no "pass" with open P0/P1
+4. [story-08-04-review-verdicts-that-hold](story-08-04-review-verdicts-that-hold/spec.md) — no "pass" with open P0/P1
    without a written acceptance; self-only review on STRICT is visible.
    *(STANDARD)*
 

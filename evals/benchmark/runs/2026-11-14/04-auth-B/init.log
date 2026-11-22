@@ -1,0 +1,16 @@
+Coding Flow installed.
+Copied: 15
+Updated: 0
+Skills: served by the plugin as coding-flow:flow-* — no project copy (plugin detected (registry))
+Harness config: created
+Config: created (storage=local, branchPerEpic=true)
+Guard hook: wired in .claude/settings.json
+Package scripts: added flow, flow:init, flow:upgrade, flow:doctor, flow:fix, flow:skills, flow:status, flow:next, flow:check, flow:harness, flow:commands, flow:uninstall
+Commands cheat sheet: created
+
+Existing codebase detected: 1 script — 1 test directory.
+The signal is partial, so treat the scan as a starting point.
+
+Project docs are still empty. Next: /flow-plan bootstrap
+
+PATH: `ai-flow` resolves directly on this machine — the short form works.

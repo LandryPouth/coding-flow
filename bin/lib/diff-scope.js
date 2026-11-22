@@ -37,7 +37,7 @@ function addedLinesByFile(root, files) {
   const mergeBase = currentDiffBase(root).mergeBase;
 
   try {
-    const diffArgs = mergeBase ? ["diff", "-U0", mergeBase] : ["diff", "-U0"];
+    const diffArgs = ["-c", "core.quotePath=false", "diff", "-U0", ...(mergeBase ? [mergeBase] : [])];
     const output = require("child_process").execFileSync("git", diffArgs, {
       cwd: root,
       encoding: "utf8",
@@ -97,7 +97,7 @@ function diffBaseFlag() {
   return diffBaseRequest.flagBase;
 }
 
-function publicDiffBase({ ref, mergeBase, source, scope, forkPointMissing, configUnresolved }) {
+function publicDiffBase({ ref, mergeBase, source, scope, forkPointMissing, configUnresolved, forkPointIgnored, configIgnored }) {
   return {
     ref,
     mergeBase,
@@ -105,6 +105,8 @@ function publicDiffBase({ ref, mergeBase, source, scope, forkPointMissing, confi
     scope,
     ...(forkPointMissing ? { forkPointMissing } : {}),
     ...(configUnresolved ? { configUnresolved } : {}),
+    ...(forkPointIgnored ? { forkPointIgnored } : {}),
+    ...(configIgnored ? { configIgnored } : {}),
   };
 }
 
@@ -129,11 +131,18 @@ function currentDiffBase(root = cwd) {
   return diffBaseCache.get(key);
 }
 
+// `core.quotePath=false`: git otherwise prints a non-ASCII path as
+// `"test/\303\251.test.js"`, a name no glob, no `existedAt` and no `+++ b/` header
+// match recognizes — an edited test with such a name read as untouched.
 function runGitList(argsForGit, root = cwd) {
   try {
     const childProcess = require("child_process");
     return childProcess
-      .execFileSync("git", argsForGit, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .execFileSync("git", ["-c", "core.quotePath=false", ...argsForGit], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
@@ -168,8 +177,9 @@ function filterScopedFiles(files, config) {
 
 // Everything this branch contributes, not just what is uncommitted: a story whose
 // tests are already committed must not read as "no test changed". Falls back to
-// the working tree when there is no base to compare against.
-function changedFilesForCoverage(root = cwd) {
+// the working tree when there is no base to compare against. `scope` is the
+// harness config whose `ignoredPaths` apply (the working one by default).
+function changedFilesForCoverage(root = cwd, scope = null) {
   const files = new Set();
   const { mergeBase } = currentDiffBase(root);
 
@@ -189,7 +199,45 @@ function changedFilesForCoverage(root = cwd) {
     files.add(file);
   }
 
-  return filterScopedFiles([...files].map(normalizePortable), readHarnessConfig(root).config).sort();
+  return filterScopedFiles([...files].map(normalizePortable), scope || readHarnessConfig(root).config).sort();
+}
+
+// The paths the diff RISK reads: `changedFilesForCoverage` plus the old side of
+// every rename, pure or not. A path is behavior on its own: moving
+// `middleware.ts` away disables it, a migration moved out of `migrations/` no
+// longer runs, and git may pair a deleted high-risk file with an unrelated
+// identical one as a pure move. So a file moved out of a high-risk directory is
+// scored as if it had not moved, which is also what `diff.renames=false`
+// already gave (the old side listed as a deletion). Coverage keeps measuring
+// the file at its new path only, through `changedFilesForCoverage`.
+function riskPathsInDiff(root = cwd, scope = null) {
+  const config = scope || readHarnessConfig(root).config;
+  const files = new Set(changedFilesForCoverage(root, config));
+  const { mergeBase } = currentDiffBase(root);
+  let raw = "";
+
+  // The working tree against the base (HEAD with none): committed, staged and
+  // unstaged changes in one comparison. `-z` keeps every path byte for byte.
+  try {
+    raw = require("child_process").execFileSync(
+      "git",
+      ["diff", "--find-renames", "--raw", "-z", mergeBase || "HEAD"],
+      { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 },
+    );
+  } catch {
+    raw = "";
+  }
+
+  const fields = raw.split("\0");
+  for (let i = 0; i < fields.length; i += 1) {
+    const header = fields[i].match(/^:\d+ \d+ [0-9a-f.]+ [0-9a-f.]+ ([A-Z])\d*$/);
+    if (!header) continue;
+
+    if (header[1] === "R") files.add(normalizePortable(fields[i + 1]));
+    i += header[1] === "R" || header[1] === "C" ? 2 : 1;
+  }
+
+  return filterScopedFiles([...files], config).sort();
 }
 
 // The lines this change ADDED, per file. Only added lines: a deleted line has no
@@ -204,7 +252,7 @@ function parseAddedLines(diffText) {
   let nextLine = 0;
 
   for (const line of diffText.split(/\r?\n/)) {
-    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
+    const fileMatch = line.match(/^\+\+\+ b\/([^\t]+)/);
 
     if (fileMatch) {
       current = fileMatch[1] === "dev/null" ? null : normalizePortable(fileMatch[1]);
@@ -236,7 +284,7 @@ function parseAddedLines(diffText) {
 function runGitText(argsForGit) {
   try {
     const childProcess = require("child_process");
-    return childProcess.execFileSync("git", argsForGit, {
+    return childProcess.execFileSync("git", ["-c", "core.quotePath=false", ...argsForGit], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -290,7 +338,7 @@ function parseChangedText(diffText) {
   let current = null;
 
   for (const line of diffText.split(/\r?\n/)) {
-    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
+    const fileMatch = line.match(/^\+\+\+ b\/([^\t]+)/);
 
     if (fileMatch) {
       current = fileMatch[1] === "dev/null" ? null : normalizePortable(fileMatch[1]);
@@ -314,6 +362,43 @@ function parseChangedText(diffText) {
   }
 
   return byFile;
+}
+
+function renamedFilesInDiff() {
+  const pairs = [];
+  const seen = new Set();
+  const { mergeBase } = currentDiffBase(cwd);
+  const sources = [
+    ["diff", "--find-renames", "--name-status"],
+    ["diff", "--find-renames", "--cached", "--name-status"],
+  ];
+
+  if (mergeBase) {
+    sources.push(["diff", "--find-renames", "--name-status", mergeBase]);
+  }
+
+  for (const argsForGit of sources) {
+    for (const line of runGitText(argsForGit).split(/\r?\n/)) {
+      const match = line.match(/^R\d+\t(.+)\t(.+)$/);
+
+      if (!match) {
+        continue;
+      }
+
+      const from = normalizePortable(match[1].trim());
+      const to = normalizePortable(match[2].trim());
+      const key = `${from}\0${to}`;
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        pairs.push({ from, to });
+      }
+    }
+  }
+
+  const config = readHarnessConfig(cwd).config;
+
+  return pairs.filter((pair) => !isScopedOut(pair.from, config));
 }
 
 function deletedFilesInDiff() {
@@ -352,8 +437,10 @@ module.exports = {
   isScopedOut,
   filterScopedFiles,
   changedFilesForCoverage,
+  riskPathsInDiff,
   runGitText,
   changedLinesForCoverage,
+  renamedFilesInDiff,
   parseChangedText,
   deletedFilesInDiff,
   addedLinesByFile,

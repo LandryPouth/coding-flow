@@ -1,0 +1,310 @@
+diff --git a/spec/vendors.spec.js b/spec/vendors.spec.js
+new file mode 100644
+index 0000000..c16506f
+--- /dev/null
++++ b/spec/vendors.spec.js
+@@ -0,0 +1,198 @@
++'use strict';
++
++const { test } = require('node:test');
++const assert = require('node:assert');
++const { createStore } = require('../src/store');
++const { createReporter } = require('../src/report');
++const { createRouter } = require('../src/routes');
++
++function app() {
++  const store = createStore();
++  const vendorStore = createStore();
++  return { store, vendorStore, router: createRouter(store, createReporter(store), vendorStore) };
++}
++
++const create = (router, body) => router['POST /vendors'](body);
++const edit = (router, body) => router['PATCH /vendors'](body);
++const list = (router) => router['GET /vendors']({}).body;
++
++test('a vendor is created with a name and a country', () => {
++  const { router } = app();
++  const created = create(router, { name: ' Acme ', country: 'France' });
++
++  assert.equal(created.status, 200);
++  assert.ok(created.body.id);
++  assert.equal(created.body.name, 'Acme');
++  assert.equal(created.body.country, 'France');
++});
++
++test('vendors can be listed', () => {
++  const { router } = app();
++  create(router, { name: 'Acme', country: 'France' });
++  create(router, { name: 'Globex', country: 'Spain' });
++
++  assert.deepEqual(list(router).map((vendor) => vendor.name), ['Acme', 'Globex']);
++});
++
++test('two vendors cannot share a name', () => {
++  const { router } = app();
++  create(router, { name: 'Acme', country: 'France' });
++  const duplicate = create(router, { name: 'Acme', country: 'Spain' });
++
++  assert.equal(duplicate.status, 400);
++  assert.match(duplicate.body.error, /duplicate/);
++  assert.equal(list(router).length, 1);
++});
++
++test('a name differing only by case or spaces is a duplicate', () => {
++  const { router } = app();
++  create(router, { name: 'Acme', country: 'France' });
++
++  assert.equal(create(router, { name: ' acme ', country: 'France' }).status, 400);
++  assert.equal(list(router).length, 1);
++});
++
++test('a blank or missing name is refused', () => {
++  const { router, vendorStore } = app();
++
++  for (const body of [{ country: 'FR' }, { name: '', country: 'FR' }, { name: '   ', country: 'FR' }]) {
++    const refused = create(router, body);
++    assert.equal(refused.status, 400);
++    assert.equal(refused.body.error, 'missing field: name');
++  }
++
++  assert.equal(vendorStore.all().length, 0);
++});
++
++test('a blank or missing country is refused', () => {
++  const { router, vendorStore } = app();
++
++  for (const body of [{ name: 'Acme' }, { name: 'Acme', country: '' }, { name: 'Acme', country: '  ' }]) {
++    const refused = create(router, body);
++    assert.equal(refused.status, 400);
++    assert.equal(refused.body.error, 'missing field: country');
++  }
++
++  assert.equal(vendorStore.all().length, 0);
++});
++
++test('unknown fields are refused', () => {
++  const { router } = app();
++  const refused = create(router, { name: 'Acme', country: 'FR', vat: 'x' });
++
++  assert.equal(refused.status, 400);
++  assert.equal(refused.body.error, 'unknown field: vat');
++});
++
++test('non-string values are refused', () => {
++  const { router, vendorStore } = app();
++
++  assert.equal(create(router, { name: 42, country: 'FR' }).status, 400);
++  assert.equal(create(router, { name: 'Acme', country: 42 }).status, 400);
++  assert.equal(vendorStore.all().length, 0);
++});
++
++test('a vendor write needs no actor, and an actor is ignored', () => {
++  const { router } = app();
++
++  assert.equal(create(router, { name: 'Acme', country: 'FR' }).status, 200);
++  assert.equal(create(router, { actorId: 'nobody', name: 'Globex', country: 'FR' }).status, 200);
++  assert.equal(list(router)[1].actorId, undefined);
++});
++
++test('vendors do not appear in expenses or the report', () => {
++  const { router } = app();
++  create(router, { name: 'Acme', country: 'FR' });
++  router['POST /expenses']({
++    actorId: 'alice',
++    description: 'Train',
++    amount: '10.00',
++    category: 'travel',
++    spentOn: '2026-03-01',
++  });
++
++  assert.equal(router['GET /expenses']({}).body.length, 1);
++  assert.deepEqual(router['GET /report']({}).body, { travel: 1000 });
++});
++
++test("a vendor's country can be edited", () => {
++  const { router } = app();
++  const { id } = create(router, { name: 'Acme', country: 'FR' }).body;
++  const updated = edit(router, { id, country: ' BE ' });
++
++  assert.equal(updated.status, 200);
++  assert.equal(updated.body.country, 'BE');
++  assert.equal(updated.body.name, 'Acme');
++});
++
++test('a vendor can be renamed', () => {
++  const { router } = app();
++  const { id } = create(router, { name: 'Acme', country: 'FR' }).body;
++
++  assert.equal(edit(router, { id, name: 'Acme Ltd' }).status, 200);
++  assert.equal(list(router)[0].name, 'Acme Ltd');
++});
++
++test("a vendor cannot be renamed onto another's name", () => {
++  const { router } = app();
++  create(router, { name: 'Acme', country: 'FR' });
++  const { id } = create(router, { name: 'Globex', country: 'ES' }).body;
++  const refused = edit(router, { id, name: 'ACME' });
++
++  assert.equal(refused.status, 400);
++  assert.match(refused.body.error, /duplicate/);
++  assert.equal(list(router)[1].name, 'Globex');
++});
++
++test('a vendor can keep its own name', () => {
++  const { router } = app();
++  const { id } = create(router, { name: 'Acme', country: 'FR' }).body;
++
++  assert.equal(edit(router, { id, name: 'Acme' }).status, 200);
++  assert.equal(edit(router, { id, country: 'BE' }).status, 200);
++});
++
++test('an edit to a blank value is refused and changes nothing', () => {
++  const { router } = app();
++  const { id } = create(router, { name: 'Acme', country: 'FR' }).body;
++
++  assert.equal(edit(router, { id, name: '  ' }).status, 400);
++  assert.equal(edit(router, { id, country: '' }).status, 400);
++  assert.equal(edit(router, { id, name: 'Renamed', country: '' }).status, 400);
++  assert.deepEqual(list(router), [{ id, name: 'Acme', country: 'FR' }]);
++});
++
++test('editing an unknown vendor is refused', () => {
++  const { router } = app();
++  const refused = edit(router, { id: 'nope', name: 'Acme' });
++
++  assert.equal(refused.status, 400);
++  assert.equal(refused.body.error, 'no such vendor: nope');
++});
++
++test('an edit with an unknown field is refused', () => {
++  const { router } = app();
++  const { id } = create(router, { name: 'Acme', country: 'FR' }).body;
++  const refused = edit(router, { id, country: 'BE', vat: 'x' });
++
++  assert.equal(refused.status, 400);
++  assert.equal(refused.body.error, 'unknown field: vat');
++  assert.equal(list(router)[0].country, 'FR');
++});
++
++test('editing a vendor leaves expenses and the report alone', () => {
++  const { router } = app();
++  const { id } = create(router, { name: 'Acme', country: 'FR' }).body;
++  router['POST /expenses']({
++    actorId: 'alice',
++    description: 'Train',
++    amount: '10.00',
++    category: 'travel',
++    spentOn: '2026-03-01',
++  });
++  const before = [router['GET /expenses']({}).body, router['GET /report']({}).body];
++
++  edit(router, { id, name: 'Acme Ltd', country: 'BE' });
++
++  assert.deepEqual([router['GET /expenses']({}).body, router['GET /report']({}).body], before);
++});
+diff --git a/src/routes.js b/src/routes.js
+index 1d061e1..4b93eb4 100644
+--- a/src/routes.js
++++ b/src/routes.js
+@@ -3,9 +3,12 @@
+ const { getUser } = require('./users');
+ const { createExpense, updateExpense, listExpenses } = require('./expenses');
+ const { approveExpense, rejectExpense } = require('./approvals');
++const { createStore } = require('./store');
++const { createVendor, updateVendor, listVendors } = require('./vendors');
+ 
+ // Thin transport layer: no business rules live here, only shaping.
+-function createRouter(store, reporter) {
++// Vendors live in their own store: store.all() backs GET /expenses and the report.
++function createRouter(store, reporter, vendorStore = createStore()) {
+   function handle(fn) {
+     try {
+       return { status: 200, body: fn() };
+@@ -55,6 +58,12 @@ function createRouter(store, reporter) {
+         return decided;
+       }),
+ 
++    'POST /vendors': (req) => handle(() => createVendor(vendorStore, req)),
++
++    'PATCH /vendors': (req) => handle(() => updateVendor(vendorStore, req.id, req)),
++
++    'GET /vendors': () => handle(() => listVendors(vendorStore)),
++
+     'GET /report': () => handle(() => reporter.totalsByCategory()),
+   };
+ }
+diff --git a/src/vendors.js b/src/vendors.js
+new file mode 100644
+index 0000000..33c7506
+--- /dev/null
++++ b/src/vendors.js
+@@ -0,0 +1,69 @@
++'use strict';
++
++const { requireFields, rejectUnknownFields } = require('./validate');
++
++const FIELDS = ['name', 'country'];
++// actorId is accepted and ignored: vendor writes need no known actor.
++const CREATE_FIELDS = [...FIELDS, 'actorId'];
++const UPDATE_FIELDS = ['id', ...CREATE_FIELDS];
++
++// Trims the given vendor fields; rejects non-strings and blanks before anything is stored.
++function normalize(payload, fields) {
++  const values = {};
++
++  for (const field of fields) {
++    const value = payload[field];
++
++    if (value === undefined) continue;
++
++    if (typeof value !== 'string') {
++      throw new Error(`invalid field: ${field}`);
++    }
++
++    values[field] = value.trim();
++  }
++
++  requireFields(values, Object.keys(values));
++  return values;
++}
++
++function assertNameFree(vendorStore, name, exceptId) {
++  const key = name.toLowerCase();
++  const clash = vendorStore.all().find((vendor) => vendor.id !== exceptId && vendor.name.toLowerCase() === key);
++
++  if (clash) {
++    throw new Error(`duplicate vendor name: ${name}`);
++  }
++}
++
++function createVendor(vendorStore, payload) {
++  rejectUnknownFields(payload, CREATE_FIELDS);
++  const vendor = normalize(payload, FIELDS);
++  requireFields(vendor, FIELDS);
++  assertNameFree(vendorStore, vendor.name);
++
++  return vendorStore.insert(vendor);
++}
++
++function updateVendor(vendorStore, id, payload) {
++  const vendor = vendorStore.get(id);
++
++  if (!vendor) {
++    throw new Error(`no such vendor: ${id}`);
++  }
++
++  rejectUnknownFields(payload, UPDATE_FIELDS);
++  const changes = normalize(payload, FIELDS);
++
++  if (changes.name !== undefined) {
++    assertNameFree(vendorStore, changes.name, id);
++  }
++
++  return vendorStore.update(id, changes);
++}
++
++function listVendors(vendorStore) {
++  return vendorStore.all();
++}
++
++module.exports = { createVendor, updateVendor, listVendors };

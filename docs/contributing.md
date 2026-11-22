@@ -29,6 +29,20 @@ node /path/to/coding-flow/bin/ai-flow.js doctor
 node /path/to/coding-flow/bin/ai-flow.js status
 ```
 
+This repository's own `ai-flow verify` runs the suite under native coverage and
+writes `coverage/lcov.info` (git-ignored), which is what lets its proof reach
+`Coverage: verified`. The lcov reporter needs **Node ≥ 20**: on Node 18 that
+command fails with Node's own error. `npm test` (and CI, on Node 18/20/22) is
+unchanged.
+
+### Fixtures that look like secrets
+
+The guard refuses any write or Bash command containing a real credential *format*
+(an AWS key, a GitHub token…), example keys from vendor docs included — exact
+patterns apply everywhere, tests too. A test that needs one builds it at run time
+so no literal exists in the file: `` `AKIA${'IOSFODNN7EXAMPLE'}` ``, or
+`['AKIA', '…'].join('')`. Do not add the path to an allowlist or weaken the pattern.
+
 ## CLI architecture (`bin/`)
 
 `bin/ai-flow.js` is a thin dispatcher: it parses arguments and delegates to cohesive

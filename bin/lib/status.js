@@ -19,12 +19,14 @@ const { readConfig } = require("./config");
 const { evaluateBranchPolicy } = require("./policy");
 const {
   readHarnessConfig,
-  changedFilesForCoverage,
+  riskPathsInDiff,
   readStoryBundle,
   scoreStoryRisk,
   scoreDiffRisk,
   combineRisk,
 } = require("./harness");
+const { collectRecovery } = require("./recover");
+const { epicNumbers } = require("./epic-numbers");
 
 // Indexes the worktrees by branch name. The worktree<->story mapping is
 // stateless: `worktree add --story` names the branch after the story directory,
@@ -100,7 +102,7 @@ function computeReviewStatus(root, storyPath) {
 // sharing a checkout shares one diff), not on the story itself — cached per
 // root so a project with many done stories on the same checkout (the common
 // case: most stories share `cwd`, since worktrees are the exception) pays for
-// `changedFilesForCoverage`'s several `git` spawns once, not once per story.
+// `riskPathsInDiff`'s several `git` spawns once, not once per story.
 // A `/flow-review` measured `ai-flow status`/`next` going from ~0.1s to
 // ~0.5-0.7s on this repository's own 7 done stories before this cache existed.
 function diffRiskForRoot(root, cache) {
@@ -109,7 +111,7 @@ function diffRiskForRoot(root, cache) {
   }
 
   const { config } = readHarnessConfig(root);
-  const diffRisk = scoreDiffRisk(changedFilesForCoverage(root), config, root);
+  const diffRisk = scoreDiffRisk(riskPathsInDiff(root), config, root);
   const entry = { config, diffRisk };
   cache.set(root, entry);
   return entry;
@@ -189,6 +191,17 @@ function listUntrackedPlans(epics) {
   return planFiles
     .filter((name) => !epicText.includes(`${PLANS_DIR}/${name}`))
     .map((name) => toPortable(path.join(PLANS_DIR, name)));
+}
+
+// Active worktrees that don't match any story (loose branches, main/master,
+// etc.). Useful to see all the parallel work in progress.
+function looseWorktreeList(entries, mappedBranches) {
+  return entries
+    .filter((entry) => !entry.bare && entry.branch && !mappedBranches.has(entry.branch))
+    .map((entry) => ({
+      branch: entry.branch,
+      path: relativePath(cwd, entry.path),
+    }));
 }
 
 // The read model behind `status` — epics/stories enriched with their linked
@@ -277,43 +290,119 @@ function buildStatusModel(config) {
     }),
   }));
 
-  // Active worktrees that don't match any story (loose branches, main/master,
-  // etc.). Useful to see all the parallel work in progress.
-  const looseWorktrees = wt.entries
-    .filter((entry) => !entry.bare && entry.branch && !mappedBranches.has(entry.branch))
-    .map((entry) => ({
-      branch: entry.branch,
-      path: relativePath(cwd, entry.path),
-    }));
+  const looseWorktrees = looseWorktreeList(wt.entries, mappedBranches);
 
   const policy = evaluateBranchPolicy(cwd, config);
   const untrackedPlans = listUntrackedPlans(epics);
+  const recovery = collectRecovery(cwd);
 
-  return { epics, looseWorktrees, worktreesActive: wt.isRepo, policy, untrackedPlans };
+  return { epics, looseWorktrees, worktreesActive: wt.isRepo, policy, untrackedPlans, recovery };
+}
+
+// The order states are listed in, so a dossier reads the same way twice.
+const RECOVERY_STATE_ORDER = [
+  "suspected",
+  "confirmed",
+  "reproduced",
+  "fixed",
+  "mitigated",
+  "accepted",
+  "refuted",
+  "false-positive",
+  "not examined",
+];
+
+const RECOVERY_OPEN_LIMIT = 5;
+
+function recoveryCounts(counts) {
+  const seen = new Set();
+  const parts = [];
+
+  for (const state of RECOVERY_STATE_ORDER) {
+    seen.add(state);
+    if (counts[state]) {
+      parts.push(`${state} ${counts[state]}`);
+    }
+  }
+
+  for (const [state, count] of Object.entries(counts)) {
+    if (!seen.has(state) && count) {
+      parts.push(`${state} ${count}`);
+    }
+  }
+
+  return parts.join(", ");
+}
+
+function printRecovery(recovery) {
+  const sources = [
+    recovery.files.tracked ? "docs/recovery/findings.md" : null,
+    recovery.files.local ? ".coding-flow/recovery/findings.local.md" : null,
+  ].filter(Boolean);
+  log(`Recovery — ${sources.join(" + ")}`);
+
+  const counts = recoveryCounts(recovery.counts);
+  const total = Object.values(recovery.counts).reduce((sum, count) => sum + count, 0);
+  log(`- ${total} finding(s)${counts ? `: ${counts}` : ""}`);
+
+  if (recovery.open.length > 0) {
+    log("- open by severity:");
+    for (const finding of recovery.open.slice(0, RECOVERY_OPEN_LIMIT)) {
+      const label = finding.severity > 0 ? ["low", "medium", "high", "critical"][finding.severity - 1] : "unrated";
+      const location = finding.location ? ` (${finding.location})` : "";
+      log(`  - [${label}] ${finding.id} — ${finding.title}${location}`);
+    }
+  }
+
+  if (recovery.fixedProven.length > 0) {
+    log(`- fixed (proven): ${recovery.fixedProven.join(", ")}`);
+  }
+  if (recovery.fixedClaimed.length > 0) {
+    log(`- fixed (claimed): ${recovery.fixedClaimed.join(", ")}`);
+  }
+  if (recovery.unresolvedLocations.length > 0) {
+    log(`- unresolved location: ${recovery.unresolvedLocations.map((entry) => `${entry.id} (${entry.location})`).join(", ")}`);
+  }
+  if (recovery.acceptedNoRevisit.length > 0) {
+    log(`- accepted, no revisit date: ${recovery.acceptedNoRevisit.join(", ")}`);
+  }
+  if (recovery.revisitOverdue.length > 0) {
+    log(`- revisit overdue: ${recovery.revisitOverdue.map((entry) => `${entry.id} (${entry.revisit})`).join(", ")}`);
+  }
+  for (const entry of recovery.unreadable) {
+    log(`- unreadable block: ${entry.id || "(no id)"}${entry.reason ? ` (${entry.reason})` : ""}`);
+  }
+
+  log("");
+}
+
+// Only when the dossier exists: a project that never ran recovery gets
+// byte-identical output to before this section existed.
+// `nextEpicNumber` (story 17-03): what `/flow-plan` numbers a new epic with.
+function statusPayload(config, { epics, looseWorktrees, worktreesActive, policy, untrackedPlans, recovery }) {
+  const numbers = epicNumbers(cwd);
+  return {
+    storage: config.storage,
+    epics,
+    ...(recovery.present ? { recovery } : {}),
+    worktrees: { active: worktreesActive, loose: looseWorktrees },
+    policy: {
+      branchPerEpic: policy.enforced,
+      branch: policy.branch,
+      onBase: policy.onBase,
+    },
+    untrackedPlans,
+    nextEpicNumber: numbers.next,
+    nextEpicNumberSources: numbers.sources,
+  };
 }
 
 function status({ json = false } = {}) {
   const config = readConfig(cwd);
-  const { epics, looseWorktrees, worktreesActive, policy, untrackedPlans } = buildStatusModel(config);
+  const { epics, looseWorktrees, worktreesActive, policy, untrackedPlans, recovery } = buildStatusModel(config);
 
   if (json) {
-    log(
-      JSON.stringify(
-        {
-          storage: config.storage,
-          epics,
-          worktrees: { active: worktreesActive, loose: looseWorktrees },
-          policy: {
-            branchPerEpic: policy.enforced,
-            branch: policy.branch,
-            onBase: policy.onBase,
-          },
-          untrackedPlans,
-        },
-        null,
-        2,
-      ),
-    );
+    log(JSON.stringify(statusPayload(config, { epics, looseWorktrees, worktreesActive, policy, untrackedPlans, recovery }), null, 2));
     return;
   }
 
@@ -357,6 +446,10 @@ function status({ json = false } = {}) {
       }
       log("");
     }
+  }
+
+  if (recovery.present) {
+    printRecovery(recovery);
   }
 
   if (looseWorktrees.length > 0) {

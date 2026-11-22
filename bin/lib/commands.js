@@ -113,13 +113,7 @@ More
 Quickstart: docs/QUICKSTART.md`);
 }
 
-function printHelp({ all = false } = {}) {
-  if (!all) {
-    printGoldenPath();
-    return;
-  }
-
-  log(`Coding Flow — full command reference
+const FULL_REFERENCE = `Coding Flow — full command reference
 
 Most of these are invoked automatically by the skills, CI, or the git hook. As a
 user you mainly need: init, status, next, ship (and the /flow-plan, /flow-run skills).
@@ -192,6 +186,7 @@ Flags:
   --export   Write docs/AUDIT.md from the audit ledger, or docs/DECISIONS.md with --decisions.
   --check    Exit non-zero if the latest verify per story is failing or missing (CI gate).
   --test-exemption  Reason a verified change carries no test; recorded verbatim in the evidence.
+  --policy-change  Reason a check's own configuration changed; recorded verbatim in the evidence.
   --since    Filter audit entries to those generated at or after an ISO timestamp.
   --decisions  Aggregate every story's ## Decisions section instead of the run-evidence ledger.
   --verdict    Outcome recorded by review capture: pass or fail.
@@ -216,7 +211,15 @@ Skills channel:
   recorded in .coding-flow/config.json ("skills": "plugin" | "project") so every
   later command — and every teammate — sees the same install. Change it with
   \`upgrade --with-skills\` / \`upgrade --no-skills\`.
-`);
+`;
+
+function printHelp({ all = false } = {}) {
+  if (!all) {
+    printGoldenPath();
+    return;
+  }
+
+  log(FULL_REFERENCE);
 }
 
 module.exports = { printCommands, printHelp };

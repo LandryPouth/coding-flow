@@ -91,11 +91,13 @@ const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
+const { recoverScan } = require("./lib/recover");
 const { harnessCommand, ensureHarnessConfig, registerStoryLocator } = require("./lib/harness");
 registerStoryLocator(require("./lib/speckit"));
 const { auditCommand } = require("./lib/audit");
 const { reviewCommand } = require("./lib/review");
 const { traceCommand } = require("./lib/trace");
+const { archiveCommand } = require("./lib/archive");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
 const { worktreeCommand, storyWorkElsewhere } = require("./lib/worktree");
@@ -867,6 +869,15 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     dryRun: flags.has("--dry-run"),
     force: flags.has("--force"),
   });
+} else if (command === "recover") {
+  if (commandArgs[0] !== "scan") {
+    fail("recover requires a subcommand: recover scan [--history-limit N] [--json]");
+  }
+
+  recoverScan({
+    json: flags.has("--json"),
+    historyLimit: getFlagValue("--history-limit", null),
+  });
 } else if (command === "harness") {
   if (commandArgs[0] === "verify") refuseVerifyAwayFromStoryWork(getFlagValue("--story", null));
   harnessCommand({ commandArgs, getFlagValue, flags });
@@ -884,6 +895,8 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   reviewCommand({ commandArgs, getFlagValue, flags });
 } else if (command === "trace") {
   traceCommand({ getFlagValue, flags });
+} else if (command === "archive") {
+  archiveCommand({ commandArgs, flags });
 } else if (command === "ci") {
   ciCommand({ commandArgs, flags });
 } else if (command === "plugin") {

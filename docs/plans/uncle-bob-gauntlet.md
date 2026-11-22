@@ -9,6 +9,81 @@ is either measured on this checkout (its `.coding-flow/runs/`,
 `docs/DOGFOODING.md`, `git log`) or comes from an experiment run in a
 throwaway worktree.
 
+**Re-measured again 2026-11-14, after epics 13–15** — next section.
+
+## Re-measured 2026-11-14, after epics 13–15
+
+One command, on the primary checkout's runs (story 15-06):
+
+```bash
+node scripts/remeasure-study.js --runs .coding-flow/runs --since 2026-10-18
+```
+
+`2026-10-18` is the day epic 13 started. Everything in the table comes from
+that output and from `docs/DOGFOODING.md`; the caveats under it come from
+the 2026-11-13/14 sessions that ran 13-04, 13-07, 13-08 and 15-01 to 15-05.
+The window is a date, not a set of stories: it also holds 33 runs with no
+story, re-verifies of stories from epics 01–12 (their STRICT ones print "no
+review recorded" — their reviews predate the window), and DOGFOODING rows of
+2026-10-18/19 written before epic 13's first story landed.
+
+| Measure | Before | 2026-11-14 | Target | Reading |
+|---|---|---|---|---|
+| Verifies at `verified` | 0 / 206 | **29 / 105 (27.6 %)**; 36.7 % of the 79 green ones | > 0 | **Met.** 13-03 put lcov in this repository's validation; almost every green story verify since 14-03 reaches the rung. The rest are reds (no tier), storyless runs and re-verifies of older stories. |
+| Review passes per STRICT story (epics 13–15) | 10–12 (05-01/02/03) | 13-01: 1 · 14-04: 2 · 15-02: 1 · **15-05: 4** (3 STRICT + 1 alignment) · 14-03: no review recorded | ≤ 3 | **Missed by one on 15-05.** Stories planned below STRICT, reviewed independently: 13-04 (STANDARD): 4, 13-07 and 13-08 (QUICK): 3 each — not STRICT, so not a miss of this target. Nothing near 10–12. 26 review files counted of 27 (one identical re-record). |
+| P1s caught by `verify` rather than review | not measured | **0 defects caught by a gate.** 5 gate reds over 4 stories: 3 size-ratchet reds (13-04, 14-07, 15-01 twice on `shell-writes.js`) and 1 claim misuse (15-02, `base-not-shared`: a wrong `--base`) | no baseline | **Neither met nor missed**: there was no earlier number. No coverage or contrary-signal red; the 14 P1s reviews recorded are where the defects were found. 21 more reds failed on commands — real reds and timing flakes mixed, counted apart. |
+| Surviving mutants per story | — | **not measured: no verify ran the probe** | — | 15-05 shipped the probe opt-in; this repository does not set `mutation` in `harness.json`. **Missed** as a measure, not as a result. |
+| DOGFOODING rows about worktrees | 12 / 38 (whole log, 2026-10-17) | whole log **19 / 72**; rows dated since 2026-10-18: **8 / 34 by surface (7 still open)**, plus 6 rows whose problem is a worktree | falling | **Missed.** Same denominator, the whole log: 31.6 % → 26.4 %, a share diluted by other new rows, not fewer worktree rows — 7 to 8 new ones in four weeks, nearly all open. No conclusion that it fell. |
+
+**What the numbers under-count, measured in the same sessions:**
+
+- **Evidence dies with the worktree.** `land` and `autoland` remove the
+  story worktree and its `.coding-flow/runs/` (DOGFOODING 2026-11-09, open).
+  The stories of this series were re-verified and their review re-recorded on
+  `develop` afterwards: **one review file for 13-04's 4 passes, 15-05's 4,
+  13-07's 3, 13-08's 3**. The script prints both the files and the passes a
+  review's text states; before this series nothing stated them, so the
+  pass counts of 13-01, 14-04 and 15-02 above are floors, not counts, and
+  14-03's review is not in the runs at all. The same loss hides the reds of
+  the worktree verifies (13-07's first verify, red on the size ratchet, is
+  not in the primary's runs).
+- **Review is still where the P1s come from.** 13-04 (4 P1s: policy globs
+  unlisting themselves, renames, working-tree scope, the base config), 13-07
+  (4: a self-named `baseBranch`, then a regression of its own first fix),
+  13-08 (2: a pure move made verify red, `R100` read as identity) — each
+  found by a fresh reviewer, none by a gate. They are the epic-05 pattern at
+  a smaller scale: missing cases in a resolution rule, not weak tests.
+- **15-02 is NOT PROVEN today.** Its `--claim refactor` cannot be re-taken
+  after land: later stories edited tests in its window (DOGFOODING
+  2026-11-13). The refactor was proven once, in its worktree, and that proof
+  went with it.
+- **Flakes cost verifies.** A first red on a timing test under load was
+  common in this series (`test/mutation.test.js:409` three times, fixed in
+  `cafa6c5`); a verify timeout left 38 processes running (DOGFOODING
+  2026-11-13, open). Those reds are in the 21 counted apart.
+
+**Targets missed:** review passes ≤ 3 on one STRICT story (15-05 at 4);
+surviving mutants (not measurable here until `mutation` is configured);
+worktree friction (not falling). **No baseline:** P1s caught by `verify`
+(0 defects caught by a gate this time; the next re-measure compares to it).
+
+### The open question, answered by the count
+
+The study's rule was: *if the friction persists once epics 02/03 are stable,
+make the layer optional rather than extend it.* It persisted: 8 rows by
+surface dated since 2026-10-18 and 6 more caused by a worktree, 7 of the 8
+open;
+in this series `autoland` refused every land it was asked for (15-01,
+15-05, 13-08 — each then landed by hand with `worktree land`; 13-07 went
+straight to `land`), and every land deleted the story's proof.
+
+**Decided 2026-11-14** ([design decision 17](../design-decisions.md)): the layer becomes a setting (story 18-07, after 18-02), on for the maintainer. The recommendation as written:
+make the worktree layer optional — stories run in the current checkout by
+default, a worktree only when a second chain runs in parallel — and, ahead
+of that, carry a story's verify and review evidence into the primary at land
+(the 2026-11-09 row). The second is a defect in the proof itself, whatever is
+decided about the first. Recorded as design decision 17.
+
 ## Re-measured 2026-10-18, after epics 01–12
 
 | Measure | 2026-10-17 | 2026-10-18 | Reading |
@@ -122,6 +197,88 @@ covered), `applyDeps` (12 %). **Limit:** V8 reports block coverage, so
 labelled as one. The same `FN` ranges also give function length in any
 language that emits lcov.
 
+### Experiment 3 — the mutation probe replayed on bethl (story 15-04)
+
+`scripts/mutation-probe.js` on three bethl stories with high-risk diffs, each
+carrying a Prisma migration: 37-03 (signed agent uploads, upload cap,
+cleanup cron), 34-02 (exact address only after a confirmed visit), 34-03
+(entrance photo and presence verification). The study's operator table,
+30 sites sampled per story (34-02 has 20), the test files each story's own
+commits touched as the targeted command (`jest {files}`), run from a clone of
+bethl so its tree is never written. The auth stories (18-xx, 29-xx) have 4–16
+sites each under this table: too few to sample 20.
+
+The mutants ran on `ec8a3e0e`, the commit before bethl's switch to SWC:
+bethl's installed dependencies predate it, so `@swc/jest` is missing at HEAD.
+Sites were relocated to that tree by verbatim line match.
+
+| Story | Mutants | Killed | Timeout | Did not compile | Survived | s / mutant |
+|---|---|---|---|---|---|---|
+| 37-03 | 30 | 17 | 0 | 9 | 4 | 40.4 |
+| 34-02 | 20 | 9 | 0 | 8 | 3 | 15.2 |
+| 34-03 | 30 | 11 | 2 | 5 | 12 | 35.3 |
+| **Total** | **80** | **37** | **2** | **22** | **19** | **32.2** |
+
+Kill rate: 66 % (37 killed of the 56 that were killed or survived). The 2
+timeouts are counted apart: a run past its bound is as likely slow as hung,
+so read either way the rate is 63–67 % (37/58 to 39/58). The 56 include the
+8 survivors read below as noise (re-indented code, one site moved onto the
+wrong line): without them the rate is 77 % (37/48), assuming none of the 37
+kills sat on a noise line, which was not checked. `ts-jest`
+type-checks, so 22 mutants (28 %) were stopped by TypeScript, not by a
+test — mostly Prisma `select` flags and impossible comparisons (TS2367).
+Counting those as kills would read 75 %.
+
+The 19 survivors, classified by reading the code and its specs:
+
+| Class | Count | Sites |
+|---|---|---|
+| **Real gap** | 1 | 37-03 `cloudinary.service.ts:246` — `findImageResource`, new in 37-03, is called by no test (the integration spec stubs it; the 404 test covers `findVideoResource`). Inverting its 404 check turns a Cloudinary 500 into `null`, i.e. "photo unknown", on the upload-confirmation path. |
+| **Weak assertion, high-risk path** | 3 | 34-03 `presence-rules.ts:57` — the test named "accepte pile à la limite de 100 m" checks 99.5 m and 100.5 m, never 100 m; that rule sets `verifiedAt`. 34-03 `presence-verification.service.ts:203` — the 8 MB upload cap is tested at `MAX + 1` only. 37-03 `agent-photos.service.ts:300` — `media.create` is asserted with `objectContaining` that omits `authenticatedDelivery`. |
+| Weak assertion, low risk | 2 | 34-03 `visit-location.service.ts:70` (`hasEntrancePhoto` asserted `true` only); 34-03 `presence-rules.ts:40` (longitude ±180°). |
+| Equivalent | 5 | Swagger `nullable: true` ×3 (OpenAPI metadata only); 37-03 cron log line on an empty batch; 34-02 tie between two visits of equal expiry (the access decision is unchanged). |
+| Outside the four classes: not the story's code | 8 | 34-03 `property.service.ts:812–826` ×7, a Prisma `include` block the story only re-indented; 34-03 `property.controller.ts:344`, relocated onto another occurrence of the same line (`git blame` names a later commit). The mutant ran, but not on code the story wrote. |
+
+**Verdict: go.** One real gap and three weak assertions on high-risk paths,
+in a project the author did not design for the probe — the condition of
+wave 5. Two checks behind it:
+
+- The four go-deciding survivors were re-run against bethl's **whole** API
+  unit suite (1 763 tests; `openapi-contract.spec.ts`, already red at
+  `ec8a3e0e`, left out; the integration specs need a database and were not
+  run): all four survive. They are not artefacts of the targeted `{files}`.
+- The real gap is a function no test calls: wave 4's lcov signal finds that
+  one without mutation. What only mutation found is the three weak
+  assertions — tests that run the line and do not pin it. The go stands on
+  those.
+
+All 80 sites are still sites under the probe's corrected masking (multi-line
+and nested templates, regex literals): none sat in a SQL template. The
+numbers come from the probe's first version. Its compile pattern later
+narrowed (a `SyntaxError:` line, not the word anywhere, and only a line the
+passing baseline did not print), and the 22 compile mutants' output was not
+kept: under today's rules some might read as killed, which can only raise
+the 66 %; the timeouts, counted as kills then, are apart now. The exact `--paths`/`--tests` per story are in 15-04's Result.
+
+The replay also says what 15-05 must not inherit:
+
+- **8 of 19 survivors (42 %) were noise.** Sites must come from lines the
+  diff changed in substance, not re-indented or moved ones (`git diff -w`, or
+  `--color-moved`), and relocation onto another tree must use `git blame`,
+  never a text match.
+- **Cost: 32 s per mutant, ~43 min for 80** with a targeted command, against
+  10 s here. A per-verify probe of 30 mutants is 16 minutes on bethl: opt-in,
+  `high`-risk diffs only, as wave 5 already says — and out of the default
+  verify loop.
+- **Compiled languages:** 28 % of mutants never reached a test. Reported
+  apart (`compile`), never as killed — otherwise the kill rate reads 75 %
+  instead of 66 % (77 % once the 8 noise survivors are left out).
+- **Linked dependencies are live.** `--link node_modules` points at the
+  source checkout's real directory: a runner can write caches there (`git
+  status` does not see ignored files), and a workspace package reached
+  through it is that checkout's copy, not the mutated tree's. Here every
+  mutant was in `apps/api/src`, which is not reached that way.
+
 ## Clean code and clean architecture — in the tool itself
 
 | Finding | Measure |
@@ -199,10 +356,11 @@ prose is exactly what Martin found agents ignore. Turning them into signals:
 | **2 — the tool's architecture** | 11-01 split along the Dependency Rule, 12-03 layering test, size ratchet in this repo's `validation.quality` | guard → harness, core → layers, a 322-line function | M |
 | **3 — the bar does not move** | `policyGlobs` in `harness.json`: a diff touching lint config, coverage thresholds, dependency rules or `harness.json` is a contrary signal; strict fails unless a `## Policy Change` section explains it (lowers the claim, so the direction rule allows it). Also fix `nonBehaviorGlobs`, which today makes `**/*.config.js`, `**/.eslintrc*` and `tsconfig*.json` invisible to every signal | Hole read in the default config | S/M |
 | **4 — lcov signals for users** | CRAP and size ratchet on the diff | Experiment 2 | M |
-| **5 — mutation probe** | Opt-in via `harness.json` (`mutation: { command, maxMutants }`), `high`-risk diffs only, sites drawn from the story's added lines, deterministic sampling seeded by the tree token, executed in a throwaway worktree (never in the user's tree), result stored as `mutation: { killed, survived[], durationMs }`, `## Mutation Exemption` for equivalent mutants | Experiment 1: 90 % killed, ~10 s/mutant here. **Replay offline on bethl first** (183 s suite median, so a targeted test command is mandatory); drop it if it finds no real gaps there | L |
+| **5 — mutation probe** | Opt-in via `harness.json` (`mutation: { command, maxMutants }`), `high`-risk diffs only, sites drawn from the story's added lines, deterministic sampling seeded by the tree token, executed in a throwaway worktree (never in the user's tree), result stored as `mutation: { killed, survived[], durationMs }`, `## Mutation Exemption` for equivalent mutants | Experiment 1: 90 % killed, ~10 s/mutant here. **Replay offline on bethl first** (183 s suite median, so a targeted test command is mandatory); drop it if it finds no real gaps there. **Replayed 2026-11-10 (15-04): go** — 1 real gap and 3 weak assertions on high-risk paths in 80 mutants, 66 % killed (timeouts and type errors apart), 32 s/mutant; see Experiment 3 | L |
 
 Known limits of wave 5, to be printed rather than hidden: in compiled
-languages a non-compiling mutant counts as killed; equivalent mutants exist;
+languages a non-compiling mutant is reported apart, never as killed (see
+Experiment 3); equivalent mutants exist;
 the textual operator table skips strings and comments heuristically.
 
 ## Refused
@@ -264,10 +422,13 @@ All readable from `.coding-flow/runs/`:
 The two experiments and the run analysis were scratch scripts, not committed.
 Their method is fully described above; to re-run:
 
-- **Runs:** group `.coding-flow/runs/*.json` by suffix (`-verify`, `-review`),
-  then count `coverage.tier`, `reviewer`, `verdict`, `findingCounts.p1` per
-  `story`.
-- **Mutation:** `git worktree add --detach <tmp> HEAD`; take the `+` lines of
+- **Runs:** `node scripts/remeasure-study.js --runs .coding-flow/runs --since
+  <YYYY-MM-DD> [--json]` (story 15-06; its header gives what each number
+  means). It groups `*-verify` and `*-review` runs by `story` and counts
+  `coverage.tier`, `reviewer`, `findingCounts.p1`, gate reds and mutation
+  survivors, plus the DOGFOODING rows about worktrees.
+- **Mutation:** now `scripts/mutation-probe.js` (story 15-04; its header
+  gives the usage). By hand, as experiment 1 did: `git worktree add --detach <tmp> HEAD`; take the `+` lines of
   `git diff -U0 <base> HEAD -- bin/lib/guard.js`; for each sampled site, apply
   one operator swap, run `node --require ./scripts/test-env-guard.js --test
   test/guard*.test.js test/opencode-guard.test.js`, record exit code, restore.

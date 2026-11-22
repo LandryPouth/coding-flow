@@ -8,7 +8,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const { cwd, packageJson } = require("./context");
-const { log, toPortable, parseFrontmatter, readJson, hashFile, isCommandAvailable, binaryPathNote } = require("./util");
+const { matchesPattern, log, toPortable, parseFrontmatter, readJson, hashFile, isCommandAvailable, binaryPathNote } = require("./util");
 const {
   ensureTemplatesExist,
   listTemplateSkillNames,
@@ -23,6 +23,8 @@ const {
   ensureConvenienceFiles,
 } = require("./templates");
 const { collectHarnessReport } = require("./harness");
+const { harnessConfigPath, EVIDENCE_BLOCKED_PATHS } = require("./harness-config");
+const { trackedOpenSecurityFindings } = require("./recover");
 const { readConfig, activeTargets } = require("./config");
 const { CODEX_SKILLS_DIR } = require("./platforms/codex");
 const { COMMAND_PLATFORMS } = require("./platforms/registry");
@@ -37,6 +39,9 @@ const { inspectOpenCodePlugin, probeOpenCode, usesOpenCode } = require("./openco
 const { servedByClaude } = require("./platforms/opencode");
 const { EXPLICIT_TARGETS } = require("./detect");
 const { inspectOpenCodeInstructions, inspectGlobalCommands, globalOpenCodeDir } = require("./opencode-config");
+const { storyLinkIssues, fixStoryLinks } = require("./story-links");
+const { indexFreshness, refreshIndex } = require("./archive");
+const { epicNumberCollisions } = require("./epic-numbers");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -118,6 +123,79 @@ function checkOversizedEpics(warnings) {
       });
     }
   }
+}
+
+// An explicit `blockedPaths` replaces the defaults, so an install written before
+// the evidence entries existed never gets them. Told, not rewritten: the list is
+// the user's.
+function checkEvidenceBlocked(warnings) {
+  const config = readJson(harnessConfigPath(cwd), null);
+  if (!config || !Array.isArray(config.blockedPaths)) return;
+
+  // An equivalent glob of the user's own (`.coding-flow/**`) already covers it.
+  const missing = EVIDENCE_BLOCKED_PATHS.filter(
+    (entry) => !config.blockedPaths.some((pattern) => typeof pattern === "string" && matchesPattern(entry.replace("**", "x-verify.json"), pattern)),
+  );
+  if (missing.length === 0) return;
+
+  warnings.push({
+    code: "evidence_writable",
+    file: ".coding-flow/harness.json",
+    message:
+      `blockedPaths does not list ${missing.join(", ")} — an agent's Write or shell redirect can edit the proof; ` +
+      "add them to blockedPaths",
+  });
+}
+
+// A public repository that ships a trace to an open security hole is publishing
+// the exploit. Visibility needs `gh`: when it cannot answer, stay quiet rather
+// than guess, but say the check could not be made. Only the tracked dossier
+// counts — `.coding-flow/recovery/findings.local.md` is the git-ignored place the
+// trace belongs.
+function checkRecoveryExposure(warnings, notes) {
+  const exposed = trackedOpenSecurityFindings(cwd);
+
+  if (exposed.length === 0) return;
+
+  const ids = exposed.map((finding) => finding.id).join(", ");
+  let visibility;
+
+  try {
+    const output = execFileSync("gh", ["repo", "view", "--json", "visibility"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const parsed = JSON.parse(output);
+    visibility = typeof parsed.visibility === "string" ? parsed.visibility.toLowerCase() : null;
+  } catch {
+    visibility = null;
+  }
+
+  if (visibility === null) {
+    notes.push({
+      code: "recovery_visibility_unknown",
+      message:
+        "`gh` could not report this repository's visibility, so the open security trace in " +
+        `docs/recovery/findings.md (${ids}) was not checked; keep it in .coding-flow/recovery/findings.local.md`,
+    });
+    return;
+  }
+
+  if (visibility === "public") {
+    warnings.push({
+      code: "recovery_public_trace",
+      file: "docs/recovery/findings.md",
+      message:
+        `public repository: docs/recovery/findings.md publishes an open security trace (${ids}) — ` +
+        "move the trace to the git-ignored .coding-flow/recovery/findings.local.md",
+    });
+  }
+}
+
+function checkEvidenceAndRecovery(warnings, notes) {
+  checkEvidenceBlocked(warnings);
+  checkRecoveryExposure(warnings, notes);
 }
 
 const GENERATED_DIR_NAMES = new Set(["generated", "__generated__", "gen"]);
@@ -234,7 +312,10 @@ function checkReleaseTag(warnings) {
 // stops being unique the moment both branches merge. Nothing can prevent that
 // race without a shared counter this tool deliberately does not have, so
 // `doctor` catches it mechanically right after the merge instead, while a
-// rename is still a one-line fix.
+// rename is still a one-line fix. Story 17-03 narrows the race before the
+// merge: checkEpicNumberCollisions below reads the archived entries and the
+// other local and fetched refs. Two clones that have not fetched each other
+// are still caught only here, after the merge.
 function checkDuplicateNumbering(warnings) {
   let epics;
   try {
@@ -304,6 +385,85 @@ function checkDuplicateNumbering(warnings) {
       }
     }
   }
+}
+
+function listEpicsQuietly() {
+  try {
+    return getStorage(cwd, readConfig(cwd)).listEpics();
+  } catch {
+    return []; // best-effort only — never block doctor on a storage read failure.
+  }
+}
+
+// A number on disk already held by an archived epic, or by another ref under
+// another slug (story 17-03). Warn only: the fix is a rename.
+function checkEpicNumberCollisions(warnings) {
+  let collisions;
+  try {
+    collisions = epicNumberCollisions(cwd);
+  } catch {
+    return; // best-effort only — never block doctor on a git or index read failure.
+  }
+  const seen = new Set();
+  for (const { code, message } of collisions) {
+    if (seen.has(message)) continue;
+    seen.add(message);
+    warnings.push({ code, file: "epics", message });
+  }
+}
+
+// `/flow-plan` writes each `## Stories` entry as a link that opens the story's
+// spec (`1. [story-…](story-…/spec.md) — …`). Checked on every install shape:
+// the same entries are what `worktree place` reads, minimal install or not.
+function checkStoryLinks(warnings) {
+  for (const epic of listEpicsQuietly()) {
+    const epicDir = path.join(cwd, epic.path);
+    const indexPath = path.join(epicDir, "index.md");
+
+    if (!fs.existsSync(indexPath)) continue;
+
+    const file = `${epic.path}/index.md`;
+    for (const issue of storyLinkIssues(epicDir, fs.readFileSync(indexPath, "utf8"))) {
+      warnings.push({ code: "story_entry_not_linked", file, line: issue.line, message: `${file}:${issue.line}: ${issue.message}` });
+    }
+  }
+}
+
+// `epics/INDEX.md`'s live section (story 17-02) lists every epic and every
+// story's written status. A new epic, story, title or written status makes it
+// stale; a proof going stale does not, since the file carries none.
+function checkEpicIndex(warnings) {
+  let freshness;
+  try {
+    freshness = indexFreshness();
+  } catch {
+    return; // best-effort only — never block doctor on a storage read failure.
+  }
+  if (!freshness || !freshness.stale) return;
+  warnings.push({
+    code: "epic_index_stale",
+    file: "epics/INDEX.md",
+    message: `${freshness.reason} — run \`ai-flow archive --refresh\` (or \`ai-flow doctor --fix\`)`,
+  });
+}
+
+// What `doctor` reads from the epics on disk: size, numbering, story links, the index.
+function checkEpicFiles(warnings) {
+  checkOversizedEpics(warnings);
+  checkDuplicateNumbering(warnings);
+  checkEpicNumberCollisions(warnings);
+  checkStoryLinks(warnings);
+  checkEpicIndex(warnings);
+}
+
+// `--fix` half of checkStoryLinks: rewrites each fixable entry to the canonical
+// link, the rest of its line kept.
+function fixAllStoryLinks() {
+  let count = 0;
+  for (const epic of listEpicsQuietly()) {
+    count += fixStoryLinks(path.join(cwd, epic.path));
+  }
+  if (count > 0) log(`Rewrote ${count} \`## Stories\` entr${count === 1 ? "y" : "ies"} to link to the story spec.`);
 }
 
 // Calls the guard let through because it could not judge them. Silence there
@@ -607,11 +767,14 @@ function collectMinimalReport({ strict = false } = {}) {
     }
   }
 
+  checkEvidenceAndRecovery(warnings, notes);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
   checkOpenCodeWiring(errors, warnings, notes);
   checkReleaseTag(warnings);
+  checkStoryLinks(warnings);
+  checkEpicIndex(warnings);
 
   return {
     ok: errors.length === 0,
@@ -834,11 +997,11 @@ function collectDoctorReport({ strict = false } = {}) {
   // fire on the `doctor` a user actually runs. A warning, never an error —
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
-  checkOversizedEpics(warnings);
+  checkEpicFiles(warnings);
   checkGeneratedDirectories(warnings);
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
-  checkDuplicateNumbering(warnings);
+  checkEvidenceAndRecovery(warnings, notes);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
@@ -873,35 +1036,46 @@ function printNotes(report) {
   }
 }
 
-function doctor({ fix = false, json = false, strict = false } = {}) {
-  // `--fix` restores the templates, which a minimal install never had. Silently
-  // laying them down would turn a diagnostic into an unasked-for upgrade.
-  if (fix && readConfig(cwd).install === "minimal") {
+// `doctor --fix`. Epic indexes are the project's own files on either install
+// shape, so their story links and `epics/INDEX.md`'s live section are fixed
+// first. `--fix` then restores the templates, which a minimal install never
+// had: silently laying them down would turn a diagnostic into an unasked-for
+// upgrade.
+function applyFix() {
+  fixAllStoryLinks();
+  refreshIndex({ quiet: true });
+
+  const fixConfig = readConfig(cwd);
+
+  if (fixConfig.install === "minimal") {
     log("Minimal install: nothing to restore (no templates were laid down).");
     log("Run `ai-flow init` to lay down the full workflow.");
-    fix = false;
+    return;
   }
 
+  const fixPlatforms = activeTargets(fixConfig);
+
+  copyTemplates({
+    force: false,
+    dryRun: false,
+    includeSkills: fixPlatforms.includes("claude") && fixConfig.skills === "project",
+    target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
+  });
+
+  for (const platform of fixPlatforms.filter((p) => COMMAND_PLATFORMS[p])) {
+    copyPlatformCommands(platform, { force: false, dryRun: false });
+  }
+
+  if (fixPlatforms.includes("codex")) {
+    copyCodexSkills({ force: false, dryRun: false });
+  }
+  writeManifest(readManifest());
+  ensureConvenienceFiles({ dryRun: false, force: false });
+}
+
+function doctor({ fix = false, json = false, strict = false } = {}) {
   if (fix) {
-    const fixConfig = readConfig(cwd);
-    const fixPlatforms = activeTargets(fixConfig);
-
-    copyTemplates({
-      force: false,
-      dryRun: false,
-      includeSkills: fixPlatforms.includes("claude") && fixConfig.skills === "project",
-      target: fixPlatforms.includes("claude") ? "claude" : fixConfig.target,
-    });
-
-    for (const platform of fixPlatforms.filter((p) => COMMAND_PLATFORMS[p])) {
-      copyPlatformCommands(platform, { force: false, dryRun: false });
-    }
-
-    if (fixPlatforms.includes("codex")) {
-      copyCodexSkills({ force: false, dryRun: false });
-    }
-    writeManifest(readManifest());
-    ensureConvenienceFiles({ dryRun: false, force: false });
+    applyFix();
   }
 
   const report = collectDoctorReport({ strict });

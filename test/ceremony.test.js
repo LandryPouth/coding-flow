@@ -125,7 +125,7 @@ test('a STRICT-risk diff defaults Architecture, Tests, and Security to Deep with
   const review = flat(read(SKILLS, 'flow-review', 'SKILL.md'));
   assert.match(
     review,
-    /`scoreDiffRisk`\/ `scoreStoryRisk` returned `high`\), Architecture, Tests, and Security default to their \*\*Deep\*\* sections/,
+    /`scoreDiffRisk`\/ ?`scoreStoryRisk` returned `high`\), Architecture, Tests, and Security default to their \*\*Deep\*\* sections/,
   );
   // The floor only moves where the risk score already moved it.
   assert.match(review, /A QUICK\/STANDARD diff is unaffected: the quick checklist stays the stated default there/);
@@ -143,16 +143,20 @@ test('flow-plan records story dependencies as a tree so parallelism is visible',
 
   // The epic index carries a dependency tree, not a flat parallel-safe line:
   // branches with no edge between them are the stories that can run in
-  // parallel, and a merge is where one story consolidates several. A missing
-  // edge is a claim of parallel-safety, so the skill checks disjoint files.
+  // parallel. A missing edge is a claim of parallel-safety, so the skill checks
+  // disjoint files. The skill used to teach a merge (`──┴──`) that
+  // `backbone.js` refuses, so `worktree place` stopped on every epic drawn that
+  // way: the example now holds only shapes the parser reads, and says so.
   assert.match(plan, /### Story dependency tree/);
   assert.match(plan, /├──/);
-  assert.match(plan, /──┴──/);
+  assert.match(flat(plan), /Every story has \*\*one parent\*\*: no merge/);
+  const example = plan.slice(plan.indexOf('### Story dependency tree'), plan.indexOf('## Boundaries'));
+  assert.doesNotMatch(example.slice(0, example.indexOf('- Story 01 is the root')), /[┴┤]/);
   assert.match(plan, /ai-flow worktree add --story/);
   assert.doesNotMatch(plan, /Parallel-safe/);
 });
 
-// Two shipped copies of the same seven skills: skills/ is what the Claude Code
+// Two shipped copies of the same skills: skills/ is what the Claude Code
 // plugin serves, templates/.claude/skills/ is what `ai-flow init` copies into a
 // project. Nothing compared them, so a one-sided edit shipped a plugin that
 // disagreed with the scaffold and no test noticed. They are identical today;

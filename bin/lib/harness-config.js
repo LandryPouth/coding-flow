@@ -9,8 +9,18 @@ const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
-const { DEFAULT_REPORT_PATHS } = require("./coverage");
 const { readJson, writeJson } = require("./util");
+
+// Where coverage tools put their output, in the order we trust them. Not
+// configurable by accident: `coverageReports` in harness.json overrides it.
+const DEFAULT_REPORT_PATHS = [
+  "coverage/lcov.info",
+  "coverage/lcov/lcov.info",
+  "lcov.info",
+  "coverage/coverage-final.json",
+  "coverage/coverage.json",
+  ".coverage/lcov.info",
+];
 
 // `root` defaults to this module's own process-bound `cwd` (the overwhelming
 // majority of call sites — `verify`, `check`, `preflight` all run in-process
@@ -146,11 +156,11 @@ function defaultHighRiskPaths() {
 // clear by lying (a fake test) or by turning the tool off. Every entry below is
 // a case where "not covered" carries no information.
 //
-// An entry that is also listed, as the same pattern, in `highRiskPaths`
-// (`**/migrations/**`, `**/*.sql`) is overridden by it: the coverage gate
-// treats those files as behavior, so a migration needs a test or a declared
-// exemption. The entries stay here so that a project which removes them from
-// `highRiskPaths` keeps them out of the gate.
+// The entries that are also default `highRiskPaths` (`**/migrations/**`,
+// `**/*.sql`) give way to any high-risk match: the coverage gate treats a file
+// matching one of them and any `highRiskPaths` pattern as behavior, so a
+// migration needs a test or a declared exemption. The entries stay here so that
+// a project whose `highRiskPaths` match no migration keeps them out of the gate.
 function defaultNonBehaviorGlobs() {
   return [
     "docs/**",
@@ -190,6 +200,38 @@ function defaultNonBehaviorGlobs() {
   ];
 }
 
+// Evidence is written by the CLI through `fs`, which the guard never judges; an
+// agent's own Write/Edit or shell redirect into it is what these entries refuse.
+const EVIDENCE_BLOCKED_PATHS = [".coding-flow/runs/**", ".coding-flow/ledger.jsonl"];
+
+// Config that decides what passes: a diff touching one is the `policy-changed`
+// contrary signal (policy-drift.js). `package.json` is left out on purpose: every
+// dependency bump touches it.
+function defaultPolicyGlobs() {
+  return [
+    "**/.eslintrc*",
+    "**/eslint.config.*",
+    "**/.prettierrc*",
+    "**/tsconfig*.json",
+    "**/jest.config.*",
+    "**/vitest.config.*",
+    "**/.c8rc*",
+    "**/.nycrc*",
+    "**/.dependency-cruiser.*",
+    "**/.importlinter*",
+    "**/importlinter*",
+    "**/pyproject.toml",
+    "**/setup.cfg",
+    ".coding-flow/harness.json",
+    ".coding-flow/config.json",
+  ];
+}
+
+// Story 14-07: a function the diff touches whose length crosses `max` or grows
+// while above it (or whose CRAP crosses 30) is a `complexity-grew` warning in
+// verify, read from the run's lcov. `enforce: true` fails on it.
+const DEFAULT_FUNCTION_SIZE = Object.freeze({ max: 80, enforce: false });
+
 function defaultHarnessConfig() {
   return {
     version: 1,
@@ -212,6 +254,13 @@ function defaultHarnessConfig() {
     highRiskPaths: defaultHighRiskPaths(),
     testGlobs: defaultTestGlobs(),
     nonBehaviorGlobs: defaultNonBehaviorGlobs(),
+    policyGlobs: defaultPolicyGlobs(),
+    // The targeted command `verify --red-at-base` runs in both throwaway
+    // worktrees, e.g. `node --test --test-reporter=tap {files}`. `{files}` is
+    // replaced by the diff's test paths. Empty means the flag fails with the
+    // example rather than guessing a runner.
+    redAtBase: { command: null, timeoutMs: null },
+    functionSize: { ...DEFAULT_FUNCTION_SIZE },
     // Paths that are output, not authorship (a regenerated client, an OpenAPI
     // dump): left out of coverage, risk, weakening and deleted-test signals.
     // Never consulted by the guard (`blockedPaths`) or by secret scanning.
@@ -225,6 +274,7 @@ function defaultHarnessConfig() {
       "**/*.pem",
       "**/*.key",
       "node_modules/**",
+      ...EVIDENCE_BLOCKED_PATHS,
     ],
     sensitiveGlobs: [
       "**/.env*",
@@ -289,6 +339,15 @@ function readHarnessConfig(root = cwd) {
       highRiskPaths: Array.isArray(config.highRiskPaths) ? config.highRiskPaths : defaults.highRiskPaths,
       testGlobs: Array.isArray(config.testGlobs) ? config.testGlobs : defaults.testGlobs,
       ignoredPaths: Array.isArray(config.ignoredPaths) ? config.ignoredPaths : defaults.ignoredPaths,
+      policyGlobs: Array.isArray(config.policyGlobs) ? config.policyGlobs : defaults.policyGlobs,
+      redAtBase:
+        config.redAtBase && typeof config.redAtBase === "object" && !Array.isArray(config.redAtBase)
+          ? { ...defaults.redAtBase, ...config.redAtBase }
+          : defaults.redAtBase,
+      functionSize:
+        config.functionSize && typeof config.functionSize === "object" && !Array.isArray(config.functionSize)
+          ? { ...defaults.functionSize, ...config.functionSize }
+          : defaults.functionSize,
       nonBehaviorGlobs: Array.isArray(config.nonBehaviorGlobs)
         ? config.nonBehaviorGlobs
         : defaults.nonBehaviorGlobs,
@@ -323,13 +382,17 @@ function ensureHarnessConfig({ dryRun = false } = {}) {
 }
 
 module.exports = {
+  DEFAULT_REPORT_PATHS,
   harnessConfigPath,
   harnessRunsDir,
   defaultSecretPatterns,
   defaultSecretScanAllowlist,
   defaultTestGlobs,
   defaultHighRiskPaths,
+  defaultNonBehaviorGlobs,
+  defaultPolicyGlobs,
   defaultHarnessConfig,
+  EVIDENCE_BLOCKED_PATHS,
   readHarnessConfig,
   ensureHarnessConfig,
 };

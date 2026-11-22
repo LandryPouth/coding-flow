@@ -104,18 +104,18 @@ that way.
 
 ## Stories
 
-1. **story-02-01-lock-a-story-before-parallel-work** — a gitignored
+1. [story-02-01-lock-a-story-before-parallel-work](story-02-01-lock-a-story-before-parallel-work/spec.md) — a gitignored
    `.coding-flow/active-story.json`, written when a story starts and cleared
    when it finishes, refuses a second story on an occupied checkout, wired
    into `skills/flow-run/SKILL.md` for every intensity.
-2. **story-02-02-land-a-story-onto-its-epic-branch** — `ai-flow worktree
+2. [story-02-02-land-a-story-onto-its-epic-branch](story-02-02-land-a-story-onto-its-epic-branch/spec.md) — `ai-flow worktree
    land <name>`: clean-tree and green-verify preconditions, ff-only merge,
    rebase-replay fallback, hard stop on conflict, worktree/branch cleanup.
-3. **story-02-03-verify-and-roll-back-a-landed-story** — always re-run the
+3. [story-02-03-verify-and-roll-back-a-landed-story](story-02-03-verify-and-roll-back-a-landed-story/spec.md) — always re-run the
    project's validation commands against the merged epic branch after a
    land; on failure, `git reset --hard` the single merge commit `land` just
    created and report which check failed.
-4. **story-02-04-surface-landable-worktrees-in-status** — `ai-flow status`
+4. [story-02-04-surface-landable-worktrees-in-status](story-02-04-surface-landable-worktrees-in-status/story.md) — `ai-flow status`
    lists each epic's story worktrees as active (locked), landable (clean +
    verified), or landed, reusing `collectWorktrees` and
    `latestVerifyByStoryDir` rather than new state.
