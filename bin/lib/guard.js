@@ -530,6 +530,22 @@ function viaNote(found, given) {
 const CASE_INSENSITIVE = process.platform === "win32" || process.platform === "darwin";
 
 // Pure decision: from the hook input + root, returns allow/deny + reason.
+// A nested root's policy applies only to a target inside it (its allowlist
+// cannot judge a `$HOME`-relative name); the governing one always applies.
+function secretInWrite(named, content) {
+  return named
+    .filter(({ names }, index) => index === 0 || names.some((entry) => entry.inside))
+    .map(({ scope, names }) =>
+      findSecretsInContent(content, getSecretPatterns(scope.policy), {
+        // Every name must be allowlisted: `docs/notes.md -> ../src/app.js` writes
+        // into src/, and the docs allowance does not travel through the link.
+        skipHeuristics: names.length > 0 && names.every((entry) => isHeuristicAllowlisted(entry.relative, scope.policy)),
+        first: true,
+      })[0],
+    )
+    .find(Boolean);
+}
+
 function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   if (!hook || typeof hook !== "object" || Array.isArray(hook)) {
     return { decision: "unchecked", reason: "no parseable hook input" };
@@ -586,21 +602,7 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   // placeholder in an example is not a leak, an AWS key in one still is.
   const content = writtenContent(toolName, toolInput);
 
-  // A nested root's policy applies only to a target inside it (its allowlist
-  // cannot judge a `$HOME`-relative name); the governing one always applies.
-  const secret = !content
-    ? null
-    : named
-        .filter(({ names }, index) => index === 0 || names.some((entry) => entry.inside))
-        .map(({ scope, names }) =>
-          findSecretsInContent(content, getSecretPatterns(scope.policy), {
-            // Every name must be allowlisted: `docs/notes.md -> ../src/app.js` writes
-            // into src/, and the docs allowance does not travel through the link.
-            skipHeuristics: names.length > 0 && names.every((entry) => isHeuristicAllowlisted(entry.relative, scope.policy)),
-            first: true,
-          })[0],
-        )
-        .find(Boolean);
+  const secret = content ? secretInWrite(named, content) : null;
 
   if (secret) {
     return {
@@ -1186,6 +1188,30 @@ function strictOutcome(result, hook, roots) {
   return { decision: "deny", reason: `${STRICT_PREFIX} ${result.reason}`, path: null };
 }
 
+// An allowed call: its warnings (warn mode) are said and kept; `--json` prints
+// the decision. A warning carries no permission decision of its own, so the
+// user's permission rules still apply.
+function writeAllowed(result, { root, hook, json }) {
+  const warnings = result.warnings || [];
+  if (warnings.length) {
+    recordWarnings({ root, hook, result });
+    for (const warning of warnings) {
+      process.stderr.write(`coding-flow guard: warning: ${warning}\n`);
+    }
+  }
+  if (json) {
+    process.stdout.write(
+      `${JSON.stringify({
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+        reason: result.reason,
+        ...(warnings.length ? { warnings, systemMessage: warnings.join("\n") } : {}),
+      })}\n`,
+    );
+  } else if (warnings.length) {
+    process.stdout.write(`${JSON.stringify({ systemMessage: warnings.map((warning) => `coding-flow guard: warning: ${warning}`).join("\n") })}\n`);
+  }
+}
+
 function guardCommand({ getFlagValue, flags }) {
   const inputFile = getFlagValue("--input", null);
   const raw = readHookInput({ inputFile });
@@ -1227,27 +1253,7 @@ function guardCommand({ getFlagValue, flags }) {
     process.exit(2);
   }
 
-  const warnings = result.warnings || [];
-  if (warnings.length) {
-    recordWarnings({ root, hook, result });
-    for (const warning of warnings) {
-      process.stderr.write(`coding-flow guard: warning: ${warning}\n`);
-    }
-  }
-
-  if (flags.has("--json")) {
-    process.stdout.write(
-      `${JSON.stringify({
-        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
-        reason: result.reason,
-        ...(warnings.length ? { warnings, systemMessage: warnings.join("\n") } : {}),
-      })}\n`,
-    );
-  } else if (warnings.length) {
-    // No permission decision: the user's own permission rules still apply.
-    process.stdout.write(`${JSON.stringify({ systemMessage: warnings.map((warning) => `coding-flow guard: warning: ${warning}`).join("\n") })}\n`);
-  }
-
+  writeAllowed(result, { root, hook, json: flags.has("--json") });
   process.exit(0);
 }
 

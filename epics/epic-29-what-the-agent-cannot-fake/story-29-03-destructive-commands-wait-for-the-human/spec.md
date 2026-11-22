@@ -44,14 +44,14 @@ wrapper can intercept"); the guard is that wrapper.
 
 ## Acceptance Criteria
 
-- [ ] Given `git reset --hard HEAD~1`, when the guard evaluates it, then it is denied with the rule, the files at risk and `git stash push -u` as the alternative, and a line is appended to `denials.jsonl`.
-- [ ] Given `cd repo && git push origin +main`, when the guard evaluates it, then it is denied (the `+refspec` form).
-- [ ] Given `worktrees.primaryLocked: true` and `git switch develop` run in the primary checkout, then it is denied; the same command in a linked worktree is allowed.
-- [ ] Given `bash -c "rm -rf build"`, then it is denied and the refusal names `trash build`.
-- [ ] Given `npx prisma migrate reset --force`, then it is denied.
-- [ ] Given `allowDestructive: ["git clean -fdX"]` in `harness.json`, then exactly that command is allowed and `git clean -fdx` is still denied.
-- [ ] Given `destructiveCommands: "warn"`, then the command is allowed and the warning is printed and recorded.
-- [ ] Given an agent Edit to `.coding-flow/harness.json`, then it stays refused (existing blocked path), so the agent cannot allow itself.
+- [x] Given `git reset --hard HEAD~1`, when the guard evaluates it, then it is denied with the rule, the files at risk and `git stash push -u` as the alternative, and a line is appended to `denials.jsonl`.
+- [x] Given `cd repo && git push origin +main`, when the guard evaluates it, then it is denied (the `+refspec` form).
+- [x] Given `worktrees.primaryLocked: true` and `git switch develop` run in the primary checkout, then it is denied; the same command in a linked worktree is allowed.
+- [x] Given `bash -c "rm -rf build"`, then it is denied and the refusal names `trash build`.
+- [x] Given `npx prisma migrate reset --force`, then it is denied.
+- [x] Given `allowDestructive: ["git clean -fdX"]` in `harness.json`, then exactly that command is allowed and `git clean -fdx` is still denied.
+- [x] Given `destructiveCommands: "warn"`, then the command is allowed and the warning is printed and recorded.
+- [x] Given an agent Edit to `.coding-flow/harness.json`, then a change that loosens the destructive policy is refused (the file was not a blocked path: see plan.md D2), so the agent cannot allow itself.
 
 ## Edge Cases
 
