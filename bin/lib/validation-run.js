@@ -359,7 +359,25 @@ function streamEnd(text) {
     .slice(-NETWORK_TAIL_LINES);
 }
 
-function securityOutcome(item) {
+// cmd.exe has no exit 127: a command it cannot find exits 1, prints nothing on
+// stdout, and ends stderr with exactly these two lines. Only that, on Windows,
+// is a scanner that did not run: a scanner may quote the phrase in a finding,
+// and a finding must stay a failure. A localized Windows prints another
+// sentence; it does not match and stays a failure (it fails safe).
+const CMD_NOT_FOUND = [/^'[^']+' is not recognized as an internal or external command,$/, /^operable program or batch file\.$/];
+
+function cmdNotFound(item, platform) {
+  if (platform !== "win32" || item.exitCode !== 1 || String(item.stdoutTail || "").trim() !== "") {
+    return false;
+  }
+  const lines = String(item.stderrTail || "").split(/\r?\n/).filter((line) => line.trim() !== "");
+  const last = lines.slice(-CMD_NOT_FOUND.length);
+
+  return last.length === CMD_NOT_FOUND.length && CMD_NOT_FOUND.every((pattern, index) => pattern.test(last[index]));
+}
+
+// `platform` is injectable for the tests; it defaults to this process's.
+function securityOutcome(item, platform = process.platform) {
   if (item.ok) {
     return { outcome: "pass" };
   }
@@ -382,8 +400,7 @@ function securityOutcome(item) {
     return notExamined("command found but not executable (exit 126)");
   }
 
-  // cmd.exe has no 127: a missing command exits 1 with this line.
-  if (item.exitCode === 1 && streamEnd(item.stderrTail).some((line) => /is not recognized as an internal or external command/.test(line))) {
+  if (cmdNotFound(item, platform)) {
     return notExamined("command not found (not recognized by cmd.exe)");
   }
 
