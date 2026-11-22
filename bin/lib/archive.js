@@ -35,6 +35,7 @@ const {
   withLiveSection,
   inert,
 } = require("./epic-index");
+const { epicNumbers } = require("./epic-numbers");
 
 // The only states that mean "finished". `## Status:` accepts any written word,
 // so anything else — planned, in-progress, blocked, but also todo, draft, wip —
@@ -351,9 +352,11 @@ function refreshIndex({ dryRun = false, json = false, quiet = false } = {}) {
     fs.writeFileSync(indexPath(cwd), planned.next);
   }
   if (planned.refused && !quiet) process.exitCode = 1;
+  // `doctor --fix` (quiet) has no use for it; `archive --refresh` prints it.
+  const nextEpicNumber = quiet ? null : epicNumbers(cwd).next;
 
   if (json) {
-    log(JSON.stringify({ ...result, ...(dryRun && planned.section ? { section: planned.section } : {}) }, null, 2));
+    log(JSON.stringify({ ...result, ...(nextEpicNumber ? { nextEpicNumber } : {}), ...(dryRun && planned.section ? { section: planned.section } : {}) }, null, 2));
   } else if (planned.refused) {
     log(`Refresh refused: ${planned.refused}`);
   } else if (dryRun && planned.section) {
@@ -364,6 +367,7 @@ function refreshIndex({ dryRun = false, json = false, quiet = false } = {}) {
   } else if (!quiet) {
     log(planned.skip ? `Nothing to refresh: ${planned.skip}.` : `${file} is current.`);
   }
+  if (nextEpicNumber && !json) log(`Next epic number: ${nextEpicNumber}.`);
   return result;
 }
 

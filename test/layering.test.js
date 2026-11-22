@@ -29,7 +29,7 @@ const PURE = ['shell-writes'];
 // checks with install diagnostics (templates, storage, platforms) that need
 // splitting out before it can be called core.
 const LAYER = [
-  'archive', 'doctor', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'recover',
+  'archive', 'doctor', 'epic-numbers', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'recover',
   'quality-recipes', 'review', 'run', 'security-recipes', 'ship', 'skills', 'speckit', 'status', 'story-links', 'templates', 'worktree',
   'worktree-plan',
   // install, platform wiring and CLI plumbing: not needed to guard or prove

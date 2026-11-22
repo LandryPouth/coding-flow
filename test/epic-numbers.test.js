@@ -212,3 +212,10 @@ test('archive --refresh prints the next epic number', (t) => {
   const json = JSON.parse(run(dir, ['archive', '--refresh', '--json', '--dry-run']).output);
   assert.equal(json.nextEpicNumber, '05');
 });
+
+test('/flow-plan takes the epic number from nextEpicNumber, not a directory listing', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'templates', '.claude', 'skills', 'flow-plan', 'SKILL.md'), 'utf8');
+  const conventions = skill.slice(skill.indexOf('## Conventions'), skill.indexOf('## Pipeline'));
+  assert.match(conventions, /ai-flow status --json/);
+  assert.match(conventions, /nextEpicNumber/);
+});
