@@ -1463,4 +1463,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { isRemote, shellWrites, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
+module.exports = { isRemote, shellWrites, commandOf, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };

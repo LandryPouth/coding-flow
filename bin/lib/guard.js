@@ -33,7 +33,7 @@ const { execFileSync } = require("child_process");
 const { defaultHarnessConfig } = require("./harness-config");
 const { getSecretPatterns, findSecretsInContent, isHeuristicAllowlisted } = require("./security-policy");
 const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./util");
-const { shellWrites: readShellWrites, splitSegments, tokenize, expandHome: expandHomeIn, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE } = require("./shell-writes");
+const { shellWrites: readShellWrites, splitSegments, tokenize, commandOf, expandHome: expandHomeIn, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE } = require("./shell-writes");
 
 // Tools that write to disk through a structured file_path. The others (Read,
 // Grep…) are not our business here: immediate allow.
@@ -144,7 +144,22 @@ function loadPolicy(root) {
     // Only an explicit "strict" tightens the guard; anything else (absent, unreadable,
     // a typo) is the standard posture, so a broken file never locks anyone out.
     mode: config && config.mode === "strict" ? "strict" : "standard",
+    ...destructivePolicy(config),
     unreadable,
+  };
+}
+
+// Story 29-03. Anything but an explicit "warn" or "off" is "deny": a typo or a
+// broken file never disarms the check. The allow list holds exact command
+// prefixes, word by word.
+const DESTRUCTIVE_MODES = ["deny", "warn", "off"];
+
+function destructivePolicy(config) {
+  const valid = config && typeof config === "object" && !Array.isArray(config);
+  return {
+    destructiveCommands: valid && DESTRUCTIVE_MODES.includes(config.destructiveCommands) ? config.destructiveCommands : "deny",
+    allowDestructive: valid && Array.isArray(config.allowDestructive) ? config.allowDestructive.filter((entry) => typeof entry === "string" && entry.trim()) : [],
+    primaryLocked: Boolean(valid && config.worktrees && typeof config.worktrees === "object" && config.worktrees.primaryLocked === true),
   };
 }
 
@@ -547,6 +562,12 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   const relative = filePath ? normalizePortable(path.relative(ctx.root, path.resolve(ctx.cwd, filePath))) : null;
   const named = ctx.scopes.map((scope) => ({ scope, names: filePath ? resolveTargets(ctx, scope, filePath) : [] }));
 
+  // Check 0 — the agent does not loosen what it may destroy (story 29-03).
+  const loosened = named.map(({ scope, names }) => policyLoosening(scope, names, toolName, toolInput)).find(Boolean);
+  if (loosened) {
+    return { decision: "deny", reason: loosened, path: POLICY_FILE };
+  }
+
   // Check 1 — path blocked by the policy of any root the target answers to.
   for (const { scope, names } of named) {
     const found = firstHit(names, scope.policy, caseInsensitive);
@@ -740,6 +761,241 @@ function denialFor(entry, found) {
   }
 }
 
+// --- destructive commands (story 29-03) ------------------------------------------
+//
+// `destructive.js` reads which commands of the line destroy work or history;
+// here the disk settles what it cannot (is the path modified, is this the
+// primary checkout), and the governing policy says deny, warn or off.
+
+const POLICY_FILE = ".coding-flow/harness.json";
+// The same words as `destructive.js`, which is required only on the Bash path
+// (the guard's module graph stays small on a Write).
+const DESTRUCTIVE_EXPANSION = "a destructive-command check depends on shell expansion";
+const DESTRUCTIVE_UNKNOWN_CWD = "a destructive-command check depends on a working directory set by shell expansion";
+const MODE_RANK = { off: 0, warn: 1, deny: 2 };
+
+// The destructive policy a harness.json text would give, as `loadPolicy` reads it.
+function destructivePolicyOf(text) {
+  let config = null;
+  try {
+    config = text === null ? null : JSON.parse(text.replace(/^﻿/, ""));
+  } catch {
+    config = null;
+  }
+  return destructivePolicy(config);
+}
+
+function loosens(before, after) {
+  return (
+    MODE_RANK[after.destructiveCommands] < MODE_RANK[before.destructiveCommands] ||
+    after.allowDestructive.some((entry) => !before.allowDestructive.includes(entry)) ||
+    (before.primaryLocked && !after.primaryLocked)
+  );
+}
+
+function readTextOrNull(file) {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+// The file a write tool leaves, or undefined when it cannot be told (an Edit
+// whose old text is not there fails on its own).
+function afterWrite(toolName, input, before) {
+  if (toolName === "Write") {
+    return typeof input.content === "string" ? input.content : undefined;
+  }
+  const edits = toolName === "MultiEdit" ? (Array.isArray(input.edits) ? input.edits : []) : [input];
+  let text = before;
+  for (const edit of edits) {
+    if (text === null || !edit || typeof edit.old_string !== "string" || typeof edit.new_string !== "string" || !text.includes(edit.old_string)) {
+      return undefined;
+    }
+    text = edit.replace_all ? text.split(edit.old_string).join(edit.new_string) : text.replace(edit.old_string, () => edit.new_string);
+  }
+  return text;
+}
+
+// A write tool may edit the policy file — the user repairs it through their
+// agent, strict or not — but not to loosen what the agent may destroy: that
+// is the human's edit.
+function policyLoosening(scope, names, toolName, input) {
+  if (!names.some((entry) => entry.inside && entry.relative === POLICY_FILE) || toolName === "NotebookEdit") {
+    return null;
+  }
+  const file = path.join(scope.root, POLICY_FILE);
+  const before = readTextOrNull(file);
+  const after = afterWrite(toolName, input || {}, before);
+  if (after === undefined || !loosens(destructivePolicyOf(before), destructivePolicyOf(after))) {
+    return null;
+  }
+  return `this edit loosens the destructive-command policy in ${POLICY_FILE} (destructiveCommands, allowDestructive, worktrees.primaryLocked). What the agent may destroy is the human's decision: ask them to make this edit.`;
+}
+
+// `rm`, `unlink`, `trash`, `git rm` of the policy file: the defaults come back,
+// and a project's primaryLocked goes with them. Read through `cd`, `bash -c`,
+// `xargs` as the destructive commands are; a path the reader cannot place is
+// unchecked when it may be the policy file.
+function removesPolicyFile(ctx, removed, caseInsensitive) {
+  const isPolicy = (entry) => entry.inside && (caseInsensitive ? entry.relative.toLowerCase() === POLICY_FILE : entry.relative === POLICY_FILE);
+  for (const { cwd, paths } of removed) {
+    for (const operand of paths) {
+      if (EXPANDS.test(operand) || (cwd === null && !path.isAbsolute(operand))) {
+        if (/harness\.json|[*?[]|[$`]/.test(operand) && !ctx.issues.includes(DESTRUCTIVE_EXPANSION)) {
+          ctx.issues.push(DESTRUCTIVE_EXPANSION);
+        }
+        continue;
+      }
+      const file = path.resolve(cwd === null ? ctx.cwd : cwd, operand);
+      if (ctx.scopes.some((scope) => resolveTargets(ctx, scope, file).some(isPolicy))) {
+        return `this command removes ${POLICY_FILE}, which holds the destructive-command policy; without it the defaults apply and a locked primary checkout is unlocked. Ask the human.`;
+      }
+    }
+  }
+  return null;
+}
+
+// What an `onPath("trash")` is worth: the alternative `rm -r` names.
+function onPath(program) {
+  const extensions = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
+  return (process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean)
+    .some((dir) => extensions.some((ext) => fs.existsSync(path.join(dir, program + ext))));
+}
+
+const destructiveHost = {
+  exists: (file) => fs.existsSync(file),
+  home: () => os.homedir(),
+  onPath,
+};
+
+// git, fresh: the work tree changes between two calls of a long-lived host, so
+// the memo `git()` keeps for roots is not used. `{ out }`, with `issue` when git
+// did not answer (a timeout, a refused repository): the check is then unchecked.
+function gitNow(cwd, args) {
+  try {
+    return { out: execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 2000 }) };
+  } catch (err) {
+    if (err && (err.signal || err.code === "ETIMEDOUT")) {
+      return { out: null, issue: GIT_TIMEOUT };
+    }
+    if (/dubious ownership|safe\.directory/.test(String((err && err.stderr) || ""))) {
+      return { out: null, issue: GIT_REFUSED };
+    }
+    return { out: null };
+  }
+}
+
+function fileList(lines) {
+  const shown = lines.slice(0, 5).join(", ");
+  return lines.length > 5 ? `${shown} and ${lines.length - 5} more` : shown;
+}
+
+const porcelainFiles = (out) => (out || "").split(/\r?\n/).filter(Boolean).map((line) => line.slice(3));
+const EXPANDS = /[$`]/;
+
+// Whether a finding applies here, and what it would destroy now:
+// `{ applies, detail }`, or `{ unchecked }` when the disk could not say.
+function settle(finding, policy) {
+  const check = finding.check;
+  if (!check) {
+    return { applies: true, detail: "" };
+  }
+  if (finding.cwd === null) {
+    return check.kind === "changes" ? { applies: true, detail: "" } : { unchecked: DESTRUCTIVE_UNKNOWN_CWD };
+  }
+  if (check.kind === "primary") {
+    const { out, issue } = gitNow(finding.cwd, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"]);
+    if (issue) {
+      return { unchecked: issue };
+    }
+    const [gitDir, commonDir] = (out || "").split(/\r?\n/).filter(Boolean);
+    if (!gitDir || !commonDir || path.resolve(gitDir) !== path.resolve(commonDir)) {
+      return { applies: false };
+    }
+    // Locked by the policy the call runs under, or by the primary checkout's own
+    // (`git -C <primary> switch` from a linked worktree).
+    return { applies: policy.primaryLocked || loadPolicy(path.dirname(path.resolve(commonDir))).primaryLocked, detail: "" };
+  }
+  if (check.kind === "dirty") {
+    if (check.paths.some((word) => EXPANDS.test(word))) {
+      return { unchecked: DESTRUCTIVE_EXPANSION };
+    }
+    const { out, issue } = gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no", "--", ...check.paths]);
+    if (issue) {
+      return { unchecked: issue };
+    }
+    const files = porcelainFiles(out);
+    return { applies: files.length > 0, detail: fileList(files) };
+  }
+  if (check.kind === "changes") {
+    return { applies: true, detail: fileList(porcelainFiles(gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no"]).out)) };
+  }
+  // clean: what `git clean -n` with the same flags lists.
+  const flags = check.flags.map((letter) => `-${letter}`);
+  const { out } = gitNow(finding.cwd, ["clean", "-n", ...flags, "--", ...check.paths.filter((word) => !EXPANDS.test(word))]);
+  const files = (out || "").split(/\r?\n/).filter(Boolean).map((line) => line.replace(/^Would remove /, ""));
+  return { applies: true, detail: fileList(files) };
+}
+
+// A command line in a refusal is logged: no credential in a URL, no long word.
+function shown(command) {
+  const text = command.replace(/\/\/[^/\s@]+@/g, "//***@").split(" ").map((word) => (word.length > 60 ? `${word.slice(0, 57)}...` : word)).join(" ");
+  return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+}
+
+function destructiveReason(finding, detail) {
+  const now = detail ? ` (here: ${detail})` : "";
+  return `\`${shown(finding.command)}\` is a destructive command (${finding.rule}): it destroys ${finding.destroys}${now}. Instead: ${finding.alternative}. A destructive step waits for the human: say what it would destroy and how to undo it, then ask. Only they can allow it (destructiveCommands, allowDestructive in ${POLICY_FILE}).`;
+}
+
+function allowedByPolicy(prefixes, words) {
+  return prefixes.some((prefix) => {
+    const expected = prefix.trim().split(/\s+/);
+    return expected.length <= words.length && expected.every((word, i) => word === words[i]);
+  });
+}
+
+// `{ deny }` with the refusal, or `{ warnings }` (warn mode). An unsettled check
+// joins `ctx.issues`: the call is unchecked unless something else refuses it.
+function judgeDestructive(ctx, { findings, unchecked }) {
+  const policy = ctx.scopes[0].policy;
+  if (policy.destructiveCommands === "off") {
+    return { warnings: [] };
+  }
+  for (const entry of unchecked) {
+    if (!ctx.issues.includes(entry.reason)) {
+      ctx.issues.push(entry.reason);
+    }
+  }
+  const warnings = [];
+  for (const finding of findings) {
+    if (allowedByPolicy(policy.allowDestructive, finding.words)) {
+      continue;
+    }
+    const settled = settle(finding, policy);
+    if (settled.unchecked) {
+      if (!ctx.issues.includes(settled.unchecked)) {
+        ctx.issues.push(settled.unchecked);
+      }
+      continue;
+    }
+    if (!settled.applies) {
+      continue;
+    }
+    const reason = destructiveReason(finding, settled.detail);
+    if (policy.destructiveCommands === "warn") {
+      warnings.push(reason);
+    } else {
+      return { deny: { decision: "deny", reason, path: null } };
+    }
+  }
+  return { warnings };
+}
+
 function decideBash(toolInput, hook, root, caseInsensitive) {
   // A missing or renamed `command` is not an empty one: only `""` has nothing to check.
   if (!toolInput || typeof toolInput !== "object" || typeof toolInput.command !== "string") {
@@ -757,6 +1013,9 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   }
 
   const ctx = context(hook, root);
+  // A shell command writes the policy file blind: the guard cannot read what it
+  // changes, so it is refused like a blocked path (story 29-03).
+  const shellCtx = { ...ctx, scopes: ctx.scopes.map((scope) => ({ ...scope, policy: { ...scope.policy, blockedPaths: [...scope.policy.blockedPaths, POLICY_FILE] } })) };
 
   for (const entry of readShellWrites(command, ctx.cwd, shellHost, { trees: true })) {
     if (entry.unchecked) {
@@ -764,10 +1023,20 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
       continue;
     }
 
-    const found = judgeShellEntry(ctx, entry, caseInsensitive);
+    const found = judgeShellEntry(shellCtx, entry, caseInsensitive);
     if (found) {
-      return { decision: "deny", reason: denialFor(entry, found), path: found.relative };
+      const policyFile = found.hit === POLICY_FILE && !ctx.scopes.some((scope) => scope.policy.blockedPaths.includes(POLICY_FILE));
+      const reason = policyFile
+        ? `this command writes ${found.relative}${viaNote(found, entry.target)}, the policy file: from a shell the guard cannot read what it changes in what the agent may destroy. Edit it with a write tool, or ask the human.`
+        : denialFor(entry, found);
+      return { decision: "deny", reason, path: found.relative };
     }
+  }
+
+  const reading = require("./destructive").readDestructive(command, { cwd: ctx.cwd, host: destructiveHost });
+  const removal = removesPolicyFile(ctx, reading.removed, caseInsensitive);
+  if (removal) {
+    return { decision: "deny", reason: removal, path: POLICY_FILE };
   }
 
   const secret = ctx.scopes
@@ -782,13 +1051,19 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     };
   }
 
+  const destructive = judgeDestructive(ctx, reading);
+  if (destructive.deny) {
+    return destructive.deny;
+  }
+  const warned = destructive.warnings.length ? { warnings: destructive.warnings } : {};
+
   // A real failure (ELOOP, a git timeout) is named before a shell-reading limit:
   // `doctor` skips the limits, and `> "$X"; > loop/x` must not hide the ELOOP.
   if (ctx.issues.length) {
-    return { decision: "unchecked", reason: ctx.issues.find((reason) => !isShellLimit(reason)) || ctx.issues[0] };
+    return { decision: "unchecked", reason: ctx.issues.find((reason) => !isShellLimit(reason)) || ctx.issues[0], ...warned };
   }
 
-  return { decision: "allow", reason: "no blocked write target or secret detected" };
+  return { decision: "allow", reason: "no blocked write target or secret detected", ...warned };
 }
 
 // A denial used to be exit 2 and a line on stderr, and then nothing. That is
@@ -865,6 +1140,14 @@ function recordDenial(event) {
 // `doctor` read, so silence is never mistaken for protection.
 function recordUnchecked(event) {
   recordEvent("guard-unchecked.jsonl", event);
+}
+
+// `destructiveCommands: "warn"`: the call goes ahead, and each destructive command
+// it runs is said and kept — in its own file, since `denials.jsonl` means refused.
+function recordWarnings({ root, hook, result }) {
+  for (const warning of (result && result.warnings) || []) {
+    recordEvent("guard-warnings.jsonl", { root, hook, result: { reason: warning, path: null } });
+  }
 }
 
 // Appended to what the agent reads (never to the denial log). Observed on
@@ -944,13 +1227,25 @@ function guardCommand({ getFlagValue, flags }) {
     process.exit(2);
   }
 
+  const warnings = result.warnings || [];
+  if (warnings.length) {
+    recordWarnings({ root, hook, result });
+    for (const warning of warnings) {
+      process.stderr.write(`coding-flow guard: warning: ${warning}\n`);
+    }
+  }
+
   if (flags.has("--json")) {
     process.stdout.write(
       `${JSON.stringify({
         hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
         reason: result.reason,
+        ...(warnings.length ? { warnings, systemMessage: warnings.join("\n") } : {}),
       })}\n`,
     );
+  } else if (warnings.length) {
+    // No permission decision: the user's own permission rules still apply.
+    process.stdout.write(`${JSON.stringify({ systemMessage: warnings.map((warning) => `coding-flow guard: warning: ${warning}`).join("\n") })}\n`);
   }
 
   process.exit(0);
@@ -972,6 +1267,7 @@ function evaluate(hook, root) {
     if (result.decision === "unchecked") {
       recordUnchecked({ root: roots[0], hook, result });
     }
+    recordWarnings({ root: roots[0], hook, result });
 
     return result;
   } catch (err) {
