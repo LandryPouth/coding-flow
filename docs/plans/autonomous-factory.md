@@ -272,6 +272,10 @@ and records where it stands: [`autonomous-run.md`](autonomous-run.md).
    human**) and 29-01 (**`ai-flow scan`**), both added 2026-11-14 after the
    study of Shipmoor and agentic-os, proven first by the `epic-run`
    workflow's proof gate.
+0b. **One workspace, several repositories** (epic 30, added 2026-11-22 at
+   the maintainer's request for tse-binam): after step 0, since s3 judges
+   `ai-flow scan` (29-01) per repository and s4 extends the guard 29-03
+   changes. s1 → s2 ∥ s3 → s4 ∥ s6 → s5.
 1. **First driven run early**: 18-01 (journal) → 19-01 (failing test names)
    → 29-02 (changed tests proven collected) → 19-07 (tests read-only) →
    20-01 (one story headless), then 20-01 runs

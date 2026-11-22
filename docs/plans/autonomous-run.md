@@ -1,4 +1,4 @@
-# Autonomous run — epics 13 to 29 (from 2026-11-14)
+# Autonomous run — epics 13 to 30 (from 2026-11-14)
 
 The maintainer handed the backlog to an unattended run on 2026-11-14 ("je vais
 te laisser tourner… jusqu'à mardi… tout devra être auto"). This file is the
@@ -39,6 +39,12 @@ stand-in for epic 20:
 - A product decision the spec leaves open is decided by the run, written in
   the story's `plan.md` under Decisions, and listed in the run report — the
   maintainer reviews afterwards, not during.
+- Memory vault (`~/dev/.ai-memory-vault`, read its `AGENTS.md` first): at
+  every release and at every long stop, update the run note
+  `workflows/epic-run/runs/2026-11-14-coding-flow-epics-13-30.md` and add or
+  increment lessons in `workflows/epic-run/lessons.md` (`proposed` only), then
+  commit `vault: …` there. Only those two places; never secrets, command output,
+  code or absolute paths.
 - Another session commits to `develop` (epic 29 was re-planned by one on
   2026-11-14): never commit files the run did not write.
 
@@ -86,6 +92,22 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
 
+### Wave 2b — one workspace, several repositories (epic 30) · *release 0.17.0*
+
+Added 2026-11-22 at the maintainer's request (asked 2026-11-21 for tse-binam:
+`api/` + `web/` in one container folder). After wave 2 because s3 judges
+`ai-flow scan` (29-01) per repository and s4 extends the guard 29-03 changes.
+The assumptions settled in each story's `plan.md` stand; the run lists them in
+its report.
+
+s1 first (walking skeleton), then s2 ∥ s3, then s4 ∥ s6, then s5 (needs s2's
+per-repository branches).
+
+- [ ] 30-01 a story is verified in each of its repos
+- [ ] 30-02 each repo gets its worktree and lands (STRICT)  - [ ] 30-03 coverage and scan per repo
+- [ ] 30-04 the workspace guard holds in each repo  - [ ] 30-06 a workspace is installed in one command
+- [ ] 30-05 one PR per repo and a status that sees them
+
 ### Wave 3 — first driven run (step 1) · two lanes
 
 Lane A (serial, the order the factory plan fixes): 18-01 journal → 19-01 a
@@ -98,19 +120,19 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 - [ ] 18-01  - [ ] 19-01  - [ ] 29-02  - [ ] 19-07  - [ ] 20-01
 - [ ] 18-02  - [ ] 18-07  - [ ] 18-03  - [ ] 18-06
 
-### Wave 4 — the rest of 18 → 19 → 20 · *release 0.17.0*
+### Wave 4 — the rest of 18 → 19 → 20 · *release 0.18.0*
 
 - [ ] 18-04 ∥ 19-03 → 18-05 (after 18-02) ∥ 19-04
 - [ ] 19-02 (after 19-01) ∥ 19-06 (after 19-05)
 - [ ] 20-02 → 20-03 → 20-04 → 20-05 → 20-06 → 20-07 (a chain)
 
-### Wave 5 — the run knows why it stopped (step 3) · *release 0.18.0*
+### Wave 5 — the run knows why it stopped (step 3) · *release 0.19.0*
 
 - [ ] 27-01, then 27-02…27-07 two at a time
 - [ ] 26-01, 26-02 (notify), 26-05
 - [ ] 24-01, 24-02, 24-07 → 26-04 → epic 25
 
-### Wave 6 — learning (step 4) · *release 0.19.0*
+### Wave 6 — learning (step 4) · *release 0.20.0*
 
 - [ ] epic 21 → epic 22 → epic 23 → 28-02 → 24-03…24-06 (team; re-read
       against the first driven runs before starting)
@@ -151,3 +173,5 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   Lane A of wave 1 is done. Release 0.15.0 cut (epics 13, 16, 17-01/02).
   The scratchpad was cleared during the pause: `land.sh` was rewritten from
   this file's description. Next: 17-03, then 17-04 alone, then wave 2.
+- 2026-11-22 — epic 30 added to the run as wave 2b at the maintainer's request
+  (it was out of the run when planned); later releases shift by one minor.
