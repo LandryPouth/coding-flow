@@ -7,7 +7,7 @@ not ok 1 - the router exposes list, create and edit for vendors
   ---
   duration_ms: 9.203542
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:19:1'
+  location: '/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:19:1'
   failureType: 'testCodeFailure'
   error: 'missing route: GET /vendors'
   code: 'ERR_ASSERTION'
@@ -16,7 +16,7 @@ not ok 1 - the router exposes list, create and edit for vendors
   actual: 'undefined'
   operator: '=='
   stack: |-
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:23:12)
+    TestContext.<anonymous> (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:23:12)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.start (node:internal/test_runner/test:944:17)
@@ -27,14 +27,14 @@ not ok 2 - a vendor is created and listed
   ---
   duration_ms: 0.63891
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:27:1'
+  location: '/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:27:1'
   failureType: 'testCodeFailure'
   error: 'router.POST /vendors is not a function'
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:29:19)
+    create (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:29:19)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -47,14 +47,14 @@ not ok 3 - a vendor is edited in place
   ---
   duration_ms: 0.729617
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:40:1'
+  location: '/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:40:1'
   failureType: 'testCodeFailure'
   error: 'router.POST /vendors is not a function'
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:42:19)
+    create (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:42:19)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -67,14 +67,14 @@ not ok 4 - a blank name and a missing country are both refused
   ---
   duration_ms: 0.516579
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:51:1'
+  location: '/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:51:1'
   failureType: 'testCodeFailure'
   error: 'router.POST /vendors is not a function'
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:54:16)
+    create (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:54:16)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -87,14 +87,14 @@ not ok 5 - two vendors cannot share a name
   ---
   duration_ms: 3.630982
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:58:1'
+  location: '/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:58:1'
   failureType: 'testCodeFailure'
   error: 'router.POST /vendors is not a function'
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:60:3)
+    create (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:60:3)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -107,14 +107,14 @@ not ok 6 - vendors do not leak into the expense report
   ---
   duration_ms: 0.659978
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:68:1'
+  location: '/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:68:1'
   failureType: 'testCodeFailure'
   error: 'router.POST /vendors is not a function'
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    create (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-02-crud-0hTV4n/spec/accept.spec.js:70:3)
+    create (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:17:57)
+    TestContext.<anonymous> (/tmp/bench-02-crud-0hTV4n/spec/accept.spec.js:70:3)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)

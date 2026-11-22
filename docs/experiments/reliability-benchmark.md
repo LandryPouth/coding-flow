@@ -248,7 +248,9 @@ Against the 2026-10-17 vanilla arm ($0.97, 217s, 4/5): cost 4.1×, time 2.6×.
 
 **The lighter skills did not make the arm cheaper, and 16-01 made it stop.** Cost
 went up 18 % ($3.36 → $3.98) and first-pass success went down (3/5 → 2/5). The
-cause is one behaviour, not the word count: in three of five tasks `/flow-plan`
+cause is most likely one behaviour, not the word count — one run (N=1), on a
+newer `claude` build (2.1.311 against 2.1.302), with `--allowedTools Bash` added
+and the tasks run one after another, so it is not isolated: in three of five tasks `/flow-plan`
 wrote an `Assumption (unconfirmed):` line and ended at `not ready`, and
 `/flow-run` then refused to implement — exactly what 16-01 asks for, and in a
 headless run nobody can answer. Tasks 1 and 4, where the plan wrote no
@@ -283,7 +285,7 @@ unconfirmed assumption, passed first time at about the first run's cost.
   read as "go", both stories were implemented and passed: $0.35 for the plan,
   $0.48 for the re-prompt. Tasks 3 (+$0.37) and 2 (+$0.25) are the whole cost
   rise; the other three moved by a few cents.
-- **Task 1 (fix): a red reproduction came before the fix.** The story records
+- **Task 1 (fix): a red reproduction came before the fix (self-reported).** The story records
   "Red before fix (`npm test`): `formatAmount(-1234)` returned `$-12.34`
   (expected `-$12.34`)" before the fix line, and `formatAmount` changed after
   (`01-fix-B/run-0.json`; the story file in the workspace, which is the agent's

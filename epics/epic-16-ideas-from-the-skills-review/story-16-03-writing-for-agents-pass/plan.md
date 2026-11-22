@@ -51,3 +51,12 @@
 ```bash
 npm test
 ```
+
+### Review (2026-11-22, independent reviewer: PASS, 3 P2, all fixed)
+
+- Machine paths in two raw `accept-0.txt` stack traces were rewritten to `/tmp/`
+  (the summarizer reads only PASS/FAIL lines; the pinned table is unchanged).
+- Task 1's red step is marked self-reported in the write-up and the CHANGELOG:
+  the workspace story file and transcript were not kept.
+- The cause of the regression is stated as "most likely", with the confounders
+  named (N=1, newer `claude` build, `--allowedTools Bash`, sequential tasks).

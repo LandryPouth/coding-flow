@@ -7,7 +7,7 @@ not ok 1 - a rejected expense is not counted in the totals
   ---
   duration_ms: 6.537171
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-05-cross-module-aGDblh/spec/accept.spec.js:24:1'
+  location: '/tmp/bench-05-cross-module-aGDblh/spec/accept.spec.js:24:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be loosely deep-equal:
@@ -29,7 +29,7 @@ not ok 1 - a rejected expense is not counted in the totals
     travel: 35000
   operator: 'deepEqual'
   stack: |-
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-05-cross-module-aGDblh/spec/accept.spec.js:31:10)
+    TestContext.<anonymous> (/tmp/bench-05-cross-module-aGDblh/spec/accept.spec.js:31:10)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.start (node:internal/test_runner/test:944:17)
@@ -40,7 +40,7 @@ not ok 2 - a category emptied entirely by rejections disappears rather than read
   ---
   duration_ms: 1.051365
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-05-cross-module-aGDblh/spec/accept.spec.js:34:1'
+  location: '/tmp/bench-05-cross-module-aGDblh/spec/accept.spec.js:34:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be loosely deep-equal:
@@ -64,7 +64,7 @@ not ok 2 - a category emptied entirely by rejections disappears rather than read
     travel: 10000
   operator: 'deepEqual'
   stack: |-
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-05-cross-module-aGDblh/spec/accept.spec.js:41:10)
+    TestContext.<anonymous> (/tmp/bench-05-cross-module-aGDblh/spec/accept.spec.js:41:10)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -83,7 +83,7 @@ not ok 4 - the summary agrees with the totals
   ---
   duration_ms: 14.186288
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-05-cross-module-aGDblh/spec/accept.spec.js:54:1'
+  location: '/tmp/bench-05-cross-module-aGDblh/spec/accept.spec.js:54:1'
   failureType: 'testCodeFailure'
   error: "'meals: $60.00\\ntravel: $100.00' == 'travel: $100.00'"
   code: 'ERR_ASSERTION'
@@ -94,7 +94,7 @@ not ok 4 - the summary agrees with the totals
     travel: $100.00
   operator: '=='
   stack: |-
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-05-cross-module-aGDblh/spec/accept.spec.js:61:10)
+    TestContext.<anonymous> (/tmp/bench-05-cross-module-aGDblh/spec/accept.spec.js:61:10)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -107,7 +107,7 @@ not ok 5 - rejecting through the domain, not the router, is also excluded
   ---
   duration_ms: 1.480373
   type: 'test'
-  location: '/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-05-cross-module-aGDblh/spec/accept.spec.js:64:1'
+  location: '/tmp/bench-05-cross-module-aGDblh/spec/accept.spec.js:64:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be loosely deep-equal:
@@ -129,7 +129,7 @@ not ok 5 - rejecting through the domain, not the router, is also excluded
     travel: 35000
   operator: 'deepEqual'
   stack: |-
-    TestContext.<anonymous> (/tmp/claude-1000/-home-landry-pouth-dev-tools-coding-flow/2b62b500-fbeb-419a-9160-f7db84667cdf/scratchpad/tmp-1603/bench-05-cross-module-aGDblh/spec/accept.spec.js:76:10)
+    TestContext.<anonymous> (/tmp/bench-05-cross-module-aGDblh/spec/accept.spec.js:76:10)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
