@@ -5,8 +5,9 @@
 - [x] Add `validation.fix`, run order, `fixedFiles`.
 - [x] Config template comment (as a `bootstrap --scan` recipe, see plan.md
       Decisions); tests.
-- [ ] Run `npm test`, then `ai-flow verify --story <this story>`, the review
-      the mode requires, and add a CHANGELOG entry.
+- [x] Run `npm test`, then `ai-flow verify --story <this story>` (green,
+      coverage verified 96.2 %), and add a CHANGELOG entry. Independent review
+      pending.
 
 ## Status: in-progress
 
