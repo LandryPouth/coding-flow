@@ -282,3 +282,21 @@ test('a shallow clone counts its fetched refs', (t) => {
   git(dir, ['clone', '-q', '--depth', '1', '--no-single-branch', `file://${upstream}`, '.']);
   assert.equal(statusJson(dir).nextEpicNumber, '10');
 });
+
+test('a project in a subdirectory reads each ref under its own path', (t) => {
+  const dir = tempDir(t);
+  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['config', 'user.email', 'test@example.com']);
+  git(dir, ['config', 'user.name', 'Test']);
+  git(dir, ['config', 'commit.gpgsign', 'false']);
+  const app = path.join(dir, 'app');
+  fs.mkdirSync(app);
+  assert.equal(run(app, ['init']).code, 0);
+  commit(dir, 'init');
+  git(dir, ['checkout', '-q', '-b', 'other']);
+  write(dir, 'app/epics/epic-03-x/index.md', '# x\n');
+  write(dir, 'epics/epic-09-root-level/index.md', '# not this project\n');
+  commit(dir, 'epics');
+  git(dir, ['checkout', '-q', 'main']);
+  assert.equal(statusJson(app).nextEpicNumber, '04');
+});

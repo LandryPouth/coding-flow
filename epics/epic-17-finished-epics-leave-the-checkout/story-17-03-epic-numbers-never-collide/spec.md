@@ -14,13 +14,15 @@ even after epic 08 is archived.
   - the `epic-NN-` directories in the working tree;
   - the `<!-- coding-flow:archived NN slug -->` entries in `epics/INDEX.md`;
   - the `epic-NN-` directories under `epics/` on every local branch and
-    remote-tracking ref (`git for-each-ref`, then `git ls-tree --name-only
-    <ref> -- epics/`), with no fetch and no network.
+    remote-tracking ref (`git for-each-ref`, then one `git cat-file --batch`
+    fed `<ref>:<prefix>epics` for all of them, read as raw tree bytes so
+    `core.quotePath` cannot change a name), with no fetch and no network.
 
   Numbers are zero-padded to the width already in use (`16`, not `016`).
 - **It is exposed** in `ai-flow status --json` as `nextEpicNumber`, together
-  with `nextEpicNumberSources`: which refs were scanned, and whether the
-  remote refs are as of the last fetch. `ai-flow archive --refresh` prints
+  with `nextEpicNumberSources`: how many refs were scanned, the refs that
+  hold at least one epic, and whether the remote refs are as of the last
+  fetch. `ai-flow archive --refresh` prints
   it.
 - **Doctor**, next to the existing `duplicate_epic_number` check:
   - `archived_epic_number_reused`: a directory on disk carries a number that
@@ -56,7 +58,7 @@ even after epic 08 is archived.
 
 ## Edge Cases
 
-- **Many refs.** One `ls-tree` per ref is cheap, but cap the scan (for
+- **Many refs.** One batched read for every ref is cheap, but cap the scan (for
   example at 200 refs) and say so in `nextEpicNumberSources` when the cap
   is hit.
 - **Story numbers inside an epic**: unchanged. They follow the epic number,

@@ -36,6 +36,18 @@
   `test/epic-numbers.test.js`, not `test/doctor.test.js`, so all of the
   story's criteria are read in one place.
 - **Width** is the widest number seen, never less than 2.
+- **One batched read, raw bytes (review P1, P2-1).** `git ls-tree` quotes
+  non-ASCII and special names under `core.quotePath`, so a slug never matched
+  the disk. A single `git cat-file --batch` reads every ref's `epics` tree
+  as raw bytes; refs sharing a tree are parsed once; `<prefix>` from
+  `rev-parse --show-prefix` keeps a project in a subdirectory on its own path.
+  Measured on a repository with 200 branches (`bench1703.sh` in the run's
+  scratchpad): `status --json` 636 ms → 123 ms (90 ms without the scan),
+  `doctor --json` 767 ms → 233 ms (236 ms without it).
+- **One warning per conflicting epic (P2-2, P2-3).** It lists every ref that
+  carries it and says to `git fetch --prune` or delete a stale branch.
+- **`refs` lists only the refs that hold an epic (P2-4)**; `refsScanned`
+  counts them all.
 
 ## Acceptance Traceability
 
