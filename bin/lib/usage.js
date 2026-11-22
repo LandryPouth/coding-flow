@@ -24,6 +24,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
                 [--p0 n] [--p1 n] [--p2 n] [--p3 n] [--json]
   ai-flow trace [--story path] [--json]
   ai-flow archive <epic-dir | NN> [--dry-run] [--json]   (a finished, merged epic leaves the checkout)
+  ai-flow archive --refresh [--dry-run] [--json]   (rewrite epics/INDEX.md's live section: every epic, every story's written status)
   ai-flow report [--raw] [--json] [--out file]
   ai-flow ci init [--force] [--dry-run]
   ai-flow plugin sync|check [--json] [--dry-run]

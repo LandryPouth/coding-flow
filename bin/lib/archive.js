@@ -18,7 +18,23 @@ const { log, toPortable } = require("./util");
 const { readConfig } = require("./config");
 const { defaultBranch } = require("./policy");
 const { buildStatusModel } = require("./status");
-const { INDEX_FILE, indexPath, indexKind, readIndex, archivedEpics, withArchivedEntry, parseEpicName, sameEpic } = require("./epic-index");
+const { getStorage } = require("./storage");
+const { writtenStatus } = require("./storage/local");
+const {
+  INDEX_FILE,
+  indexPath,
+  indexKind,
+  readIndex,
+  archivedEpics,
+  withArchivedEntry,
+  parseEpicName,
+  sameEpic,
+  renderLiveSection,
+  liveSectionOf,
+  liveSectionBroken,
+  withLiveSection,
+  inert,
+} = require("./epic-index");
 
 // The only states that mean "finished". `## Status:` accepts any written word,
 // so anything else — planned, in-progress, blocked, but also todo, draft, wip —
@@ -150,6 +166,7 @@ function indexRefusals() {
   const kind = indexKind(cwd);
   if (kind === "symlink") return [`${file} is a symbolic link: the entry would be written outside the repository`];
   if (kind === "other") return [`${file} is not a regular file`];
+  if (liveSectionBroken(readIndex(cwd))) return [`${file} has a broken live section: fix its index:start / index:end markers by hand`];
   const state = git(["status", "--porcelain", "--", INDEX_FILE]).replace(/\n$/, "");
   // Clean, untracked, or staged with nothing more in the work tree (a previous
   // archive in the same uncommitted batch) is fine.
@@ -216,7 +233,7 @@ function storyRow(story) {
 }
 
 function cell(text) {
-  return String(text).replace(/\|/g, "\\|");
+  return inert(text).replace(/\|/g, "\\|");
 }
 
 function buildEntry({ name, sha, stories, date }) {
@@ -259,6 +276,97 @@ function plan(name) {
   return { name, rel: `epics/${name}`, reasons, stories, sha: baseSha };
 }
 
+const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+// The live section's input (story 17-02): every epic on disk, each story with
+// its written status, in directory order. Null when the storage backend is not
+// local: a Spec Kit or remote backend has no epic directories to list.
+function liveEpics() {
+  const config = readConfig(cwd);
+  if (config.storage && config.storage !== "local") return null;
+  return getStorage(cwd, config)
+    .listEpics()
+    .sort(byName)
+    .map((epic) => ({
+      name: epic.name,
+      title: epicTitle(epic.name),
+      stories: epic.stories
+        .slice()
+        .sort(byName)
+        .map((story) => ({ ...storyRow(story), status: writtenStatus(path.join(cwd, story.path)) })),
+    }));
+}
+
+// What `doctor` reports: null when there is nothing to judge (no local epics,
+// no index and no epic, an INDEX.md archive already refuses to touch), else
+// { stale, reason }.
+function indexFreshness() {
+  const epics = liveEpics();
+  const kind = indexKind(cwd);
+  if (!epics || kind === "symlink" || kind === "other") return null;
+  const existing = readIndex(cwd);
+  if (existing === null) {
+    return epics.length > 0 ? { stale: true, reason: `epics/ holds ${epics.length} epic(s) and has no ${toPortable(INDEX_FILE)}` } : null;
+  }
+  const file = toPortable(INDEX_FILE);
+  if (liveSectionBroken(existing)) {
+    return { stale: true, reason: `${file} has a broken live section — fix its index:start / index:end markers by hand` };
+  }
+  const current = liveSectionOf(existing);
+  // A hand-written INDEX.md, no markers, no epic on disk: nothing to judge.
+  if (current === null && epics.length === 0) return null;
+  if (current === renderLiveSection(epics)) return { stale: false };
+  return { stale: true, reason: current === null ? `${file} has no live section` : `${file} no longer matches the epics on disk` };
+}
+
+// The refresh, computed: { skip } (nothing to write), { refused }, or
+// { existing, next, section }. Writes nothing.
+function planRefresh() {
+  const epics = liveEpics();
+  if (!epics) return { skip: "the storage backend is not local: there are no epic directories to index" };
+  const kind = indexKind(cwd);
+  const file = toPortable(INDEX_FILE);
+  if (kind === "symlink") return { refused: `${file} is a symbolic link: the index would be written outside the repository` };
+  if (kind === "other") return { refused: `${file} is not a regular file` };
+  const existing = readIndex(cwd);
+  if (existing === null && epics.length === 0) return { skip: "no epic directory under epics/: no index to write" };
+  const section = renderLiveSection(epics);
+  try {
+    return { existing, next: withLiveSection(existing, section), section, count: epics.length };
+  } catch (error) {
+    return { refused: error.message };
+  }
+}
+
+// `archive --refresh` (and `doctor --fix`): rewrites the live section only,
+// never stages. `quiet` prints only a change or a refusal.
+function refreshIndex({ dryRun = false, json = false, quiet = false } = {}) {
+  const planned = planRefresh();
+  const file = toPortable(INDEX_FILE);
+  const changed = Boolean(planned.next) && planned.next !== planned.existing;
+  const result = { file, dryRun, changed, ...(planned.skip ? { skip: planned.skip } : {}), ...(planned.refused ? { refused: planned.refused } : {}) };
+
+  if (changed && !dryRun) {
+    fs.mkdirSync(path.dirname(indexPath(cwd)), { recursive: true });
+    fs.writeFileSync(indexPath(cwd), planned.next);
+  }
+  if (planned.refused && !quiet) process.exitCode = 1;
+
+  if (json) {
+    log(JSON.stringify({ ...result, ...(dryRun && planned.section ? { section: planned.section } : {}) }, null, 2));
+  } else if (planned.refused) {
+    log(`Refresh refused: ${planned.refused}`);
+  } else if (dryRun && planned.section) {
+    log(`Dry run — nothing was written. The live section of ${file} would be:`);
+    log(planned.section);
+  } else if (changed) {
+    log(`Refreshed ${file}: live section lists ${planned.count} epic(s).`);
+  } else if (!quiet) {
+    log(planned.skip ? `Nothing to refresh: ${planned.skip}.` : `${file} is current.`);
+  }
+  return result;
+}
+
 // `git rm`, then the entry, then staging the entry. Any failure puts the
 // directory, the index and INDEX.md back as they were.
 function writeArchive(state) {
@@ -273,7 +381,10 @@ function writeArchive(state) {
   try {
     git(["rm", "-r", "-q", "--", state.rel]);
     fs.mkdirSync(path.dirname(indexPath(cwd)), { recursive: true });
-    fs.writeFileSync(indexPath(cwd), withArchivedEntry(existing, state.entry));
+    // After the `git rm`: the live section no longer lists the archived epic.
+    const withEntry = withArchivedEntry(existing, state.entry);
+    const epics = liveEpics();
+    fs.writeFileSync(indexPath(cwd), epics ? withLiveSection(withEntry, renderLiveSection(epics)) : withEntry);
     if (indexWasClean) git(["add", "--", INDEX_FILE]);
   } catch (error) {
     git(["checkout", "HEAD", "--", state.rel], { allowFail: true });
@@ -313,6 +424,7 @@ function report(state, { json, dryRun }) {
     log(`  1. git rm -r -q -- ${state.rel} (${state.files} file(s), staged, not committed)`);
     log(`  2. append this entry to ${toPortable(INDEX_FILE)}:`);
     log(state.entry.trimEnd().split("\n").map((line) => `       ${line}`).join("\n"));
+    log(`  3. refresh the live section of ${toPortable(INDEX_FILE)} (the epic leaves it)`);
   } else {
     log(`Archived ${state.rel}: ${state.files} file(s) staged for deletion.`);
     log(`  Entry appended to ${toPortable(INDEX_FILE)}${state.indexStaged ? " (staged)" : " (not staged: the file is new and untracked — add it with the deletion)"}.`);
@@ -366,13 +478,18 @@ function archive({ target, dryRun = false, json = false } = {}) {
 }
 
 function archiveCommand({ commandArgs, flags }) {
+  if (flags.has("--refresh")) {
+    refreshIndex({ dryRun: flags.has("--dry-run"), json: flags.has("--json") });
+    return;
+  }
   const target = commandArgs.find((arg) => !arg.startsWith("-"));
   if (!target) {
     log("Usage: ai-flow archive <epic-dir | NN> [--dry-run] [--json]");
+    log("       ai-flow archive --refresh [--dry-run] [--json]");
     process.exitCode = 1;
     return;
   }
   archive({ target, dryRun: flags.has("--dry-run"), json: flags.has("--json") });
 }
 
-module.exports = { archive, archiveCommand, resolveEpic };
+module.exports = { archive, archiveCommand, resolveEpic, refreshIndex, indexFreshness };

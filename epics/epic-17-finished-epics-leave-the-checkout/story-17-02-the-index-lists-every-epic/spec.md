@@ -31,21 +31,21 @@ archived epic ever existed only by luck.
 
 ## Acceptance Criteria
 
-- [ ] Given a temp repository with two epics, when `ai-flow archive
+- [x] Given a temp repository with two epics, when `ai-flow archive
       --refresh` runs, then `epics/INDEX.md` lists both, with every story's
       number, title and written status, between the markers.
-- [ ] Given that file, when it is refreshed again with nothing changed, then
+- [x] Given that file, when it is refreshed again with nothing changed, then
       it is byte-identical (idempotent).
-- [ ] Given hand-written text above the markers and an archived section
+- [x] Given hand-written text above the markers and an archived section
       below them, when it is refreshed, then both are byte-identical
       afterwards.
-- [ ] Given a story added after the last refresh, when `doctor` runs, then
+- [x] Given a story added after the last refresh, when `doctor` runs, then
       it warns `epic_index_stale`. After `doctor --fix`, the warning is gone.
-- [ ] Given a story whose proof went stale and whose written status did not
+- [x] Given a story whose proof went stale and whose written status did not
       change, when `doctor` runs, then it does not warn `epic_index_stale`.
-- [ ] Given `--dry-run`, then the new section is printed and nothing is
+- [x] Given `--dry-run`, then the new section is printed and nothing is
       written.
-- [ ] Given `flow-plan/SKILL.md`, then the Pipeline and `## Verification`
+- [x] Given `flow-plan/SKILL.md`, then the Pipeline and `## Verification`
       name `ai-flow archive --refresh`, and the skill evals pass.
 
 ## Edge Cases
