@@ -6,8 +6,8 @@
 - [x] Config template comment (as a `bootstrap --scan` recipe, see plan.md
       Decisions); tests.
 - [x] Run `npm test`, then `ai-flow verify --story <this story>` (green,
-      coverage verified 96.2 %), and add a CHANGELOG entry. Independent review
-      pending.
+      coverage verified), and add a CHANGELOG entry. Review 1: FAIL (1 P1,
+      4 P2), all fixed; re-review pending.
 
 ## Status: in-progress
 
@@ -20,7 +20,8 @@
   `bin/lib/harness-report.js`; listed by `verify --dry-run` and
   `run --dry-run`; skipped by `land` (`runFix: false`).
 - `bin/lib/fix-recipes.js` + `## Fixer Recipes` in `bootstrap --scan`.
-- Tests: `test/harness-fixers.test.js` (16), `test/worktree.test.js` (1).
+- Tests: `test/harness-fixers.test.js` (22), `test/worktree.test.js` (1),
+  `test/layering.test.js` (module classified).
 - Docs: README verify paragraph, `docs/rules-and-limits.md`, CHANGELOG.
 
 ### Rollback Notes

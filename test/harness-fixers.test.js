@@ -93,6 +93,76 @@ test('the proof is about the fixed tree: a second verify is answered from it', (
   assert.match(again.output, /already proved/);
 });
 
+// Ticks a box in a tracked story file and reformats `src/a.js`: both are files
+// the fixer changed, wherever they live.
+const TICKER = node(
+  "const fs=require('fs');" +
+  "fs.writeFileSync('epics/e/s/spec.md','- [x] done\\n');" +
+  "fs.writeFileSync('src/a.js','const x = 1;\\n')",
+);
+
+function storyFileProject(t) {
+  const dir = project(t, { fix: [TICKER], commands: [node('0')] }, { gitRepo: false });
+  fs.mkdirSync(path.join(dir, 'epics', 'e', 's'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'epics', 'e', 's', 'spec.md'), '- [ ] done\n');
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  return dir;
+}
+
+test('a tracked story file a fixer edits is listed, with no untracked file around', (t) => {
+  const dir = storyFileProject(t);
+  const evidence = JSON.parse(verify(dir).output);
+  assert.deepEqual(evidence.fixedFiles, ['epics/e/s/spec.md', 'src/a.js']);
+});
+
+test('a tracked story file a fixer edits is listed, with an untracked file around', (t) => {
+  const dir = storyFileProject(t);
+  fs.writeFileSync(path.join(dir, 'src', 'new.js'), 'const z = 3;\n');
+  const evidence = JSON.parse(verify(dir).output);
+  assert.deepEqual(evidence.fixedFiles, ['epics/e/s/spec.md', 'src/a.js']);
+});
+
+test('a path that starts with a space is listed whole', (t) => {
+  const dir = project(t, { fix: [node("require('fs').writeFileSync(' lead.js','x')")], commands: [node('0')] });
+  const evidence = JSON.parse(verify(dir).output);
+  assert.deepEqual(evidence.fixedFiles, [' lead.js']);
+});
+
+test('a fixer and a check with the same text keep their own time limits', (t) => {
+  const slow = node('setTimeout(()=>{},1500)');
+  const dir = project(t, { fix: [{ command: slow, timeoutMs: 300 }], commands: [{ command: slow, timeoutMs: 20000 }] });
+  const evidence = JSON.parse(verify(dir).output);
+  const [fixer, check] = evidence.results;
+  assert.equal(fixer.kind, 'fix');
+  assert.equal(fixer.timedOut, true);
+  assert.equal(check.ok, true, 'the check runs under its own, longer limit');
+});
+
+test('a proof made under other fixers is not reused', (t) => {
+  const dir = project(t, { fix: [FIXER], commands: [CHECK] });
+  assert.equal(verify(dir).code, 0);
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation.fix = [{ command: FIXER, timeoutMs: 60000 }];
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  const again = run(dir, ['verify']);
+  assert.equal(again.code, 0, again.output);
+  assert.doesNotMatch(again.output, /already proved/);
+  assert.match(again.output, /\[ok\] fix: /);
+});
+
+test('run --dry-run names the fixers that would run first', (t) => {
+  const dir = project(t, { fix: [FIXER], commands: [CHECK] });
+  fs.mkdirSync(path.join(dir, STORY), { recursive: true });
+  fs.writeFileSync(path.join(dir, STORY, 'story.md'), '# Demo\n\n## Status: planned\n');
+  const { code, output } = run(dir, ['run', '--dry-run']);
+  assert.equal(code, 0, output);
+  assert.match(output, /fixers first: node -e/);
+  assert.equal(fs.readFileSync(path.join(dir, 'src', 'a.js'), 'utf8'), 'const x=1\n');
+});
+
 test('a fixer that changes nothing lists no file', (t) => {
   const dir = project(t, { fix: [node('0')], commands: [node('0')] });
   const evidence = JSON.parse(verify(dir).output);
@@ -178,6 +248,15 @@ test('a fixer declared only in plan.md is refused unattended, and nothing runs',
   const evidence = JSON.parse(output);
   assert.match(evidence.refused, /not run unattended/);
   assert.equal(fs.readFileSync(path.join(dir, 'src', 'a.js'), 'utf8'), 'const x=1\n');
+});
+
+test('the same plan checks without the fixer run unattended: the fixer alone is what was refused', (t) => {
+  const dir = planProject(t, { commands: ['npm test'], fixers: [], scripts: { test: 'node -e "0"' } });
+  const { code, output } = run(dir, ['verify', '--story', STORY, '--json'], { CI: 'true' });
+  assert.equal(code, 0, output);
+  const evidence = JSON.parse(output);
+  assert.equal(evidence.refused, undefined);
+  assert.equal(evidence.ok, true);
 });
 
 test('plan.md fixers run with --allow-plan-commands, before the plan checks', (t) => {

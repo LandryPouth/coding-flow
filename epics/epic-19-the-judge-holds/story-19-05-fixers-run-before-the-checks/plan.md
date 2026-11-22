@@ -28,11 +28,17 @@
   (a bare project-script invocation passes, `--allow-plan-commands` opts in).
   Criterion 4 needs a plan-side declaration to mean anything; tying it to the
   checks' source keeps one rule: the config wins, as for checks.
-- **`fixedFiles` from two git snapshots** of the working tree (the same
-  throwaway-index tree the tree token uses, untracked included), diffed by
-  git. `null` when git cannot say (outside git, no commit yet): unknown is not
-  empty. Paths under `.coding-flow/` and the story dirs follow the token's
-  rules for untracked files.
+- **`fixedFiles` from two git snapshots** of the whole working tree: a
+  throwaway copy of the index, `add -A -- .` (ignored files left out, only
+  `.coding-flow/runs` excluded), `write-tree`, diffed by git and read
+  untrimmed. Not the tree token's snapshot: that one excludes the story dirs
+  and `.coding-flow/` whenever an untracked file exists, so a fixer ticking a
+  box in a tracked `spec.md` went unlisted (review P1). `null` when git cannot
+  say (outside git): unknown is not empty.
+- **Fixer limits apart from the checks'** (`fixTimeouts`): a fixer and a check
+  may share a text and carry different limits (review P2). A fixer's limit is
+  part of its fingerprint line; a changed `validation.fix` also changes the
+  policy fingerprint, so an earlier proof is not reused (tested).
 - **`land` never runs fixers.** Its re-verify judges the merge commit on the
   target checkout; a fixer there would leave the target dirty and prove a
   tree nobody committed. If the merged result needs fixing, its checks fail

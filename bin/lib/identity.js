@@ -222,16 +222,50 @@ function captureIdentity(cwd) {
   };
 }
 
-// The working tree as a git tree object (tracked and untracked, ignored files
-// left out), or null outside git or before the first commit. Two snapshots
+// The whole working tree as a git tree object (tracked and untracked, ignored
+// files left out), or null outside git. Unlike the tree token's snapshot it
+// excludes nothing — a fixer that ticks a box in a story file or rewrites the
+// config changed that file too — save verify's own run files. A throwaway copy
+// of the index takes it; the real index is never touched. Two snapshots
 // compared with `changedPaths` say which files a command rewrote (story 19-05).
 function workingTreeSnapshot(cwd) {
-  const head = gitField(cwd, ["rev-parse", "HEAD"]);
-  return head ? workingTreeTree(cwd, head) : null;
+  const index = gitField(cwd, ["rev-parse", "--git-path", "index"]);
+
+  if (!index) {
+    return null;
+  }
+
+  let dir = null;
+
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "coding-flow-snapshot-"));
+    const tempIndex = path.join(dir, "index");
+    const realIndex = path.resolve(cwd, index);
+
+    if (fs.existsSync(realIndex)) {
+      fs.copyFileSync(realIndex, tempIndex);
+    }
+
+    const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
+
+    if (tryExec("git", ["add", "-A", "--", ".", `:(exclude)${EVIDENCE_DIR}/runs`], cwd, env) === null) {
+      return null;
+    }
+
+    const tree = tryExec("git", ["write-tree"], cwd, env);
+    return tree && tree.length > 0 ? tree : null;
+  } catch {
+    return null;
+  } finally {
+    if (dir) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
 }
 
 // Paths whose content differs between two snapshots, sorted, `/`-separated as
-// git prints them; null when either snapshot or the diff is unavailable.
+// git prints them; null when either snapshot or the diff is unavailable. Read
+// untrimmed: a path may start or end with a space.
 function changedPaths(cwd, before, after) {
   if (!before || !after) {
     return null;
@@ -241,8 +275,16 @@ function changedPaths(cwd, before, after) {
     return [];
   }
 
-  const listing = tryExec("git", ["-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", before, after], cwd);
-  return listing == null ? null : listing.split("\0").filter(Boolean).sort();
+  try {
+    const listing = execFileSync("git", ["-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", before, after], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return listing.split("\0").filter(Boolean).sort();
+  } catch {
+    return null;
+  }
 }
 
 module.exports = { captureIdentity, currentTreeToken, workingTreeSnapshot, changedPaths };

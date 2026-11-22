@@ -206,7 +206,10 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
 // fixer this is exactly the old list, and every earlier proof keeps its value.
 function provedCommands(resolution) {
   const fix = resolution.fix || [];
-  return fix.length > 0 ? [...fix.map((command) => `\u0001fix\u0000${command}`), ...resolution.commands] : resolution.commands;
+  const limit = (command) => (resolution.fixTimeouts && resolution.fixTimeouts[command]) || "";
+  return fix.length > 0
+    ? [...fix.map((command) => `\u0001fix\u0000${command}\u0000${limit(command)}`), ...resolution.commands]
+    : resolution.commands;
 }
 
 function commandsFingerprint(commands, timeouts = {}) {
@@ -448,7 +451,7 @@ function runFixers({ resolution, cleaned }) {
   const before = workingTreeSnapshot(cwd);
   const results = resolution.fix.map((command) => ({
     ...runValidationCommand(command, {
-      ...commandTimeout(resolution, command),
+      ...commandTimeout({ timeouts: resolution.fixTimeouts }, command),
       ...(cleaned ? { env: cleaned.env } : {}),
     }),
     kind: "fix",

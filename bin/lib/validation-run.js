@@ -88,30 +88,32 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
 
   if (declaredFix.length > 0) {
     const globalTimeout = config.validation && Number.isFinite(config.validation.timeoutMs) ? config.validation.timeoutMs : null;
-    const timeouts = { ...(resolution.timeouts || {}) };
+    // Apart from the checks' map: a fixer and a check may share a text
+    // (`npm run lint` as both) and still carry different limits.
+    const fixTimeouts = {};
     const fix = declaredFix.map((entry) => {
       const command = typeof entry === "string" ? entry : entry.command;
       const timeoutMs = typeof entry === "string" ? globalTimeout : entry.timeoutMs || globalTimeout;
 
       if (timeoutMs) {
-        timeouts[command] = timeoutMs;
+        fixTimeouts[command] = timeoutMs;
       }
 
       return command;
     });
 
-    return { ...resolution, fix, fixSource: "config", ...(Object.keys(timeouts).length > 0 ? { timeouts } : {}) };
+    return { ...resolution, fix, fixSource: "config", fixTimeouts };
   }
 
   if (resolution.source === "plan.md") {
     const fix = parseTestsCommands(readStoryPart(storyDir, "plan") || "", "## fixers");
 
     if (fix.length > 0) {
-      return { ...resolution, fix, fixSource: "plan.md" };
+      return { ...resolution, fix, fixSource: "plan.md", fixTimeouts: {} };
     }
   }
 
-  return { ...resolution, fix: [], fixSource: null };
+  return { ...resolution, fix: [], fixSource: null, fixTimeouts: {} };
 }
 
 function resolveCheckCommands({ storyDir = null, fresh = false } = {}) {
