@@ -78,7 +78,7 @@ Lane A (skills): epic 16, a chain.
 Lane B (CLI): epic 17, a chain.
 - [x] 17-01 archive one epic — landed, re-proved, review captured
 - [x] 17-02 the index lists every epic — landed, re-proved, review captured
-- [ ] 17-03 epic numbers never collide
+- [x] 17-03 epic numbers never collide — 2 reviews (1 P1, 9 P2 fixed), landed, re-proved, review captured
 - [ ] 17-04 archive coding-flow's own epics — alone, when no worktree is open
 
 ### Wave 2 — no factory needed (step 0) · two lanes · *release 0.16.0*
