@@ -20,6 +20,9 @@ second reviewer of 20-04 is justified by numbers, not by the bethl memory of
   `noise` = no change and re-run passed); precision = useful / fired.
 - Review cost: the reviewer process's `total_cost_usd` and wall time from run
   reports (20-04) next to its findings.
+- Review yield by round, from `review.round` (20-04): new P0/P1 found at
+  round 1, 2, 3, 4, and how many stories hit `review-not-converging` — the
+  numbers that keep or change STRICT's two clean rounds and the cap.
 - Same small-sample rule as 21-01.
 
 ## Acceptance Criteria
@@ -31,6 +34,8 @@ second reviewer of 20-04 is justified by numbers, not by the bethl memory of
       "1 of 5 useful".
 - [ ] Given run reports with reviewer cost, then cost per real finding is
       printed.
+- [ ] Given `review.round` events with 3, 1 and 0 new P1 at rounds 1–3,
+      then insights prints the new-P1 count per round.
 - [ ] Given legacy-counts reviews, then they are shown apart and never
       counted as process findings.
 

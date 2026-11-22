@@ -19,7 +19,12 @@ stand-in for epic 20:
 1. Implementer agent in the story's worktree (`ai-flow worktree add --story`),
    TDD, `verify` until green, stops at `in-progress`.
 2. A fresh independent reviewer (never the implementer); P0/P1 go back to the
-   same implementer, then a re-review.
+   same implementer, then a re-review by a **new** reviewer (never the one
+   that found the defects) on the story's whole diff: blind first, then given
+   the earlier findings to confirm. Done when a fresh round finds no P0/P1;
+   STRICT needs two clean rounds in a row. At most 4 rounds, then split or
+   park the story. A contested P1 goes to a fresh skeptic first. (Since
+   2026-11-22: a same-reviewer re-review passed what the next one failed.)
 3. Close: `review capture`, `## Status: done`, unlock; land from the primary
    checkout with `ai-flow worktree land --story` (dry-run first); re-verify
    on `develop` with `--base <pre-land tip>` and re-capture the review (the
@@ -187,3 +192,7 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   19-05, so it runs after 19-05 lands, not beside it. 17-04 archives epics 13,
   16 and 17 only (no open worktree there), once main has 0.15.0 and an agent
   slot is free.
+- 2026-11-22 — review rule changed (maintainer): every re-review is a new
+  reviewer on the whole diff; STRICT needs two clean rounds; cap 4. Same
+  change planned in 20-04 (rounds, `review-not-converging`) and 21-04 (yield
+  per round); the `epic-run` skill updated.
