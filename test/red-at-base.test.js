@@ -1402,6 +1402,43 @@ test('the command runner hands red-at-base the whole output and the signal', { s
   assert.equal(runValidationCommand(`node -e "process.kill(process.pid, 'SIGTERM')"; exit $?`).exitCode, 143);
 });
 
+// node's TAP doubles each backslash of a location; read on Windows, the path
+// is the tree's test file. On POSIX a backslash is part of a file name.
+function tapFailureAt(location) {
+  return {
+    output: [
+      'TAP version 13',
+      '# Subtest: adds',
+      'not ok 1 - adds',
+      '  ---',
+      '  duration_ms: 1.2',
+      `  location: '${location}:3:1'`,
+      "  failureType: 'testCodeFailure'",
+      "  error: '-1 == 5'",
+      '  ...',
+      '1..1',
+      '# fail 1',
+      '',
+    ].join('\n'),
+  };
+}
+
+test("a Windows location in node's TAP, backslashes doubled, names the diff's test file", () => {
+  const { readBaseFailure } = require('../bin/lib/red-at-base');
+  const windows = tapFailureAt('C:\\\\tree\\\\test\\\\a.test.js');
+
+  assert.equal(readBaseFailure(windows, { files: ['test/a.test.js'], treeRoots: ['C:\\tree'], platform: 'win32' }).verdict, 'ran');
+  assert.equal(readBaseFailure(windows, { files: ['test/b.test.js'], treeRoots: ['C:\\tree'], platform: 'win32' }).verdict, 'unknown');
+});
+
+test('on POSIX a backslash in a test file name is not a directory separator', () => {
+  const { readBaseFailure } = require('../bin/lib/red-at-base');
+  const named = tapFailureAt('/tree/test\\\\a.test.js');
+
+  assert.equal(readBaseFailure(named, { files: ['test/a.test.js'], treeRoots: ['/tree'], platform: 'linux' }).verdict, 'unknown');
+  assert.equal(readBaseFailure(named, { files: ['test\\a.test.js'], treeRoots: ['/tree'], platform: 'linux' }).verdict, 'ran');
+});
+
 test('{files} is substituted with the quoted test paths', () => {
   const { expandCommand } = require('../bin/lib/red-at-base');
 

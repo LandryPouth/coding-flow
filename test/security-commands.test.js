@@ -168,15 +168,26 @@ function outcomeOf(t, command) {
   return { res, item: res.json.results.find((entry) => entry.command === command) };
 }
 
-// cmd.exe has no exit 127: a missing command exits 1 with this line on stderr.
-test("cmd.exe's not-recognized line is a scanner that did not run, on stderr only", (t) => {
-  const missing = 'node -e "console.error(\'\\\'gitleaks\\\' is not recognized as an internal or external command,\'); process.exit(1)"';
-  const { item } = outcomeOf(t, missing);
-  assert.equal(item.outcome, 'not-examined');
-  assert.match(item.notExamined, /command not found \(not recognized by cmd\.exe\)/);
+// cmd.exe has no exit 127: a command it cannot find exits 1 with exactly these
+// two lines on stderr and nothing on stdout. Only that, on Windows, is a scanner
+// that did not run; the phrase anywhere else is a finding (a scanner may quote it).
+test("cmd.exe's not-found lines are a scanner that did not run, on Windows only", () => {
+  const { securityOutcome } = require('../bin/lib/validation-run');
+  const CMD = "'gitleaks' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n";
+  const failed = (fields) => ({ ok: false, exitCode: 1, stdoutTail: '', stderrTail: CMD, ...fields });
 
-  const onStdout = 'node -e "console.log(\'x is not recognized as an internal or external command\'); process.exit(1)"';
-  assert.equal(outcomeOf(t, onStdout).item.outcome, 'fail');
+  const missing = securityOutcome(failed(), 'win32');
+  assert.equal(missing.outcome, 'not-examined');
+  assert.match(missing.notExamined, /command not found \(not recognized by cmd\.exe\)/);
+
+  assert.equal(securityOutcome(failed(), 'linux').outcome, 'fail', 'off Windows the phrase is output');
+  assert.equal(securityOutcome(failed({ stdoutTail: 'src/a.js:3 high: injection\n' }), 'win32').outcome, 'fail', 'stdout is not empty');
+  assert.equal(securityOutcome(failed({ exitCode: 2 }), 'win32').outcome, 'fail', 'cmd exits 1');
+  // Quoted inside a finding: not cmd's own line, or not the last lines.
+  const quoted = "src/x.js:4: msg = \"'a' is not recognized as an internal or external command,\"\noperable program or batch file.\n";
+  assert.equal(securityOutcome(failed({ stderrTail: quoted }), 'win32').outcome, 'fail', 'unanchored');
+  assert.equal(securityOutcome(failed({ stderrTail: `${CMD}high: CVE-2026-1 in lodash\n` }), 'win32').outcome, 'fail', 'not the last lines');
+  assert.equal(securityOutcome(failed({ stderrTail: "'a' is not recognized as an internal or external command,\n" }), 'win32').outcome, 'fail', 'second line missing');
 });
 
 test('a finding that quotes a resolver error on stdout is still a failed scan', (t) => {
