@@ -182,3 +182,8 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   (what to keep from "Améliorez votre IA de 1 % par jour"); wave 6, inside
   epic 22. Windows CI of PR #59: drive letters and the red-at-base sweep fixed
   (2 reviews, 1 P1), pushed; waiting for green.
+- 2026-11-22 — wave 2 started while PR #59's Windows job runs: 19-05 ∥ 29-03
+  (disjoint files). 26-06 shares `validation-run.js` and `config.js` with
+  19-05, so it runs after 19-05 lands, not beside it. 17-04 archives epics 13,
+  16 and 17 only (no open worktree there), once main has 0.15.0 and an agent
+  slot is free.
