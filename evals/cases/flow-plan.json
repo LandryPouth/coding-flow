@@ -37,6 +37,10 @@
       {
         "prompt": "add two stories to epic 05 and keep the epics index current",
         "top_k": 2
+      },
+      {
+        "prompt": "plan a new epic and give it the next free epic number",
+        "top_k": 2
       }
     ],
     "negative": [

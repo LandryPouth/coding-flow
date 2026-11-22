@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **An epic number is never handed out twice.** `ai-flow status --json` gives `nextEpicNumber`: the highest epic number found plus one, zero-padded to the width in use, across the `epic-NN-` directories on disk, the archived entries of `epics/INDEX.md`, and the `epics/` tree of every other local branch and remote-tracking ref (no fetch, no network; at most 200 refs). `nextEpicNumberSources` says which refs were scanned, whether the cap was hit, and when the remote refs were last fetched. `ai-flow archive --refresh` prints it. `doctor` warns `archived_epic_number_reused` when a directory reuses an archived epic's number under another slug, and `epic_number_on_other_branch` when another ref uses the number for an epic this branch does not have — renumber before merging. Two clones that never fetched each other are still caught only after the merge, by `duplicate_epic_number`. `/flow-plan` takes the number from `nextEpicNumber`.
+
 ## [0.15.0] - 2026-11-22
 
 The proof holds its own bar, and finished epics leave the checkout. Epic 13 closes the holes found by measuring Coding Flow against its own rules: the guard treats a directory swap and a long tail of shell and archive writes as writes, the security core stays high-risk, a new function is measured as new, a deleted file raises the risk, a wrapped acceptance criterion is read whole, and the bar (coverage, function size, module boundaries, scanners) does not move silently. Epic 16 sharpens the skills: `/flow-plan` asks in rounds and never settles an ambiguity in silence, a bug fix starts red in every mode, `/flow-review` reads the diff against what was asked. Epic 17 adds `ai-flow archive` and a live `epics/INDEX.md`.

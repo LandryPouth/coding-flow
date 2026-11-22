@@ -36,22 +36,22 @@ even after epic 08 is archived.
 
 ## Acceptance Criteria
 
-- [ ] Given a temp repository with `epic-01`, an archived entry for
+- [x] Given a temp repository with `epic-01`, an archived entry for
       `epic-02` and a branch `other` carrying `epic-03-x`, when `ai-flow
       status --json` runs on `main`, then `nextEpicNumber` is `04` and
       `nextEpicNumberSources` lists `other`.
-- [ ] Given a new `epic-02-y` on disk while `epic-02` is archived under
+- [x] Given a new `epic-02-y` on disk while `epic-02` is archived under
       another slug, when `doctor` runs, then it warns
       `archived_epic_number_reused` and names both slugs.
-- [ ] Given `epic-03-z` on the current branch while `other` carries
+- [x] Given `epic-03-z` on the current branch while `other` carries
       `epic-03-x`, when `doctor` runs, then it warns
       `epic_number_on_other_branch` and names `other`.
-- [ ] Given the same slug on both branches (the same epic, not yet merged),
+- [x] Given the same slug on both branches (the same epic, not yet merged),
       when `doctor` runs, then it does not warn.
-- [ ] Given a repository with no remote and no other branch, then
+- [x] Given a repository with no remote and no other branch, then
       `nextEpicNumber` comes from the disk and the index alone, and nothing
       fails.
-- [ ] Given `flow-plan/SKILL.md`, then the numbering convention names
+- [x] Given `flow-plan/SKILL.md`, then the numbering convention names
       `nextEpicNumber`, and the skill evals pass.
 
 ## Edge Cases
@@ -71,3 +71,5 @@ even after epic 08 is archived.
 
 - A shared counter, or any network call.
 - Renumbering automatically.
+
+## Status: in-progress

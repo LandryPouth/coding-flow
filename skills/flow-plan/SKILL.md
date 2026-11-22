@@ -15,6 +15,8 @@ with minimal ambiguity. Dense artifacts, no ceremony, no document no agent will 
 
 - Epics live under `epics/epic-NN-name/`; stories under
   `epics/epic-NN-name/story-NN-MM-name/`.
+- A new epic's `NN` is `nextEpicNumber` from `ai-flow status --json`, never the
+  highest directory you can list: it also counts archived epics and other branches.
 - A story is a vertical product outcome, not a technical layer.
 - `docs/project-context.md` is the durable current-state map, updated only when that
   state changes — never a decisions log. Story decisions go in the story's

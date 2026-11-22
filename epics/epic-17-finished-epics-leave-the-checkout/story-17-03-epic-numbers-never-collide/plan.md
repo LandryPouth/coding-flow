@@ -25,10 +25,22 @@
 - **The remote refs as last fetched.** No fetch: zero network keeps the CLI
   offline. The sources field says how fresh they are.
 
+- **The current branch is the disk.** Its own ref is not scanned: the working
+  tree is what the planner sees, uncommitted epics included. A detached HEAD
+  scans every local branch.
+- **A ref's copy of an epic this branch has archived is not a collision.** An
+  old branch still carrying `epic-08-x` after `epic-08-x` was archived here is
+  the same epic; only `archived_epic_number_reused` judges a new slug.
+- **The doctor checks live in their own module.** `doctor.js` calls
+  `epicNumberCollisions`; the doctor test plan's file is
+  `test/epic-numbers.test.js`, not `test/doctor.test.js`, so all of the
+  story's criteria are read in one place.
+- **Width** is the widest number seen, never less than 2.
+
 ## Acceptance Traceability
 
 - 1, 5 → `test/epic-numbers.test.js`
-- 2–4 → `test/doctor.test.js`
+- 2–4 → `test/epic-numbers.test.js` (doctor cases)
 - 6 → `evals/cases/flow-plan.json`
 
 ## Commands
