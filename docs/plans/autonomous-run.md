@@ -136,6 +136,9 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 
 - [ ] epic 21 → epic 22 → epic 23 → 28-02 → 24-03…24-06 (team; re-read
       against the first driven runs before starting)
+- Epic 22 now ends with 22-08 (a friction becomes a finding) and 22-09 (a
+  rule nobody needs is retired), added 2026-11-22; both run inside epic 22's
+  chain, after 22-07.
 
 ## Log
 
@@ -175,3 +178,7 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   this file's description. Next: 17-03, then 17-04 alone, then wave 2.
 - 2026-11-22 — epic 30 added to the run as wave 2b at the maintainer's request
   (it was out of the run when planned); later releases shift by one minor.
+- 2026-11-22 — stories 22-08 and 22-09 planned at the maintainer's request
+  (what to keep from "Améliorez votre IA de 1 % par jour"); wave 6, inside
+  epic 22. Windows CI of PR #59: drive letters and the red-at-base sweep fixed
+  (2 reviews, 1 P1), pushed; waiting for green.

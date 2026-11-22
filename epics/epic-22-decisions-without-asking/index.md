@@ -40,7 +40,8 @@ something one person's agent remembers.
   event and the story's Decisions line.
 - A decision registry with topic, paths, provenance and status, searched on
   demand (`ai-flow decisions search`), never injected whole.
-- The promotion ladder for review findings.
+- The promotion ladder for review findings and for the human's corrections
+  (22-08), and its way down: retiring a rule nobody needs (22-09).
 - Moving agent-memory preferences into the repo, one approved item at a time.
 - Playbooks proposed from runs that worked, approved before use.
 - A personal preference profile in the vault (`preferences/`), proposed to
@@ -56,7 +57,7 @@ something one person's agent remembers.
 
 ## Backbone
 
-`Backbone: the project says who decides → past decisions are found with their provenance → a repeated finding climbs the ladder → personal memory moves into the repo → a run that worked becomes a playbook → a personal taste is proposed to each project → the design system is a check`
+`Backbone: the project says who decides → past decisions are found with their provenance → a repeated finding climbs the ladder → personal memory moves into the repo → a run that worked becomes a playbook → a personal taste is proposed to each project → the design system is a check → a friction becomes a finding → a rule nobody needs is retired`
 
 The stories form a plain chain over the same policy and registry modules; no
 tree.
@@ -70,6 +71,8 @@ tree.
 5. [story-22-05-a-run-that-worked-becomes-a-playbook](story-22-05-a-run-that-worked-becomes-a-playbook/spec.md) *(STANDARD)*
 6. [story-22-06-a-personal-taste-is-proposed-to-each-project](story-22-06-a-personal-taste-is-proposed-to-each-project/spec.md) *(STANDARD — the vault's `preferences/` offered to each project, accepted line by line; the project wins)*
 7. [story-22-07-the-design-system-is-a-check](story-22-07-the-design-system-is-a-check/spec.md) *(STANDARD — `validation.conformance`: forbidden patterns on added lines, `warn` then `block`; the ladder's `gate` rung)*
+8. [story-22-08-a-friction-becomes-a-finding](story-22-08-a-friction-becomes-a-finding/spec.md) *(STANDARD — added 2026-11-22: a human correction mid-session is recorded and feeds the ladder; drafts ranked check → skill → convention; a symptom-hiding fix is labelled)*
+9. [story-22-09-a-rule-nobody-needs-is-retired](story-22-09-a-rule-nobody-needs-is-retired/spec.md) *(STANDARD — added 2026-11-22: the ladder also proposes removing a convention a check supersedes or nothing cites)*
 
 ## Decisions
 
