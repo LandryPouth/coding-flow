@@ -204,7 +204,7 @@ function reader(startCwd, host, options = {}) {
   // The shell resolves `..` physically once a `cd` went through a symlink, so every
   // directory it tracks is the real one when it exists (a missing one stays lexical).
   const start = host.realpath(path.resolve(startCwd));
-  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0, acted: options.after || 0, substitutes: Boolean(options.substitutes) };
+  return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0, acted: options.after || 0, substitutes: Boolean(options.substitutes), platform: options.platform || process.platform };
 }
 
 const homeOf = (r, target) => expandHome(target, r.host.home());
@@ -504,11 +504,15 @@ function readCopy(r, command) {
 // `..`: an earlier `rm -rf`/`trash` in the same command may have emptied the name,
 // and `mv X dst/` onto a missing `dst/` creates dst.
 const REMOTE_WORD = /^(?:[^/]*:|rsync:\/\/)/;
-// On Windows `C:/x` and `C:\x` are a drive, not a host named C: read as a
-// local path, never as remote (a remote `scp` destination writes nothing here).
+// On Windows `C:/x` and `C:\x` are a drive for cp, mv and ln, and for a
+// destination (read as local, a word flags more, never less). An rsync or scp
+// *source* `C:/x` stays remote: MSYS and Cygwin builds read it as host `C`, so
+// judging the local `C:/x` would allow what an ssh alias `C` may serve.
+// `C:x` (no slash) stays remote everywhere: unread, which fails safe.
+const LOCAL_COPIERS = new Set(["cp", "mv", "ln"]);
 const isRemote = (word, platform = process.platform) => REMOTE_WORD.test(word) && !(platform === "win32" && /^[A-Za-z]:[\\/]/.test(word));
 
-function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDirectory) {
+function copiedTrees(r, { name, tool = name, args }, { optionAt, directory, sources }, isDirectory) {
   const symbolic = name === "cp" && args.some((arg) => /^-[A-Za-z]*[sl]/.test(arg) || arg === "--symbolic-link" || arg === "--link");
   const recursive = name === "rsync" || name === "mv" || name === "ln" || symbolic || (name === "cp" && args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || arg === "--recursive" || arg === "--archive"));
   if (!r.trees || !recursive || typeof directory !== "string") {
@@ -518,11 +522,11 @@ function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDire
   const noTarget = args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory");
   // `rsync -e X`: X runs as the "remote" end, local or not. Pushed to a remote
   // destination, nothing lands here.
-  if (name === "rsync" && !isRemote(directory) && args.some((arg) => /^-[a-zA-Z]*e/.test(arg) || arg.startsWith("--rsh"))) {
+  if (name === "rsync" && !isRemote(directory, r.platform) && args.some((arg) => /^-[a-zA-Z]*e/.test(arg) || arg.startsWith("--rsh"))) {
     r.found.push({ target: directory, kind: "tree", unchecked: REMOTE_SHELL });
   }
   for (const source of sources) {
-    const from = treeSource(r, source);
+    const from = treeSource(r, source, tool);
     if (!isDirectory || noTarget || itself) {
       add(r, directory, "tree", from);
     }
@@ -539,8 +543,9 @@ function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDire
 // segment, or a substitution anywhere on the line (`$(…)`, a backtick, `<(…)`) — as it
 // may have made or filled the source under any name, or `unread` when a glob, a
 // variable or a remote (`host:/x`, `rsync://`) decides it.
-function treeSource(r, source) {
-  if (classify(source) !== "path" || r.cwd === null || isRemote(source)) {
+function treeSource(r, source, tool) {
+  const remote = LOCAL_COPIERS.has(tool) ? isRemote(source, r.platform) : REMOTE_WORD.test(source);
+  if (classify(source) !== "path" || r.cwd === null || remote) {
     return { unread: true };
   }
   return { source: path.resolve(r.cwd, homeOf(r, source)), chained: r.segments > 0 || r.substitutes };
@@ -1132,12 +1137,12 @@ function readSecureCopy(r, command) {
     r.found.push({ target: words[0] || "(sftp)", kind: "write", unchecked: SFTP_SESSION });
     return;
   }
-  if (words.length < 2 || isRemote(destination)) {
+  if (words.length < 2 || isRemote(destination, r.platform)) {
     return;
   }
   const recursive = flags.some((flag) => flag.includes("r"));
   const args = recursive ? ["-r", ...words] : words;
-  readCopy(r, { segment: command.segment, name: "cp", args, operands: args, files: words.filter((arg) => classify(arg) !== "skip") });
+  readCopy(r, { segment: command.segment, name: "cp", tool: command.name, args, operands: args, files: words.filter((arg) => classify(arg) !== "skip") });
 }
 
 // --- commands handed their paths ----------------------------------------------

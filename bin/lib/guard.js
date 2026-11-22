@@ -194,8 +194,8 @@ const shellHost = {
 };
 
 // What a command would write: see `shell-writes.js`.
-function shellWrites(command, startCwd = process.cwd()) {
-  return readShellWrites(command, startCwd, shellHost);
+function shellWrites(command, startCwd = process.cwd(), options = {}) {
+  return readShellWrites(command, startCwd, shellHost, options);
 }
 
 // Compatibility: the plain list of paths a command writes.

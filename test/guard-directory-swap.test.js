@@ -174,10 +174,16 @@ function repo(t) {
 
 const at = (dir, sub, command) => decide({ tool_name: 'Bash', cwd: path.join(dir, sub), tool_input: { command } }, dir);
 
+// On Windows the temp dir is a drive path (`C:/…`), and rsync reads `C:/x` as a
+// host named C: a tree it brings onto the project (or an ancestor) comes from a
+// source the guard cannot read, so it is unchecked there, whatever it holds.
+const RSYNC_DRIVE_ONTO_ROOT = /^rsync -a (?:--exclude='<\(x\)' )?[A-Za-z]:\/\S*\/ \.\.?(?: |$)/;
+
 function expectDecisions(dir, decision, commands) {
   for (const command of commands) {
     const [sub, text] = Array.isArray(command) ? command : ['.', command];
-    assert.equal(at(dir, sub, text).decision, decision, `${sub}: ${text}`);
+    const expected = process.platform === 'win32' && RSYNC_DRIVE_ONTO_ROOT.test(text) ? 'unchecked' : decision;
+    assert.equal(at(dir, sub, text).decision, expected, `${sub}: ${text}`);
   }
 }
 

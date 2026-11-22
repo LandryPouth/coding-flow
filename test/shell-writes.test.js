@@ -231,6 +231,26 @@ test('a drive letter is a local path on Windows, a host elsewhere', () => {
   assert.equal(isRemote('/tmp/x', 'win32'), false);
 });
 
+test('on Windows a drive is local to cp, mv, ln and to a destination, never to an rsync or scp source', () => {
+  const reads = (command, platform) => shellWrites(command, process.cwd(), { platform, trees: true });
+  const rootTree = (command, platform) => reads(command, platform).find((e) => e.kind === 'tree' && e.target === '.');
+  // The write a remote-looking destination hid: a download onto the drive.
+  assert.deepStrictEqual(reads('scp host:/x C:/repo/a.json', 'win32'), [write('C:/repo/a.json')]);
+  assert.deepStrictEqual(reads('scp host:/x C:/repo/a.json', 'linux'), []);
+  // coreutils read the drive: the source is judged on what it holds.
+  for (const command of ['cp -r C:/x/. .', 'cp -rT C:/x .']) {
+    assert.equal(rootTree(command, 'win32').unread, undefined, command);
+    assert.equal(rootTree(command, 'linux').unread, true, command);
+  }
+  // rsync (MSYS, Cygwin) reads `C:/x` as host C: unread on every platform.
+  for (const platform of ['win32', 'linux']) {
+    assert.equal(rootTree('rsync -a C:/x/ .', platform).unread, true, platform);
+    assert.equal(rootTree('rsync -a C:x/ .', platform).unread, true, platform);
+  }
+  // `C:x` is drive-relative: still unread for cp, which fails safe.
+  assert.equal(rootTree('cp -r C:x/. .', 'win32').unread, true);
+});
+
 test('a start directory that does not exist is read lexically', () => {
   assert.deepStrictEqual(shellWrites('cd sub && echo > b', '/nonexistent-coding-flow/x'), [write('sub/b')]);
 });
