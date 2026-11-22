@@ -168,6 +168,24 @@ const body = (n, indent = '  ') => Array.from({ length: n }, (_, i) => `${indent
 // The lcov a real `node --test --experimental-test-coverage` run writes, not a
 // hand-written one: V8 names a test callback `anonymous_0` and an export
 // `exports.build`.
+// The lcov reporter is not in every supported Node (18 has none): asked once,
+// on an empty suite, rather than guessed from the version number.
+const lcovReporter = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lcov-reporter-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'e.test.js'), '');
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    execFileSync(process.execPath, ['--test', '--test-reporter=lcov', '--test-reporter-destination=out.lcov', 'e.test.js'],
+      { cwd: dir, env, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
 function realLcov(dir, testFile) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
@@ -176,7 +194,7 @@ function realLcov(dir, testFile) {
     '--test-reporter-destination=coverage/lcov.info', testFile], { cwd: dir, env, stdio: ['ignore', 'ignore', 'ignore'] });
 }
 
-test('with a real Node lcov, editing a long test title or adding an export parameter is not new code', (t) => {
+test('with a real Node lcov, editing a long test title or adding an export parameter is not new code', { skip: !lcovReporter && 'this Node has no lcov test reporter' }, (t) => {
   const dir = init(t);
   const exported = (params) => `exports.build = function (${params}) {\n${body(88)}\n  return a;\n};\n`;
   const suite = (title) => `const { test } = require('node:test');\nconst m = require('../src/e.js');\ntest('${title}', () => {\n${body(88)}\n  m.build(1);\n});\n`;
