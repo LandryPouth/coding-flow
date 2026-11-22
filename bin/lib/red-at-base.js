@@ -614,7 +614,9 @@ function readTap(text, context) {
       return "never-started";
     }
 
-    const quoted = keys.location.replace(/^'|'$/g, "").replace(/:\d+:\d+$/, "");
+    // node's TAP doubles each backslash of the path (a Windows location reads
+    // 'C:\\tree\\t\\a.test.js:3:1'): read back as the path it printed.
+    const quoted = keys.location.replace(/^'|'$/g, "").replace(/\\\\/g, "\\").replace(/:\d+:\d+$/, "");
     // node 18 prints an ESM file's location as a file:// URL.
     const location = quoted.startsWith("file://") ? fileURLToPath(quoted) : quoted;
 
