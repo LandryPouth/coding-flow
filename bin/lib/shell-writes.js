@@ -503,7 +503,10 @@ function readCopy(r, command) {
 // (`X/.`, rsync's `X/`, a glob) — and DIR itself in every case but `-t DIR`, `.` and
 // `..`: an earlier `rm -rf`/`trash` in the same command may have emptied the name,
 // and `mv X dst/` onto a missing `dst/` creates dst.
-const REMOTE = /^(?:[^/]*:|rsync:\/\/)/;
+const REMOTE_WORD = /^(?:[^/]*:|rsync:\/\/)/;
+// On Windows `C:/x` and `C:\x` are a drive, not a host named C: read as a
+// local path, never as remote (a remote `scp` destination writes nothing here).
+const isRemote = (word, platform = process.platform) => REMOTE_WORD.test(word) && !(platform === "win32" && /^[A-Za-z]:[\\/]/.test(word));
 
 function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDirectory) {
   const symbolic = name === "cp" && args.some((arg) => /^-[A-Za-z]*[sl]/.test(arg) || arg === "--symbolic-link" || arg === "--link");
@@ -515,7 +518,7 @@ function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDire
   const noTarget = args.some((arg) => /^-[A-Za-z]*T/.test(arg) || arg === "--no-target-directory");
   // `rsync -e X`: X runs as the "remote" end, local or not. Pushed to a remote
   // destination, nothing lands here.
-  if (name === "rsync" && !REMOTE.test(directory) && args.some((arg) => /^-[a-zA-Z]*e/.test(arg) || arg.startsWith("--rsh"))) {
+  if (name === "rsync" && !isRemote(directory) && args.some((arg) => /^-[a-zA-Z]*e/.test(arg) || arg.startsWith("--rsh"))) {
     r.found.push({ target: directory, kind: "tree", unchecked: REMOTE_SHELL });
   }
   for (const source of sources) {
@@ -537,7 +540,7 @@ function copiedTrees(r, { name, args }, { optionAt, directory, sources }, isDire
 // may have made or filled the source under any name, or `unread` when a glob, a
 // variable or a remote (`host:/x`, `rsync://`) decides it.
 function treeSource(r, source) {
-  if (classify(source) !== "path" || r.cwd === null || REMOTE.test(source)) {
+  if (classify(source) !== "path" || r.cwd === null || isRemote(source)) {
     return { unread: true };
   }
   return { source: path.resolve(r.cwd, homeOf(r, source)), chained: r.segments > 0 || r.substitutes };
@@ -1129,7 +1132,7 @@ function readSecureCopy(r, command) {
     r.found.push({ target: words[0] || "(sftp)", kind: "write", unchecked: SFTP_SESSION });
     return;
   }
-  if (words.length < 2 || REMOTE.test(destination)) {
+  if (words.length < 2 || isRemote(destination)) {
     return;
   }
   const recursive = flags.some((flag) => flag.includes("r"));
@@ -1455,4 +1458,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { shellWrites, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
+module.exports = { isRemote, shellWrites, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };

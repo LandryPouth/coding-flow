@@ -234,12 +234,16 @@ test('a non-ASCII or quoted slug on both branches is the same epic', (t) => {
   const dir = repo(t);
   git(dir, ['config', 'core.quotePath', 'true']);
   otherBranch(dir, 'epic-05-café');
-  otherBranch(dir, 'epic-06-say "hi"', 'quoted');
   epic(dir, 'epic-05-café');
-  epic(dir, 'epic-06-say "hi"');
+  // A `"` cannot be in a Windows file name: the quoted slug runs on the other platforms.
+  const quotes = process.platform !== 'win32';
+  if (quotes) {
+    otherBranch(dir, 'epic-06-say "hi"', 'quoted');
+    epic(dir, 'epic-06-say "hi"');
+  }
   const codes = warnings(dir).map((w) => w.code);
   assert.ok(!codes.includes('epic_number_on_other_branch'), codes.join(', '));
-  assert.equal(statusJson(dir).nextEpicNumber, '07');
+  assert.equal(statusJson(dir).nextEpicNumber, quotes ? '07' : '06');
 });
 
 test('one collision held by several refs is one warning that lists them, with a stale-ref hint', (t) => {

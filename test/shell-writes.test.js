@@ -215,8 +215,20 @@ test('cd, pushd, popd and subshells move where a relative write lands', (t) => {
     // `/abs` is on the drive of the shell's directory (Windows), not of this process.
     ['cd /abs && echo > o', (dir) => [write(path.relative(dir, path.resolve(dir, '/abs/o')).split(path.sep).join('/'))]],
     ['cd $X && cd rel && echo > p', [unchecked('p', UNKNOWN_CWD)]],
-    ['cd && echo > h', (dir) => [write(path.relative(dir, path.join(fs.realpathSync(os.homedir()), 'h')))]],
+    ['cd && echo > h', (dir) => [write(path.relative(dir, path.join(fs.realpathSync(os.homedir()), 'h')).split(path.sep).join('/'))]],
   ]);
+});
+
+test('a drive letter is a local path on Windows, a host elsewhere', () => {
+  const { isRemote } = require('../bin/lib/shell-writes');
+  for (const word of ['C:/Users/x', 'c:\\Users\\x', 'D:/']) {
+    assert.equal(isRemote(word, 'win32'), false, word);
+    assert.equal(isRemote(word, 'linux'), true, word);
+  }
+  for (const word of ['host:x', 'user@host:/x', 'CD:/x', 'rsync://h/m']) {
+    assert.equal(isRemote(word, 'win32'), true, word);
+  }
+  assert.equal(isRemote('/tmp/x', 'win32'), false);
 });
 
 test('a start directory that does not exist is read lexically', () => {

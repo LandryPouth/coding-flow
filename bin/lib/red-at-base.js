@@ -771,9 +771,11 @@ function processAlive(pid) {
   }
 }
 
+// Native: on Windows it expands 8.3 short names (`RUNNER~1`), so the OS temp dir
+// and the long path `git worktree list` prints compare equal.
 function realpathSafe(candidate) {
   try {
-    return fs.realpathSync(candidate);
+    return fs.realpathSync.native(candidate);
   } catch {
     return null;
   }
