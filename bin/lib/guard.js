@@ -539,7 +539,9 @@ function secretInWrite(named, content) {
       findSecretsInContent(content, getSecretPatterns(scope.policy), {
         // Every name must be allowlisted: `docs/notes.md -> ../src/app.js` writes
         // into src/, and the docs allowance does not travel through the link.
-        skipHeuristics: names.length > 0 && names.every((entry) => isHeuristicAllowlisted(entry.relative, scope.policy)),
+        skipHeuristics: names.length > 0 && names.every((entry) => {
+          return isHeuristicAllowlisted(entry.relative, scope.policy);
+        }),
         first: true,
       })[0],
     )
