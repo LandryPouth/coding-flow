@@ -156,7 +156,7 @@ test('the PR body never shows a scanner that did not run as a pass', (t) => {
 
   const block = buildEvidenceBlock(evidence);
   const row = block.split('\n').find((line) => line.includes('definitely-not-a-scanner-on-path'));
-  assert.match(row, /⚠️ not examined \(command not found \(exit 127\)\)/);
+  assert.match(row, /⚠️ not examined \(command not found \((exit 127|not recognized by cmd\.exe)\)\)/);
   assert.doesNotMatch(row, /✅/);
 });
 
@@ -167,6 +167,17 @@ function outcomeOf(t, command) {
   const res = verify(dir);
   return { res, item: res.json.results.find((entry) => entry.command === command) };
 }
+
+// cmd.exe has no exit 127: a missing command exits 1 with this line on stderr.
+test("cmd.exe's not-recognized line is a scanner that did not run, on stderr only", (t) => {
+  const missing = 'node -e "console.error(\'\\\'gitleaks\\\' is not recognized as an internal or external command,\'); process.exit(1)"';
+  const { item } = outcomeOf(t, missing);
+  assert.equal(item.outcome, 'not-examined');
+  assert.match(item.notExamined, /command not found \(not recognized by cmd\.exe\)/);
+
+  const onStdout = 'node -e "console.log(\'x is not recognized as an internal or external command\'); process.exit(1)"';
+  assert.equal(outcomeOf(t, onStdout).item.outcome, 'fail');
+});
 
 test('a finding that quotes a resolver error on stdout is still a failed scan', (t) => {
   // semgrep prints the flagged source line; the code under scan chose its text.
@@ -188,7 +199,7 @@ test('an advisory titled "Network error ..." is a failed scan', (t) => {
   assert.equal(outcomeOf(t, command).item.outcome, 'fail');
 });
 
-test('a scanner that times out, or is not executable, is not examined', (t) => {
+test('a scanner that times out, or is not executable, is not examined', { skip: process.platform === 'win32' && 'Windows has no executable bit (exit 126)' }, (t) => {
   const slow = { command: 'node -e "setTimeout(() => {}, 5000)"', timeoutMs: 300 };
   const dir = project(t, { security: [slow, './scanner.sh'] });
   fs.writeFileSync(path.join(dir, 'scanner.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });

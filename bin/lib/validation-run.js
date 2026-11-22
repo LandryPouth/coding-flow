@@ -382,6 +382,11 @@ function securityOutcome(item) {
     return notExamined("command found but not executable (exit 126)");
   }
 
+  // cmd.exe has no 127: a missing command exits 1 with this line.
+  if (item.exitCode === 1 && streamEnd(item.stderrTail).some((line) => /is not recognized as an internal or external command/.test(line))) {
+    return notExamined("command not found (not recognized by cmd.exe)");
+  }
+
   const network = [...streamEnd(item.stdoutTail), ...streamEnd(item.stderrTail)].find((line) =>
     NETWORK_FAILURES.some((pattern) => pattern.test(line)),
   );
