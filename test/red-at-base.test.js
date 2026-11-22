@@ -1396,8 +1396,10 @@ test('the command runner hands red-at-base the whole output and the signal', { s
 
   // The shell itself killed: the signal is reported as such.
   assert.equal(runValidationCommand('kill -TERM $$', { keepOutput: true }).signal, 'SIGTERM');
-  // The runner killed under the shell: only its 128+n exit code survives.
-  assert.equal(runValidationCommand(`node -e "process.kill(process.pid, 'SIGTERM')"`).exitCode, 143);
+  // The runner killed under the shell: only its 128+n exit code survives. A
+  // command after it keeps the shell alive — a lone command may be exec'd in
+  // place of the shell (macOS's sh does), and then the shell itself is killed.
+  assert.equal(runValidationCommand(`node -e "process.kill(process.pid, 'SIGTERM')"; exit $?`).exitCode, 143);
 });
 
 test('{files} is substituted with the quoted test paths', () => {
