@@ -300,3 +300,36 @@ test('a project in a subdirectory reads each ref under its own path', (t) => {
   git(dir, ['checkout', '-q', 'main']);
   assert.equal(statusJson(app).nextEpicNumber, '04');
 });
+
+test('a ref scan that fails is said, and doctor warns', (t) => {
+  const dir = repo(t);
+  otherBranch(dir, 'epic-03-x');
+  const oid = git(dir, ['rev-parse', 'other:epics']).trim();
+  const object = path.join(dir, '.git', 'objects', oid.slice(0, 2), oid.slice(2));
+  fs.chmodSync(object, 0o644);
+  fs.writeFileSync(object, 'corrupt');
+
+  const sources = statusJson(dir).nextEpicNumberSources;
+  assert.equal(sources.refsRead, false);
+  const found = warnings(dir).find((w) => w.code === 'epic_refs_unread');
+  assert.ok(found, 'expected epic_refs_unread');
+  assert.match(found.message, /nextEpicNumber/);
+});
+
+test('a scan that read every ref says so', (t) => {
+  const dir = repo(t);
+  otherBranch(dir, 'epic-03-x');
+  assert.equal(statusJson(dir).nextEpicNumberSources.refsRead, true);
+  assert.ok(!warnings(dir).some((w) => w.code === 'epic_refs_unread'));
+});
+
+test('a collision on many refs names three and counts the rest', (t) => {
+  const dir = repo(t);
+  otherBranch(dir, 'epic-03-x', 'r0');
+  for (let i = 1; i < 6; i += 1) git(dir, ['branch', `r${i}`, 'r0']);
+  epic(dir, 'epic-03-z');
+  const found = warnings(dir).filter((w) => w.code === 'epic_number_on_other_branch');
+  assert.equal(found.length, 1);
+  assert.match(found[0].message, /r0, r1, r2 and 3 more use for epic-03-x/);
+  assert.doesNotMatch(found[0].message, /\br5\b/);
+});
