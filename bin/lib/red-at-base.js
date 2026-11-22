@@ -531,23 +531,27 @@ const TAP_RUNNER = { name: "node --test (TAP)", detect: /^TAP version \d+/m };
 // the diff's test files only when it is that file: neither
 // `legacy/test/math.test.js` nor a `test/math.test.js` the diff's
 // `pkg/test/math.test.js` requires is this diff's test.
-function isDiffFile(reported, files) {
-  const portable = normalizePortable(reported.replace(/^\.\//, ""));
+function isDiffFile(reported, files, platform) {
+  const portable = portableOn(reported, platform);
 
-  return files.some((file) => {
-    const diffFile = normalizePortable(file);
+  return files.some((file) => portableOn(file, platform) === portable);
+}
 
-    return portable === diffFile;
-  });
+// A path with forward slashes, on the platform the runner ran on: a backslash
+// separates directories on Windows only; on POSIX it belongs to a file name.
+function portableOn(filePath, platform = process.platform) {
+  const text = String(filePath);
+
+  return (platform === "win32" ? text.replace(/\\/g, "/") : text).replace(/^\.\//, "");
 }
 
 // An absolute path the runner printed, made relative to the tree it ran in
 // (its real path too: macOS prints /private/var for /var).
-function treeRelative(reported, treeRoots = []) {
-  const portable = normalizePortable(reported);
+function treeRelative(reported, treeRoots = [], platform) {
+  const portable = portableOn(reported, platform);
 
   for (const root of treeRoots) {
-    const prefix = `${normalizePortable(root)}/`;
+    const prefix = `${portableOn(root, platform)}/`;
 
     if (portable.startsWith(prefix)) {
       return portable.slice(prefix.length);
@@ -620,7 +624,7 @@ function readTap(text, context) {
     // node 18 prints an ESM file's location as a file:// URL.
     const location = quoted.startsWith("file://") ? fileURLToPath(quoted) : quoted;
 
-    ran = ran || isDiffFile(treeRelative(location, context.treeRoots), context.files);
+    ran = ran || isDiffFile(treeRelative(location, context.treeRoots, context.platform), context.files, context.platform);
   }
 
   return ran ? "ran" : "unknown";
@@ -1123,4 +1127,5 @@ module.exports = {
   expandCommand,
   findChangedTestFiles,
   runRedAtBase,
+  readBaseFailure,
 };
