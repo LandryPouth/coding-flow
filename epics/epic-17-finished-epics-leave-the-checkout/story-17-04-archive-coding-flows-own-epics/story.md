@@ -40,3 +40,29 @@ npm test
 ```
 
 ## Result
+
+### Baseline (2026-11-22, before any archive)
+
+- `epics/`: 30 epics, 436 files, 1,144,130 bytes; no `INDEX.md` yet.
+- Fixtures: `grep -rn "epics/epic-" test/ scripts/ evals/` names real epic
+  directories (`epic-08-evidence-levels`, `epic-09-monorepo`) only as paths
+  inside throwaway directories (`test/archive.test.js`,
+  `test/epic-index.test.js`); no test, script or eval reads the repository's
+  own `epics/`.
+- `doctor` warnings before: the global OpenCode install is behind; no
+  `v0.15.0` tag; six story entries of epic 13's index are not links;
+  `epics/` has no `INDEX.md`.
+- `status --json`: `nextEpicNumber` 31.
+
+### First attempt — every epic refused by the gate
+
+`ai-flow archive NN --dry-run` for 01 to 16: every epic "differs from main:
+merge it into main first". `main` was still at 0.14.0 (release PR #59 open),
+so nothing was archived — the gate holds. Re-run once PR #59 is merged and the
+local `main` ref is updated (`git fetch origin main:main`).
+
+The dry-run also showed 16-03 (and `status` showed 17-03) as `in-progress`:
+both wrote `## Status: done` in `spec.md`, but a three-file story's status is
+read from `tasks.md`. Fixed in `8e43db3`. Twenty older stories keep the line in
+`spec.md` only, so their written status is not read either; they pass the gate
+on their proof state.
