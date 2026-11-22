@@ -26,6 +26,7 @@ const {
   combineRisk,
 } = require("./harness");
 const { collectRecovery } = require("./recover");
+const { epicNumbers } = require("./epic-numbers");
 
 // Indexes the worktrees by branch name. The worktree<->story mapping is
 // stateless: `worktree add --story` names the branch after the story directory,
@@ -377,7 +378,9 @@ function printRecovery(recovery) {
 
 // Only when the dossier exists: a project that never ran recovery gets
 // byte-identical output to before this section existed.
+// `nextEpicNumber` (story 17-03): what `/flow-plan` numbers a new epic with.
 function statusPayload(config, { epics, looseWorktrees, worktreesActive, policy, untrackedPlans, recovery }) {
+  const numbers = epicNumbers(cwd);
   return {
     storage: config.storage,
     epics,
@@ -389,6 +392,8 @@ function statusPayload(config, { epics, looseWorktrees, worktreesActive, policy,
       onBase: policy.onBase,
     },
     untrackedPlans,
+    nextEpicNumber: numbers.next,
+    nextEpicNumberSources: numbers.sources,
   };
 }
 

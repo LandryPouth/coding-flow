@@ -41,6 +41,7 @@ const { EXPLICIT_TARGETS } = require("./detect");
 const { inspectOpenCodeInstructions, inspectGlobalCommands, globalOpenCodeDir } = require("./opencode-config");
 const { storyLinkIssues, fixStoryLinks } = require("./story-links");
 const { indexFreshness, refreshIndex } = require("./archive");
+const { epicNumberCollisions } = require("./epic-numbers");
 
 // Past this many stories, an epic is no longer one shippable capability (see
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
@@ -311,7 +312,10 @@ function checkReleaseTag(warnings) {
 // stops being unique the moment both branches merge. Nothing can prevent that
 // race without a shared counter this tool deliberately does not have, so
 // `doctor` catches it mechanically right after the merge instead, while a
-// rename is still a one-line fix.
+// rename is still a one-line fix. Story 17-03 narrows the race before the
+// merge: checkEpicNumberCollisions below reads the archived entries and the
+// other local and fetched refs. Two clones that have not fetched each other
+// are still caught only here, after the merge.
 function checkDuplicateNumbering(warnings) {
   let epics;
   try {
@@ -391,6 +395,23 @@ function listEpicsQuietly() {
   }
 }
 
+// A number on disk already held by an archived epic, or by another ref under
+// another slug (story 17-03). Warn only: the fix is a rename.
+function checkEpicNumberCollisions(warnings) {
+  let collisions;
+  try {
+    collisions = epicNumberCollisions(cwd);
+  } catch {
+    return; // best-effort only — never block doctor on a git or index read failure.
+  }
+  const seen = new Set();
+  for (const { code, message } of collisions) {
+    if (seen.has(message)) continue;
+    seen.add(message);
+    warnings.push({ code, file: "epics", message });
+  }
+}
+
 // `/flow-plan` writes each `## Stories` entry as a link that opens the story's
 // spec (`1. [story-…](story-…/spec.md) — …`). Checked on every install shape:
 // the same entries are what `worktree place` reads, minimal install or not.
@@ -430,6 +451,7 @@ function checkEpicIndex(warnings) {
 function checkEpicFiles(warnings) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
+  checkEpicNumberCollisions(warnings);
   checkStoryLinks(warnings);
   checkEpicIndex(warnings);
 }

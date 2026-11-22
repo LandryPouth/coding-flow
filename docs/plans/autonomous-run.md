@@ -39,6 +39,12 @@ stand-in for epic 20:
 - A product decision the spec leaves open is decided by the run, written in
   the story's `plan.md` under Decisions, and listed in the run report — the
   maintainer reviews afterwards, not during.
+- Memory vault (`~/dev/.ai-memory-vault`, read its `AGENTS.md` first): at
+  every release and at every long stop, update the run note
+  `workflows/epic-run/runs/2026-11-14-coding-flow-epics-13-30.md` and add or
+  increment lessons in `workflows/epic-run/lessons.md` (`proposed` only), then
+  commit `vault: …` there. Only those two places; never secrets, command output,
+  code or absolute paths.
 - Another session commits to `develop` (epic 29 was re-planned by one on
   2026-11-14): never commit files the run did not write.
 
@@ -72,7 +78,7 @@ Lane A (skills): epic 16, a chain.
 Lane B (CLI): epic 17, a chain.
 - [x] 17-01 archive one epic — landed, re-proved, review captured
 - [x] 17-02 the index lists every epic — landed, re-proved, review captured
-- [ ] 17-03 epic numbers never collide
+- [x] 17-03 epic numbers never collide — 2 reviews (1 P1, 9 P2 fixed), landed, re-proved, review captured
 - [ ] 17-04 archive coding-flow's own epics — alone, when no worktree is open
 
 ### Wave 2 — no factory needed (step 0) · two lanes · *release 0.16.0*
