@@ -6,6 +6,7 @@ node_modules/
 .coding-flow/runs/
 .coding-flow/denials.jsonl
 .coding-flow/guard-unchecked.jsonl
+.coding-flow/guard-warnings.jsonl
 .coding-flow/manifest.json
 .coding-flow/active-story.json
 
