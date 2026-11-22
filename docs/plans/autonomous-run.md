@@ -36,6 +36,10 @@ stand-in for epic 20:
 - At most 2 agents at once (implementers and reviewers together); two lanes
   run in parallel only when their files are disjoint.
 - TMPDIR under the session scratchpad, never inside a repository.
+- Every review brief says: experiments only in a throwaway repo, as
+  `set -euo pipefail; D=$(mktemp -d) && cd "$D" && …` — never `;` after a
+  mktemp or cd, never in the primary checkout (2026-11-22: a reviewer's failed
+  mktemp ran its steps in the primary checkout and committed there; repaired).
 - Never weaken or delete a test; never switch the primary checkout's branch;
   `trash`, not `rm`; English only; CHANGELOG `[Unreleased]` for every
   user-visible change.
@@ -199,3 +203,8 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 - 2026-11-22 — release 0.15.0 merged to main (PR #59, merge 2592244) after four
   CI rounds; `npm publish` and `npm run release` are the maintainer's. Vault
   run note and lessons updated. 17-04 next, when an agent slot frees.
+- 2026-11-22 — incident: 19-05's second reviewer committed a test config on
+  develop (8f7fe8f, local only, 3 min) after its mktemp failed; it reset to
+  1f58d2f and restored the file; checked clean. Review briefs now require
+  `set -euo pipefail` experiments. 19-05 round 2: FAIL (new P1, fixers alone
+  gave a green verify).
