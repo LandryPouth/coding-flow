@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-22
+
+The proof holds its own bar, and finished epics leave the checkout. Epic 13 closes the holes found by measuring Coding Flow against its own rules: the guard treats a directory swap and a long tail of shell and archive writes as writes, the security core stays high-risk, a new function is measured as new, a deleted file raises the risk, a wrapped acceptance criterion is read whole, and the bar (coverage, function size, module boundaries, scanners) does not move silently. Epic 16 sharpens the skills: `/flow-plan` asks in rounds and never settles an ambiguity in silence, a bug fix starts red in every mode, `/flow-review` reads the diff against what was asked. Epic 17 adds `ai-flow archive` and a live `epics/INDEX.md`.
+
+**Behaviour changes:** the default `blockedPaths` includes `.coding-flow/runs/**`, so an agent can no longer write its own evidence; a write the guard cannot classify is reported as unchecked instead of silently allowed; `doctor` warns `epic_index_stale` until `ai-flow archive --refresh` (or `doctor --fix`) writes `epics/INDEX.md`. A proof captured before this release may read `stale` once — re-verify it.
+
 ### Added
 
 - **`epics/INDEX.md` lists every epic, live and archived.** `ai-flow archive --refresh [--dry-run] [--json]` writes a live section between `<!-- coding-flow:index:start -->` and `<!-- coding-flow:index:end -->`: one heading per epic on disk (number, title, directory) and one line per story with its number, title and the `## Status:` written in its file (`—` when none) — never the proof-derived state, which stays with `ai-flow status`. Text outside the markers (a hand-written preface, the append-only archived section) is kept byte for byte; without markers the section goes above the archived section. `archive <epic>` refreshes it too, so an archived epic leaves the live list. `doctor` warns `epic_index_stale` when the section no longer matches the epics on disk (or epics exist with no index), and `doctor --fix` refreshes it; a proof going stale is not a change. A symlinked `INDEX.md` or broken markers refuse and write nothing. `/flow-plan` runs the refresh after writing an epic.

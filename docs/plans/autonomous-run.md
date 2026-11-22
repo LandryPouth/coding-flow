@@ -66,12 +66,12 @@ tag must follow npm (story 10-04).
 
 Lane A (skills): epic 16, a chain.
 - [x] 16-01 grilling rounds hold the request — landed, re-proved, review captured (20-05 reads its marker)
-- [ ] 16-02 a bug fix starts red
-- [ ] 16-03 writing-for-agents pass (after s1, s2)
+- [x] 16-02 a bug fix starts red — landed, re-proved, review captured
+- [x] 16-03 writing-for-agents pass — 1 review (3 P2 fixed), landed, re-proved, review captured
 
 Lane B (CLI): epic 17, a chain.
-- [ ] 17-01 archive one epic
-- [ ] 17-02 the index lists every epic
+- [x] 17-01 archive one epic — landed, re-proved, review captured
+- [x] 17-02 the index lists every epic — landed, re-proved, review captured
 - [ ] 17-03 epic numbers never collide
 - [ ] 17-04 archive coding-flow's own epics — alone, when no worktree is open
 
@@ -82,8 +82,8 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 
 - [ ] 26-06  - [ ] 26-03  - [ ] 26-07
 - [ ] 19-05  - [ ] 26-02 (todo)  - [ ] 28-01
-- [ ] 13-14 a deletion is a structural signal (QUICK; from 17-01's review)
-- [ ] 13-13 the guard's long tail (STRICT; follow-up of 13-09)
+- [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
+- [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
 
 ### Wave 3 — first driven run (step 1) · two lanes
@@ -139,3 +139,15 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   not exempt a deletion, skip lines > 2000 chars in the risk regexes.
 - 2026-11-14 08:30 — resumed: 13-12 and 16-01 landed and re-proved; reviews of
   13-03/05/06/12 and 16-01 captured on develop. Wave 0 left: 13-14 (closing).
+- 2026-11-14 ~10:00 — 16-02, 17-01, 13-14, 13-13 and 17-02 landed, re-proved,
+  reviews captured on develop. 16-03's implementer was stopped mid-verify (its
+  benchmark run and write-up are committed on its branch); the run re-runs its
+  verify, then the independent review.
+- 2026-11-22 — resumed after a pause. Epic 30 (one workspace, several
+  repositories) was planned by another session on 2026-11-21; its index says
+  it is not part of this run (the maintainer schedules it). Release 0.15.0 is cut now
+  (wave 0 done, plus what wave 1 landed).
+- 2026-11-22 — 16-03 reviewed (PASS, 3 P2 fixed by the run), landed, re-proved.
+  Lane A of wave 1 is done. Release 0.15.0 cut (epics 13, 16, 17-01/02).
+  The scratchpad was cleared during the pause: `land.sh` was rewritten from
+  this file's description. Next: 17-03, then 17-04 alone, then wave 2.
