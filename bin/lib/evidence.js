@@ -11,7 +11,7 @@ const { execFileSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { policyFingerprint } = require("./policy-fingerprint");
-const { currentTreeToken, captureIdentity } = require("./identity");
+const { currentTreeToken, captureIdentity, workingTreeSnapshot, changedPaths } = require("./identity");
 const { resolveCoverageFloor } = require("./coverage");
 const {
   storyPartPath,
@@ -201,6 +201,14 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
 // A different limit is a different command contract: a run that passed under a
 // 20 min limit proves nothing about the same command under 1 s. Commands with no
 // declared limit hash exactly as before, so existing proofs stay valid.
+// What a proof's command set is: the checks, preceded by the fixers when there
+// are any (marked, so a fixer and a check of the same text differ). With no
+// fixer this is exactly the old list, and every earlier proof keeps its value.
+function provedCommands(resolution) {
+  const fix = resolution.fix || [];
+  return fix.length > 0 ? [...fix.map((command) => `\u0001fix\u0000${command}`), ...resolution.commands] : resolution.commands;
+}
+
 function commandsFingerprint(commands, timeouts = {}) {
   const lines = commands.map((command) => (timeouts && timeouts[command] ? `${command}\u0000${timeouts[command]}` : command));
 
@@ -431,6 +439,25 @@ function executeValidationCommands({ resolution, freshRequired, cleaned, refused
   });
 }
 
+// Fixers (story 19-05) run before the checks, each like any declared command: a
+// red one is a red verify. The files whose content they changed are listed,
+// from two snapshots of the working tree taken around them; null when git cannot
+// say (outside git, before the first commit), never a guessed empty list. Their
+// changes stay in the tree: the checks, and the tree token, see the fixed files.
+function runFixers({ resolution, cleaned }) {
+  const before = workingTreeSnapshot(cwd);
+  const results = resolution.fix.map((command) => ({
+    ...runValidationCommand(command, {
+      ...commandTimeout(resolution, command),
+      ...(cleaned ? { env: cleaned.env } : {}),
+    }),
+    kind: "fix",
+  }));
+  const fixedFiles = changedPaths(cwd, before, workingTreeSnapshot(cwd));
+
+  return { results, fixedFiles };
+}
+
 function evaluateClaimFor({ refused, storyDir, config, claim, resolution, commandsOk, startedAt }) {
   return refused
     ? null
@@ -464,6 +491,9 @@ function verifyStoryOnce({
   unattended = isUnattended(),
   allowPlanCommands = false,
   cleanEnv = false, redAtBase = false, announce = false,
+  // `land` re-verifies the merge commit on the target checkout: a fixer there
+  // would leave the target dirty and prove a tree nobody committed.
+  runFix = true,
 } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
@@ -471,8 +501,13 @@ function verifyStoryOnce({
   const { config } = readHarnessConfig();
   const freshRequired = freshTestsRequired({ storyDir, config });
   const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
+  // A fixer from plan.md is a plan command: refused unattended on the same terms.
+  const planCommands = [
+    ...(resolution.source === "plan.md" ? resolution.commands : []),
+    ...(resolution.fixSource === "plan.md" ? resolution.fix : []),
+  ];
   const refused =
-    resolution.source === "plan.md" && unattended && !allowPlanCommands && !resolution.commands.every(isProjectScriptInvocation)
+    planCommands.length > 0 && unattended && !allowPlanCommands && !planCommands.every(isProjectScriptInvocation)
       ? PLAN_COMMANDS_REFUSAL
       : null;
   const cleaned = cleanEnv ? cleanEnvironment() : null;
@@ -480,15 +515,20 @@ function verifyStoryOnce({
   if (announce && !refused && resolution.source === "plan.md") {
     log("Running commands from plan.md (not from .coding-flow/config.json):");
 
-    for (const command of resolution.commands) {
+    for (const command of [...(resolution.fixSource === "plan.md" ? resolution.fix : []), ...resolution.commands]) {
       log(`  ${command}`);
     }
   }
 
+  const fixing = runFix && !refused && resolution.fix.length > 0 ? runFixers({ resolution, cleaned }) : null;
+
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const results = executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" });
+  const results = [
+    ...(fixing ? fixing.results : []),
+    ...executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" }),
+  ];
   const commandsOk = results.length > 0 && results.every((item) => item.ok);
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.
@@ -518,7 +558,7 @@ function verifyStoryOnce({
     commandSource: resolution.source,
     commandsFound: resolution.commands.length,
     // Recorded so a later verify can recognise this proof as still applicable.
-    commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
+    commandsFingerprint: commandsFingerprint(runFix ? provedCommands(resolution) : resolution.commands, resolution.timeouts),
     // The floor this verdict was judged against. `.coding-flow/` is outside the
     // tree token, so without it an edit to the floor would leave a stale "ok".
     coverageFloor: resolveCoverageFloor(config),
@@ -529,6 +569,7 @@ function verifyStoryOnce({
     environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
     unattended,
     ...(refused ? { refused } : {}),
+    ...(fixing ? { fixedFiles: fixing.fixedFiles } : {}),
     commandsOk,
     // Which base every diff-derived signal below was measured from: a surprising
     // coverage or risk verdict is explained by this line before anything else.
@@ -549,6 +590,7 @@ module.exports = {
   buildHarnessPreflight,
   checkStoryEvidence,
   commandsFingerprint,
+  provedCommands,
   findReusableVerify,
   writeVerifyEvidence,
   verifyStoryOnce,

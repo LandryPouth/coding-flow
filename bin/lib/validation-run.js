@@ -33,9 +33,10 @@ function resolveStoryDir(story) {
 // Extracts the command lines under "## Commands": the lines of a fenced block, plus
 // labelled bullets (`- Command: `x``) because a model reading "a block" often writes
 // that instead, and verify must not silently find zero commands because of it.
-function parseTestsCommands(testsMarkdown) {
+// `heading` reads another section the same way (`## Fixers`, story 19-05).
+function parseTestsCommands(testsMarkdown, heading = "## commands") {
   const lines = testsMarkdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim().toLowerCase() === "## commands");
+  const start = lines.findIndex((line) => line.trim().toLowerCase() === heading);
 
   if (start === -1) {
     return [];
@@ -74,7 +75,46 @@ function parseTestsCommands(testsMarkdown) {
 
 // Source of the commands, by decreasing priority: explicit config, then the
 // story's plan.md contract, then the usual package.json scripts.
+//
+// Fixers (story 19-05) run before every check and may rewrite files:
+// `validation.fix` from the config whatever source the checks come from, else the
+// `## Fixers` block of the plan when the checks come from it too (and then
+// refused unattended exactly like plan checks). Absent, `fix` is empty and
+// verify runs as it always did.
 function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
+  const resolution = resolveCheckCommands({ storyDir, fresh });
+  const config = readConfig(cwd);
+  const declaredFix = config.validation && Array.isArray(config.validation.fix) ? config.validation.fix : [];
+
+  if (declaredFix.length > 0) {
+    const globalTimeout = config.validation && Number.isFinite(config.validation.timeoutMs) ? config.validation.timeoutMs : null;
+    const timeouts = { ...(resolution.timeouts || {}) };
+    const fix = declaredFix.map((entry) => {
+      const command = typeof entry === "string" ? entry : entry.command;
+      const timeoutMs = typeof entry === "string" ? globalTimeout : entry.timeoutMs || globalTimeout;
+
+      if (timeoutMs) {
+        timeouts[command] = timeoutMs;
+      }
+
+      return command;
+    });
+
+    return { ...resolution, fix, fixSource: "config", ...(Object.keys(timeouts).length > 0 ? { timeouts } : {}) };
+  }
+
+  if (resolution.source === "plan.md") {
+    const fix = parseTestsCommands(readStoryPart(storyDir, "plan") || "", "## fixers");
+
+    if (fix.length > 0) {
+      return { ...resolution, fix, fixSource: "plan.md" };
+    }
+  }
+
+  return { ...resolution, fix: [], fixSource: null };
+}
+
+function resolveCheckCommands({ storyDir = null, fresh = false } = {}) {
   const config = readConfig(cwd);
 
   if (config.validation) {

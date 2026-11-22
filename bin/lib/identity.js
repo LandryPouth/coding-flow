@@ -222,4 +222,27 @@ function captureIdentity(cwd) {
   };
 }
 
-module.exports = { captureIdentity, currentTreeToken };
+// The working tree as a git tree object (tracked and untracked, ignored files
+// left out), or null outside git or before the first commit. Two snapshots
+// compared with `changedPaths` say which files a command rewrote (story 19-05).
+function workingTreeSnapshot(cwd) {
+  const head = gitField(cwd, ["rev-parse", "HEAD"]);
+  return head ? workingTreeTree(cwd, head) : null;
+}
+
+// Paths whose content differs between two snapshots, sorted, `/`-separated as
+// git prints them; null when either snapshot or the diff is unavailable.
+function changedPaths(cwd, before, after) {
+  if (!before || !after) {
+    return null;
+  }
+
+  if (before === after) {
+    return [];
+  }
+
+  const listing = tryExec("git", ["-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", before, after], cwd);
+  return listing == null ? null : listing.split("\0").filter(Boolean).sort();
+}
+
+module.exports = { captureIdentity, currentTreeToken, workingTreeSnapshot, changedPaths };

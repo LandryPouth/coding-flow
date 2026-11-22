@@ -319,10 +319,36 @@ function printVerify(evidence, outputPath) {
   }
 
   printResults(evidence.results);
+  printFixedFiles(evidence.fixedFiles);
 
   if (outputPath) {
     log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
   }
+}
+
+// Story 19-05: what the fixers rewrote, left in the tree for whoever commits.
+function printFixedFiles(fixedFiles) {
+  if (fixedFiles === undefined) {
+    return;
+  }
+
+  if (fixedFiles === null) {
+    log("Fixed by the fixers: unknown (no git snapshot of the working tree).");
+    return;
+  }
+
+  if (fixedFiles.length === 0) {
+    log("Fixed by the fixers: nothing changed.");
+    return;
+  }
+
+  log("Fixed by the fixers:");
+
+  for (const file of fixedFiles) {
+    log(`  - ${file}`);
+  }
+
+  log("  (left in the working tree, not committed)");
 }
 
 // One line per command, then what explains a non-green one.
@@ -331,7 +357,7 @@ function printResults(results) {
     const replay = item.cache === "full" || item.cache === "partial"
       ? `, replayed from cache${item.total ? `: ${item.cached}/${item.total} tasks` : ""}`
       : "";
-    const kind = item.kind === "security" ? "security: " : "";
+    const kind = item.kind === "security" ? "security: " : item.kind === "fix" ? "fix: " : "";
     log(`- [${resultStatus(item)}] ${kind}${item.command} (${item.durationMs}ms${replay})`);
 
     if (item.outcome === "not-examined") {

@@ -72,6 +72,7 @@ const {
   buildHarnessPreflight,
   checkStoryEvidence,
   findReusableVerify,
+  provedCommands,
   writeVerifyEvidence,
   verifyStoryOnce,
 } = require("./evidence");
@@ -375,6 +376,7 @@ function harnessVerify({
       story: resolvedStory ? resolvedStory.relativePath : null,
       commandSource: resolution.source,
       commands: resolution.commands,
+      ...(resolution.fix.length > 0 ? { fix: resolution.fix, fixSource: resolution.fixSource } : {}),
     };
 
     if (json) {
@@ -387,6 +389,16 @@ function harnessVerify({
 
     if (resolution.commands.length === 0) {
       log("No validation commands found.");
+    }
+
+    if (resolution.fix.length > 0) {
+      log(`Fixers (run first): from ${resolution.fixSource}`);
+
+      for (const command of resolution.fix) {
+        log(`- ${command}`);
+      }
+
+      log("Checks:");
     }
 
     for (const command of resolution.commands) {
@@ -409,7 +421,7 @@ function harnessVerify({
     const reusable = findReusableVerify({
       storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
       storyDir: resolveStoryDir(story),
-      commands: resolution.commands,
+      commands: provedCommands(resolution),
       timeouts: resolution.timeouts,
       claimKind: claimKindOf(story, claim), redAtBase,
     });

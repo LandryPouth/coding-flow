@@ -16,6 +16,7 @@ const { cwd } = require("./context");
 const { log, toPortable, readJson, findDirectories } = require("./util");
 const { detectSecurityRecipes } = require("./security-recipes");
 const { detectQualityRecipes } = require("./quality-recipes");
+const { detectFixRecipes } = require("./fix-recipes");
 
 // Directories Coding Flow itself installs, plus the usual noise. They say nothing
 // about whether the repo holds code — and `init` runs the scan *after* laying
@@ -797,6 +798,11 @@ function formatRecipeSections(scan) {
       "Boundary and complexity checks for `validation.quality` — not declared by this scan. Read from the root manifests only: a workspace package needs its own.",
       (scan.qualityRecipes || []).map(formatQualityRecipe),
     ),
+    ...recipeSection(
+      "## Fixer Recipes",
+      "Candidates for `validation.fix` (run before the checks, may rewrite files) — not declared by this scan.",
+      (scan.fixRecipes || []).map((recipe) => `- ${recipe.script}: \`${recipe.command}\``),
+    ),
   ];
 }
 
@@ -928,6 +934,7 @@ function withRecipes(scan) {
     ...scan,
     securityRecipes: detectSecurityRecipes(cwd).map(({ tool, ecosystem, command }) => ({ tool, ecosystem, command })),
     qualityRecipes: detectQualityRecipes(cwd),
+    fixRecipes: detectFixRecipes(cwd),
   };
 }
 
@@ -998,6 +1005,10 @@ function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
   if (scan.qualityRecipes.length > 0) {
     const label = (recipe) => (recipe.present ? `${recipe.tool} (present)` : recipe.tool);
     log(`Quality recipes for validation.quality: ${scan.qualityRecipes.map(label).join(", ")}.`);
+  }
+
+  if ((scan.fixRecipes || []).length > 0) {
+    log(`Fixer recipes for validation.fix: ${scan.fixRecipes.map((recipe) => `\`${recipe.command}\``).join(", ")}.`);
   }
 
   log("");
