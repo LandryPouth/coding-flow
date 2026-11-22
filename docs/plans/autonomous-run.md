@@ -39,6 +39,12 @@ stand-in for epic 20:
 - A product decision the spec leaves open is decided by the run, written in
   the story's `plan.md` under Decisions, and listed in the run report — the
   maintainer reviews afterwards, not during.
+- Memory vault (`~/dev/.ai-memory-vault`, read its `AGENTS.md` first): at
+  every release and at every long stop, update the run note
+  `workflows/epic-run/runs/2026-11-14-coding-flow-epics-13-30.md` and add or
+  increment lessons in `workflows/epic-run/lessons.md` (`proposed` only), then
+  commit `vault: …` there. Only those two places; never secrets, command output,
+  code or absolute paths.
 - Another session commits to `develop` (epic 29 was re-planned by one on
   2026-11-14): never commit files the run did not write.
 
