@@ -196,3 +196,6 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   reviewer on the whole diff; STRICT needs two clean rounds; cap 4. Same
   change planned in 20-04 (rounds, `review-not-converging`) and 21-04 (yield
   per round); the `epic-run` skill updated.
+- 2026-11-22 — release 0.15.0 merged to main (PR #59, merge 2592244) after four
+  CI rounds; `npm publish` and `npm run release` are the maintainer's. Vault
+  run note and lessons updated. 17-04 next, when an agent slot frees.
