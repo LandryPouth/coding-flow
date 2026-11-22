@@ -21,6 +21,33 @@
 
 - **Fixers before checks, results kept**: the alternative (report-only) keeps
   the red that was the problem.
+- **Where a fixer may come from (decided by the run, 2026-11-22):**
+  `validation.fix` in the config applies whatever the checks' source; a
+  `## Fixers` block in `plan.md` applies only when the checks come from
+  `plan.md` too, and is refused unattended on the same terms as plan checks
+  (a bare project-script invocation passes, `--allow-plan-commands` opts in).
+  Criterion 4 needs a plan-side declaration to mean anything; tying it to the
+  checks' source keeps one rule: the config wins, as for checks.
+- **`fixedFiles` from two git snapshots** of the working tree (the same
+  throwaway-index tree the tree token uses, untracked included), diffed by
+  git. `null` when git cannot say (outside git, no commit yet): unknown is not
+  empty. Paths under `.coding-flow/` and the story dirs follow the token's
+  rules for untracked files.
+- **`land` never runs fixers.** Its re-verify judges the merge commit on the
+  target checkout; a fixer there would leave the target dirty and prove a
+  tree nobody committed. If the merged result needs fixing, its checks fail
+  and the land rolls back, as for any red.
+- **Fingerprint:** fixers join the command fingerprint only when declared, so
+  a project without them keeps every earlier proof (criterion 3).
+- **Suggestion, not template:** `config.json` is JSON (no comments), so the
+  "suggest as a comment" requirement is met by `bootstrap --scan` (a
+  `## Fixer Recipes` section and a summary line), like the quality and
+  security recipes. A script that already rewrites (`--fix`, `--write`) is
+  offered as is; an ESLint `lint` without one gets `-- --fix`; Coding Flow's
+  own `flow:fix` (`doctor --fix`) is never offered.
+- **Outside-the-repo writes:** a fixer runs at the project root like every
+  declared command; the tool cannot stop a command writing elsewhere, and
+  `fixedFiles` lists only paths inside the work tree.
 
 ## Test Plan
 
@@ -29,8 +56,12 @@ command refusal; dry-run.
 
 ## Acceptance Traceability
 
-- 1, 2, 3, 5 → `test/harness-verify.test.js::fixers`
-- 4 → `test/harness-plan-commands.test.js::fixers from plan refused`
+- 1, 2, 3, 5 → `test/harness-fixers.test.js` (a fixer runs first…, a fixer
+  that fails…, without validation.fix…, --dry-run lists the fixers…)
+- 4 → `test/harness-fixers.test.js` (a fixer declared only in plan.md is
+  refused unattended…)
+- land skips fixers → `test/worktree.test.js` (worktree land re-verifies the
+  merged commit as it is…)
 
 ## Commands
 

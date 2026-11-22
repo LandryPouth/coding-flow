@@ -24,13 +24,13 @@ bethl's 130 red runs (38 % of failing commands), almost all mechanical.
 
 ## Acceptance Criteria
 
-- [ ] Given a fixer that reformats a file, when verify runs, then the checks
+- [x] Given a fixer that reformats a file, when verify runs, then the checks
       run on the fixed file and the evidence lists it under `fixedFiles`.
-- [ ] Given a fixer that fails, then verify is red on that command.
-- [ ] Given no `validation.fix`, then verify behaves exactly as before.
-- [ ] Given an unattended run and a fixer declared only in `plan.md`, then it
+- [x] Given a fixer that fails, then verify is red on that command.
+- [x] Given no `validation.fix`, then verify behaves exactly as before.
+- [x] Given an unattended run and a fixer declared only in `plan.md`, then it
       is refused like any plan command.
-- [ ] Given `--dry-run`, then no fixer runs.
+- [x] Given `--dry-run`, then no fixer runs.
 
 ## Edge Cases
 
