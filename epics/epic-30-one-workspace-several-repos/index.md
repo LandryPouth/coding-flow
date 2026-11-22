@@ -138,8 +138,9 @@ coverage gate only and says so.
 
 ## Delivery order
 
-s1 first. Then s2 ∥ s3, then s4 ∥ s6, then s5. Not part of the unattended run
-of `docs/plans/autonomous-run.md`: the maintainer schedules it.
+s1 first. Then s2 ∥ s3, then s4 ∥ s6, then s5. Scheduled in the unattended run
+of `docs/plans/autonomous-run.md` as wave 2b, after wave 2 (29-01 `scan`, 29-03
+guard), at the maintainer's request on 2026-11-22.
 
 ## Readiness
 
