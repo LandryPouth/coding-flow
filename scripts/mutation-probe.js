@@ -526,12 +526,26 @@ function alive(pid) {
   }
 }
 
+// A process's working directory: /proc on Linux, lsof where there is no /proc
+// (macOS). Throws when it cannot be read.
+function cwdOf(pid) {
+  if (fs.existsSync("/proc/self/cwd")) {
+    return fs.readlinkSync("/proc/" + pid + "/cwd");
+  }
+  const out = execFileSync("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const line = out.split("\n").find((l) => l.startsWith("n"));
+  if (!line) {
+    throw new Error("no cwd for " + pid);
+  }
+  return line.slice(1);
+}
+
 // The process group a SIGKILLed run left, killed only while its leader still
 // works inside that run's directory: a recorded pid may since belong to anyone.
 function killLeftGroup(tmp) {
   try {
     const pgid = Number(fs.readFileSync(path.join(tmp, "running"), "utf8"));
-    const cwd = fs.readlinkSync("/proc/" + pgid + "/cwd");
+    const cwd = cwdOf(pgid);
     if (pgid > 0 && (cwd + "/").startsWith(tmp + "/")) {
       process.kill(-pgid, "SIGKILL");
     }
