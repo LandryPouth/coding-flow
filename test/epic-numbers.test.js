@@ -108,6 +108,7 @@ test('a repository with no remote and no other branch counts the disk and the in
   const payload = statusJson(dir);
   assert.equal(payload.nextEpicNumber, '06');
   assert.deepEqual(payload.nextEpicNumberSources.refs, []);
+  assert.equal(payload.nextEpicNumberSources.refsScanned, 0);
   assert.equal(payload.nextEpicNumberSources.lastFetch, null);
 });
 
@@ -147,7 +148,7 @@ test('the ref scan is capped, and the cap is said', (t) => {
   const { epicNumbers } = require('../bin/lib/epic-numbers');
   const result = epicNumbers(dir, { refLimit: 1 });
   assert.equal(result.sources.refsCapped, true);
-  assert.equal(result.sources.refs.length, 1);
+  assert.equal(result.sources.refsScanned, 1);
   assert.equal(result.sources.refLimit, 1);
 });
 
@@ -218,4 +219,66 @@ test('/flow-plan takes the epic number from nextEpicNumber, not a directory list
   const conventions = skill.slice(skill.indexOf('## Conventions'), skill.indexOf('## Pipeline'));
   assert.match(conventions, /ai-flow status --json/);
   assert.match(conventions, /nextEpicNumber/);
+});
+
+test('the sources list only the refs that hold epics, and count the rest', (t) => {
+  const dir = repo(t);
+  for (let i = 0; i < 5; i += 1) git(dir, ['branch', `empty-${i}`]);
+  otherBranch(dir, 'epic-03-x');
+  const sources = statusJson(dir).nextEpicNumberSources;
+  assert.deepEqual(sources.refs, ['other']);
+  assert.equal(sources.refsScanned, 6);
+});
+
+test('a non-ASCII or quoted slug on both branches is the same epic', (t) => {
+  const dir = repo(t);
+  git(dir, ['config', 'core.quotePath', 'true']);
+  otherBranch(dir, 'epic-05-café');
+  otherBranch(dir, 'epic-06-say "hi"', 'quoted');
+  epic(dir, 'epic-05-café');
+  epic(dir, 'epic-06-say "hi"');
+  const codes = warnings(dir).map((w) => w.code);
+  assert.ok(!codes.includes('epic_number_on_other_branch'), codes.join(', '));
+  assert.equal(statusJson(dir).nextEpicNumber, '07');
+});
+
+test('one collision held by several refs is one warning that lists them, with a stale-ref hint', (t) => {
+  const dir = repo(t);
+  otherBranch(dir, 'epic-03-x');
+  git(dir, ['branch', 'copy-of-other', 'other']);
+  epic(dir, 'epic-03-z');
+  const found = warnings(dir).filter((w) => w.code === 'epic_number_on_other_branch');
+  assert.equal(found.length, 1, JSON.stringify(found));
+  assert.match(found[0].message, /copy-of-other/);
+  assert.match(found[0].message, /\bother\b/);
+  assert.match(found[0].message, /git fetch --prune/);
+});
+
+test('a detached HEAD scans every local branch', (t) => {
+  const dir = repo(t);
+  otherBranch(dir, 'epic-03-x');
+  git(dir, ['checkout', '-q', '--detach', 'main']);
+  epic(dir, 'epic-03-z');
+  const payload = statusJson(dir);
+  assert.equal(payload.nextEpicNumber, '04');
+  assert.ok(warnings(dir).some((w) => w.code === 'epic_number_on_other_branch'));
+});
+
+test('a linked worktree sees the primary branch as another ref', (t) => {
+  const dir = repo(t);
+  epic(dir, 'epic-04-main-only');
+  commit(dir, 'epic 04');
+  const linked = path.join(tempDir(t), 'wt');
+  git(dir, ['worktree', 'add', '-q', '-b', 'side', linked, 'main~1']);
+  const payload = statusJson(linked);
+  assert.equal(payload.nextEpicNumber, '05');
+  assert.ok(payload.nextEpicNumberSources.refs.includes('main'), JSON.stringify(payload.nextEpicNumberSources));
+});
+
+test('a shallow clone counts its fetched refs', (t) => {
+  const upstream = repo(t);
+  otherBranch(upstream, 'epic-09-far', 'feature');
+  const dir = tempDir(t);
+  git(dir, ['clone', '-q', '--depth', '1', '--no-single-branch', `file://${upstream}`, '.']);
+  assert.equal(statusJson(dir).nextEpicNumber, '10');
 });
