@@ -45,6 +45,13 @@
   and the land rolls back, as for any red.
 - **Fingerprint:** fixers join the command fingerprint only when declared, so
   a project without them keeps every earlier proof (criterion 3).
+- **Fixers prove nothing alone (review 2 P1):** the verdict comes from the
+  checks; with no check verify is red even when the fixers passed, and no
+  earlier proof is reused for a run without checks.
+- **Red-at-base and the mutation probe run the checks without the fixers:**
+  they judge a base or a mutant as committed, the way `land` does. A base
+  whose only fault is formatting can read red at base; documented in
+  `docs/rules-and-limits.md`, not changed here.
 - **Suggestion, not template:** `config.json` is JSON (no comments), so the
   "suggest as a comment" requirement is met by `bootstrap --scan` (a
   `## Fixer Recipes` section and a summary line), like the quality and

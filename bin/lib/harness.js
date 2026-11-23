@@ -351,17 +351,20 @@ function printVerifyDryRun({ story, resolvedStory, json }) {
   log("Harness verify — dry run (no command executed).");
   log(`Source: ${resolution.source || "none"}`);
 
-  if (resolution.commands.length === 0) {
-    log("No validation commands found.");
-  }
-
   if (resolution.fix.length > 0) {
     log(`Fixers (run first): from ${resolution.fixSource}`);
 
     for (const command of resolution.fix) {
       log(`- ${command}`);
     }
+  }
 
+  if (resolution.commands.length === 0) {
+    log(resolution.fix.length > 0 ? "No validation commands found: fixers alone prove nothing." : "No validation commands found.");
+    return;
+  }
+
+  if (resolution.fix.length > 0) {
     log("Checks:");
   }
 
@@ -420,8 +423,11 @@ function harnessVerify({
   // current tree token, so `status` and `audit` already read it as verified.
   // A clean-env run is asked for a proof made without the secrets; replaying one
   // made with them would answer a different question.
-  if (!noCache && !cleanEnv) {
-    const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
+  const reuse = !noCache && !cleanEnv ? resolveValidationCommands({ storyDir: resolveStoryDir(story) }) : null;
+
+  // No check, no proof to reuse: the fixer lines alone must not find one.
+  if (reuse && reuse.commands.length > 0) {
+    const resolution = reuse;
     const reusable = findReusableVerify({
       storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
       storyDir: resolveStoryDir(story),

@@ -316,3 +316,50 @@ test('a lint script that already fixes is offered once, as it is', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a fixer alone is no proof: with no check, verify is red', (t) => {
+  const dir = project(t, { fix: [node('0')] });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  const { code, output } = verify(dir);
+  assert.notEqual(code, 0, output);
+  const evidence = JSON.parse(output);
+  assert.equal(evidence.commandsFound, 0);
+  assert.equal(evidence.commandsOk, false);
+  assert.equal(evidence.ok, false);
+  // Asked again without --no-cache: no earlier proof answers for it either.
+  const again = run(dir, ['verify']);
+  assert.notEqual(again.code, 0, again.output);
+  assert.doesNotMatch(again.output, /already proved/);
+});
+
+test('a story whose plan has no checks is red even when the config declares a fixer', (t) => {
+  const dir = project(t, { fix: [node('0')] });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  fs.mkdirSync(path.join(dir, STORY), { recursive: true });
+  fs.writeFileSync(path.join(dir, STORY, 'spec.md'), '# Demo\n');
+  fs.writeFileSync(path.join(dir, STORY, 'plan.md'), '# Plan\n\n## Decisions\n\n- none\n');
+  const { code, output } = run(dir, ['verify', '--story', STORY, '--json', '--no-cache']);
+  assert.notEqual(code, 0, output);
+  assert.equal(JSON.parse(output).ok, false);
+});
+
+test('--dry-run with fixers and no check says the fixers prove nothing', (t) => {
+  const dir = project(t, { fix: [FIXER] });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  const { output } = run(dir, ['verify', '--dry-run']);
+  assert.match(output, /No validation commands found: fixers alone prove nothing\./);
+  assert.doesNotMatch(output, /Checks:/);
+});
+
+test('the command fingerprint changes with a fixer and with a fixer limit, and not without fixers', () => {
+  const { commandsFingerprint, provedCommands } = require('../bin/lib/evidence');
+  const of = (resolution) => commandsFingerprint(provedCommands(resolution), resolution.timeouts);
+  const base = { commands: ['npm test'], timeouts: {}, fix: ['npm run fix'], fixTimeouts: {} };
+  assert.notEqual(of(base), of({ ...base, fix: ['npm run format'] }), 'another fixer');
+  assert.notEqual(of(base), of({ ...base, fixTimeouts: { 'npm run fix': 5000 } }), 'another fixer limit');
+  assert.notEqual(of(base), of({ ...base, fix: [] }), 'a fixer removed');
+  // A fixer is not a check of the same text.
+  assert.notEqual(of({ ...base, fix: ['npm test'], commands: [] }), of({ ...base, fix: [], commands: ['npm test'] }));
+  // No fixer: exactly the fingerprint every earlier proof carries.
+  assert.equal(of({ ...base, fix: [] }), commandsFingerprint(['npm test'], {}));
+});

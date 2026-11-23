@@ -535,7 +535,8 @@ function verifyStoryOnce({
   const startedAt = Date.now();
   const checks = executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" });
   const results = fixing ? [...fixing.results, ...checks] : checks;
-  const commandsOk = results.length > 0 && results.every((item) => item.ok);
+  // A fixer proves nothing: with no check there is no green, whatever the fixers did.
+  const commandsOk = checks.length > 0 && results.every((item) => item.ok);
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.
   const coverage = !commandsOk
