@@ -96,7 +96,7 @@ Lane A: 26-06 `ai-flow rules` → 26-03 `docs check` → 26-07 we need you
 Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) → 28-01 ideas
 
 - [ ] 26-06  - [ ] 26-03  - [ ] 26-07
-- [ ] 19-05  - [ ] 26-02 (todo)  - [ ] 28-01
+- [ ] 19-05  - [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
@@ -208,3 +208,9 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   1f58d2f and restored the file; checked clean. Review briefs now require
   `set -euo pipefail` experiments. 19-05 round 2: FAIL (new P1, fixers alone
   gave a green verify).
+- 2026-11-23 — 19-05 hit the review cap (4 rounds, a new P1 each). Re-scoped:
+  the fixer-only exclusion is removed (it made proof depend on run state);
+  the gate's "neutral counts as strengthened" rule moves to new story 19-08,
+  after 19-05 in lane B. 19-05 restarts its review series once re-scoped.
+  29-03 round 2: FAIL (5 P1, same class as round 1) — asked for fail-safe
+  defaults per class. Machine slowed by an unrelated long-running next-server.

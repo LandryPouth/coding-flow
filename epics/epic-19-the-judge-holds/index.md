@@ -85,6 +85,7 @@ passing. s4's detached job goes through s3's queue. s6 extends the
 5. [story-19-05-fixers-run-before-the-checks](story-19-05-fixers-run-before-the-checks/spec.md) *(STANDARD)*
 6. [story-19-06-the-risk-picks-the-tiers](story-19-06-the-risk-picks-the-tiers/spec.md) *(STRICT — changes which commands prove a story)*
 7. [story-19-07-tests-are-read-only-when-nobody-watches](story-19-07-tests-are-read-only-when-nobody-watches/spec.md) *(STRICT — guard)*
+8. [story-19-08-a-reformatted-test-is-not-a-stronger-test](story-19-08-a-reformatted-test-is-not-a-stronger-test/spec.md) *(STANDARD — added 2026-11-23 from 19-05's reviews: a neutral test edit no longer earns the coverage gate)*
 
 ## Decisions
 
