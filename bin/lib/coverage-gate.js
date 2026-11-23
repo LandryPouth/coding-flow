@@ -491,7 +491,6 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
       riskSource: risk.source,
       changedFiles,
       testFiles,
-      strengthenedFiles: weakening.strengthened,
     });
   }
 

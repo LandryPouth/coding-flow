@@ -44,6 +44,7 @@ const {
   contraryPolicy,
   freshTestsRequired,
   evaluateCoverage,
+  scanTestWeakening,
   readAcceptanceCriteria,
   evaluateContrarySignals,
   NO_CONTRARY,
@@ -485,12 +486,12 @@ function runFixers({ resolution, cleaned, storyDir }) {
 // Test files the gate counted as strengthened that a fixer also rewrote in this
 // run: said, never excused nor refused — the verdict is the gate's (its neutral
 // rule is story 19-08's), so a reuse or a status reading it later stays sound.
-function fixerStrengthened(coverage, fixing) {
-  const strengthened = (coverage && coverage.mode === "test-file" && coverage.strengthenedFiles) || [];
-
-  if (!fixing || !fixing.fixedFiles || strengthened.length === 0) {
+function fixerStrengthened(coverage, fixing, config) {
+  if (!fixing || !fixing.fixedFiles || fixing.fixedFiles.length === 0 || !coverage || coverage.mode !== "test-file") {
     return [];
   }
+
+  const { strengthened } = scanTestWeakening(config);
 
   // The gate names files from the repository top, fixedFiles from the project root.
   const [prefix = ""] = runGitList(["rev-parse", "--show-prefix"]);
@@ -622,7 +623,7 @@ function verifyStoryOnce({
     unattended,
     ...(refused ? { refused } : {}),
     ...(fixing ? { fixedFiles: fixing.fixedFiles } : {}),
-    ...withFixerStrengthened(fixerStrengthened(coverage, fixing)),
+    ...withFixerStrengthened(fixerStrengthened(coverage, fixing, config)),
     ...(resolution.planFixersIgnored ? { planFixersIgnored: resolution.planFixersIgnored } : {}),
     commandsOk,
     // Which base every diff-derived signal below was measured from: a surprising
