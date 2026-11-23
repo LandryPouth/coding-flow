@@ -7,7 +7,8 @@
       Decisions); tests.
 - [x] Run `npm test`, then `ai-flow verify --story <this story>` (green,
       coverage verified), and add a CHANGELOG entry. Review 1: FAIL (1 P1,
-      4 P2), review 2: FAIL (1 P1, 2 P2), all fixed; re-review pending.
+      4 P2), review 2: FAIL (1 P1, 2 P2), review 3: FAIL (1 P1,
+      8 P2), all fixed or decided; re-review pending.
 
 ## Status: in-progress
 
@@ -20,7 +21,7 @@
   `bin/lib/harness-report.js`; listed by `verify --dry-run` and
   `run --dry-run`; skipped by `land` (`runFix: false`).
 - `bin/lib/fix-recipes.js` + `## Fixer Recipes` in `bootstrap --scan`.
-- Tests: `test/harness-fixers.test.js` (26), `test/worktree.test.js` (1),
+- Tests: `test/harness-fixers.test.js` (32), `test/worktree.test.js` (1),
   `test/layering.test.js` (module classified).
 - Docs: README verify paragraph, `docs/rules-and-limits.md`, CHANGELOG.
 

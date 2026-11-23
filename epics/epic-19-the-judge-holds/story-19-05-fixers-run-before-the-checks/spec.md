@@ -18,7 +18,9 @@ bethl's 130 red runs (38 % of failing commands), almost all mechanical.
 - Changed files are left in the working tree; verify's tree token is computed
   after the fixers, so the proof is about the fixed tree.
 - A fixer that exits non-zero is a red command like any other.
-- Fixers never run in `--dry-run`, and never touch files outside the repo.
+- Fixers never run in `--dry-run`. They run at the project root like any
+  declared command: the tool lists what they changed inside the work tree and
+  cannot stop a write elsewhere (a stated limit, `docs/rules-and-limits.md`).
 - `/flow-setup` (or `init`'s config template) suggests `fix` entries when it
   detects eslint/prettier scripts, as a comment, never enabled silently.
 

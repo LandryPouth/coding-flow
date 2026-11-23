@@ -224,8 +224,9 @@ function captureIdentity(cwd) {
 
 // The whole working tree as a git tree object (tracked and untracked, ignored
 // files left out), or null outside git. Unlike the tree token's snapshot it
-// excludes nothing — a fixer that ticks a box in a story file or rewrites the
-// config changed that file too — save verify's own run files. A throwaway copy
+// excludes nothing — a fixer that ticks a box in a story file, rewrites the
+// config or drops a forged run file changed that file too; verify writes its own
+// evidence only after the second snapshot. A throwaway copy
 // of the index takes it; the real index is never touched. Two snapshots
 // compared with `changedPaths` say which files a command rewrote (story 19-05).
 function workingTreeSnapshot(cwd) {
@@ -248,7 +249,7 @@ function workingTreeSnapshot(cwd) {
 
     const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
 
-    if (tryExec("git", ["add", "-A", "--", ".", `:(exclude)${EVIDENCE_DIR}/runs`], cwd, env) === null) {
+    if (tryExec("git", ["add", "-A", "--", "."], cwd, env) === null) {
       return null;
     }
 

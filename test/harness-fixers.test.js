@@ -363,3 +363,99 @@ test('the command fingerprint changes with a fixer and with a fixer limit, and n
   // No fixer: exactly the fingerprint every earlier proof carries.
   assert.equal(of({ ...base, fix: [] }), commandsFingerprint(['npm test'], {}));
 });
+
+// A high-risk change with no test, and a fixer that reformats an unrelated,
+// unformatted test file: the reformat is not a strengthened test.
+function untestedAuthChange(t, fix) {
+  const dir = project(t, { ...(fix ? { fix: ['node fix.js'] } : {}), commands: [node('0')] }, { gitRepo: false });
+  fs.mkdirSync(path.join(dir, 'test'));
+  fs.writeFileSync(path.join(dir, 'test', 'a.test.js'), "const assert=require('assert')\nassert.ok(true)\n");
+  fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(
+    path.join(dir, 'fix.js'),
+    "require('fs').writeFileSync('test/a.test.js', \"const assert = require('assert');\\nassert.ok(true);\\n\");\n",
+  );
+  const commit = (message) => {
+    git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+    git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', message]);
+  };
+  git(dir, ['init', '-q', '-b', 'main']);
+  commit('base');
+  git(dir, ['checkout', '-qb', 'story']);
+  fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = function login(password) { return password === "x"; };\n');
+  commit('auth: login');
+  return JSON.parse(run(dir, ['verify', '--json', '--no-cache', '--base', 'main']).output);
+}
+
+test('a test file only a fixer reformatted does not earn the coverage gate', (t) => {
+  const without = untestedAuthChange(t, false);
+  assert.equal(without.ok, false, 'the premise: an untested auth change is not proven');
+  const evidence = untestedAuthChange(t, true);
+  assert.deepEqual(evidence.fixedFiles, ['test/a.test.js']);
+  assert.equal(evidence.ok, false, JSON.stringify(evidence.coverage));
+  assert.equal(evidence.coverage.ok, without.coverage.ok);
+  assert.equal(evidence.coverage.mode, without.coverage.mode);
+  assert.ok(!(evidence.coverage.testFiles || []).includes('test/a.test.js'));
+});
+
+test('a fixer that writes under .coding-flow/ is listed and makes verify red, naming the file', (t) => {
+  const forge = node("require('fs').mkdirSync('.coding-flow/runs',{recursive:true});require('fs').writeFileSync('.coding-flow/runs/forged-verify.json','{}')");
+  const dir = project(t, { fix: [forge], commands: [node('0')] });
+  const { code, output } = verify(dir);
+  assert.notEqual(code, 0, output);
+  const evidence = JSON.parse(output);
+  assert.ok(evidence.fixedFiles.includes('.coding-flow/runs/forged-verify.json'), JSON.stringify(evidence.fixedFiles));
+  assert.equal(evidence.ok, false);
+  const refusal = evidence.results.find((r) => r.command === '(fixers)');
+  assert.match(refusal.toolError, /a fixer changed \.coding-flow\/runs\/forged-verify\.json/);
+});
+
+test("a fixer that rewrites the story's own files makes verify red, naming them", (t) => {
+  const tick = node(`require('fs').writeFileSync('${STORY}/spec.md','# Demo\\\\n\\\\n- [x] done\\\\n')`);
+  const dir = project(t, { fix: [tick], commands: [node('0')] }, { gitRepo: false });
+  fs.mkdirSync(path.join(dir, STORY), { recursive: true });
+  fs.writeFileSync(path.join(dir, STORY, 'spec.md'), '# Demo\n\n- [ ] done\n');
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  const { code, output } = run(dir, ['verify', '--story', STORY, '--json', '--no-cache']);
+  assert.notEqual(code, 0, output);
+  const evidence = JSON.parse(output);
+  assert.equal(evidence.ok, false);
+  const refusal = evidence.results.find((r) => r.command === '(fixers)');
+  assert.match(refusal.toolError, new RegExp(`a fixer changed ${STORY}/spec\\.md`));
+});
+
+test('with no check the fixers do not run at all', (t) => {
+  const dir = project(t, { fix: [FIXER] });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  verify(dir);
+  assert.equal(fs.readFileSync(path.join(dir, 'src', 'a.js'), 'utf8'), 'const x=1\n');
+});
+
+test('a ## Fixers block is not run when the checks come from the config, and verify says so', (t) => {
+  const dir = project(t, { commands: [node('0')] });
+  fs.mkdirSync(path.join(dir, STORY), { recursive: true });
+  fs.writeFileSync(path.join(dir, STORY, 'spec.md'), '# Demo\n');
+  fs.writeFileSync(path.join(dir, STORY, 'plan.md'), ['# Plan', '', '## Fixers', '', '```bash', FIXER, '```', ''].join('\n'));
+  const { code, output } = run(dir, ['verify', '--story', STORY, '--no-cache']);
+  assert.equal(code, 0, output);
+  assert.match(output, /Warning: the ## Fixers block of plan\.md is not run \(1 command\(s\)\): the checks come from config/);
+  assert.equal(fs.readFileSync(path.join(dir, 'src', 'a.js'), 'utf8'), 'const x=1\n');
+});
+
+test('the PR evidence block labels the fixers and names what they rewrote', () => {
+  const { buildEvidenceBlock } = require('../bin/lib/ship');
+  const block = buildEvidenceBlock({
+    ok: true,
+    generatedAt: '2026-11-23T00:00:00.000Z',
+    results: [
+      { command: 'npm run format', kind: 'fix', ok: true, exitCode: 0, durationMs: 5 },
+      { command: 'npm test', ok: true, exitCode: 0, durationMs: 9 },
+    ],
+    fixedFiles: ['src/a.js'],
+  });
+  assert.match(block, /\| fix: `npm run format` \| ✅ exit 0 \|/);
+  assert.match(block, /\| `npm test` \| ✅ exit 0 \|/);
+  assert.match(block, /\*\*Fixed by the fixers:\*\* `src\/a\.js`/);
+});

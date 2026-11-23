@@ -84,11 +84,25 @@ function addedLinesByFile(root, files) {
 // is measured from. Resolved once per run and per HEAD, not once per function:
 // five readers disagreeing about the base would make the evidence incoherent.
 let diffBaseRequest = { flagBase: null, story: null };
+let fixerOnly = new Set();
 let diffBaseCache = new Map();
 
 function setDiffBaseRequest({ flagBase = null, story = null } = {}) {
   diffBaseRequest = { flagBase, story };
   diffBaseCache = new Map();
+  fixerOnly = new Set();
+}
+
+// Files only the fixers changed in this run (story 19-05): content the story
+// did not touch, rewritten by a formatter. They are no part of the story's
+// diff, so no diff-derived signal reads them — a reformatted test file is not a
+// strengthened test, a reformatted function did not grow. Reset with each request.
+function setFixerOnlyPaths(paths) {
+  fixerOnly = new Set(paths.map(normalizePortable));
+}
+
+function isFixerOnly(file) {
+  return fixerOnly.has(normalizePortable(file));
 }
 
 // The `--base` flag of the current request. A getter, not the binding: the
@@ -167,6 +181,7 @@ function isScopedOut(file, config) {
 
   return (
     portable.startsWith(".coding-flow/") ||
+    fixerOnly.has(portable) ||
     (config.ignoredPaths || []).some((pattern) => typeof pattern === "string" && matchesPattern(portable, pattern))
   );
 }
@@ -435,6 +450,8 @@ module.exports = {
   runGitList,
   getChangedFiles,
   isScopedOut,
+  isFixerOnly,
+  setFixerOnlyPaths,
   filterScopedFiles,
   changedFilesForCoverage,
   riskPathsInDiff,

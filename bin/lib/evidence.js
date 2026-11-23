@@ -33,9 +33,11 @@ const {
 } = require("./harness-config");
 const {
   currentDiffBase,
+  changedFilesForCoverage,
   runGitList,
   riskPathsInDiff,
   setDiffBaseRequest,
+  setFixerOnlyPaths,
   diffBaseFlag,
   publicDiffBase,
 } = require("./diff-scope");
@@ -447,7 +449,13 @@ function executeValidationCommands({ resolution, freshRequired, cleaned, refused
 // from two snapshots of the working tree taken around them; null when git cannot
 // say (outside git, before the first commit), never a guessed empty list. Their
 // changes stay in the tree: the checks, and the tree token, see the fixed files.
-function runFixers({ resolution, cleaned }) {
+//
+// A file only the fixers changed (the story's diff did not hold it before them)
+// is scoped out of every diff-derived signal for this run. A fixer that rewrites
+// `.coding-flow/` or the story's own files is a red run: the config, the story
+// text and its criteria are judged as written, never as a formatter left them.
+function runFixers({ resolution, cleaned, storyDir }) {
+  const storyBefore = new Set(changedFilesForCoverage());
   const before = workingTreeSnapshot(cwd);
   const results = resolution.fix.map((command) => ({
     ...runValidationCommand(command, {
@@ -457,6 +465,23 @@ function runFixers({ resolution, cleaned }) {
     kind: "fix",
   }));
   const fixedFiles = changedPaths(cwd, before, workingTreeSnapshot(cwd));
+  const storyPrefix = storyDir ? `${normalizePortable(path.relative(cwd, storyDir))}/` : null;
+  const forbidden = (fixedFiles || []).filter(
+    (file) => file.startsWith(".coding-flow/") || (storyPrefix && file.startsWith(storyPrefix)),
+  );
+
+  setFixerOnlyPaths((fixedFiles || []).filter((file) => !storyBefore.has(file)));
+
+  if (forbidden.length > 0) {
+    results.push({
+      command: "(fixers)",
+      kind: "fix",
+      ok: false,
+      exitCode: null,
+      toolError: `a fixer changed ${forbidden.join(", ")}: .coding-flow/ and the story's own files are judged as written, never rewritten by a fixer`,
+      durationMs: 0,
+    });
+  }
 
   return { results, fixedFiles };
 }
@@ -473,6 +498,10 @@ function planCommandsRefusal({ resolution, unattended, allowPlanCommands }) {
 const planFixers = (resolution) => (resolution.fixSource === "plan.md" ? resolution.fix : []);
 
 function announcePlanCommands({ announce, refused, resolution }) {
+  if (announce && resolution.planFixersIgnored) {
+    log(`Warning: the ## Fixers block of plan.md is not run (${resolution.planFixersIgnored} command(s)): the checks come from ${resolution.source}, so declare fixers in validation.fix.`);
+  }
+
   if (!announce || refused || resolution.source !== "plan.md") {
     return;
   }
@@ -528,7 +557,9 @@ function verifyStoryOnce({
   const cleaned = cleanEnv ? cleanEnvironment() : null;
   announcePlanCommands({ announce, refused, resolution });
   // `land` passes runFix: false: on the target checkout a fixer would leave it dirty.
-  const fixing = runFix && !refused && resolution.fix.length > 0 ? runFixers({ resolution, cleaned }) : null;
+  const fixing = runFix && !refused && resolution.fix.length > 0 && resolution.commands.length > 0
+    ? runFixers({ resolution, cleaned, storyDir })
+    : null;
 
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
@@ -577,6 +608,7 @@ function verifyStoryOnce({
     unattended,
     ...(refused ? { refused } : {}),
     ...(fixing ? { fixedFiles: fixing.fixedFiles } : {}),
+    ...(resolution.planFixersIgnored ? { planFixersIgnored: resolution.planFixersIgnored } : {}),
     commandsOk,
     // Which base every diff-derived signal below was measured from: a surprising
     // coverage or risk verdict is explained by this line before anything else.

@@ -105,15 +105,14 @@ function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
     return { ...resolution, fix, fixSource: "config", fixTimeouts };
   }
 
-  if (resolution.source === "plan.md") {
-    const fix = parseTestsCommands(readStoryPart(storyDir, "plan") || "", "## fixers");
+  const planFix = storyDir ? parseTestsCommands(readStoryPart(storyDir, "plan") || "", "## fixers") : [];
 
-    if (fix.length > 0) {
-      return { ...resolution, fix, fixSource: "plan.md", fixTimeouts: {} };
-    }
+  if (resolution.source === "plan.md" && planFix.length > 0) {
+    return { ...resolution, fix: planFix, fixSource: "plan.md", fixTimeouts: {} };
   }
 
-  return { ...resolution, fix: [], fixSource: null, fixTimeouts: {} };
+  // A `## Fixers` block whose checks come from elsewhere is not run: said, not silent.
+  return { ...resolution, fix: [], fixSource: null, fixTimeouts: {}, ...(planFix.length > 0 ? { planFixersIgnored: planFix.length } : {}) };
 }
 
 function resolveCheckCommands({ storyDir = null, fresh = false } = {}) {
