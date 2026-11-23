@@ -119,6 +119,68 @@ Taken by the run (2026-11-22, unattended); the maintainer reviews afterwards.
   `rsync --delete`, `python -c "shutil.rmtree(…)"`, `git update-ref -d`, `git
   reflog expire`, `git gc --prune=now`, `git filter-branch`, `git rm -rf`.
 
+### Review round 2 (fresh reviewer, 5 P1) — each class closed by a fail-safe default
+
+Both rounds found the same kind of bypass: a list of forms losing to the next
+form. Each fix below closes the class with a default that is never "allow"; the
+reported instances stay as tests (`R2-*` in `guard-destructive.test.js`).
+
+- **D21 — Nothing after the destructive check can lose its refusal.** The reader
+  and `judgeDestructive` run first, on their own issue list; the rest of the
+  Bash decision runs in a `try` that returns the destructive refusal if it
+  throws. A reader that throws makes the call unchecked. The refusal is returned
+  before the policy-file check, so `rm -rf build [z-a]` names `recursive rm`.
+- **D22 — A glob the guard cannot model matches the policy file.** `globRegex`
+  returns null (read as matching) for an invalid class (`[z-a]`), a POSIX class
+  it does not map (`[[:punct:]]`, `[[=a=]]`), or a sequence (`{a..z}`). Brace
+  alternatives (`{harness,x}`) and the common POSIX classes (alpha, digit, alnum,
+  upper, lower, space, blank, xdigit, word) are modelled. The working directory
+  is escaped before the operand's glob is applied, so a `[` in a directory name
+  is not a class.
+- **D23 — Command substitutions the segment splitter does not see are read.**
+  `$(…)` inside double quotes, every backtick, and `$(…)` in an unquoted heredoc
+  body are scanned (quotes, nesting, comments and heredoc bodies honoured) and read
+  as scripts, for destructive commands **and** writes (`echo "$(echo x > .env)"`,
+  a pre-existing write-reader gap). One that does not close is unchecked. After a
+  `cd` on the line their directory is unknown (null): a finding needing a check is
+  unchecked, a write is unchecked. A quoted heredoc (`<<'EOF'`) expands nothing,
+  so the usual `git commit -m "$(cat <<'EOF' … EOF)"` stays allowed.
+- **D24 — xargs values, GNU's way.** Value options: `-I -n -L -P -d -E -s -a` and
+  `--max-args --max-lines --max-procs --delimiter --arg-file --max-chars
+  --process-slot-var`, read by prefix (`--max-a`); `--opt=value` is one word.
+  **Deviation from the brief:** `--replace`, `--eof` (and `-i`, `-e`, `-l`) take a
+  value only when attached (`xargs --help`: `--replace[=R]`), so the next word is
+  the command — the old set wrongly took `-i rm` as a value. Tests cover both.
+- **D25 — A verb hidden behind an unknown command is unchecked.** `setsid`,
+  `unbuffer`, `flock FILE`, `taskset MASK` join the wrappers (`flock … -c` hands a
+  script on); `sudo -iu root` (a cluster ending in a value option) steps over the
+  value; `parallel CMD ::: ARGS` is read as `CMD ARGS`. The class: a command the
+  reader does not know, and that is not inert (`echo`, `grep`, `which`, `man`,
+  `cat`…), has each later word that names a command the reader knows read as
+  that command; a finding there is unchecked (never refused: the word may be
+  data), a path it touches is `maybe` (unchecked if it reaches the policy file).
+- **D26 — Paths the guard cannot see.** A remover, mover, copier or `git rm`/`mv`/`checkout`/`restore` run by
+  `xargs` (or `parallel` without `:::`) is handed paths from its input: the call
+  is unchecked, wherever it runs (an input path may be absolute). `find -exec` of
+  a remover, `mv`, or a copy onto `{}` reaches what find matches (refused when
+  that is the policy file); of any other non-inert command it is `maybe`. A
+  `find` whose start is an expansion, or after an unknown `cd`, is unchecked.
+
+P2 dispositions:
+
+- **D27 — An unreadable policy file keeps the primary checkout locked**
+  (`chmod 000`, a broken edit): fixed on the read side, so no chmod parsing.
+- **D28 — `ln` to the policy file or a directory holding it is refused**: what a
+  later step does through the link (`ln -s .coding-flow cf && rm cf/harness.json`)
+  cannot be followed when the link does not exist yet.
+- **D29 — From a linked worktree, the primary checkout's policy file** is one the
+  shell may not touch either.
+- **D30 — `git branch -f <name> …`, `-M`, `-C` are refused** (forced branch move).
+- **D31 — Not fixed, listed in rules-and-limits:** `git stash push` (or `git
+  stash`) taking an uncommitted edit of `harness.json` away — it is recoverable
+  (`git stash pop`), and a human tightening is safe once committed; a `case`
+  pattern's `)` inside `"$(…)"` ends the substitution early.
+
 ## Security
 
 - **Who can lift a refusal?** Only a human edit of `harness.json`. An env var, a

@@ -423,7 +423,7 @@ test('readDestructive is pure: words in, findings out', () => {
   assert.equal(findings[0].rule, 'forced push');
   assert.equal(findings[0].cwd, path.resolve('/x'));
   assert.deepEqual(unchecked, []);
-  assert.deepEqual(readDestructive('echo hi', { cwd: '/w', host }), { findings: [], unchecked: [], touched: [] });
+  assert.deepEqual(readDestructive('echo hi', { cwd: '/w', host }), { findings: [], unchecked: [], touched: [], substituted: [] });
   assert.deepEqual(readDestructive('cd sub && bash -c "rm a b"', { cwd: '/w', host }).touched, [{ cwd: path.resolve('/w/sub'), paths: ['a', 'b'], mode: 'remove' }]);
 });
 
@@ -461,7 +461,9 @@ test('P1-3: xargs and find -exec step over wrappers before the verb', (t) => {
     'ls | xargs nohup git clean -fdx',
     'find . -exec /bin/rm -r {} +',
   ]);
-  expectAll(dir, 'allow', ['ls | xargs sudo rm -f', 'find . -exec env cat {} +']);
+  expectAll(dir, 'allow', ['find . -exec env cat {} +']);
+  // Round 2: the paths xargs hands a remover are unseen, so never a silent allow.
+  expectAll(dir, 'unchecked', ['ls | xargs sudo rm -f']);
 });
 
 test('P1-4: an abbreviated long option is read as the option it abbreviates', (t) => {
@@ -566,4 +568,106 @@ test('P2: a git alias defined on the command line is unchecked; NotebookEdit can
   assert.equal(run(dir, 'git -c core.pager=cat log').decision, 'allow');
   const notebook = decide({ tool_name: 'NotebookEdit', cwd: dir, tool_input: { notebook_path: path.join(dir, '.coding-flow', 'harness.json'), new_source: '{}' } }, dir);
   assert.equal(notebook.decision, 'deny');
+});
+
+// Review round 2: each class closed with a fail-safe default; the instances found stay as tests.
+
+test('R2-a: a pattern the guard cannot parse never loses the refusal: it counts as naming the policy file', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', ['rm -rf build [z-a]', "find . -name '[z-a]' -delete", 'rm .coding-flow/[z-a]arness.json']);
+  assert.match(run(dir, 'rm -rf build [z-a]').reason, /recursive rm/, 'the destructive refusal is named first');
+});
+
+test('R2-b: a command substitution inside double quotes or backticks is read; one the guard cannot read is unchecked', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    'echo "$(rm -rf build)"',
+    'echo "`rm -rf build`"',
+    'echo `git reset --hard`',
+    'x="pre $(echo "$(git clean -fdx)")"',
+    'cat <<EOF\n$(rm -rf build)\nEOF',
+    'echo "$(echo x > .env)"',
+    'echo `echo x > .env`',
+  ]);
+  expectAll(dir, 'allow', [
+    "git commit -m \"$(cat <<'EOF'\nFix: don't (really) break it\nEOF\n)\"",
+    'echo "$(date)" `pwd`',
+    "echo '$(rm -rf build)' '`git reset --hard`'",
+    "cat <<'EOF'\n$(rm -rf build)\nEOF",
+  ]);
+  assert.equal(run(dir, 'echo "$(rm -rf build"').decision, 'unchecked', 'an unbalanced substitution is unchecked');
+});
+
+test('R2-c: xargs options that take a value are stepped over, long or short; optional values only when attached', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    'echo build | xargs --max-args 1 rm -rf',
+    'echo build | xargs --max-procs 2 rm -rf',
+    'echo build | xargs --delimiter , rm -rf',
+    'echo build | xargs --arg-file list rm -rf',
+    'echo build | xargs --max-lines 1 rm -rf',
+    'echo build | xargs --max-chars 99 rm -rf',
+    'echo build | xargs --max-args=1 rm -rf',
+    'echo build | xargs --max-a 1 rm -rf',
+    'echo build | xargs -i rm -rf {}',
+    'echo build | xargs --replace rm -rf {}',
+    'echo build | xargs -e rm -rf',
+    'echo build | xargs -l rm -rf',
+  ]);
+});
+
+test('R2-d: a wrapper that hides the verb never yields a silent allow', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    'setsid rm -rf build',
+    'flock /tmp/l rm -rf build',
+    "flock -w 3 /tmp/l -c 'rm -rf build'",
+    'taskset 1 rm -rf build',
+    'unbuffer rm -rf build',
+    'parallel rm -rf ::: build',
+    'sudo -iu root rm -rf build',
+    'sudo -nu root git reset --hard',
+  ]);
+  // An unknown command that may run a destructive one it is handed: unchecked.
+  expectAll(dir, 'unchecked', ['firejail rm -rf build', 'systemd-run --user git reset --hard']);
+  // A command that never runs its words.
+  expectAll(dir, 'allow', ['echo rm -rf build', 'grep -rn "git reset --hard" .', 'which git', 'man git']);
+});
+
+test('R2-e: the policy file through braces, POSIX classes and paths it cannot see', (t) => {
+  const dir = repo(t, { worktrees: { primaryLocked: true } });
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'other.json'), '{}');
+  expectAll(dir, 'deny', [
+    'rm .coding-flow/{harness,x}.json',
+    'rm .coding-flow/{other,harness}.json',
+    'rm .coding-flow/[[:alpha:]]arness.json',
+    'rm .coding-flow/[[:lower:]]arness.js[[:alnum:]]n',
+    'find . -name harness.json -exec cp /dev/null {} \;',
+  ]);
+  expectAll(dir, 'unchecked', [
+    'echo .coding-flow/harness.json | xargs rm',
+    'find . -name harness.json | xargs trash',
+    'find . -name harness.json -exec python3 wipe.py {} \;',
+    'git ls-files | xargs git rm',
+  ]);
+  // (The write reader makes `xargs git add` unchecked on its own; the destructive reader adds nothing.)
+  assert.deepEqual(readDestructive('git ls-files -m | xargs git add', { cwd: dir, host: {} }).touched, [], 'git under xargs touches its paths only to remove, move or restore them');
+  expectAll(dir, 'allow', [
+    'rm .coding-flow/{other,x}.json',
+    'rm .coding-flow/[[:digit:]]arness.json',
+    'find . -name "*.log" -exec cat {} \;',
+  ]);
+});
+
+test('R2 P2: branch -f / -M move a branch; a broken policy file keeps the primary locked; the primary policy file from a worktree; a link to it', (t) => {
+  const dir = repo(t, { worktrees: { primaryLocked: true } });
+  expectAll(dir, 'deny', ['git branch -f main HEAD~1', 'git branch --force side', 'git branch -M side main', 'ln -s .coding-flow cf && rm cf/harness.json']);
+  expectAll(dir, 'allow', ['git branch side', 'git branch -d side', 'git branch --list']);
+
+  const linked = path.join(tmp(t, 'destructive-wt'), 'wt');
+  git(dir, 'worktree', 'add', '-q', '-b', 'side2', linked);
+  assert.equal(run(dir, `rm ${dir}/.coding-flow/harness.json`, linked).decision, 'deny', 'the primary checkout policy file from a linked worktree');
+
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'harness.json'), '{ broken');
+  assert.equal(run(dir, 'git switch side').decision, 'deny', 'an unreadable policy file keeps the primary checkout locked');
 });

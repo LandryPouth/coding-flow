@@ -851,10 +851,73 @@ function policyLoosening(scope, names, toolName, input, caseInsensitive) {
 // primaryLocked goes with them. Read through `cd`, `bash -c`, `xargs` as the
 // destructive commands are. A glob is matched against the file and its
 // directories; a path built by an expansion that may name it is unchecked.
-const GLOB = /[*?[]/;
+const GLOB = /[*?[{]/;
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
 
-// A shell glob as a regex; `find -path` lets `*` and `?` cross a `/` (`crosses`).
-function globRegex(pattern, caseInsensitive, crosses = false) {
+const POSIX_CLASSES = { alpha: "a-zA-Z", digit: "0-9", alnum: "a-zA-Z0-9", upper: "A-Z", lower: "a-z", space: "\\s", blank: " \\t", xdigit: "0-9A-Fa-f", word: "\\w" };
+
+// `[…]` at `i`: `{ source, end }`; `{ literal: true }` when it does not close (a
+// plain `[`); null when it cannot be modelled (`[z-a]`, `[[:punct:]]`, `[[=a=]]`).
+function bracketAt(pattern, i) {
+  let j = i + 1;
+  const negate = pattern[j] === "!" || pattern[j] === "^";
+  j += negate ? 1 : 0;
+  let body = "";
+  for (const first = j; j < pattern.length; j += 1) {
+    const ch = pattern[j];
+    if (ch === "]" && j > first) {
+      const source = `[${negate ? "^" : ""}${body}]`;
+      try {
+        new RegExp(source);
+      } catch {
+        return null;
+      }
+      return { source, end: j };
+    }
+    if (ch === "[" && /[:=.]/.test(pattern[j + 1] || "")) {
+      const close = pattern.indexOf(`${pattern[j + 1]}]`, j + 2);
+      const named = close === -1 || pattern[j + 1] !== ":" ? undefined : POSIX_CLASSES[pattern.slice(j + 2, close)];
+      if (named === undefined) {
+        return null;
+      }
+      body += named;
+      j = close + 1;
+    } else if (ch === "\\") {
+      body += `\\${pattern[j + 1] || "\\"}`;
+      j += 1;
+    } else {
+      body += /[\]\\^[]/.test(ch) ? `\\${ch}` : ch;
+    }
+  }
+  return { literal: true };
+}
+
+// `{a,b}` at `i`: its alternatives and end; null when it is not a brace
+// expansion (no comma, no close).
+function braceAt(pattern, i) {
+  let depth = 0;
+  let start = i + 1;
+  const parts = [];
+  for (let j = i; j < pattern.length; j += 1) {
+    const ch = pattern[j];
+    if (ch === "\\") {
+      j += 1;
+    } else if (ch === "{") {
+      depth += 1;
+    } else if (ch === "," && depth === 1) {
+      parts.push(pattern.slice(start, j));
+      start = j + 1;
+    } else if (ch === "}" && (depth -= 1) === 0) {
+      parts.push(pattern.slice(start, j));
+      return parts.length > 1 ? { parts, end: j } : null;
+    }
+  }
+  return null;
+}
+
+// A shell glob as a regex source, or null when it cannot be modelled: the
+// caller reads that as matching. `find -path` lets `*` and `?` cross a `/`.
+function globSource(pattern, crosses) {
   let out = "";
   for (let i = 0; i < pattern.length; i += 1) {
     const ch = pattern[i];
@@ -862,44 +925,85 @@ function globRegex(pattern, caseInsensitive, crosses = false) {
       out += crosses ? ".*" : "[^/]*";
     } else if (ch === "?") {
       out += crosses ? "." : "[^/]";
+    } else if (ch === "\\") {
+      out += escapeRegex(pattern[i + 1] || "\\");
+      i += 1;
     } else if (ch === "[") {
-      const close = pattern.indexOf("]", i + 2);
-      if (close === -1) {
-        out += "\\[";
-      } else {
-        out += `[${pattern.slice(i + 1, close).replace(/^!/, "^").replace(/\\/g, "\\\\")}]`;
-        i = close;
+      const bracket = bracketAt(pattern, i);
+      if (bracket === null) {
+        return null;
       }
+      out += bracket.literal ? "\\[" : bracket.source;
+      i = bracket.literal ? i : bracket.end;
+    } else if (ch === "{" && braceAt(pattern, i)) {
+      const brace = braceAt(pattern, i);
+      const alternatives = brace.parts.map((part) => globSource(part, crosses));
+      if (alternatives.includes(null)) {
+        return null;
+      }
+      out += `(?:${alternatives.join("|")})`;
+      i = brace.end;
+    } else if (ch === "{" && /^\{[^{}]*\.\.[^{}]*\}/.test(pattern.slice(i))) {
+      return null; // a sequence, `{a..z}`
     } else {
-      out += ch.replace(/[.+^${}()|\\]/g, "\\$&");
+      out += escapeRegex(ch);
     }
   }
-  return new RegExp(`^${out}$`, caseInsensitive ? "i" : "");
+  return out;
 }
 
-const slashed = (file) => file.split(path.sep).join("/");
+// The glob as a RegExp, or null (matches anything) when it cannot be modelled.
+function globRegex(pattern, caseInsensitive, crosses = false) {
+  const source = globSource(pattern, crosses);
+  try {
+    return source === null ? null : new RegExp(`^${source}$`, caseInsensitive ? "i" : "");
+  } catch {
+    return null;
+  }
+}
 
-// The policy file of each scope, and the directories that hold it up to the root.
+const globMatches = (regex, text) => regex === null || regex.test(text);
+
+// An operand glob made absolute: its directory escaped, so a `[` in the
+// directory's name is not a class; leading `..` resolved.
+function absoluteGlob(cwd, operand) {
+  const parts = path.posix.normalize(slashed(operand)).split("/");
+  let lead = 0;
+  while (parts[lead] === "..") {
+    lead += 1;
+  }
+  const base = path.isAbsolute(operand) ? "" : `${slashed(path.resolve(cwd, ...parts.slice(0, lead))).replace(/[*?[{\\]/g, "\\$&")}/`;
+  return base + parts.slice(lead).join("/");
+}
+
+function slashed(file) {
+  return file.split(path.sep).join("/");
+}
+
+// The policy file of each scope — and of its primary checkout, which a linked
+// worktree's write tools may not loosen either — and the directories that hold it.
 function policyPaths(ctx) {
   const files = new Set();
   for (const scope of ctx.scopes) {
-    for (const root of [scope.root, scope.realRoot].filter(Boolean)) {
+    for (const root of [scope.root, scope.realRoot, scope.primary].filter(Boolean)) {
       files.add(path.join(root, POLICY_FILE));
     }
   }
   return [...files].map((file) => ({ file, holders: [path.dirname(file), path.dirname(path.dirname(file))] }));
 }
 
-function reaches(target, mode, policies, caseInsensitive) {
-  const same = (a, b) => (caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b);
-  const real = GLOB.test(target) ? null : realPathOf(target);
-  return policies.some(({ file, holders }) => {
-    if (GLOB.test(target)) {
-      const pattern = globRegex(slashed(target), caseInsensitive);
-      return pattern.test(slashed(file)) || (mode === "remove" && holders.some((holder) => pattern.test(slashed(holder))));
-    }
-    return [target, real].filter(Boolean).some((at) => same(at, file) || (mode === "remove" && (caseInsensitive ? file.toLowerCase() : file).startsWith((caseInsensitive ? at.toLowerCase() : at).replace(/[\\/]?$/, path.sep))));
-  });
+// "write" reaches the file itself; "remove" and "link" (a link to it, through
+// which a later step cannot be followed) also reach a directory holding it.
+function reaches(cwd, operand, mode, policies, caseInsensitive) {
+  const fold = (text) => (caseInsensitive ? text.toLowerCase() : text);
+  const holds = mode === "remove" || mode === "link";
+  if (GLOB.test(operand)) {
+    const pattern = globRegex(absoluteGlob(cwd, expandHome(operand)), caseInsensitive);
+    return policies.some(({ file, holders }) => globMatches(pattern, slashed(file)) || (holds && holders.some((holder) => globMatches(pattern, slashed(holder)))));
+  }
+  const target = path.resolve(cwd, expandHome(operand));
+  const real = realPathOf(target);
+  return policies.some(({ file }) => [target, real].filter(Boolean).some((at) => fold(at) === fold(file) || (holds && fold(file).startsWith(fold(at).replace(/[\\/]?$/, path.sep)))));
 }
 
 // `find START… -delete` reaches the file when a start holds it and its name
@@ -921,35 +1025,53 @@ function findReaches(cwd, { starts, tests }, policies, caseInsensitive) {
           if (/regex/.test(test)) {
             return true; // not modelled: read as matching
           }
-          return /name$/.test(test) && !/wholename/.test(test) ? globRegex(pattern, folded).test(path.basename(file)) : globRegex(pattern, folded, true).test(shown);
+          return /name$/.test(test) && !/wholename/.test(test) ? globMatches(globRegex(pattern, folded), path.basename(file)) : globMatches(globRegex(pattern, folded, true), shown);
         })
       );
     });
   });
 }
 
-const MAY_NAME_POLICY = /harness|coding|[*?[]|^[$`]|\/[$`]/;
+const MAY_NAME_POLICY = /harness|coding|[*?[{]|^[$`]|\/[$`]/;
+const POLICY_UNSEEN = `a command removes or overwrites paths the guard cannot see (handed by xargs); one may be ${POLICY_FILE}`;
+const POLICY_MAYBE = `a command the guard does not read may remove or overwrite ${POLICY_FILE}`;
 
+// Whether one entry of `touched` reaches the policy file. An operand built by an
+// expansion that may name it joins the issues instead.
+function entryReaches(ctx, entry, policies, caseInsensitive) {
+  const unsure = (reason) => !ctx.issues.includes(reason) && ctx.issues.push(reason);
+  if (entry.find) {
+    if (entry.cwd === null || entry.find.starts.some((start) => EXPANDS.test(start))) {
+      unsure(DESTRUCTIVE_EXPANSION);
+      return false;
+    }
+    return findReaches(entry.cwd, entry.find, policies, caseInsensitive);
+  }
+  return entry.paths.some((operand) => {
+    if (EXPANDS.test(operand) || (entry.cwd === null && !path.isAbsolute(operand))) {
+      if (MAY_NAME_POLICY.test(operand)) {
+        unsure(DESTRUCTIVE_EXPANSION);
+      }
+      return false;
+    }
+    return reaches(entry.cwd, operand, entry.mode, policies, caseInsensitive);
+  });
+}
+
+// The refusal when a command removes, moves, overwrites or links to the policy
+// file; null otherwise. What may reach it unseen (xargs' paths, a command the
+// guard does not read) is unchecked, never allowed.
 function touchesPolicyFile(ctx, touched, caseInsensitive) {
   const policies = policyPaths(ctx);
-  const refusal = `this command removes, moves or overwrites ${POLICY_FILE} (or a directory holding it), which holds the destructive-command policy; without it the defaults apply and a locked primary checkout is unlocked. Ask the human.`;
+  const unsure = (reason) => !ctx.issues.includes(reason) && ctx.issues.push(reason);
   for (const entry of touched) {
-    if (entry.find) {
-      if (entry.cwd !== null && findReaches(entry.cwd, entry.find, policies, caseInsensitive)) {
-        return refusal;
+    if (entry.unseen) {
+      unsure(POLICY_UNSEEN);
+    } else if (entryReaches(ctx, entry, policies, caseInsensitive)) {
+      if (!entry.maybe) {
+        return `this command removes, moves, overwrites or links to ${POLICY_FILE} (or a directory holding it), which holds the destructive-command policy; without it the defaults apply and a locked primary checkout is unlocked. Ask the human.`;
       }
-      continue;
-    }
-    for (const operand of entry.paths) {
-      if (EXPANDS.test(operand) || (entry.cwd === null && !path.isAbsolute(operand))) {
-        if (MAY_NAME_POLICY.test(operand) && !ctx.issues.includes(DESTRUCTIVE_EXPANSION)) {
-          ctx.issues.push(DESTRUCTIVE_EXPANSION);
-        }
-        continue;
-      }
-      if (reaches(path.resolve(entry.cwd, expandHome(operand)), entry.mode, policies, caseInsensitive)) {
-        return refusal;
-      }
+      unsure(POLICY_MAYBE);
     }
   }
   return null;
@@ -1016,7 +1138,11 @@ function settle(finding, policy) {
     }
     // Locked by the policy the call runs under, or by the primary checkout's own
     // (`git -C <primary> switch` from a linked worktree).
-    return { applies: policy.primaryLocked || loadPolicy(path.dirname(path.resolve(commonDir))).primaryLocked, detail: "" };
+    // A policy file that cannot be read keeps the lock: `chmod 000` or a broken
+    // edit must not open the primary checkout.
+    const own = loadPolicy(path.dirname(path.resolve(commonDir)));
+    const unreadable = policy.unreadable || own.unreadable;
+    return { applies: policy.primaryLocked || own.primaryLocked || unreadable, detail: unreadable ? ` (${POLICY_FILE} cannot be read, so the lock is kept)` : "" };
   }
   if (check.kind === "dirty") {
     if (check.paths.some((word) => EXPANDS.test(word))) {
@@ -1111,27 +1237,69 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   }
 
   const ctx = context(hook, root);
-  // A shell command writes the policy file blind: the guard cannot read what it
-  // changes, so it is refused like a blocked path (story 29-03).
-  const shellCtx = { ...ctx, scopes: ctx.scopes.map((scope) => ({ ...scope, policy: { ...scope.policy, blockedPaths: [...scope.policy.blockedPaths, POLICY_FILE] } })) };
+  // The destructive check is settled first, and nothing after it can lose its
+  // refusal: a later check that throws still returns it (review round 2).
+  const destructiveIssues = [];
+  const reading = readDestructiveSafely(command, ctx, destructiveIssues);
+  const destructive = judgeDestructive({ ...ctx, issues: destructiveIssues }, reading);
+  try {
+    return decideBashWrites(command, ctx, { reading, destructive, destructiveIssues }, caseInsensitive);
+  } catch (error) {
+    if (destructive.deny) {
+      return destructive.deny;
+    }
+    throw error;
+  }
+}
 
-  for (const entry of readShellWrites(command, ctx.cwd, shellHost, { trees: true })) {
-    if (entry.unchecked) {
-      ctx.issues.push(entry.unchecked);
+// What the destructive reader makes of the command; a reader that throws makes the call unchecked.
+function readDestructiveSafely(command, ctx, issues) {
+  try {
+    return require("./destructive").readDestructive(command, { cwd: ctx.cwd, host: destructiveHost });
+  } catch {
+    issues.push("the destructive-command reader could not read this command");
+    return { findings: [], unchecked: [], touched: [], substituted: [] };
+  }
+}
+
+// A shell command writes the policy file blind: the guard cannot read what it
+// changes, so it is refused like a blocked path (story 29-03). The scripts of
+// `"$(…)"` and backticks are read too; after a `cd` their directory is unknown.
+function shellWriteDenial(ctx, command, caseInsensitive, substituted) {
+  const shellCtx = { ...ctx, scopes: ctx.scopes.map((scope) => ({ ...scope, policy: { ...scope.policy, blockedPaths: [...scope.policy.blockedPaths, POLICY_FILE] } })) };
+  for (const { script, cwd } of [{ script: command, cwd: ctx.cwd }, ...substituted]) {
+    const entries = readShellWrites(script, cwd || ctx.cwd, shellHost, { trees: true });
+    if (cwd === null && entries.length) {
+      ctx.issues.push("a write inside a command substitution after a cd: its directory is unknown");
       continue;
     }
-
-    const found = judgeShellEntry(shellCtx, entry, caseInsensitive);
-    if (found) {
-      const policyFile = found.hit === POLICY_FILE && !ctx.scopes.some((scope) => scope.policy.blockedPaths.includes(POLICY_FILE));
-      const reason = policyFile
-        ? `this command writes ${found.relative}${viaNote(found, entry.target)}, the policy file: from a shell the guard cannot read what it changes in what the agent may destroy. Edit it with a write tool, or ask the human.`
-        : denialFor(entry, found);
-      return { decision: "deny", reason, path: found.relative };
+    for (const entry of entries) {
+      if (entry.unchecked) {
+        ctx.issues.push(entry.unchecked);
+        continue;
+      }
+      const found = judgeShellEntry(shellCtx, entry, caseInsensitive);
+      if (found) {
+        const policyFile = found.hit === POLICY_FILE && !ctx.scopes.some((scope) => scope.policy.blockedPaths.includes(POLICY_FILE));
+        const reason = policyFile
+          ? `this command writes ${found.relative}${viaNote(found, entry.target)}, the policy file: from a shell the guard cannot read what it changes in what the agent may destroy. Edit it with a write tool, or ask the human.`
+          : denialFor(entry, found);
+        return { decision: "deny", reason, path: found.relative };
+      }
     }
   }
+  return null;
+}
 
-  const reading = require("./destructive").readDestructive(command, { cwd: ctx.cwd, host: destructiveHost });
+function decideBashWrites(command, ctx, { reading, destructive, destructiveIssues }, caseInsensitive) {
+  const written = shellWriteDenial(ctx, command, caseInsensitive, reading.substituted);
+  if (written) {
+    return written;
+  }
+  if (destructive.deny) {
+    return destructive.deny;
+  }
+
   const removal = touchesPolicyFile(ctx, reading.touched, caseInsensitive);
   if (removal) {
     return { decision: "deny", reason: removal, path: POLICY_FILE };
@@ -1149,7 +1317,11 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     };
   }
 
-  const destructive = judgeDestructive(ctx, reading);
+  for (const reason of destructiveIssues) {
+    if (!ctx.issues.includes(reason)) {
+      ctx.issues.push(reason);
+    }
+  }
   if (destructive.deny) {
     return destructive.deny;
   }

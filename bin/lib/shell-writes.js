@@ -271,7 +271,7 @@ function readRedirections(r, text) {
 // --- the verb -----------------------------------------------------------------
 
 // Wrappers and compound-command keywords that sit in front of the real verb.
-const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "timeout", "stdbuf", "ionice", "chroot", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
+const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "timeout", "stdbuf", "ionice", "chroot", "setsid", "unbuffer", "flock", "taskset", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
 const WRAPPER_VALUE_OPTIONS = {
   sudo: new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-r", "-t", "-U", "-D", "--user", "--group", "--host", "--prompt", "--close-from", "--chdir", "--role", "--type", "--other-user", "--command-timeout"]),
   doas: new Set(["-u", "-C"]),
@@ -281,7 +281,17 @@ const WRAPPER_VALUE_OPTIONS = {
   stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
   ionice: new Set(["-c", "-n", "-p", "-P", "-u", "--class", "--classdata", "--pid", "--pgid", "--uid"]),
   chroot: new Set(["--userspec", "--groups"]),
+  flock: new Set(["-w", "--timeout", "--wait", "-E", "--conflict-exit-code"]),
 };
+
+// Wrappers whose first operand is not the verb: `chroot DIR`, `flock FILE`, `taskset MASK`.
+const LEADING_OPERAND = new Set(["chroot", "flock", "taskset"]);
+
+// `sudo -iu root`: a cluster of short options whose last one takes the value.
+function takesValue(wrapper, token) {
+  const options = WRAPPER_VALUE_OPTIONS[wrapper];
+  return Boolean(options && (options.has(token) || (/^-[A-Za-z]{2,}$/.test(token) && options.has(`-${token.slice(-1)}`))));
+}
 
 // `sudo cp …`, `env FOO=1 tee …`, `time cd x`: step over the wrapper to the verb.
 // An option that takes a value (`sudo -u root`, `nice -n 5`) steps over its value too,
@@ -291,14 +301,16 @@ function verbAt(tokens) {
   let wrapper = null;
   while (index < tokens.length) {
     const token = tokens[index];
-    if (WRAPPERS.has(token)) {
+    if (token === "flock" && tokens.slice(index).some((word) => word === "-c" || word === "--command" || word.startsWith("--command="))) {
+      break; // `flock FILE -c 'script'` hands a script on: flock is the verb
+    } else if (WRAPPERS.has(token)) {
       wrapper = token;
       index += 1;
     } else if (token.includes("=")) {
       index += 1;
     } else if (index > 0 && token.startsWith("-")) {
-      index += WRAPPER_VALUE_OPTIONS[wrapper]?.has(token) ? 2 : 1;
-    } else if ((wrapper === "timeout" && /^\d/.test(token)) || wrapper === "chroot") {
+      index += takesValue(wrapper, token) ? 2 : 1;
+    } else if ((wrapper === "timeout" && /^\d/.test(token)) || LEADING_OPERAND.has(wrapper)) {
       // `timeout 5 …` steps over its duration, `chroot DIR …` over its new root.
       index += 1;
       wrapper = null;

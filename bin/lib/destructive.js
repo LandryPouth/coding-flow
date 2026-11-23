@@ -29,6 +29,8 @@ const EXPANSION = "a destructive-command check depends on shell expansion";
 const UNKNOWN_CWD = "a destructive-command check depends on a working directory set by shell expansion";
 const TOO_DEEP = `a destructive-command check stops at ${MAX_DEPTH} nested scripts`;
 const CLI_ALIAS = "git runs an alias defined on its own command line";
+const HIDDEN_VERB = "a destructive command may be run by a command the guard does not read";
+const UNREAD_SUBSTITUTION = "a command substitution the guard cannot read";
 
 // Short options glued in one word (`-fdx`) and long options (`--force=…`), up to `--`.
 // `has(letter, name)` reads a long option as git and GNU tools do: any prefix
@@ -197,8 +199,12 @@ function readGitSub(sub, rest, exists) {
         : null;
     }
     case "branch":
-      return options.short.has("D") || (options.has("d", "delete") && options.has("f", "force"))
-        ? { rule: "forced branch delete", destroys: "the branch's commits that no other branch holds", alternative: "`git branch -d <name>`, which refuses an unmerged branch" }
+      if (options.short.has("D") || (options.has("d", "delete") && options.has("f", "force"))) {
+        return { rule: "forced branch delete", destroys: "the branch's commits that no other branch holds", alternative: "`git branch -d <name>`, which refuses an unmerged branch" };
+      }
+      // `branch -f main HEAD~3` moves an existing branch; `-M`/`-C` overwrite the one they name.
+      return (options.has("f", "force") && operandsOf(rest).length > 0) || options.short.has("M") || options.short.has("C")
+        ? { rule: "forced branch move", destroys: "the commits only the branch's old position held", alternative: "`git branch <new-name> <start>`, which refuses a branch that exists" }
         : null;
     case "worktree":
       return rest[0] === "remove" && optionsOf(rest.slice(1)).has("f", "force")
@@ -278,14 +284,15 @@ function targetDirectory(args) {
   return attached ? attached.slice("--target-directory=".length) : null;
 }
 
-// Sources go away; the destination is overwritten. `-t DIR` names the directory.
-function readMove(out, args, cwd, sourcesGo = true) {
+// Sources go away (`mv`), or are what a link points at (`ln`, mode "link"); the
+// destination is overwritten. `-t DIR` names the directory.
+function readMove(out, args, cwd, sourceMode = "remove") {
   const into = targetDirectory(args);
   const operands = operandsOf(args, new Set(["-S", "--suffix", "-t", "--target-directory", "-m", "--mode", "-o", "--owner", "-g", "--group"]));
   const sources = into === null ? operands.slice(0, -1) : operands;
   const written = into === null ? operands.slice(-1) : sources.map((source) => path.posix.join(into, path.posix.basename(source)));
-  if (sourcesGo) {
-    out.touched.push({ cwd, paths: sources, mode: "remove" });
+  if (sourceMode) {
+    out.touched.push({ cwd, paths: sources, mode: sourceMode });
   }
   out.touched.push({ cwd, paths: written, mode: "write" });
 }
@@ -293,11 +300,25 @@ function readMove(out, args, cwd, sourcesGo = true) {
 // `find START… [tests] -delete` or `-exec <remover>`: which starts, which name tests.
 const FIND_TESTS = new Set(["-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex"]);
 
+// Commands that never run, remove or overwrite the words they are handed.
+const INERT = new Set(["echo", "printf", "grep", "egrep", "fgrep", "rg", "ag", "which", "whereis", "type", "man", "help", "info", "cat", "head", "tail", "less", "more", "ls", "wc", "sort", "uniq", "cut", "stat", "file", "diff", "cmp", "md5sum", "sha1sum", "sha256sum", "test", "[", "true", "false", "basename", "dirname", "realpath", "readlink", "du", "jq"]);
+
+// The commands `readCommand` reads: a later word naming one may be run by the
+// command before it.
+const READ_VERBS = new Set(["git", "rm", "unlink", "trash", "shred", "mv", "cp", "install", "ln", "prisma", "dropdb", "psql", "docker", "curl", "wget", "bash", "sh", "zsh", "dash", "ksh", "fish", "eval", "xargs", "find", "watch", "su", "script", "flock", "parallel", "npx", "bunx", "pnpx", "pnpm", "yarn"]);
+
+// `-delete`, `-exec rm`/`mv` or a copy onto `{}` remove or overwrite what find
+// matches. Any other command but an inert one may: `maybe`, which the guard
+// makes unchecked rather than refused.
 function readFindDeletion(out, args, cwd) {
   const at = args.findIndex((arg) => /^-(?:exec|execdir|ok|okdir)$/.test(arg));
-  const handed = at === -1 ? null : commandFromWords(args.slice(at + 1));
-  const deletes = args.includes("-delete") || (handed !== null && (REMOVERS.has(handed.name) || handed.name === "mv"));
-  if (!deletes) {
+  const end = args.findIndex((arg, i) => i > at && (arg === ";" || arg === "+"));
+  const handed = at === -1 ? null : commandFromWords(args.slice(at + 1, end === -1 ? undefined : end));
+  // A copy only touches the match when it is the destination: `cp /dev/null {}`, not `cp {} /backup`.
+  const copiesOnto = handed !== null && COPIERS.has(handed.name);
+  const ontoMatch = copiesOnto && operandsOf(handed.args).slice(-1).some((operand) => operand.includes("{}"));
+  const deletes = args.includes("-delete") || (handed !== null && (REMOVERS.has(handed.name) || handed.name === "mv")) || ontoMatch;
+  if (!deletes && (handed === null || INERT.has(handed.name) || copiesOnto)) {
     return;
   }
   const first = args.findIndex((arg) => /^[-(!]/.test(arg));
@@ -308,7 +329,7 @@ function readFindDeletion(out, args, cwd) {
       tests.push({ test: arg.slice(1), pattern: args[i + 1] });
     }
   });
-  out.touched.push({ cwd, find: { starts: starts.length ? starts : ["."], tests } });
+  out.touched.push({ cwd, find: { starts: starts.length ? starts : ["."], tests }, ...(deletes ? {} : { maybe: true }) });
 }
 
 function readRm(out, args, cwd, ctx) {
@@ -417,7 +438,16 @@ function add(out, found, words, cwd) {
 
 const RUNNERS = new Set(["npx", "bunx", "pnpx"]);
 const RUNNER_VALUE_OPTIONS = new Set(["-p", "--package", "-c", "--call"]);
-const XARGS_VALUE_OPTIONS = new Set(["-I", "-i", "-n", "-L", "-l", "-P", "-d", "-E", "-e", "-s", "-a"]);
+// GNU xargs: `-i`, `-e`, `-l`, `--replace` and `--eof` take a value only when
+// attached (`-i{}`, `--replace=X`), so the next word is the command. A long
+// option is read by prefix (`--max-a 1`), as getopt does.
+const XARGS_VALUE_OPTIONS = new Set(["-I", "-n", "-L", "-P", "-d", "-E", "-s", "-a"]);
+const XARGS_LONG_VALUES = ["--max-args", "--max-lines", "--max-procs", "--delimiter", "--arg-file", "--max-chars", "--process-slot-var"];
+const xargsValue = (arg) => XARGS_VALUE_OPTIONS.has(arg) || (/^--[^=]+$/.test(arg) && arg.length > 4 && XARGS_LONG_VALUES.some((name) => name.startsWith(arg)));
+
+// GNU parallel: its options, then the command, then `:::` and the arguments it appends.
+const PARALLEL_VALUE_OPTIONS = new Set(["-j", "--jobs", "-S", "--sshlogin", "-d", "--delimiter", "-a", "--arg-file", "-I", "-n", "--max-args", "-N", "-C", "--colsep", "--joblog", "--results", "--tmpdir", "--workdir", "--timeout", "--delay", "-E", "--env"]);
+const PARALLEL_SOURCES = /^:{3,4}\+?$/;
 
 // The program a package runner starts: `npx prisma …`, `pnpm exec prisma …`,
 // `pnpm prisma …`, `yarn dlx prisma …`. Null when it starts none we read.
@@ -455,13 +485,30 @@ function commandFromWords(words) {
 }
 
 // The command `xargs` or `find -exec` runs, with the words it was given.
+// `stdinOperands`: xargs (and parallel without `:::`) hands the command paths
+// read from its input, which the reader never sees.
 function forwarded({ name, args }) {
   if (name === "xargs") {
     for (let i = 0; i < args.length; i += 1) {
-      if (XARGS_VALUE_OPTIONS.has(args[i])) {
+      if (xargsValue(args[i])) {
         i += 1;
       } else if (!args[i].startsWith("-")) {
-        return commandFromWords(args.slice(i));
+        const command = commandFromWords(args.slice(i));
+        return command && { ...command, stdinOperands: true };
+      }
+    }
+    return null;
+  }
+  if (name === "parallel") {
+    const sources = args.findIndex((arg) => PARALLEL_SOURCES.test(arg));
+    const head = sources === -1 ? args : args.slice(0, sources);
+    for (let i = 0; i < head.length; i += 1) {
+      if (PARALLEL_VALUE_OPTIONS.has(head[i])) {
+        i += 1;
+      } else if (!head[i].startsWith("-")) {
+        const command = commandFromWords(head.slice(i));
+        const appended = sources === -1 ? [] : args.slice(sources + 1).filter((arg) => !PARALLEL_SOURCES.test(arg));
+        return command && { ...command, args: [...command.args, ...appended], stdinOperands: sources === -1 };
       }
     }
     return null;
@@ -490,7 +537,7 @@ function handedScript({ name, args }) {
     }
     return i < args.length ? args.slice(i).join(" ") : null;
   }
-  if (name === "su" || name === "script") {
+  if (name === "su" || name === "script" || name === "flock") {
     const at = args.findIndex((arg) => arg === "-c" || arg === "--command");
     if (at !== -1) {
       return args[at + 1] === undefined ? null : args[at + 1];
@@ -535,6 +582,7 @@ function readScript(out, program, cwd, ctx) {
   out.findings.push(...inner.findings);
   out.unchecked.push(...inner.unchecked);
   out.touched.push(...inner.touched);
+  out.substituted.push(...inner.substituted);
 }
 
 function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
@@ -568,6 +616,11 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
     readCommand(out, handed, cwd, ctx);
     return;
   }
+  const gitTouches = name === "git" && args.some((arg) => ["rm", "mv", "checkout", "restore"].includes(arg));
+  if (command.stdinOperands && (REMOVERS.has(name) || name === "mv" || COPIERS.has(name) || gitTouches)) {
+    // The paths come from xargs' input: none of them is seen.
+    out.touched.push({ cwd, unseen: true, command: [name, ...args].join(" ") });
+  }
   if (name === "git") {
     readGit(out, args, cwd, ctx);
   } else if (name === "rm") {
@@ -577,7 +630,7 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
   } else if (name === "mv") {
     readMove(out, args, cwd);
   } else if (COPIERS.has(name)) {
-    readMove(out, args, cwd, false);
+    readMove(out, args, cwd, name === "ln" ? "link" : null);
   } else if (name === "prisma") {
     readPrisma(out, args, cwd);
   } else if (name === "dropdb") {
@@ -588,12 +641,33 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
     readDocker(out, args, cwd);
   } else if (DOWNLOADERS.has(name)) {
     readDownload(out, command, cwd, segments, index);
+  } else if (!INERT.has(name)) {
+    readHiddenVerb(out, args, cwd, ctx);
   }
 }
 
+// A command the reader does not know may run the words it is handed
+// (`firejail rm -rf x`, a wrapper not listed): read each word that names a
+// command the reader knows as that command. What it finds is unchecked, never
+// refused nor allowed; a path it touches is `maybe`.
+function readHiddenVerb(out, args, cwd, ctx) {
+  args.forEach((word, i) => {
+    if (!READ_VERBS.has(path.basename(word)) || ctx.hidden) {
+      return;
+    }
+    const inner = { findings: [], unchecked: [], touched: [], substituted: [] };
+    readCommand(inner, { name: path.basename(word), args: args.slice(i + 1) }, cwd, { ...ctx, hidden: true });
+    if (inner.findings.length || inner.unchecked.length) {
+      out.unchecked.push({ reason: HIDDEN_VERB, command: args.slice(i).join(" ") });
+    }
+    out.touched.push(...inner.touched.map((entry) => ({ ...entry, maybe: true })));
+  });
+}
+
 function readLine(line, start, ctx) {
-  const out = { findings: [], unchecked: [], touched: [] };
-  const segments = splitSegments(line.replace(/\\\n/g, ""));
+  const out = { findings: [], unchecked: [], touched: [], substituted: [] };
+  const joined = line.replace(/\\\n/g, "");
+  const segments = splitSegments(joined);
   const stack = [];
   let cwd = start;
   segments.forEach((segment, index) => {
@@ -618,7 +692,176 @@ function readLine(line, start, ctx) {
       cwd = stack.length ? stack.pop() : cwd;
     }
   });
+  readSubstitutions(out, joined, segments, start, ctx);
   return out;
+}
+
+// --- command substitutions ---------------------------------------------------------
+
+const HEREDOC = /^<<(-?)[ \t]*(?:"([^"]*)"|'([^']*)'|(\\?)([^\s;&|<>()`'"]+))/;
+
+// `<<WORD` at `i`: `{ dash, word, literal, length }`; `literal` when the word is
+// quoted, so the body expands nothing.
+function heredocAt(text, i) {
+  const match = HEREDOC.exec(text.slice(i));
+  if (!match) {
+    return null;
+  }
+  const word = match[2] ?? match[3] ?? match[5];
+  return { dash: match[1] === "-", word, literal: match[5] === undefined || match[4] === "\\", length: match[0].length };
+}
+
+// From the newline at `at`, past the bodies of the heredocs opened on that line.
+// `onBody(text)` gets each body that expands. Returns the index of the last newline read.
+function pastBodies(text, at, pending, onBody = null) {
+  let i = at;
+  while (pending.length) {
+    const { dash, word, literal } = pending.shift();
+    const from = i + 1;
+    let found = false;
+    while (!found && i < text.length) {
+      const next = text.indexOf("\n", i + 1);
+      const stop = next === -1 ? text.length : next;
+      const line = text.slice(i + 1, stop);
+      found = (dash ? line.replace(/^\t+/, "") : line) === word;
+      if (onBody && !literal && !found) {
+        onBody(line);
+      }
+      i = stop;
+    }
+  }
+  return i;
+}
+
+// The index of the backtick closing the one before `from`, or -1.
+function closingBacktick(text, from) {
+  for (let i = from; i < text.length; i += 1) {
+    if (text[i] === "\\") {
+      i += 1;
+    } else if (text[i] === "`") {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// The index of the `)` closing the `$(` before `from`, or -1: quotes, nested
+// substitutions, comments and heredoc bodies skipped.
+function closingParen(text, from) {
+  let depth = 0;
+  let quote = null;
+  const pending = [];
+  for (let i = from; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quote === "'") {
+      quote = ch === "'" ? null : quote;
+    } else if (ch === "\\") {
+      i += 1;
+    } else if (ch === "`") {
+      i = closingBacktick(text, i + 1);
+      if (i === -1) {
+        return -1;
+      }
+    } else if (ch === "$" && text[i + 1] === "(") {
+      i = closingParen(text, i + 2);
+      if (i === -1) {
+        return -1;
+      }
+    } else if (quote === '"') {
+      quote = ch === '"' ? null : quote;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+    } else if (ch === "<" && text[i + 1] === "<" && text[i + 2] !== "<" && heredocAt(text, i)) {
+      const heredoc = heredocAt(text, i);
+      pending.push(heredoc);
+      i += heredoc.length - 1;
+    } else if (ch === "\n" && pending.length) {
+      i = pastBodies(text, i, pending);
+    } else if (ch === "#" && (i === from || /\s/.test(text[i - 1]))) {
+      const end = text.indexOf("\n", i);
+      i = end === -1 ? text.length : end - 1;
+    } else if (ch === "(") {
+      depth += 1;
+    } else if (ch === ")") {
+      if (depth === 0) {
+        return i;
+      }
+      depth -= 1;
+    }
+  }
+  return -1;
+}
+
+// The substitutions in `text` the segment splitter does not read, as scripts;
+// null when one does not close. `expanding`: `text` is a heredoc body, where
+// quotes are text and every `$(` runs.
+function substitutionsOf(text, expanding = false) {
+  const scripts = [];
+  const pending = [];
+  let quote = null;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quote === "'") {
+      quote = ch === "'" ? null : quote;
+      continue;
+    }
+    if (ch === "\\") {
+      i += 1;
+    } else if (ch === "`") {
+      const end = closingBacktick(text, i + 1);
+      if (end === -1) {
+        return null;
+      }
+      scripts.push(text.slice(i + 1, end).replace(/\\([`$\\])/g, "$1"));
+      i = end;
+    } else if (ch === "$" && text[i + 1] === "(" && text[i + 2] !== "(" && (quote === '"' || expanding)) {
+      const end = closingParen(text, i + 2);
+      if (end === -1) {
+        return null;
+      }
+      scripts.push(text.slice(i + 2, end));
+      i = end;
+    } else if (expanding) {
+      continue;
+    } else if (ch === '"') {
+      quote = quote ? null : '"';
+    } else if (ch === "'" && quote === null) {
+      quote = "'";
+    } else if (quote === null && ch === "<" && text[i + 1] === "<" && text[i + 2] !== "<" && heredocAt(text, i)) {
+      const heredoc = heredocAt(text, i);
+      pending.push(heredoc);
+      i += heredoc.length - 1;
+    } else if (quote === null && ch === "\n" && pending.length) {
+      let broken = false;
+      i = pastBodies(text, i, pending, (body) => {
+        const inner = substitutionsOf(body, true);
+        broken = broken || inner === null;
+        scripts.push(...(inner || []));
+      });
+      if (broken) {
+        return null;
+      }
+    }
+  }
+  return scripts;
+}
+
+// The scripts the segment splitter does not see: `$(…)` inside double quotes,
+// every backtick, and those in an unquoted heredoc body. Each is read as a
+// script, in the line's directory — unknown (null) once the line changes it.
+// One that does not close is unchecked.
+function readSubstitutions(out, line, segments, start, ctx) {
+  const scripts = substitutionsOf(line);
+  if (scripts === null) {
+    out.unchecked.push({ reason: UNREAD_SUBSTITUTION, command: line });
+    return;
+  }
+  const moves = segments.some((segment) => ["cd", "pushd", "popd"].includes(commandOf(segment).name));
+  const cwd = moves ? null : start;
+  for (const script of scripts) {
+    out.substituted.push({ script, cwd });
+    readScript(out, script, cwd, ctx);
+  }
 }
 
 // `host`: `exists(absolutePath)`, `home()`, `onPath(program)` — each falls back
@@ -626,10 +869,10 @@ function readLine(line, start, ctx) {
 // (`cd "$D" && git checkout -- .`) carries `cwd: null`; the guard makes it unchecked.
 function readDestructive(command, { cwd, host }) {
   if (typeof command !== "string" || !command.trim()) {
-    return { findings: [], unchecked: [], touched: [] };
+    return { findings: [], unchecked: [], touched: [], substituted: [] };
   }
   const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, ...host };
   return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0 });
 }
 
-module.exports = { readDestructive, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS };
+module.exports = { readDestructive, substitutionsOf, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS, HIDDEN_VERB, UNREAD_SUBSTITUTION };
