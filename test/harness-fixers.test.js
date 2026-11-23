@@ -554,3 +554,80 @@ test('in a project below the repository top, a fixer rewriting .coding-flow/ is 
   assert.ok(refusal, JSON.stringify(evidence.results));
   assert.match(refusal.toolError, /a fixer changed \.coding-flow\/config\.json/);
 });
+
+// The ignore lines this repository and `init`'d projects carry for .coding-flow/.
+const CODING_FLOW_IGNORES = [
+  '.coding-flow/runs/',
+  '.coding-flow/denials.jsonl',
+  '.coding-flow/guard-unchecked.jsonl',
+  '.coding-flow/manifest.json',
+  '.coding-flow/active-story.json',
+];
+
+function ignoredRunsProject(t, fix) {
+  const dir = project(t, { fix: [fix], commands: [node('0')] }, { gitRepo: false });
+  fs.writeFileSync(path.join(dir, '.gitignore'), `${CODING_FLOW_IGNORES.join('\n')}\n`);
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  return dir;
+}
+
+for (const target of ['.coding-flow/runs/forged-verify.json', '.coding-flow/active-story.json', '.coding-flow/manifest.json']) {
+  test(`a fixer writing the ignored ${target} is seen and red`, (t) => {
+    const dir = ignoredRunsProject(t, node(
+      `const fs=require('fs');fs.mkdirSync(require('path').dirname('${target}'),{recursive:true});fs.writeFileSync('${target}','{}')`,
+    ));
+    assert.equal(git(dir, ['check-ignore', target]).trim(), target, 'the premise: git ignores it');
+    const { code, output } = verify(dir);
+    assert.notEqual(code, 0, output);
+    const evidence = JSON.parse(output);
+    assert.ok(evidence.fixedFiles.includes(target), JSON.stringify(evidence.fixedFiles));
+    assert.equal(evidence.ok, false);
+  });
+}
+
+test('without --json, a fixer that writes .coding-flow/ prints a red verify naming the file, not a crash', (t) => {
+  const dir = ignoredRunsProject(t, node("require('fs').mkdirSync('.coding-flow/runs',{recursive:true});require('fs').writeFileSync('.coding-flow/runs/forged-verify.json','{}')"));
+  const { code, output } = run(dir, ['verify', '--no-cache']);
+  assert.notEqual(code, 0, output);
+  assert.doesNotMatch(output, /Coding Flow bug/);
+  assert.match(output, /Harness verify FAILED/);
+  assert.match(output, /a fixer changed \.coding-flow\/runs\/forged-verify\.json/);
+});
+
+test('without --json, a fixer that fails prints a red verify, not a crash', (t) => {
+  const dir = project(t, { fix: [FAILING_FIXER], commands: [node('0')] });
+  const { code, output } = run(dir, ['verify', '--no-cache']);
+  assert.equal(code, 1, output);
+  assert.doesNotMatch(output, /Coding Flow bug/);
+  assert.match(output, /\[exit 4\] fix: /);
+});
+
+test('without --json, fixers with no check print no proof, not a crash', (t) => {
+  const dir = project(t, { fix: [FIXER] });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: {} }));
+  const { code, output } = run(dir, ['verify', '--no-cache']);
+  assert.notEqual(code, 0, output);
+  assert.doesNotMatch(output, /Coding Flow bug/);
+  assert.match(output, /no validation commands found/i);
+});
+
+test('in a project below the repository top, a fixer writing outside the project is listed as ../', (t) => {
+  const evidence = subdirProject(t, node("require('fs').writeFileSync('../outside.txt','x')"));
+  assert.ok(evidence.fixedFiles.includes('../outside.txt'), JSON.stringify(evidence.fixedFiles));
+});
+
+test("without --json, a fixer that rewrites the story's files prints a red verify, not a crash", (t) => {
+  const tick = node(`require('fs').writeFileSync('${STORY}/spec.md','# Demo\\\\n\\\\n- [x] done\\\\n')`);
+  const dir = project(t, { fix: [tick], commands: [node('0')] }, { gitRepo: false });
+  fs.mkdirSync(path.join(dir, STORY), { recursive: true });
+  fs.writeFileSync(path.join(dir, STORY, 'spec.md'), '# Demo\n\n- [ ] done\n');
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  const { code, output } = run(dir, ['verify', '--story', STORY, '--no-cache']);
+  assert.notEqual(code, 0, output);
+  assert.doesNotMatch(output, /Coding Flow bug/);
+  assert.match(output, new RegExp(`a fixer changed ${STORY}/spec\\.md`));
+});

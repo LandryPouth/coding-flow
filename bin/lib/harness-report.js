@@ -390,8 +390,8 @@ function printResults(results) {
     if (!item.ok) {
       const named = Array.isArray(item.failureLines) && item.failureLines.length
         ? item.failureLines.slice(-3)
-        : item.stderrTail.trim()
-          ? item.stderrTail.trim().split(/\r?\n/).slice(-3)
+        : String(item.stderrTail || "").trim()
+          ? String(item.stderrTail).trim().split(/\r?\n/).slice(-3)
           : [];
 
       for (const line of named) {

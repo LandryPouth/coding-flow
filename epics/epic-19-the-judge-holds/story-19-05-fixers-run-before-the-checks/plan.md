@@ -73,6 +73,19 @@
   verify is red anyway.
 - **A `## Fixers` block ignored** (checks from the config or package.json) is
   said in a warning and recorded as `planFixersIgnored`.
+- **The snapshot reads the whole work tree from the repository top, and
+  `.coding-flow/` whatever the ignore rules say** (re-scoped series, round 1
+  P1-A and P2-1): most projects ignore `.coding-flow/runs/`, the manifest and
+  the active story, and `git add -A` skips ignored files, so a fixer forging a
+  run file went unseen; a project below the top missed writes beside it.
+  Other ignored files stay unread (build output, `node_modules`). Tested with
+  this repository's own `.coding-flow/` ignore lines.
+- **The forbidden-write red is one-shot (decided, re-scoped round 1 P2-2):** a
+  fixer that rewrites the story's files or `.coding-flow/` makes that verify
+  red; the next verify finds nothing left to fix and judges the files as they
+  now are. Telling a fixer's text from a hand edit later would need a record of
+  every fixer run; the red names the files so the author reverts or keeps them
+  knowingly. Stated in `docs/rules-and-limits.md` and the CHANGELOG.
 - **`fixedFiles` paths are relative to the project root**, like every path
   verify prints; a file outside it reads `../…`. The forbidden-write rule
   compares them with `.coding-flow/` and the story dir in that same form

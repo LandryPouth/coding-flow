@@ -477,6 +477,8 @@ function runFixers({ resolution, cleaned, storyDir }) {
       exitCode: null,
       toolError: `a fixer changed ${forbidden.join(", ")}: .coding-flow/ and the story's own files are judged as written, never rewritten by a fixer`,
       durationMs: 0,
+      stdoutTail: "",
+      stderrTail: "",
     });
   }
 
