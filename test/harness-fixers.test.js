@@ -365,9 +365,10 @@ test('the command fingerprint changes with a fixer and with a fixer limit, and n
 });
 
 // A high-risk change with no test, and a fixer that reformats an unrelated,
-// unformatted test file: the reformat is not a strengthened test.
-function untestedAuthChange(t, fix) {
-  const dir = project(t, { ...(fix ? { fix: ['node fix.js'] } : {}), commands: [node('0')] }, { gitRepo: false });
+// unformatted test file. `mode`: 'fixer' (the fixer does it), 'hand' (the same
+// rewrite made by hand, uncommitted), or 'none'.
+function untestedAuthChange(t, mode) {
+  const dir = project(t, { ...(mode === 'fixer' ? { fix: ['node fix.js'] } : {}), commands: [node('0')] }, { gitRepo: false });
   fs.mkdirSync(path.join(dir, 'test'));
   fs.writeFileSync(path.join(dir, 'test', 'a.test.js'), "const assert=require('assert')\nassert.ok(true)\n");
   fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = 1;\n');
@@ -384,18 +385,69 @@ function untestedAuthChange(t, fix) {
   git(dir, ['checkout', '-qb', 'story']);
   fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = function login(password) { return password === "x"; };\n');
   commit('auth: login');
-  return JSON.parse(run(dir, ['verify', '--json', '--no-cache', '--base', 'main']).output);
+  const fresh = () => {
+    git(dir, ['checkout', '-q', '--', 'test/a.test.js']);
+    if (mode === 'hand') {
+      execFileSync(process.execPath, ['fix.js'], { cwd: dir });
+    }
+  };
+  fresh();
+  const evidence = JSON.parse(run(dir, ['verify', '--json', '--no-cache', '--base', 'main']).output);
+  fresh();
+  const { output } = run(dir, ['verify', '--no-cache', '--base', 'main']);
+  return { dir, evidence, output, commit };
 }
 
-test('a test file only a fixer reformatted does not earn the coverage gate', (t) => {
-  const without = untestedAuthChange(t, false);
-  assert.equal(without.ok, false, 'the premise: an untested auth change is not proven');
-  const evidence = untestedAuthChange(t, true);
-  assert.deepEqual(evidence.fixedFiles, ['test/a.test.js']);
-  assert.equal(evidence.ok, false, JSON.stringify(evidence.coverage));
-  assert.equal(evidence.coverage.ok, without.coverage.ok);
-  assert.equal(evidence.coverage.mode, without.coverage.mode);
-  assert.ok(!(evidence.coverage.testFiles || []).includes('test/a.test.js'));
+test("a fixer's rewrite counts as the story's diff, like the same edit by hand, and verify says it was a fixer's", (t) => {
+  const none = untestedAuthChange(t, 'none').evidence;
+  assert.equal(none.ok, false, 'the premise: an untested auth change is not proven');
+  const hand = untestedAuthChange(t, 'hand');
+  const fixer = untestedAuthChange(t, 'fixer');
+  // One verdict for one tree: the fixer changes no rule of the gate (19-08 owns it).
+  assert.equal(fixer.evidence.ok, hand.evidence.ok);
+  assert.equal(fixer.evidence.coverage.mode, hand.evidence.coverage.mode);
+  assert.deepEqual(fixer.evidence.fixedFiles, ['test/a.test.js']);
+  assert.deepEqual(fixer.evidence.fixerStrengthened, ['test/a.test.js']);
+  assert.match(fixer.output, /Warning: 1 test file\(s\) counted as strengthened were rewritten by a fixer in this run: test\/a\.test\.js/);
+  assert.equal('fixerStrengthened' in hand.evidence, false);
+  assert.doesNotMatch(hand.output, /rewritten by a fixer/);
+});
+
+test('a verdict made with a fixer holds once its change is committed: reuse and a fresh run agree', (t) => {
+  // The fixer rewrites a high-risk file the branch did not touch.
+  const dir = project(t, { fix: ['node fix.js'], commands: [node('0')] }, { gitRepo: false });
+  fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = (p) => p === "x";\n');
+  fs.writeFileSync(path.join(dir, 'fix.js'), "require('fs').writeFileSync('src/auth.js', 'module.exports = (p) => p === \"x\" || p === \"admin\";\\n');\n");
+  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  git(dir, ['checkout', '-qb', 'story']);
+  fs.writeFileSync(path.join(dir, 'src', 'b.js'), 'const y = 3;\n');
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qam', 'b']);
+  const first = JSON.parse(run(dir, ['verify', '--json', '--no-cache', '--base', 'main']).output);
+  assert.deepEqual(first.fixedFiles, ['src/auth.js']);
+  assert.ok(first.coverage.changedFiles.includes('src/auth.js'), 'the rewritten file is in the diff');
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qam', 'fmt']);
+  const fresh = JSON.parse(run(dir, ['verify', '--json', '--no-cache', '--base', 'main']).output);
+  assert.equal(fresh.ok, first.ok);
+  assert.deepEqual(fresh.coverage.changedFiles, first.coverage.changedFiles);
+});
+
+test('a fixer that deletes a test file is a deleted test, as by hand', (t) => {
+  const dir = project(t, { fix: [node("require('fs').unlinkSync('test/b.test.js')")], commands: [node('0')] }, { gitRepo: false });
+  fs.mkdirSync(path.join(dir, 'test'));
+  fs.writeFileSync(path.join(dir, 'test', 'b.test.js'), "require('assert').ok(true);\n");
+  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  git(dir, ['checkout', '-qb', 'story']);
+  fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = (p) => p === "x";\n');
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'auth']);
+  const evidence = JSON.parse(run(dir, ['verify', '--json', '--no-cache', '--base', 'main']).output);
+  assert.deepEqual(evidence.fixedFiles, ['test/b.test.js']);
+  const deleted = (evidence.coverage.weakenedTests || []).find((finding) => finding.file === 'test/b.test.js');
+  assert.equal(deleted && deleted.signal, 'deleted', JSON.stringify(evidence.coverage));
 });
 
 test('a fixer that writes under .coding-flow/ is listed and makes verify red, naming the file', (t) => {
@@ -458,4 +510,47 @@ test('the PR evidence block labels the fixers and names what they rewrote', () =
   assert.match(block, /\| fix: `npm run format` \| ✅ exit 0 \|/);
   assert.match(block, /\| `npm test` \| ✅ exit 0 \|/);
   assert.match(block, /\*\*Fixed by the fixers:\*\* `src\/a\.js`/);
+});
+
+// A project below the repository top (`pkg/`): paths are the project's, and the
+// forbidden-write rule sees the story and `.coding-flow/` there.
+function subdirProject(t, fix) {
+  const top = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-fixers-top-')));
+  t.after(() => fs.rmSync(top, { recursive: true, force: true }));
+  const dir = path.join(top, 'pkg');
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  run(dir, ['init']);
+  fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'const x=1\n');
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = { fix: [fix], commands: [node('0')] };
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  fs.mkdirSync(path.join(dir, STORY), { recursive: true });
+  fs.writeFileSync(path.join(dir, STORY, 'spec.md'), '# Demo\n\n- [ ] done\n');
+  git(top, ['init', '-q']);
+  git(top, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(top, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  return JSON.parse(run(dir, ['verify', '--story', STORY, '--json', '--no-cache']).output);
+}
+
+test('in a project below the repository top, fixed files are named from the project root', (t) => {
+  const evidence = subdirProject(t, FIXER);
+  assert.equal(evidence.ok, true, JSON.stringify(evidence.results));
+  assert.deepEqual(evidence.fixedFiles, ['src/a.js']);
+});
+
+test("in a project below the repository top, a fixer rewriting the story's files is red", (t) => {
+  const evidence = subdirProject(t, node(`require('fs').writeFileSync('${STORY}/spec.md','# Demo\\\\n\\\\n- [x] done\\\\n')`));
+  assert.equal(evidence.ok, false);
+  const refusal = evidence.results.find((r) => r.command === '(fixers)');
+  assert.ok(refusal, JSON.stringify(evidence.results));
+  assert.match(refusal.toolError, new RegExp(`a fixer changed ${STORY}/spec\\.md`));
+});
+
+test('in a project below the repository top, a fixer rewriting .coding-flow/ is red', (t) => {
+  const evidence = subdirProject(t, node("const f='.coding-flow/config.json';const fs=require('fs');fs.writeFileSync(f,fs.readFileSync(f,'utf8')+' ')"));
+  assert.equal(evidence.ok, false);
+  const refusal = evidence.results.find((r) => r.command === '(fixers)');
+  assert.ok(refusal, JSON.stringify(evidence.results));
+  assert.match(refusal.toolError, /a fixer changed \.coding-flow\/config\.json/);
 });

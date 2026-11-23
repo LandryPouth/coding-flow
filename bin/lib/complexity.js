@@ -20,7 +20,7 @@ const { execFileSync } = require("child_process");
 
 const { loadCoverageReports, reportCandidates, toRepoRelative, packageRootOf } = require("./coverage");
 const { normalizePortable } = require("./util");
-const { currentDiffBase, isFixerOnly } = require("./diff-scope");
+const { currentDiffBase } = require("./diff-scope");
 const { baseBranchNames } = require("./diff-base");
 const { readConfig } = require("./config");
 const { currentBranch } = require("./policy");
@@ -552,11 +552,6 @@ function diffFiles(root, base) {
     } catch {
       // Unreadable: nothing to measure in it.
     }
-  }
-
-  // A file only the fixers rewrote is not the story's change (story 19-05).
-  for (const file of [...byFile.keys()].filter(isFixerOnly)) {
-    byFile.delete(file);
   }
 
   return { byFile, unreadable };

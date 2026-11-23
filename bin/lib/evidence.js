@@ -33,11 +33,9 @@ const {
 } = require("./harness-config");
 const {
   currentDiffBase,
-  changedFilesForCoverage,
   runGitList,
   riskPathsInDiff,
   setDiffBaseRequest,
-  setFixerOnlyPaths,
   diffBaseFlag,
   publicDiffBase,
 } = require("./diff-scope");
@@ -450,12 +448,12 @@ function executeValidationCommands({ resolution, freshRequired, cleaned, refused
 // say (outside git, before the first commit), never a guessed empty list. Their
 // changes stay in the tree: the checks, and the tree token, see the fixed files.
 //
-// A file only the fixers changed (the story's diff did not hold it before them)
-// is scoped out of every diff-derived signal for this run. A fixer that rewrites
+// A file a fixer touched is the story's diff, like a hand edit, in every signal:
+// nothing depends on whether the fix is committed yet. A fixer that rewrites
 // `.coding-flow/` or the story's own files is a red run: the config, the story
 // text and its criteria are judged as written, never as a formatter left them.
+// Paths are relative to the project root, like every other path verify prints.
 function runFixers({ resolution, cleaned, storyDir }) {
-  const storyBefore = new Set(changedFilesForCoverage());
   const before = workingTreeSnapshot(cwd);
   const results = resolution.fix.map((command) => ({
     ...runValidationCommand(command, {
@@ -469,8 +467,6 @@ function runFixers({ resolution, cleaned, storyDir }) {
   const forbidden = (fixedFiles || []).filter(
     (file) => file.startsWith(".coding-flow/") || (storyPrefix && file.startsWith(storyPrefix)),
   );
-
-  setFixerOnlyPaths((fixedFiles || []).filter((file) => !storyBefore.has(file)));
 
   if (forbidden.length > 0) {
     results.push({
@@ -486,7 +482,25 @@ function runFixers({ resolution, cleaned, storyDir }) {
   return { results, fixedFiles };
 }
 
+// Test files the gate counted as strengthened that a fixer also rewrote in this
+// run: said, never excused nor refused — the verdict is the gate's (its neutral
+// rule is story 19-08's), so a reuse or a status reading it later stays sound.
+function fixerStrengthened(coverage, fixing) {
+  const strengthened = (coverage && coverage.mode === "test-file" && coverage.strengthenedFiles) || [];
+
+  if (!fixing || !fixing.fixedFiles || strengthened.length === 0) {
+    return [];
+  }
+
+  // The gate names files from the repository top, fixedFiles from the project root.
+  const [prefix = ""] = runGitList(["rev-parse", "--show-prefix"]);
+  const fixed = new Set(fixing.fixedFiles.flatMap((file) => [file, `${prefix}${file}`]));
+  return strengthened.filter((file) => fixed.has(file));
+}
+
 // A fixer from plan.md is a plan command: refused unattended on the same terms.
+const withFixerStrengthened = (files) => (files.length > 0 ? { fixerStrengthened: files } : {});
+
 function planCommandsRefusal({ resolution, unattended, allowPlanCommands }) {
   const planCommands = [...planFixers(resolution), ...(resolution.source === "plan.md" ? resolution.commands : [])];
 
@@ -608,6 +622,7 @@ function verifyStoryOnce({
     unattended,
     ...(refused ? { refused } : {}),
     ...(fixing ? { fixedFiles: fixing.fixedFiles } : {}),
+    ...withFixerStrengthened(fixerStrengthened(coverage, fixing)),
     ...(resolution.planFixersIgnored ? { planFixersIgnored: resolution.planFixersIgnored } : {}),
     commandsOk,
     // Which base every diff-derived signal below was measured from: a surprising

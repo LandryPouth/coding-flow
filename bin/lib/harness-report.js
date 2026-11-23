@@ -319,7 +319,7 @@ function printVerify(evidence, outputPath) {
   }
 
   printResults(evidence.results);
-  printFixedFiles(evidence.fixedFiles);
+  printFixedFiles(evidence);
 
   if (outputPath) {
     log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
@@ -327,7 +327,12 @@ function printVerify(evidence, outputPath) {
 }
 
 // Story 19-05: what the fixers rewrote, left in the tree for whoever commits.
-function printFixedFiles(fixedFiles) {
+function printFixedFiles({ fixedFiles, fixerStrengthened = [] }) {
+  if (fixerStrengthened.length > 0) {
+    log(`Warning: ${fixerStrengthened.length} test file(s) counted as strengthened were rewritten by a fixer in this run: ${fixerStrengthened.join(", ")}`);
+    log("  a formatter's rewrite is not a stronger test; the gate's neutral rule is under review (story 19-08)");
+  }
+
   if (fixedFiles === undefined) {
     return;
   }

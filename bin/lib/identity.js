@@ -264,9 +264,10 @@ function workingTreeSnapshot(cwd) {
   }
 }
 
-// Paths whose content differs between two snapshots, sorted, `/`-separated as
-// git prints them; null when either snapshot or the diff is unavailable. Read
-// untrimmed: a path may start or end with a space.
+// Paths whose content differs between two snapshots, sorted, `/`-separated and
+// relative to `cwd` (the project root, which may sit below the repository top:
+// a path outside it reads `../…`); null when either snapshot or the diff is
+// unavailable. Read untrimmed: a path may start or end with a space.
 function changedPaths(cwd, before, after) {
   if (!before || !after) {
     return null;
@@ -282,7 +283,15 @@ function changedPaths(cwd, before, after) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return listing.split("\0").filter(Boolean).sort();
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).replace(/\r?\n$/, "");
+    // Both sides resolved natively: /private/var on macOS, long names on Windows.
+    const here = fs.realpathSync.native(cwd);
+    const root = fs.realpathSync.native(top);
+    return listing
+      .split("\0")
+      .filter(Boolean)
+      .map((file) => path.relative(here, path.join(root, file)).split(path.sep).join("/"))
+      .sort();
   } catch {
     return null;
   }

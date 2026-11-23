@@ -48,21 +48,22 @@
 - **Fixers prove nothing alone (review 2 P1):** the verdict comes from the
   checks; with no check verify is red even when the fixers passed, and no
   earlier proof is reused for a run without checks.
-- **What only the fixers changed is not the story's diff (review 3 P1, the
-  class):** a file the story's diff did not hold before the fixers and that
-  they rewrote is scoped out of every diff-derived signal for that run,
-  through the one choke point (`isScopedOut` in `diff-scope.js`) plus the
-  complexity reader, which has its own diff. Checked, one by one: the coverage
-  gate (changed files, changed lines, test weakening and strengthening,
-  deleted tests — tested), the diff risk (`riskPathsInDiff`, added lines),
-  the refactor claim (`claim.js`), red-at-base's test list, function size
-  (`complexity.js`, filtered), the mutation probe (reads committed
-  `merge-base..HEAD`, untouched by uncommitted fixes). A file the story
-  changed and a fixer also reformatted stays in the diff, as written by the
-  story then formatted. Once a fixer's reformat is committed it is part of the
-  branch like any hand edit, and the coverage gate's "neutral counts as
-  strengthened" rule (design: direction, not effort) applies to it as to any
-  committed reformat — a known limit of that rule, not widened here.
+- **D-cap — re-scoped after four review rounds (run's decision, 2026-11-23).**
+  Each round found a new P1: (1) `fixedFiles` missed tracked story/config
+  files when an untracked file existed; (2) fixers alone gave a green verify;
+  (3) a fixer's reformat of an unrelated test file earned the coverage gate;
+  (4) the round-3 fix — scoping files only the fixers changed out of the
+  diff-derived signals — made a verdict depend on run state (green before the
+  fixer's change is committed, NOT PROVEN after, while reuse said "already
+  proved"), and compared paths in two forms in a project below the git top.
+  The run's cap is four rounds, so the story is re-scoped, not reviewed a
+  fifth time: the fixer-only scoping is removed. A file a fixer touched is the
+  story's diff exactly like a hand edit, in every signal, so reuse and status
+  stay sound. What remains of round 3 is the coverage gate's own rule that a
+  neutral test edit counts as strengthened, which a hand reformat exploits as
+  well: it moves to story 19-08. Here, verify only warns (no verdict change)
+  when a test file the gate counted as strengthened was rewritten by a fixer
+  in the run (`fixerStrengthened`).
 - **A fixer may not rewrite `.coding-flow/` or the story's own files:** the
   config, the run files, the story text and its criteria are read after the
   fixers, so verify is red (a `(fixers)` result naming the files) instead of
@@ -72,8 +73,10 @@
   verify is red anyway.
 - **A `## Fixers` block ignored** (checks from the config or package.json) is
   said in a warning and recorded as `planFixersIgnored`.
-- **`fixedFiles` paths are relative to the repository top** (git's own form,
-  the one `git add` takes); in a project below the top they carry its prefix.
+- **`fixedFiles` paths are relative to the project root**, like every path
+  verify prints; a file outside it reads `../…`. The forbidden-write rule
+  compares them with `.coding-flow/` and the story dir in that same form
+  (review 4 P1-B, tested in a project below the repository top).
 - **PR body:** fixer rows read `fix: …`, and the rewritten files are named.
 - **Snapshot cost:** `git add -A` on a throwaway index writes blobs for the
   untracked files into the object store; they are unreachable and `git gc`
