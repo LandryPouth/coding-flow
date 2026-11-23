@@ -214,3 +214,12 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   after 19-05 in lane B. 19-05 restarts its review series once re-scoped.
   29-03 round 2: FAIL (5 P1, same class as round 1) — asked for fail-safe
   defaults per class. Machine slowed by an unrelated long-running next-server.
+- 2026-11-23 18:10 — run paused by the maintainer ("arrête tout"). State:
+  - 19-05 (re-scoped): round-1 fixes committed (d7fbef3); its verify was
+    interrupted. On resume: re-run verify, then round 2 by a new reviewer.
+  - 29-03: round-3 backstops (only modeled syntax allowed; destructive text
+    handed to a non-inert command is unchecked) written but UNCOMMITTED in its
+    worktree; full suite was interrupted. On resume: run the suite, commit,
+    verify, then round 4 (the last) by a new reviewer.
+  - 17-04 waits for an agent slot; 19-08 planned after 19-05; 26-06 after 19-05.
+  - Heartbeat cron deleted; recreate it on resume.
