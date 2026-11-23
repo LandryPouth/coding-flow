@@ -581,7 +581,7 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   const named = ctx.scopes.map((scope) => ({ scope, names: filePath ? resolveTargets(ctx, scope, filePath) : [] }));
 
   // Check 0 — the agent does not loosen what it may destroy (story 29-03).
-  const loosened = named.map(({ scope, names }) => policyLoosening(scope, names, toolName, toolInput)).find(Boolean);
+  const loosened = named.map(({ scope, names }) => policyLoosening(scope, names, toolName, toolInput, caseInsensitive)).find(Boolean);
   if (loosened) {
     return { decision: "deny", reason: loosened, path: POLICY_FILE };
   }
@@ -825,9 +825,17 @@ function afterWrite(toolName, input, before) {
 // A write tool may edit the policy file — the user repairs it through their
 // agent, strict or not — but not to loosen what the agent may destroy: that
 // is the human's edit.
-function policyLoosening(scope, names, toolName, input) {
-  if (!names.some((entry) => entry.inside && entry.relative === POLICY_FILE) || toolName === "NotebookEdit") {
+function isPolicyName(entry, caseInsensitive) {
+  return entry.inside && (caseInsensitive ? entry.relative.toLowerCase() === POLICY_FILE : entry.relative === POLICY_FILE);
+}
+
+function policyLoosening(scope, names, toolName, input, caseInsensitive) {
+  if (!names.some((entry) => isPolicyName(entry, caseInsensitive))) {
     return null;
+  }
+  // A notebook edit can only break the file: nothing a repair needs.
+  if (toolName === "NotebookEdit") {
+    return `a notebook edit of ${POLICY_FILE} is refused: the policy file is edited with Write or Edit, or by the human.`;
   }
   const file = path.join(scope.root, POLICY_FILE);
   const before = readTextOrNull(file);
@@ -838,23 +846,109 @@ function policyLoosening(scope, names, toolName, input) {
   return `this edit loosens the destructive-command policy in ${POLICY_FILE} (destructiveCommands, allowDestructive, worktrees.primaryLocked). What the agent may destroy is the human's decision: ask them to make this edit.`;
 }
 
-// `rm`, `unlink`, `trash`, `git rm` of the policy file: the defaults come back,
-// and a project's primaryLocked goes with them. Read through `cd`, `bash -c`,
-// `xargs` as the destructive commands are; a path the reader cannot place is
-// unchecked when it may be the policy file.
-function removesPolicyFile(ctx, removed, caseInsensitive) {
-  const isPolicy = (entry) => entry.inside && (caseInsensitive ? entry.relative.toLowerCase() === POLICY_FILE : entry.relative === POLICY_FILE);
-  for (const { cwd, paths } of removed) {
-    for (const operand of paths) {
-      if (EXPANDS.test(operand) || (cwd === null && !path.isAbsolute(operand))) {
-        if (/harness\.json|[*?[]|[$`]/.test(operand) && !ctx.issues.includes(DESTRUCTIVE_EXPANSION)) {
+// A shell command that removes, moves or overwrites the policy file (or a
+// directory holding it) brings the defaults back, and a project's
+// primaryLocked goes with them. Read through `cd`, `bash -c`, `xargs` as the
+// destructive commands are. A glob is matched against the file and its
+// directories; a path built by an expansion that may name it is unchecked.
+const GLOB = /[*?[]/;
+
+// A shell glob as a regex; `find -path` lets `*` and `?` cross a `/` (`crosses`).
+function globRegex(pattern, caseInsensitive, crosses = false) {
+  let out = "";
+  for (let i = 0; i < pattern.length; i += 1) {
+    const ch = pattern[i];
+    if (ch === "*") {
+      out += crosses ? ".*" : "[^/]*";
+    } else if (ch === "?") {
+      out += crosses ? "." : "[^/]";
+    } else if (ch === "[") {
+      const close = pattern.indexOf("]", i + 2);
+      if (close === -1) {
+        out += "\\[";
+      } else {
+        out += `[${pattern.slice(i + 1, close).replace(/^!/, "^").replace(/\\/g, "\\\\")}]`;
+        i = close;
+      }
+    } else {
+      out += ch.replace(/[.+^${}()|\\]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${out}$`, caseInsensitive ? "i" : "");
+}
+
+const slashed = (file) => file.split(path.sep).join("/");
+
+// The policy file of each scope, and the directories that hold it up to the root.
+function policyPaths(ctx) {
+  const files = new Set();
+  for (const scope of ctx.scopes) {
+    for (const root of [scope.root, scope.realRoot].filter(Boolean)) {
+      files.add(path.join(root, POLICY_FILE));
+    }
+  }
+  return [...files].map((file) => ({ file, holders: [path.dirname(file), path.dirname(path.dirname(file))] }));
+}
+
+function reaches(target, mode, policies, caseInsensitive) {
+  const same = (a, b) => (caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b);
+  const real = GLOB.test(target) ? null : realPathOf(target);
+  return policies.some(({ file, holders }) => {
+    if (GLOB.test(target)) {
+      const pattern = globRegex(slashed(target), caseInsensitive);
+      return pattern.test(slashed(file)) || (mode === "remove" && holders.some((holder) => pattern.test(slashed(holder))));
+    }
+    return [target, real].filter(Boolean).some((at) => same(at, file) || (mode === "remove" && (caseInsensitive ? file.toLowerCase() : file).startsWith((caseInsensitive ? at.toLowerCase() : at).replace(/[\\/]?$/, path.sep))));
+  });
+}
+
+// `find START… -delete` reaches the file when a start holds it and its name
+// tests (none, or one that matches) let it through.
+function findReaches(cwd, { starts, tests }, policies, caseInsensitive) {
+  return starts.some((start) => {
+    const from = path.resolve(cwd, start);
+    return policies.some(({ file }) => {
+      const inside = path.relative(from, file);
+      if (inside.startsWith("..") || path.isAbsolute(inside)) {
+        return false;
+      }
+      // As find prints it: the start as typed, then the path under it (`./.coding-flow/…`).
+      const shown = inside ? `${start.replace(/\/+$/, "")}/${slashed(inside)}` : start;
+      return (
+        tests.length === 0 ||
+        tests.some(({ test, pattern }) => {
+          const folded = caseInsensitive || test.startsWith("i");
+          if (/regex/.test(test)) {
+            return true; // not modelled: read as matching
+          }
+          return /name$/.test(test) && !/wholename/.test(test) ? globRegex(pattern, folded).test(path.basename(file)) : globRegex(pattern, folded, true).test(shown);
+        })
+      );
+    });
+  });
+}
+
+const MAY_NAME_POLICY = /harness|coding|[*?[]|^[$`]|\/[$`]/;
+
+function touchesPolicyFile(ctx, touched, caseInsensitive) {
+  const policies = policyPaths(ctx);
+  const refusal = `this command removes, moves or overwrites ${POLICY_FILE} (or a directory holding it), which holds the destructive-command policy; without it the defaults apply and a locked primary checkout is unlocked. Ask the human.`;
+  for (const entry of touched) {
+    if (entry.find) {
+      if (entry.cwd !== null && findReaches(entry.cwd, entry.find, policies, caseInsensitive)) {
+        return refusal;
+      }
+      continue;
+    }
+    for (const operand of entry.paths) {
+      if (EXPANDS.test(operand) || (entry.cwd === null && !path.isAbsolute(operand))) {
+        if (MAY_NAME_POLICY.test(operand) && !ctx.issues.includes(DESTRUCTIVE_EXPANSION)) {
           ctx.issues.push(DESTRUCTIVE_EXPANSION);
         }
         continue;
       }
-      const file = path.resolve(cwd === null ? ctx.cwd : cwd, operand);
-      if (ctx.scopes.some((scope) => resolveTargets(ctx, scope, file).some(isPolicy))) {
-        return `this command removes ${POLICY_FILE}, which holds the destructive-command policy; without it the defaults apply and a locked primary checkout is unlocked. Ask the human.`;
+      if (reaches(path.resolve(entry.cwd, expandHome(operand)), entry.mode, policies, caseInsensitive)) {
+        return refusal;
       }
     }
   }
@@ -1038,7 +1132,7 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   }
 
   const reading = require("./destructive").readDestructive(command, { cwd: ctx.cwd, host: destructiveHost });
-  const removal = removesPolicyFile(ctx, reading.removed, caseInsensitive);
+  const removal = touchesPolicyFile(ctx, reading.touched, caseInsensitive);
   if (removal) {
     return { decision: "deny", reason: removal, path: POLICY_FILE };
   }

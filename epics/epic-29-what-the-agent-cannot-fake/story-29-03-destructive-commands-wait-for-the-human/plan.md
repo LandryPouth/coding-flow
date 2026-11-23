@@ -75,6 +75,50 @@ Taken by the run (2026-11-22, unattended); the maintainer reviews afterwards.
 - **D11 — This repository does not set `primaryLocked`.** The run's land script
   merges in the primary checkout; the maintainer decides (Human to-do).
 
+### Review round 1 (independent, 7 P1) — decided
+
+- **D12 — Past 4 nested scripts the call is unchecked** (`eval`×5, `bash -c`×6),
+  never allowed. `bash -c -- 'x'` reads the script after `--`.
+- **D13 — Forwarded commands step their wrappers** (`xargs sudo rm`, `find -exec
+  env rm`) through `shell-writes`' `verbAt`, now exported. The wrappers read there
+  grew: `stdbuf`, `ionice`, `chroot DIR`, sudo's long options with a value
+  (`--user root`), `fish -c`; `watch …`, `su -c`, `script -c` and `env -S` /
+  `--split-string` hand a script on, which is read.
+- **D14 — A long option is read by prefix** where it makes a command destructive
+  (`--har`, `--forc`, `--rec`, `--del`, `--discard`), as git and GNU tools accept
+  an unambiguous prefix; an exemption (`--dry-run`, `--staged`, `--patch`,
+  `--help`) is read exactly. An ambiguous prefix (`git push --f`) is read as the
+  destructive option: git refuses it anyway.
+- **D15 — `git checkout -f` / `--force`, `git switch -f` / `--discard-changes`**
+  discard every uncommitted change: refused when the repository has one
+  (`git status -- :/`), like a checkout of a modified path; allowed on a clean
+  tree, where they destroy nothing.
+- **D16 — The policy file from a shell, completed.** Every path a remover
+  (`rm`, `unlink`, `trash`, `shred`, `git rm`) or `mv`/`git mv` takes away is
+  checked against the file **and the directories holding it** (`trash
+  .coding-flow`, `mv .coding-flow x`, `trash .`); what `cp`/`install`/`ln`
+  overwrite is checked too (`cp /dev/null F`, which the write reader drops). A
+  glob is matched (`harn*`, `harness.jso?`, `[h]arness.json`, `.codi*/…`); an
+  expansion that may name it (`.coding-flow/$X`) is unchecked. `find … -delete` /
+  `-exec rm` is refused when a start holds the file and its `-name`/`-path`
+  tests let it through (`-regex` is read as matching).
+- **D17 — On a case-insensitive file system `HARNESS.json` is the policy file**
+  for the write tools as for the shell. A NotebookEdit of it is refused.
+- **D18 — `git -c alias.…` on the command line is unchecked**: the alias may run
+  anything (`!rm -rf`, `reset --hard`).
+- **D19 — A Write switching `mode` from strict to standard stays allowed.** The
+  reviewer notes it reopens the unchecked forms. Kept by design: `strictOutcome`
+  exists so that strictness can never lock the user out of switching back through
+  their agent (design-decisions, `guard-strict` tests). `destructiveCommands`
+  stays `deny` in standard: only what the reader cannot settle reopens.
+- **D20 — A pre-existing reader bug fixed on the way:** `reduceWord` stripped
+  backslashes twice, so a quote escaped inside a quoted word lost a level and a
+  nested `bash -c` was misread (writes too). One pass now (test in
+  `shell-writes.test.js`, red on the old reader).
+- **D9 (extended) — still not read, listed in rules-and-limits:** `npx rimraf`,
+  `rsync --delete`, `python -c "shutil.rmtree(…)"`, `git update-ref -d`, `git
+  reflog expire`, `git gc --prune=now`, `git filter-branch`, `git rm -rf`.
+
 ## Security
 
 - **Who can lift a refusal?** Only a human edit of `harness.json`. An env var, a

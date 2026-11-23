@@ -10,13 +10,16 @@
 // primary checkout — is returned as a `check` for the guard to answer.
 //
 // A finding: { rule, words, command, destroys, alternative, cwd, check? }.
-// `removed`: every `{ cwd, paths }` a remover (`rm`, `trash`, `git rm`…) is handed.
+// `touched`: every path a command removes, moves or overwrites, as
+// `{ cwd, paths, mode: "remove" | "write" }`, and every `find … -delete` as
+// `{ cwd, find: { starts, tests } }` — the guard checks none reaches its own
+// policy file.
 // `words` is the command as read (wrappers and git's global options removed),
 // matched against `allowDestructive`. `unchecked` lists what a destructive check
 // depended on but could not read (an expansion where a flag may sit).
 
 const path = require("path");
-const { splitSegments, commandOf, SHELLS } = require("./shell-writes");
+const { splitSegments, commandOf, verbAt, tokenize, SHELLS } = require("./shell-writes");
 
 const EXPANDS = /[$`]/;
 const ASK = "stop and ask the human";
@@ -24,8 +27,13 @@ const MAX_DEPTH = 4;
 
 const EXPANSION = "a destructive-command check depends on shell expansion";
 const UNKNOWN_CWD = "a destructive-command check depends on a working directory set by shell expansion";
+const TOO_DEEP = `a destructive-command check stops at ${MAX_DEPTH} nested scripts`;
+const CLI_ALIAS = "git runs an alias defined on its own command line";
 
 // Short options glued in one word (`-fdx`) and long options (`--force=…`), up to `--`.
+// `has(letter, name)` reads a long option as git and GNU tools do: any prefix
+// (`--har` is `--hard`). An exemption reads `long` exactly instead, so `--dry`
+// is never taken for `--dry-run`.
 function optionsOf(args) {
   const end = args.indexOf("--");
   const head = end === -1 ? args : args.slice(0, end);
@@ -40,7 +48,8 @@ function optionsOf(args) {
       }
     }
   }
-  return { short, long, has: (letter, name) => short.has(letter) || (name !== undefined && long.has(name)) };
+  const abbrev = (name) => [...long].some((given) => name.startsWith(given));
+  return { short, long, abbrev, has: (letter, name) => short.has(letter) || (name !== undefined && abbrev(name)) };
 }
 
 // The operands, skipping the value of each option in `valueOptions`, and every
@@ -102,9 +111,12 @@ function discards(paths) {
   };
 }
 
+// `checkout -f` / `switch -f`: every uncommitted change in the repository goes.
+const DISCARDS_ALL = { ...discards([":/"]), rule: "forced checkout" };
+
 function readCheckout(rest, exists) {
   const options = optionsOf(rest);
-  if (options.has("p", "patch") || options.long.has("help")) {
+  if (options.short.has("p") || options.long.has("patch") || options.long.has("help")) {
     return null;
   }
   const end = rest.indexOf("--");
@@ -112,22 +124,23 @@ function readCheckout(rest, exists) {
     const paths = rest.slice(end + 1);
     return paths.length ? discards(paths) : null;
   }
-  if (rest.some((arg) => /^-[A-Za-z]*[bB]$/.test(arg)) || options.long.has("orphan") || options.long.has("detach")) {
-    return BRANCH_CHANGE;
+  const forced = options.has("f", "force") ? [DISCARDS_ALL] : [];
+  if (rest.some((arg) => /^-[A-Za-z]*[bB]$/.test(arg)) || options.abbrev("orphan") || options.abbrev("detach")) {
+    return [...forced, BRANCH_CHANGE];
   }
   const operands = operandsOf(rest, new Set(["-b", "-B", "--orphan", "--conflict"]));
   const paths = operands.filter((operand) => operand === "." || exists(operand));
   if (paths.length && (paths.length === operands.length || paths[0] !== operands[0])) {
     return discards(paths);
   }
-  return operands.length ? BRANCH_CHANGE : null;
+  return operands.length ? [...forced, BRANCH_CHANGE] : forced;
 }
 
 function readRestore(rest) {
   const options = optionsOf(rest);
-  const staged = options.has("S", "staged");
+  const staged = options.short.has("S") || options.long.has("staged");
   const worktree = options.has("W", "worktree");
-  if ((staged && !worktree) || options.has("p", "patch")) {
+  if ((staged && !worktree) || options.short.has("p") || options.long.has("patch")) {
     return null;
   }
   const paths = operandsOf(rest, new Set(["-s", "--source"]));
@@ -138,7 +151,7 @@ const PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--repo", "--receive-
 
 function readClean(rest) {
   const options = optionsOf(rest);
-  if (!options.has("f", "force") || options.has("n", "dry-run")) {
+  if (!options.has("f", "force") || options.short.has("n") || options.long.has("dry-run")) {
     return null;
   }
   const what = options.has("X") ? "the ignored files (build output, local configuration)" : options.has("x") ? "untracked files, ignored ones included" : "untracked files";
@@ -154,7 +167,7 @@ function readGitSub(sub, rest, exists) {
   const options = optionsOf(rest);
   switch (sub) {
     case "reset":
-      return options.long.has("hard")
+      return options.abbrev("hard")
         ? {
             rule: "git reset --hard",
             destroys: "every uncommitted change to tracked files, and the commits it moves the branch away from",
@@ -165,7 +178,10 @@ function readGitSub(sub, rest, exists) {
     case "checkout":
       return readCheckout(rest, exists);
     case "switch":
-      return options.long.has("help") ? null : BRANCH_CHANGE;
+      if (options.long.has("help")) {
+        return null;
+      }
+      return options.has("f", "force") || options.abbrev("discard-changes") ? [DISCARDS_ALL, BRANCH_CHANGE] : BRANCH_CHANGE;
     case "restore":
       return readRestore(rest);
     case "rebase":
@@ -174,7 +190,7 @@ function readGitSub(sub, rest, exists) {
     case "clean":
       return readClean(rest);
     case "push": {
-      const forced = options.short.has("f") || ["force", "force-with-lease"].some((name) => options.long.has(name));
+      const forced = options.short.has("f") || ["force", "force-with-lease"].some((name) => options.abbrev(name));
       const plus = operandsOf(rest, PUSH_VALUE_OPTIONS).some((operand) => operand.startsWith("+"));
       return forced || plus
         ? { rule: "forced push", destroys: "the commits on the remote branch that yours does not have", alternative: ASK }
@@ -201,6 +217,9 @@ function readGit(out, args, cwd, ctx) {
   let dir = cwd;
   let i = 0;
   while (i < args.length && args[i].startsWith("-")) {
+    if (args[i] === "-c" && /^alias\./i.test(args[i + 1] || "")) {
+      out.unchecked.push({ reason: CLI_ALIAS, command: ["git", ...args].join(" ") });
+    }
     if (args[i] === "-C") {
       dir = args[i + 1] === undefined ? dir : resolveIn(dir, args[i + 1], ctx.home);
       i += 2;
@@ -216,6 +235,8 @@ function readGit(out, args, cwd, ctx) {
   const words = ["git", sub, ...rest];
   if (sub === "rm") {
     readRemoval(out, rest, dir);
+  } else if (sub === "mv") {
+    readMove(out, rest, dir);
   }
   if (EXPANDS.test(sub)) {
     out.unchecked.push({ reason: EXPANSION, command: words.join(" ") });
@@ -228,9 +249,9 @@ function readGit(out, args, cwd, ctx) {
     const at = resolveIn(dir, word, ctx.home);
     return at !== null && ctx.host.exists(at);
   };
-  const found = readGitSub(sub, rest, exists);
-  if (found) {
-    add(out, found, words, dir);
+  const found = [].concat(readGitSub(sub, rest, exists) || []);
+  if (found.length) {
+    found.forEach((entry) => add(out, entry, words, dir));
   } else if (rest.some((arg) => EXPANDS.test(arg))) {
     out.unchecked.push({ reason: EXPANSION, command: words.join(" ") });
   }
@@ -238,12 +259,56 @@ function readGit(out, args, cwd, ctx) {
 
 // --- the other tools ----------------------------------------------------------------
 
-// Every path a remover is handed, recursive or not: the guard checks none is
-// its own policy file.
+// Every path a remover is handed, recursive or not, what `mv` takes away, and
+// what `cp`/`install`/`ln` overwrite (`cp /dev/null F` names no write the write
+// reader keeps): the guard checks none is its own policy file.
 const REMOVERS = new Set(["rm", "unlink", "trash", "shred"]);
+const COPIERS = new Set(["cp", "install", "ln"]);
 
 function readRemoval(out, words, cwd) {
-  out.removed.push({ cwd, paths: operandsOf(words) });
+  out.touched.push({ cwd, paths: operandsOf(words), mode: "remove" });
+}
+
+function targetDirectory(args) {
+  const at = args.findIndex((arg) => arg === "-t" || arg === "--target-directory");
+  if (at !== -1) {
+    return args[at + 1];
+  }
+  const attached = args.find((arg) => arg.startsWith("--target-directory="));
+  return attached ? attached.slice("--target-directory=".length) : null;
+}
+
+// Sources go away; the destination is overwritten. `-t DIR` names the directory.
+function readMove(out, args, cwd, sourcesGo = true) {
+  const into = targetDirectory(args);
+  const operands = operandsOf(args, new Set(["-S", "--suffix", "-t", "--target-directory", "-m", "--mode", "-o", "--owner", "-g", "--group"]));
+  const sources = into === null ? operands.slice(0, -1) : operands;
+  const written = into === null ? operands.slice(-1) : sources.map((source) => path.posix.join(into, path.posix.basename(source)));
+  if (sourcesGo) {
+    out.touched.push({ cwd, paths: sources, mode: "remove" });
+  }
+  out.touched.push({ cwd, paths: written, mode: "write" });
+}
+
+// `find START… [tests] -delete` or `-exec <remover>`: which starts, which name tests.
+const FIND_TESTS = new Set(["-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex"]);
+
+function readFindDeletion(out, args, cwd) {
+  const at = args.findIndex((arg) => /^-(?:exec|execdir|ok|okdir)$/.test(arg));
+  const handed = at === -1 ? null : commandFromWords(args.slice(at + 1));
+  const deletes = args.includes("-delete") || (handed !== null && (REMOVERS.has(handed.name) || handed.name === "mv"));
+  if (!deletes) {
+    return;
+  }
+  const first = args.findIndex((arg) => /^[-(!]/.test(arg));
+  const starts = (first === -1 ? args : args.slice(0, first)).filter(Boolean);
+  const tests = [];
+  args.forEach((arg, i) => {
+    if (FIND_TESTS.has(arg) && args[i + 1] !== undefined) {
+      tests.push({ test: arg.slice(1), pattern: args[i + 1] });
+    }
+  });
+  out.touched.push({ cwd, find: { starts: starts.length ? starts : ["."], tests } });
 }
 
 function readRm(out, args, cwd, ctx) {
@@ -273,7 +338,7 @@ function readPrisma(out, args, cwd) {
   const words = ["prisma", ...args];
   if (operands[0] === "migrate" && operands[1] === "reset") {
     add(out, { rule: "prisma migrate reset", ...DATA_LOSS }, words, cwd);
-  } else if (operands[0] === "db" && operands[1] === "push" && (options.long.has("force-reset") || options.long.has("accept-data-loss"))) {
+  } else if (operands[0] === "db" && operands[1] === "push" && (options.abbrev("force-reset") || options.abbrev("accept-data-loss"))) {
     add(out, { rule: "prisma db push with data loss", ...DATA_LOSS }, words, cwd);
   }
 }
@@ -379,6 +444,16 @@ function runnerProgram(name, args) {
   return null;
 }
 
+// A command from its words, wrappers stepped over as for a segment
+// (`xargs sudo rm`, `find -exec env rm`): `{ name, args }`, or null when no verb is left.
+function commandFromWords(words) {
+  let index = verbAt(words);
+  if (path.basename(words[index] || "") === "busybox" && words[index + 1] && !words[index + 1].startsWith("-")) {
+    index += 1;
+  }
+  return words[index] === undefined ? null : { name: path.basename(words[index]), args: words.slice(index + 1) };
+}
+
 // The command `xargs` or `find -exec` runs, with the words it was given.
 function forwarded({ name, args }) {
   if (name === "xargs") {
@@ -386,7 +461,7 @@ function forwarded({ name, args }) {
       if (XARGS_VALUE_OPTIONS.has(args[i])) {
         i += 1;
       } else if (!args[i].startsWith("-")) {
-        return { name: path.basename(args[i]), args: args.slice(i + 1) };
+        return commandFromWords(args.slice(i));
       }
     }
     return null;
@@ -397,7 +472,52 @@ function forwarded({ name, args }) {
       return null;
     }
     const end = args.findIndex((arg, i) => i > at && (arg === ";" || arg === "+"));
-    return { name: path.basename(args[at + 1]), args: args.slice(at + 2, end === -1 ? undefined : end) };
+    return commandFromWords(args.slice(at + 1, end === -1 ? undefined : end));
+  }
+  return null;
+}
+
+// A program another command runs from one word: `watch 'rm -rf x'`, `su -c`,
+// `script -c`. Null when it hands none on.
+const WATCH_VALUE_OPTIONS = new Set(["-n", "--interval", "-q", "--equexit"]);
+
+function handedScript({ name, args }) {
+  if (name === "watch") {
+    // Its own options lead; the rest is the command, run through `sh -c`.
+    let i = 0;
+    while (i < args.length && args[i].startsWith("-")) {
+      i += WATCH_VALUE_OPTIONS.has(args[i]) ? 2 : 1;
+    }
+    return i < args.length ? args.slice(i).join(" ") : null;
+  }
+  if (name === "su" || name === "script") {
+    const at = args.findIndex((arg) => arg === "-c" || arg === "--command");
+    if (at !== -1) {
+      return args[at + 1] === undefined ? null : args[at + 1];
+    }
+    const attached = args.find((arg) => arg.startsWith("--command="));
+    return attached ? attached.slice("--command=".length) : null;
+  }
+  return null;
+}
+
+// `env -S 'rm -rf x'` / `env --split-string=…`: env splits the string into the
+// command it runs, which the verb reader has stepped over as an option value.
+function splitString(tokens) {
+  const env = tokens.indexOf("env");
+  if (env === -1) {
+    return null;
+  }
+  for (let i = env + 1; i < tokens.length; i += 1) {
+    if (tokens[i] === "-S" || tokens[i] === "--split-string") {
+      return tokens.slice(i + 1).join(" ") || null;
+    }
+    if (tokens[i].startsWith("--split-string=")) {
+      return [tokens[i].slice("--split-string=".length), ...tokens.slice(i + 1)].join(" ");
+    }
+    if (!tokens[i].startsWith("-") && !tokens[i].includes("=")) {
+      return null;
+    }
   }
   return null;
 }
@@ -406,12 +526,15 @@ function readScript(out, program, cwd, ctx) {
   if (SUBSTITUTED_DOWNLOAD.test(program)) {
     add(out, PIPED, program.split(/\s+/), cwd);
   }
-  if (ctx.depth < MAX_DEPTH) {
-    const inner = readLine(program, cwd, { ...ctx, depth: ctx.depth + 1 });
-    out.findings.push(...inner.findings);
-    out.unchecked.push(...inner.unchecked);
-    out.removed.push(...inner.removed);
+  if (ctx.depth >= MAX_DEPTH) {
+    // Not followed further: unchecked, never a silent allow.
+    out.unchecked.push({ reason: TOO_DEEP, command: program });
+    return;
   }
+  const inner = readLine(program, cwd, { ...ctx, depth: ctx.depth + 1 });
+  out.findings.push(...inner.findings);
+  out.unchecked.push(...inner.unchecked);
+  out.touched.push(...inner.touched);
 }
 
 function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
@@ -425,10 +548,20 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
   }
   if (SHELLS.has(name)) {
     const flag = args.findIndex((arg) => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
-    if (flag !== -1 && args[flag + 1] !== undefined) {
-      readScript(out, args[flag + 1], cwd, ctx);
+    // `bash -c -- 'script'`: `--` ends the options, the script follows it.
+    const program = flag === -1 ? undefined : args[flag + 1] === "--" ? args[flag + 2] : args[flag + 1];
+    if (program !== undefined) {
+      readScript(out, program, cwd, ctx);
     }
     return;
+  }
+  const script = handedScript(command);
+  if (script !== null) {
+    readScript(out, script, cwd, ctx);
+    return;
+  }
+  if (name === "find") {
+    readFindDeletion(out, args, cwd);
   }
   const handed = forwarded(command) || runnerProgram(name, args);
   if (handed) {
@@ -442,10 +575,9 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
   } else if (REMOVERS.has(name)) {
     readRemoval(out, args, cwd);
   } else if (name === "mv") {
-    // What `mv` takes away: every operand but the destination (all of them with `-t`).
-    const operands = operandsOf(args, new Set(["-S", "--suffix"]));
-    const target = args.some((arg) => arg === "-t" || arg.startsWith("--target-directory") || /^-[A-Za-z]*t/.test(arg));
-    out.removed.push({ cwd, paths: target ? operands : operands.slice(0, -1) });
+    readMove(out, args, cwd);
+  } else if (COPIERS.has(name)) {
+    readMove(out, args, cwd, false);
   } else if (name === "prisma") {
     readPrisma(out, args, cwd);
   } else if (name === "dropdb") {
@@ -460,7 +592,7 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
 }
 
 function readLine(line, start, ctx) {
-  const out = { findings: [], unchecked: [], removed: [] };
+  const out = { findings: [], unchecked: [], touched: [] };
   const segments = splitSegments(line.replace(/\\\n/g, ""));
   const stack = [];
   let cwd = start;
@@ -475,6 +607,10 @@ function readLine(line, start, ctx) {
       cwd = null;
     } else {
       readCommand(out, command, cwd, ctx, segments, index);
+      const split = splitString(tokenize(segment.text.trim()));
+      if (split !== null) {
+        readScript(out, split, cwd, ctx);
+      }
     }
     if (segment.after === "open") {
       stack.push(cwd);
@@ -490,10 +626,10 @@ function readLine(line, start, ctx) {
 // (`cd "$D" && git checkout -- .`) carries `cwd: null`; the guard makes it unchecked.
 function readDestructive(command, { cwd, host }) {
   if (typeof command !== "string" || !command.trim()) {
-    return { findings: [], unchecked: [], removed: [] };
+    return { findings: [], unchecked: [], touched: [] };
   }
   const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, ...host };
   return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0 });
 }
 
-module.exports = { readDestructive, UNKNOWN_CWD, EXPANSION };
+module.exports = { readDestructive, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS };

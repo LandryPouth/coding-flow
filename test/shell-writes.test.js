@@ -265,3 +265,11 @@ test('wrappers and compound keywords step aside for the real verb', (t) => {
     ['/usr/bin/tee k', [write('k')]],
   ]);
 });
+
+test('a quote escaped inside a quoted word keeps its backslash for the next level', () => {
+  const { tokenize } = require('../bin/lib/shell-writes');
+  assert.deepStrictEqual(tokenize('bash -c "bash -c \\"bash -c \\\\\\"x y\\\\\\"\\""'), ['bash', '-c', 'bash -c "bash -c \\"x y\\""']);
+  assert.deepStrictEqual(tokenize(".e\\nv 'a b' \"c d\""), ['.env', 'a b', 'c d']);
+  // Three levels down, a write is still read where it lands.
+  assert.deepStrictEqual(shellWrites('bash -c "bash -c \\"bash -c \\\\\\"echo A=1 > .env\\\\\\"\\""', process.cwd()), [write('.env')]);
+});

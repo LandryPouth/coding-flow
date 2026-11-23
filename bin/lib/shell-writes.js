@@ -45,8 +45,15 @@ function tokenize(segment) {
 
 // Quote and backslash removal the shell does inside one word: `.e""nv`, `.e\nv`
 // and `'.en'v` all name `.env`. A lone quote that pairs with nothing stays as is.
+// One pass, left to right: a backslash the double quotes kept (`"a \\" b"` →
+// `a \" b`) is text, not an escape to strip a second time.
 function reduceWord(token) {
-  return token.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'/g, (_, double, single) => (double !== undefined ? double.replace(/\\([\s\S])/g, "$1") : single)).replace(/\\([^\n])/g, "$1");
+  return token.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([^\n])/g, (_, double, single, escaped) => {
+    if (double !== undefined) {
+      return double.replace(/\\([\s\S])/g, "$1");
+    }
+    return single !== undefined ? single : escaped;
+  });
 }
 
 const HOME_PREFIX = /^(?:\$HOME|\$\{HOME\})(?=\/|$)/;
@@ -81,7 +88,7 @@ function expandHome(target, home) {
 // util's `normalizePortable`, repeated so this module needs no other.
 const portable = (file) => file.split(path.sep).join("/").replace(/^\.\//, "");
 
-const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
+const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh", "fish"]);
 const EXPANSION = "write target depends on shell expansion";
 const UNKNOWN_CWD = "the working directory depends on shell expansion";
 const PATHSPEC_FILE = "git reads its paths from a file";
@@ -264,13 +271,16 @@ function readRedirections(r, text) {
 // --- the verb -----------------------------------------------------------------
 
 // Wrappers and compound-command keywords that sit in front of the real verb.
-const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "timeout", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
+const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "timeout", "stdbuf", "ionice", "chroot", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
 const WRAPPER_VALUE_OPTIONS = {
-  sudo: new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-r", "-t", "-U", "-D"]),
+  sudo: new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-r", "-t", "-U", "-D", "--user", "--group", "--host", "--prompt", "--close-from", "--chdir", "--role", "--type", "--other-user", "--command-timeout"]),
   doas: new Set(["-u", "-C"]),
-  env: new Set(["-u", "-C", "-S"]),
-  nice: new Set(["-n"]),
-  timeout: new Set(["-s", "-k"]),
+  env: new Set(["-u", "-C", "-S", "--unset", "--chdir"]),
+  nice: new Set(["-n", "--adjustment"]),
+  timeout: new Set(["-s", "-k", "--signal", "--kill-after"]),
+  stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
+  ionice: new Set(["-c", "-n", "-p", "-P", "-u", "--class", "--classdata", "--pid", "--pgid", "--uid"]),
+  chroot: new Set(["--userspec", "--groups"]),
 };
 
 // `sudo cp …`, `env FOO=1 tee …`, `time cd x`: step over the wrapper to the verb.
@@ -288,7 +298,8 @@ function verbAt(tokens) {
       index += 1;
     } else if (index > 0 && token.startsWith("-")) {
       index += WRAPPER_VALUE_OPTIONS[wrapper]?.has(token) ? 2 : 1;
-    } else if (wrapper === "timeout" && /^\d/.test(token)) {
+    } else if ((wrapper === "timeout" && /^\d/.test(token)) || wrapper === "chroot") {
+      // `timeout 5 …` steps over its duration, `chroot DIR …` over its new root.
       index += 1;
       wrapper = null;
     } else {
@@ -1463,4 +1474,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { isRemote, shellWrites, commandOf, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
+module.exports = { isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };

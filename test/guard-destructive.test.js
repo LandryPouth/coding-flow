@@ -423,8 +423,8 @@ test('readDestructive is pure: words in, findings out', () => {
   assert.equal(findings[0].rule, 'forced push');
   assert.equal(findings[0].cwd, path.resolve('/x'));
   assert.deepEqual(unchecked, []);
-  assert.deepEqual(readDestructive('echo hi', { cwd: '/w', host }), { findings: [], unchecked: [], removed: [] });
-  assert.deepEqual(readDestructive('cd sub && bash -c "rm a b"', { cwd: '/w', host }).removed, [{ cwd: path.resolve('/w/sub'), paths: ['a', 'b'] }]);
+  assert.deepEqual(readDestructive('echo hi', { cwd: '/w', host }), { findings: [], unchecked: [], touched: [] });
+  assert.deepEqual(readDestructive('cd sub && bash -c "rm a b"', { cwd: '/w', host }).touched, [{ cwd: path.resolve('/w/sub'), paths: ['a', 'b'], mode: 'remove' }]);
 });
 
 test('the guard words its unchecked reasons as the reader does', (t) => {
@@ -433,4 +433,137 @@ test('the guard words its unchecked reasons as the reader does', (t) => {
   assert.equal(run(dir, 'cd "$D" && git push -f && echo').decision, 'deny', 'a forced push needs no directory');
   const unknown = run(dir, 'cd "$D" && git checkout -- a.txt').reason;
   assert.ok([UNKNOWN_CWD, 'the working directory depends on shell expansion'].includes(unknown), unknown);
+});
+
+// --- review round 1 (P1-1…P1-7 and the P2s taken) ------------------------------------
+
+test('P1-1: past the depth the reader follows, the call is unchecked, never allowed', (t) => {
+  const dir = repo(t);
+  const nest = (depth, inner) => (depth === 0 ? inner : `bash -c ${JSON.stringify(nest(depth - 1, inner))}`);
+  for (const command of ['eval eval eval eval eval rm -rf build', 'eval eval eval eval eval eval eval git reset --hard', nest(6, 'rm -rf build')]) {
+    assert.notEqual(run(dir, command).decision, 'allow', command);
+  }
+  assert.equal(run(dir, 'eval eval eval echo hi').decision, 'allow');
+});
+
+test('P1-2: bash -c -- <script> is read', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', ["bash -c -- 'rm -rf build'", "sh -c -- 'git reset --hard'", "bash -e -c -- 'git clean -fdx'"]);
+});
+
+test('P1-3: xargs and find -exec step over wrappers before the verb', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    'ls | xargs -n1 sudo rm -rf',
+    'ls | xargs env FOO=1 rm -rf',
+    'find . -exec sudo rm -rf {} \;',
+    'find . -exec env rm -rf {} +',
+    'ls | xargs nohup git clean -fdx',
+    'find . -exec /bin/rm -r {} +',
+  ]);
+  expectAll(dir, 'allow', ['ls | xargs sudo rm -f', 'find . -exec env cat {} +']);
+});
+
+test('P1-4: an abbreviated long option is read as the option it abbreviates', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    'git reset --har',
+    'git reset --ha HEAD',
+    'git clean --forc -d',
+    'git clean --fo',
+    'git branch --delete --forc x',
+    'git branch --del --force x',
+    'git push --forc',
+    'git push --force-with origin main',
+    'rm --recursiv build',
+    'rm --rec build',
+    'git worktree remove --forc ../wt',
+  ]);
+  // An exemption is read exactly: `--dry` is not taken for `--dry-run`.
+  expectAll(dir, 'deny', ['git clean -f --dry']);
+  expectAll(dir, 'allow', ['git reset --soft', 'git clean -f --dry-run', 'git push --follow-tags']);
+});
+
+test('P1-5: checkout -f and switch -f / --discard-changes discard uncommitted changes', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', ['git checkout -f', 'git checkout --force', 'git checkout -f main', 'git checkout --forc main', 'git switch -f main', 'git switch --discard-changes main', 'git switch --discard main']);
+  // On a clean tree there is nothing to discard.
+  const clean = repo(t);
+  fs.writeFileSync(path.join(clean, 'a.txt'), 'one\n');
+  expectAll(clean, 'allow', ['git checkout -f', 'git switch -f main']);
+});
+
+test('P1-6: the policy file cannot be emptied, globbed away, moved with its directory or deleted by find', (t) => {
+  const dir = repo(t, { worktrees: { primaryLocked: true } });
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'other.json'), '{}');
+  expectAll(dir, 'deny', [
+    'cp /dev/null .coding-flow/harness.json',
+    'install /dev/null .coding-flow/harness.json',
+    'rm -f .coding-flow/harn*',
+    'rm .coding-flow/harness.jso?',
+    'rm .coding-flow/[h]arness.json',
+    'rm -f .codi*/harness.json',
+    'trash .coding-flow',
+    'mv .coding-flow /tmp/cf',
+    'trash .',
+    'git mv .coding-flow/harness.json x.json',
+    'git mv .coding-flow cf',
+    'find . -name harness.json -delete',
+    'find . -name "*.json" -delete',
+    'find .coding-flow -delete',
+    'find . -iname HARNESS.JSON -delete',
+    'find . -name harness.json -exec rm {} +',
+    'find . -path "*/.coding-flow/*" -delete',
+    'cd .coding-flow && trash harness.json',
+  ]);
+  expectAll(dir, 'allow', [
+    'cp .coding-flow/harness.json /tmp/h.json',
+    'rm .coding-flow/other.json',
+    'rm -f .coding-flow/o*',
+    'find . -name "*.log" -delete',
+    'find src -name harness.json -delete',
+    'mv a.txt b2.txt',
+    'git mv a.txt c.txt',
+  ]);
+  assert.equal(run(dir, 'rm -f .coding-flow/$X').decision, 'unchecked');
+});
+
+test('P1-7: on a case-insensitive file system, HARNESS.json is the policy file', (t) => {
+  const dir = repo(t, { destructiveCommands: 'deny' });
+  const upper = path.join(dir, '.coding-flow', 'HARNESS.json');
+  const hook = { tool_name: 'Write', cwd: dir, tool_input: { file_path: upper, content: '{"destructiveCommands":"off"}' } };
+  assert.equal(decide(hook, dir, { caseInsensitive: true }).decision, 'deny');
+  const shell = { tool_name: 'Bash', cwd: dir, tool_input: { command: 'rm .coding-flow/HARNESS.JSON' } };
+  assert.equal(decide(shell, dir, { caseInsensitive: true }).decision, 'deny');
+});
+
+test('P2: more wrappers are stepped over, and their scripts read', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    'stdbuf -oL rm -rf build',
+    'stdbuf -o L git reset --hard',
+    'ionice -c 3 rm -rf build',
+    'ionice -c3 -n7 git clean -fdx',
+    'chroot / rm -rf build',
+    'sudo --user root rm -rf build',
+    'sudo -u root -- rm -rf build',
+    "watch -n 1 'rm -rf build'",
+    "watch rm -rf build",
+    "su -c 'rm -rf build' root",
+    "su root -c 'git reset --hard'",
+    "script -q -c 'rm -rf build' /dev/null",
+    "fish -c 'rm -rf build'",
+    "env -S 'rm -rf build'",
+    "env --split-string='git reset --hard'",
+  ]);
+});
+
+test('P2: a git alias defined on the command line is unchecked; NotebookEdit cannot touch the policy file', (t) => {
+  const dir = repo(t);
+  for (const command of ["git -c alias.x='!rm -rf build' x", "git -c alias.n='reset --hard' n", 'git -c alias.n=reset n --hard']) {
+    assert.notEqual(run(dir, command).decision, 'allow', command);
+  }
+  assert.equal(run(dir, 'git -c core.pager=cat log').decision, 'allow');
+  const notebook = decide({ tool_name: 'NotebookEdit', cwd: dir, tool_input: { notebook_path: path.join(dir, '.coding-flow', 'harness.json'), new_source: '{}' } }, dir);
+  assert.equal(notebook.decision, 'deny');
 });
