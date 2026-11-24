@@ -123,9 +123,12 @@ const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 // run (the text before a `(` is outside the group, the text before a `)` inside it).
 // Heredoc bodies are data: up to the delimiter line, none of it is a command.
 // From the newline at `i`, the index of the last newline of the bodies opened.
+// Each heredoc gets its `body` (lines, tabs kept), `closed` when its word was found.
 function pastHeredocBodies(command, i, heredocs) {
   while (heredocs.length) {
-    const { dash, word } = heredocs.shift();
+    const heredoc = heredocs.shift();
+    const { dash, word } = heredoc;
+    const lines = [];
     let end = command.indexOf("\n", i + 1);
     while (i + 1 < command.length) {
       const stop = end === -1 ? command.length : end;
@@ -133,9 +136,12 @@ function pastHeredocBodies(command, i, heredocs) {
       i = stop;
       end = command.indexOf("\n", i + 1);
       if ((dash ? line.replace(/^\t+/, "") : line) === word) {
+        heredoc.closed = true;
         break;
       }
+      lines.push(dash ? line.replace(/^\t+/, "") : line);
     }
+    heredoc.body = lines.join("\n");
   }
   return i;
 }
@@ -163,10 +169,12 @@ function splitSegments(command) {
   let quote = null;
   let before = null;
 
+  let opened = []; // the heredocs this segment opened: their bodies come after the line
   const flush = (after) => {
-    out.push({ text, before, after });
+    out.push(opened.length ? { text, before, after, heredocs: opened } : { text, before, after });
     before = after;
     text = "";
+    opened = [];
   };
 
   for (let i = 0; i < command.length; i += 1) {
@@ -202,6 +210,7 @@ function splitSegments(command) {
       const heredoc = heredocWord(command.slice(i));
       if (heredoc) {
         heredocs.push(heredoc);
+        opened.push(heredoc);
       }
       text += "<<";
       i += 1;
@@ -231,7 +240,7 @@ function splitSegments(command) {
     }
   }
 
-  out.push({ text, before, after: null });
+  out.push(opened.length ? { text, before, after: null, heredocs: opened } : { text, before, after: null });
   return out;
 }
 
@@ -1283,6 +1292,15 @@ const INTERPRETERS = [
   [/^php$/, /^-r$/],
 ];
 
+// The same flags glued to their code (`python3 -c"…"`, `perl -e'…'`, `php -r'…'`):
+// only the switches that take no value may come before the code flag.
+const GLUED = [
+  [/^python[\d.]*$/, /^-[bBdEhiIOqsSuvVx]*c(.+)$/s],
+  [/^perl$/, /^-[lnpsawW0-9]*[eE](.+)$/s],
+  [/^ruby$/, /^-[lnpsawW]*e(.+)$/s],
+  [/^php$/, /^-r(.+)$/s],
+];
+
 function inlineCode(name, args) {
   const programs = [];
   for (const [pattern, flag] of INTERPRETERS) {
@@ -1299,6 +1317,16 @@ function inlineCode(name, args) {
         programs.push(unquote(arg.slice(arg.indexOf("=") + 1)));
       }
     });
+  }
+  for (const [pattern, flag] of GLUED) {
+    if (pattern.test(name)) {
+      args.forEach((arg) => {
+        const glued = flag.exec(arg);
+        if (glued) {
+          programs.push(glued[1]);
+        }
+      });
+    }
   }
   return programs;
 }

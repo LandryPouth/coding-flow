@@ -1102,7 +1102,16 @@ function onPath(program) {
 }
 
 const destructiveHost = {
-  exists: (file) => fs.existsSync(file),
+  exists: (file) => file !== null && fs.existsSync(file),
+  // A regular file of at most 64 KB (a script copied, an SQL file): its text, else null.
+  readSmall: (file) => {
+    try {
+      const stat = fs.statSync(file);
+      return stat.isFile() && stat.size <= 65536 ? fs.readFileSync(file, "utf8") : null;
+    } catch {
+      return null;
+    }
+  },
   home: () => os.homedir(),
   onPath,
   // `{ value }`: the alias' expansion, null when `name` is none; `{ issue }` when git did not answer.
@@ -1165,6 +1174,82 @@ function fileList(lines) {
 const porcelainFiles = (out) => (out || "").split(/\r?\n/).filter(Boolean).map((line) => line.slice(3));
 const EXPANDS = /[$`]/;
 
+// `rm FILE` without a `git status` spawn (story 29-04): true when every path is
+// missing, untracked, or tracked with the size and mtime the index recorded, older
+// than the index itself (git's own racy rule). Anything else — a bigger or newer
+// index format, a conflict, a directory — is null, and `git status` decides.
+const MAX_INDEX_BYTES = 2 * 1024 * 1024;
+
+function gitDirOf(cwd) {
+  for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+    const dotGit = path.join(dir, ".git");
+    try {
+      const stat = fs.statSync(dotGit);
+      if (stat.isDirectory()) {
+        return { top: dir, gitDir: dotGit };
+      }
+      const pointer = /^gitdir: (.+)$/m.exec(fs.readFileSync(dotGit, "utf8"));
+      return pointer ? { top: dir, gitDir: path.resolve(dir, pointer[1].trim()) } : null;
+    } catch {
+      if (path.dirname(dir) === dir) {
+        return null;
+      }
+    }
+  }
+}
+
+function indexEntries(file) {
+  const stat = fs.statSync(file, { bigint: true });
+  const data = stat.size <= MAX_INDEX_BYTES ? fs.readFileSync(file) : null;
+  if (!data || data.toString("latin1", 0, 4) !== "DIRC" || ![2, 3].includes(data.readUInt32BE(4))) {
+    return null;
+  }
+  const entries = new Map();
+  let at = 12;
+  for (let n = data.readUInt32BE(8); n > 0; n -= 1) {
+    const flags = data.readUInt16BE(at + 60);
+    const extended = flags & 0x4000 ? 2 : 0;
+    const nameAt = at + 62 + extended;
+    const end = data.indexOf(0, nameAt);
+    entries.set(data.toString("utf8", nameAt, end), { sec: data.readUInt32BE(at + 8), nsec: data.readUInt32BE(at + 12), size: data.readUInt32BE(at + 36), stage: (flags >> 12) & 3 });
+    at += Math.ceil((end - at + 1) / 8) * 8;
+  }
+  // A split index (`link`) or a sparse one (`sdir`) keeps entries elsewhere: not read.
+  for (; at + 8 <= data.length - 20; at += 8 + data.readUInt32BE(at + 4)) {
+    if (["link", "sdir"].includes(data.toString("latin1", at, at + 4))) {
+      return null;
+    }
+  }
+  return { entries, mtime: stat.mtimeNs };
+}
+
+function indexHolds(cwd, paths) {
+  try {
+    const repo = gitDirOf(cwd);
+    const index = repo && indexEntries(path.join(repo.gitDir, "index"));
+    if (!index) {
+      return false;
+    }
+    return paths.every((word) => {
+      const file = path.resolve(cwd, word);
+      const rel = path.relative(repo.top, file).split(path.sep).join("/");
+      const stat = fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
+      if (!stat || rel.startsWith("..")) {
+        return Boolean(!stat && !rel.startsWith(".."));
+      }
+      const entry = index.entries.get(rel);
+      if (!entry) {
+        return stat.isFile() || stat.isSymbolicLink();
+      }
+      const sec = Number(stat.mtimeNs / 1000000000n);
+      const nsec = Number(stat.mtimeNs % 1000000000n);
+      return entry.stage === 0 && stat.isFile() && entry.size === Number(stat.size) && entry.sec === sec && entry.nsec === nsec && stat.mtimeNs < index.mtime;
+    });
+  } catch {
+    return false;
+  }
+}
+
 // Whether a finding applies here, and what it would destroy now:
 // `{ applies, detail }`, or `{ unchecked }` when the disk could not say.
 function settle(finding, policy) {
@@ -1197,11 +1282,15 @@ function settle(finding, policy) {
     if (check.paths.some((word) => EXPANDS.test(word))) {
       return { unchecked: DESTRUCTIVE_EXPANSION };
     }
+    if (check.worktree && indexHolds(finding.cwd, check.paths)) {
+      return { applies: false }; // a plain `rm` of files the index holds as they are: no spawn
+    }
     const { out, issue } = gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no", "--", ...check.paths]);
     if (issue) {
       return { unchecked: issue };
     }
-    const files = porcelainFiles(out);
+    // `worktree`: only a change the index does not hold is lost (`rm` of a staged file).
+    const files = porcelainFiles(check.worktree ? (out || "").split("\n").filter((line) => line[1] !== " ").join("\n") : out);
     return { applies: files.length > 0, detail: fileList(files) };
   }
   if (check.kind === "changes") {

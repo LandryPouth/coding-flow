@@ -304,7 +304,7 @@ function readGit(out, args, cwd, ctx) {
   }
   if (sub === "rm") {
     readRemoval(out, rest, dir);
-    readGitRmForced(out, rest, words, dir);
+    readGitRmForced(out, rest, words, dir, ctx.host);
   } else if (sub === "mv") {
     readMove(out, rest, dir);
   }
@@ -408,7 +408,7 @@ function readRm(out, args, cwd, ctx) {
     return;
   }
   if (!options.has("r", "recursive") && !options.short.has("R")) {
-    removesChanges(out, operandsOf(args), ["rm", ...args], cwd);
+    removesChanges(out, operandsOf(args), ["rm", ...args], cwd, ctx.host, true);
     return;
   }
   const operands = operandsOf(args);
@@ -433,58 +433,98 @@ function readPrisma(out, args, cwd) {
   }
 }
 
-// DROP DATABASE / SCHEMA / TABLE, TRUNCATE: the rule each is refused under.
-const DESTRUCTIVE_SQL = /\b(drop\s+(?:database|schema|table)|truncate)\b/i;
+// SQL that destroys data, comments stripped (`DROP/**/TABLE`): `DROP DATABASE`,
+// `SCHEMA`, `TABLE`, `OWNED`, `COLUMN`, `TRUNCATE`, a `DELETE FROM t` with no `WHERE`.
+const DESTRUCTIVE_SQL = /\b(drop\s+(?:database|schema|table|owned|column)|truncate)\b|\b(delete\s+from)\s+(?:only\s+)?[\w."]+\s*(?:;|$)/im;
 
+function destructiveSql(text) {
+  const sql = DESTRUCTIVE_SQL.exec(text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " "));
+  if (!sql) {
+    return null;
+  }
+  return sql[1] ? sql[1].replace(/\s+/g, " ").toUpperCase() : "DELETE FROM without WHERE";
+}
+
+// `-c SQL`, `--command SQL`, `--command=SQL`, `-cSQL`; `-f FILE` likewise as `files`.
 function psqlPrograms(args) {
   const programs = [];
+  const files = [];
   args.forEach((arg, i) => {
-    if (arg === "-c" || arg === "--command") {
-      programs.push(args[i + 1] || "");
-    } else if (arg.startsWith("--command=")) {
-      programs.push(arg.slice("--command=".length));
-    } else if (/^-c./.test(arg)) {
-      programs.push(arg.slice(2));
+    const glued = /^(?:-([cf])(.+)|--(command|file)=(.*))$/s.exec(arg);
+    if (arg === "-c" || arg === "--command" || arg === "-f" || arg === "--file") {
+      (/f/.test(arg) ? files : programs).push(args[i + 1] || "");
+    } else if (glued) {
+      ((glued[1] || glued[3]).startsWith("f") ? files : programs).push(glued[2] ?? glued[4]);
     }
   });
-  return programs;
+  return { programs, files };
 }
 
 function readPsql(out, command, cwd, ctx, segments, index) {
   const { args } = command;
-  const programs = psqlPrograms(args);
+  const { programs, files } = psqlPrograms(args);
   for (const program of programs) {
-    const sql = DESTRUCTIVE_SQL.exec(program);
-    if (sql) {
-      add(out, { rule: sql[1].replace(/\s+/g, " ").toUpperCase(), ...DATA_LOSS }, ["psql", ...args], cwd);
+    const rule = destructiveSql(program);
+    if (rule) {
+      add(out, { rule, ...DATA_LOSS }, ["psql", ...args], cwd);
     }
-    // `\! cmd`: psql's shell escape.
+    // `\! cmd`: psql's shell escape, run here.
     const shell = /\\!\s*(.*)/.exec(program);
     if (shell) {
       readUnproven(out, shell[1], cwd, ctx, PSQL_SHELL, ["psql", ...args].join(" "));
     }
   }
-  if (programs.length || args.some((arg) => /^(?:-f|--file)(?:=|$)/.test(arg))) {
+  if (programs.length && !files.length) {
     return;
   }
-  readPsqlStdin(out, command, segments, index);
+  const shown = ["psql", ...args].join(" ");
+  for (const file of files) {
+    psqlInput(out, sqlFile(file, cwd, ctx), shown);
+  }
+  if (!files.length) {
+    psqlInput(out, psqlStdin(command, cwd, ctx, segments, index), shown);
+  }
 }
 
-// psql with no `-c`/`-f` reads SQL from its input: a pipe, a redirection, a heredoc.
-// Echoed SQL is read; any other input is unchecked, as is SQL that destroys data.
-function readPsqlStdin(out, { args }, segments, index) {
+// What psql reads on its input, when it reads it: the text when the guard sees it,
+// null when it cannot, undefined when psql reads none (interactive, or a terminal).
+function psqlStdin({ args }, cwd, ctx, segments, index) {
   const segment = segments && segments[index];
-  const previous = segments && segments[index - 1];
-  const piped = segment && segment.before === "pipe";
-  const redirected = args.some((arg) => /^<(?!\()/.test(arg)) || (segment && /<</.test(segment.text));
-  if (!piped && !redirected) {
+  const from = args.find((arg) => /^<(?![<(])/.test(arg));
+  const heredoc = segment && segment.heredocs && segment.heredocs[0];
+  if (heredoc) {
+    return heredoc.literal || !EXPANDS.test(heredoc.body) ? heredoc.body : null;
+  }
+  if (from !== undefined) {
+    return sqlFile(from === "<" ? args[args.indexOf(from) + 1] : from.slice(1), cwd, ctx);
+  }
+  if (segment && segment.text.includes("<<<")) {
+    return null;
+  }
+  if (!segment || segment.before !== "pipe") {
+    return undefined;
+  }
+  const source = commandOf(segments[index - 1]);
+  return ["echo", "printf"].includes(source.name) && !source.args.some((arg) => EXPANDS.test(arg)) ? source.args.join(" ") : null;
+}
+
+// An SQL file: what this line wrote into it, else the file on disk when small.
+function sqlFile(word, cwd, ctx) {
+  const key = word === undefined ? null : fileKey(cwd, word, ctx.home);
+  if (key === null) {
+    return null;
+  }
+  if (ctx.written && ctx.written.has(key)) {
+    return writtenText(ctx, key);
+  }
+  return key.startsWith("?") ? null : ctx.host.readSmall(key);
+}
+
+function psqlInput(out, sql, command) {
+  if (sql === undefined || (sql !== null && !destructiveSql(sql))) {
     return;
   }
-  const source = piped && !redirected ? commandOf(previous) : null;
-  const seen = source && ["echo", "printf"].includes(source.name) ? source.args.join(" ") : null;
-  if (seen === null || DESTRUCTIVE_SQL.test(seen)) {
-    out.unchecked.push({ reason: PSQL_STDIN, command: ["psql", ...args].join(" ") });
-  }
+  out.unchecked.push({ reason: PSQL_STDIN, command });
 }
 
 const DOCKER_VALUE_GLOBALS = new Set(["-H", "--host", "--context", "-c", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey"]);
@@ -541,52 +581,76 @@ function readDownload(out, command, cwd, segments, index) {
 
 // A removal of a tracked file with uncommitted changes (`rm a.txt`, `git rm -f a.txt`)
 // loses them, as `git checkout -- a.txt` would: refused when the disk says so.
-// Only when the command runs here (`local`): handed to `ssh`, a wrapper the guard does
-// not read or interpreter code, a plain `rm` is not this repository's. A path set by
-// an expansion, or a directory the line made unknown, is not judged (plan.md D3).
-function removesChanges(out, operands, words, cwd) {
+// `worktree`: a plain `rm` loses only what the index does not hold, so a change that
+// is all staged stays allowed; `git rm -f` drops the index entry too. Marked `local`:
+// handed to `ssh` or a wrapper the guard does not read, it is not this repository's.
+// Not judged: a path set by an expansion, a directory the line made unknown, a path
+// that is not on disk (nothing to lose, and no `git status` to run) (plan.md D3).
+function removesChanges(out, operands, words, cwd, host, worktree) {
   const paths = operands.filter((operand) => operand && !EXPANDS.test(operand));
-  if (!paths.length || cwd === null) {
+  if (!paths.length || cwd === null || !paths.some((word) => host.exists(resolveIn(cwd, word, host.home())))) {
     return;
   }
   add(out, {
     rule: "removing a file with uncommitted changes",
     destroys: "the uncommitted changes in the files it removes",
     alternative: "`git stash push -u -m \"<why>\"` first, so they can come back (or `trash` the file)",
-    check: { kind: "dirty", paths },
+    check: { kind: "dirty", paths, worktree },
     local: true,
   }, words, cwd);
 }
 
-// Text read as a script on behalf of a command that runs it later or elsewhere: what
-// it finds is `unproven` — the guard settles each finding's check, then makes the call
-// unchecked rather than refused (29-03's claim: read but not proven).
+// Text that runs here, later or inside another program (interpreter code, a git alias
+// set now, a file the line wrote, psql's `\!`): what it finds is `unproven` — the guard
+// settles each finding's check, then makes the call unchecked rather than refused
+// (29-03's claim: read but not proven).
 function readUnproven(out, text, cwd, ctx, reason, command, propagate = true) {
   const inner = { findings: [], unchecked: [], touched: [], substituted: [] };
   readScript(inner, text, cwd, { ...ctx, handed: true });
-  out.findings.push(...inner.findings.filter((finding) => !finding.local).map((finding) => ({ ...finding, unproven: reason, command })));
+  out.findings.push(...inner.findings.map((finding) => ({ ...finding, unproven: reason, command })));
   if (propagate) {
     out.unchecked.push(...inner.unchecked);
   }
 }
 
 // `python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`: each string literal of the
-// code, and the literals joined, are read as scripts. Joined with nothing they are
-// tested for the policy file (`"harness" ".json"`). A program built from pieces
+// code (escapes decoded), the literals joined, and each list of literals
+// (`spawnSync("rm", ["-rf", "build"])`) are read as scripts. Joined with nothing they
+// are tested for the policy file (`"harness" ".json"`). A program built from pieces
 // (concatenation, format) with a piece naming the policy file or a destructive verb is
 // unchecked: the guard cannot join what the program computes.
 const INTERPRETER_NAME = /^(?:python[\d.]*|node|nodejs|bun|deno|perl|ruby|php)$/;
 const BUILDS = /(['"`])\s*(?:\+|\.)?\s*['"`]|%\s*[(\w]|\.format\(|\bf['"]|\$\{|\.join\(|\bsprintf\b/;
 const VERB_PIECE = /^\s*(?:rm|unlink|shred|git|dropdb|psql|prisma|docker|mv)(?:\s|$)/;
 const POLICY_PIECE = /harness|coding-flow/i;
+const LITERAL = /(['"`])((?:\\.|(?!\1)[^\\])*)\1/gs;
+const MAX_LITERAL = 4096;
+
+const ESCAPES = { n: "\n", t: "\t", r: "\r", 0: "\0" };
+const unescape = (text) =>
+  text.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|.)/gs, (_, code) => (code.length > 1 ? String.fromCharCode(parseInt(code.slice(1), 16)) : ESCAPES[code] ?? code));
+
+function codeLiterals(code) {
+  return [...code.matchAll(LITERAL)].map((match) => unescape(match[2])).filter((text) => text && text.length <= MAX_LITERAL);
+}
+
+// `("rm", ["-rf", "build"])`, `['git', 'reset', '--hard']`: the argument vector, as a command.
+function literalLists(code) {
+  const lists = [];
+  for (const match of code.matchAll(/(?:(['"`])((?:\\.|(?!\1)[^\\])*)\1\s*,\s*)?\[((?:\s*(['"`])(?:\\.|(?!\4)[^\\])*\4\s*,?)+)\s*\]/gs)) {
+    const words = [...(match[2] === undefined ? [] : [unescape(match[2])]), ...codeLiterals(match[3])];
+    lists.push(words.map((word) => (/^[\w./=:@%+,-]+$/.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`)).join(" "));
+  }
+  return lists;
+}
 
 function readInterpreterCode(out, programs, cwd, ctx, command) {
   for (const code of programs) {
-    const pieces = stringLiterals(code);
+    const pieces = codeLiterals(code);
     if (!pieces.length) {
       continue;
     }
-    for (const text of new Set([...pieces, pieces.join(" "), pieces.join("")])) {
+    for (const text of new Set([...pieces, pieces.join(" "), pieces.join(""), ...literalLists(code)])) {
       if (/\s/.test(text)) {
         readUnproven(out, text, cwd, ctx, INTERPRETER_CODE, command, false);
       }
@@ -616,10 +680,11 @@ function readConfigAlias(out, rest, dir, ctx) {
 }
 
 // A prefix that points git at another repository (`GIT_DIR=`, `GIT_WORK_TREE=`) or
-// another config (`GIT_CONFIG_GLOBAL=`, `HOME=`): its checks and aliases are not this
-// directory's.
+// another config file (`GIT_CONFIG_GLOBAL=`, `HOME=`): its checks and aliases are not
+// this directory's. `GIT_CONFIG_NOSYSTEM`, `GIT_PAGER` and the like change no alias
+// the guard would resolve.
 const REPO_ENV = /^(?:GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_INDEX_FILE)=/;
-const CONFIG_ENV_VARS = /^(?:GIT_DIR|GIT_COMMON_DIR|GIT_CONFIG\w*|HOME|XDG_CONFIG_HOME)=/;
+const CONFIG_ENV_VARS = /^(?:GIT_DIR|GIT_COMMON_DIR|GIT_CONFIG|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_CONFIG_PARAMETERS|HOME|XDG_CONFIG_HOME)=/;
 
 function gitEnv(assignments = []) {
   // `GIT_DIR=.git`: this repository, named.
@@ -646,26 +711,31 @@ function readGitConfigured(out, sub, rest, dir, ctx) {
   return false;
 }
 
-// `git rm -f a.txt` (not `--cached`) drops the file's uncommitted changes too.
-function readGitRmForced(out, rest, words, dir) {
+// `git rm -f a.txt` (not `--cached`) drops the file's uncommitted changes, staged ones too.
+function readGitRmForced(out, rest, words, dir, host) {
   const options = optionsOf(rest);
   if (options.has("f", "force") && !options.long.has("cached")) {
-    removesChanges(out, operandsOf(rest), words, dir);
+    removesChanges(out, operandsOf(rest), words, dir, host, false);
   }
 }
 
 // --- a file written, then run, on the same line ----------------------------------------
 
 // The files a segment writes: `{ word, text }`. `text` is the content when the guard
-// sees all of it (`echo`/`printf` into a file, or onto one this line wrote), else null
-// (`cat <<EOF`, `curl -o`, `cp`, `>>` onto a file already there).
+// sees all of it, else null: `echo`/`printf` output, a heredoc `cat` or `tee` copies
+// (null when its unquoted body expands), `>>` onto a file this line wrote, a `cp` of a
+// file (`{ from }`, read when it is run). A download, `>>` onto a file already there,
+// `cat` of a file: null.
 function writesOf(command, tokens, known) {
   const shown = ["echo", "printf"].includes(command.name) ? [] : null;
+  const plain = [];
   const redirects = [];
   for (let i = verbAt(tokens) + 1; i < tokens.length; i += 1) {
-    const redirect = /^(?:\d|&)?(>>?)(.*)$/.exec(tokens[i]);
-    if (!redirect) {
-      shown?.push(tokens[i]);
+    const redirect = /^(?:\d|&)?(>>|>\||>)(.*)$/.exec(tokens[i]);
+    if (/^<<-?$/.test(tokens[i])) {
+      i += 1; // `<< EOF`: the delimiter word
+    } else if (!redirect) {
+      (/^<</.test(tokens[i]) ? [] : plain).push(tokens[i]);
     } else {
       const word = redirect[2] || tokens[(i += 1)];
       if (word && !/^&|^\/dev\//.test(word)) {
@@ -673,24 +743,39 @@ function writesOf(command, tokens, known) {
       }
     }
   }
+  const content = heredocContent(command, plain) ?? (shown === null ? null : plain.join(" ").replace(/\\n/g, "\n").replace(/\\t/g, "\t"));
   const text = ({ word, append }) => {
-    if (shown === null || (append && !known(word))) {
+    if (content === null || (append && !known(word))) {
       return null;
     }
-    // printf (and echo -e) turn `\n` into a line break: the script's segments.
-    const body = shown.join(" ").replace(/\\n/g, "\n").replace(/\\t/g, "\t");
     const before = append ? known(word).text : null;
-    return before === null ? (append ? null : body) : `${before}\n${body}`;
+    return before === null ? (append ? null : content) : `${before}\n${content}`;
   };
   const named = [];
   if (command.name === "tee") {
-    named.push(...operandsOf(command.args));
+    named.push(...operandsOf(command.args).filter((word) => !/^<</.test(word)).map((word) => ({ word, text: content })));
   } else if (DOWNLOADERS.has(command.name)) {
-    command.args.forEach((arg, i) => /^(?:-o|--output|-O|--output-document)$/.test(arg) && named.push(command.args[i + 1]));
-  } else if (["cp", "mv", "install", "ln"].includes(command.name)) {
-    named.push(operandsOf(command.args).slice(-1)[0]);
+    command.args.forEach((arg, i) => /^(?:-o|--output|-O|--output-document)$/.test(arg) && named.push({ word: command.args[i + 1], text: null }));
+  } else if (["cp", "install"].includes(command.name)) {
+    const operands = operandsOf(command.args);
+    named.push({ word: operands[operands.length - 1], text: operands.length === 2 ? { from: operands[0] } : null });
+  } else if (["mv", "ln"].includes(command.name)) {
+    named.push({ word: operandsOf(command.args).slice(-1)[0], text: null });
   }
-  return [...redirects.map((entry) => ({ word: entry.word, text: text(entry) })), ...named.filter(Boolean).map((word) => ({ word, text: null }))];
+  return [...redirects.map((entry) => ({ word: entry.word, text: text(entry) })), ...named.filter((entry) => entry.word)];
+}
+
+// `cat <<EOF`, `tee f <<'EOF'`: the heredoc body, when nothing else is read (no input
+// file for `cat`) and it does not expand. Undefined when the command copies no heredoc.
+function heredocContent(command, plain) {
+  const heredoc = command.segment && command.segment.heredocs && command.segment.heredocs[0];
+  if (!heredoc || !["cat", "tee"].includes(command.name)) {
+    return undefined;
+  }
+  if (!heredoc.closed || (command.name === "cat" && plain.some((word) => !word.startsWith("-")))) {
+    return null;
+  }
+  return heredoc.literal || !EXPANDS.test(heredoc.body) ? heredoc.body : null;
 }
 
 // The file a command runs: `bash x.sh`, `sh ./x.sh`, `source x.sh`, `. x.sh`,
@@ -710,24 +795,42 @@ function runsFile(command, raw) {
   return raw && raw.includes("/") ? { word: raw, code: false } : null;
 }
 
-function readWrittenRun(out, command, raw, cwd, ctx, written) {
+function readWrittenRun(out, command, raw, cwd, ctx) {
   const run = runsFile(command, raw);
   const key = run && fileKey(cwd, run.word, ctx.home);
-  if (!run || !written.has(key)) {
+  if (!run || !ctx.written.has(key)) {
     return;
   }
-  const text = written.get(key);
+  const text = writtenText(ctx, key);
   const shown = [raw || command.name, ...command.args].join(" ");
   if (text === null) {
     out.unchecked.push({ reason: WRITTEN_UNREAD, command: shown });
   } else if (run.code) {
-    readInterpreterCode(out, [text], cwd, ctx, shown);
+    readInterpreterCode(out, [`"${text.replace(/[\\"]/g, "\\$&")}"`, text], cwd, ctx, shown);
   } else {
     readUnproven(out, text, cwd, ctx, WRITTEN_SCRIPT, shown);
   }
 }
 
 const fileKey = (cwd, word, home) => resolveIn(cwd, word, home) || `?${word}`;
+
+function recordWrites(command, tokens, cwd, ctx) {
+  const known = (file) => (ctx.written.has(fileKey(cwd, file, ctx.home)) ? { text: writtenText(ctx, fileKey(cwd, file, ctx.home)) } : null);
+  for (const { word, text } of writesOf(command, tokens, known)) {
+    const from = text !== null && typeof text === "object" ? resolveIn(cwd, text.from, ctx.home) : undefined;
+    ctx.written.set(fileKey(cwd, word, ctx.home), from === undefined ? text : from === null ? null : { from });
+  }
+}
+
+// What this line wrote into `key`: its text, or a copied file's, read now (null when
+// the guard cannot read it).
+function writtenText(ctx, key) {
+  const text = ctx.written.get(key);
+  if (text === null || typeof text === "string") {
+    return text;
+  }
+  return ctx.host.readSmall(text.from);
+}
 
 // --- one command, then the line --------------------------------------------------------
 
@@ -959,7 +1062,7 @@ function readVerb(out, command, cwd, ctx, segments, index) {
   } else if (REMOVERS.has(name)) {
     readRemoval(out, args, cwd);
     if (name !== "trash") {
-      removesChanges(out, operandsOf(args), [name, ...args], cwd);
+      removesChanges(out, operandsOf(args), [name, ...args], cwd, ctx.host, true);
     }
   } else if (name === "mv") {
     readMove(out, args, cwd);
@@ -1012,7 +1115,8 @@ function readLine(line, start, ctx) {
   const joined = line.replace(/\\\n/g, "");
   const segments = splitSegments(joined);
   const stack = [];
-  const written = new Map(); // the files this line wrote: path → their text, or null
+  const written = new Map(); // the files this line wrote: path → their text, `{ from }` or null
+  ctx = { ...ctx, written };
   let cwd = start;
   segments.forEach((segment, index) => {
     const command = commandOf(segment);
@@ -1038,10 +1142,8 @@ function readLine(line, start, ctx) {
       const segmentCtx = assignments.length ? { ...ctx, env: assignments } : ctx;
       readCommand(out, { ...command, raw, args: wholeLastWord(command.args, segment, segments[index + 1]) }, cwd, segmentCtx, segments, index);
       readHandedText(out, command, cwd, ctx);
-      readWrittenRun(out, command, raw, cwd, ctx, written);
-      for (const { word, text } of writesOf(command, tokens, (file) => (written.has(fileKey(cwd, file, ctx.home)) ? { text: written.get(fileKey(cwd, file, ctx.home)) } : null))) {
-        written.set(fileKey(cwd, word, ctx.home), text);
-      }
+      readWrittenRun(out, command, raw, cwd, ctx);
+      recordWrites(command, tokens, cwd, ctx);
       if (assignments.length) {
         readHandedText(out, { name: "(assignment)", args: assignments }, cwd, ctx);
       }
@@ -1426,7 +1528,7 @@ function readDestructive(command, { cwd, host }) {
   if (typeof command !== "string" || !command.trim()) {
     return { findings: [], unchecked: [], touched: [], substituted: [] };
   }
-  const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), gitTop: () => null, ...host };
+  const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), gitTop: () => null, readSmall: () => null, ...host };
   return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0 });
 }
 

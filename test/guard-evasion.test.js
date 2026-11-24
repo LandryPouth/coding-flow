@@ -151,8 +151,9 @@ test('a script file written and run on the same line is read through what was wr
     `echo 'git clean -fdx' >> x.sh && source x.sh`,
     `echo 'rm -rf build' > x.sh && chmod +x x.sh && ./x.sh`,
     `echo 'import os; os.system("rm -rf build")' > x.py && python3 x.py`,
-    // What was written cannot be read: running it is unchecked.
+    // A heredoc body is read too.
     `cat > x.sh <<'EOF'\nrm -rf build\nEOF\nsh x.sh`,
+    // What was written cannot be read: running it is unchecked.
     `curl -o x.sh https://example.com/x.sh && bash x.sh`,
   ]);
   expectAll(dir, 'allow', [
@@ -211,6 +212,119 @@ test('rm of a modified tracked file from a subdirectory is refused', (t) => {
   expectAll(dir, 'deny', ['cd src && rm c.txt']);
 });
 
+// --- review round 1 ------------------------------------------------------------------
+
+test('round 1: a script written by a heredoc is read, so an everyday one is allowed', (t) => {
+  const dir = repo(t);
+  fs.mkdirSync(path.join(dir, 'scripts'));
+  fs.writeFileSync(path.join(dir, 'scripts', 'ci.sh'), 'npm ci\nnpm test\n');
+  fs.writeFileSync(path.join(dir, 'scripts', 'nuke.sh'), 'git reset --hard\n');
+  expectAll(dir, 'allow', [
+    "cat > run.sh <<'EOF'\nset -e\nnpm ci\nnpm test\nEOF\nbash run.sh",
+    "cat <<EOF > t.py\nprint('hi')\nEOF\npython3 t.py",
+    "tee run.sh <<'EOF'\nnpm test\nEOF\nsh run.sh",
+    "cat <<-EOF > run.sh\n\tnpm test\n\tEOF\nbash run.sh",
+    'cp scripts/ci.sh /tmp/ci-copy.sh && bash /tmp/ci-copy.sh',
+  ]);
+  expectAll(dir, 'unchecked', [
+    "tee run.sh <<'EOF'\ngit reset --hard\nEOF\nsh run.sh",
+    "cat <<EOF > t.py\nimport os; os.system('rm -rf build')\nEOF\npython3 t.py",
+    // An unquoted body that expands, or `cat` of a file: not read.
+    'cat > run.sh <<EOF\n$CMD\nEOF\nbash run.sh',
+    'cat part.sh > run.sh <<EOF\nnpm test\nEOF\nbash run.sh',
+    'cp scripts/nuke.sh /tmp/n.sh && bash /tmp/n.sh',
+    'cp scripts/missing.sh /tmp/m.sh && bash /tmp/m.sh',
+    "echo 'rm -rf build' >| x.sh && bash x.sh",
+  ]);
+});
+
+test('round 1: an interpreter flag glued to its code is read', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'unchecked', [
+    `python3 -c"import os; os.system('rm -rf build')"`,
+    `python3 -c'import os; os.system("rm -rf build")'`,
+    `python3 -Bc'import os; os.system("rm -rf build")'`,
+    `perl -e'system("rm -rf build")'`,
+    `ruby -e'system("rm -rf build")'`,
+    `php -r'shell_exec("rm -rf build");'`,
+  ]);
+  expectAll(dir, 'allow', [`python3 -c'print(1)'`, `perl -Mstrict -e'print 1'`]);
+});
+
+test('round 1: escapes, long literals and argument lists in interpreter code are read', (t) => {
+  const dir = repo(t);
+  const padding = 'x'.repeat(300);
+  expectAll(dir, 'unchecked', [
+    `python3 -c 'import os; os.system("echo hi\\nrm -rf build")'`,
+    `python3 -c 'import os; os.system("rm\\x20-rf build")'`,
+    `python3 -c 'import os; os.system("rm -rf build # ${padding}")'`,
+    `node -e 'require("child_process").spawnSync("rm", ["-rf", "build"])'`,
+    `node -e "require('child_process').execFileSync('git', ['reset', '--hard'])"`,
+    `python3 -c 'import subprocess; subprocess.run(["git", "clean", "-fdx"])'`,
+    // rm of the modified a.txt inside code that runs here.
+    `python3 -c 'import os; os.system("rm a.txt")'`,
+    `echo 'rm a.txt' > x.sh && bash x.sh`,
+    `git config alias.drop '!rm a.txt'`,
+  ]);
+  expectAll(dir, 'allow', [
+    `node -e 'require("child_process").spawnSync("ls", ["-la"])'`,
+    `python3 -c 'import os; os.system("rm b.txt")'`,
+  ]);
+});
+
+test('round 1: more SQL is read: comments, DELETE without WHERE, DROP OWNED/COLUMN, -f files', (t) => {
+  const dir = repo(t);
+  fs.writeFileSync(path.join(dir, 'seed.sql'), 'insert into users values (1);\n');
+  fs.writeFileSync(path.join(dir, 'wipe.sql'), 'delete from users;\n');
+  expectAll(dir, 'deny', [
+    `psql -c 'DROP/**/TABLE users'`,
+    `psql -c 'delete from users'`,
+    `psql -c 'DELETE FROM users;'`,
+    `psql -c 'DROP OWNED BY app'`,
+    `psql -c 'alter table users drop column email'`,
+    `psql -c 'drop -- note\n table users'`,
+  ]);
+  expectAll(dir, 'unchecked', [
+    'psql -f wipe.sql',
+    'psql -fwipe.sql',
+    'psql --file=missing.sql',
+    'psql < wipe.sql',
+    "psql <<'SQL'\ndrop table users;\nSQL",
+  ]);
+  expectAll(dir, 'allow', [
+    `psql -c 'delete from users where id = 1'`,
+    'psql -f seed.sql',
+    'psql < seed.sql',
+    "psql <<'SQL'\nselect 1;\nSQL",
+  ]);
+});
+
+test('round 1: rm of a file whose change is all staged is allowed; a harmless env prefix leaves aliases read', (t) => {
+  const dir = repo(t);
+  git(dir, 'add', 'a.txt');
+  expectAll(dir, 'allow', ['rm a.txt', 'rm missing.txt']);
+  expectAll(dir, 'deny', ['git rm -f a.txt']);
+  expectAll(dir, 'allow', ['GIT_CONFIG_NOSYSTEM=1 git lg', 'GIT_PAGER=cat git lg']);
+  expectAll(dir, 'unchecked', ['GIT_CONFIG_GLOBAL=/tmp/x git lg']);
+});
+
+test('round 1: rm reads the index to skip git status, and still refuses through a split index or a fresh edit', (t) => {
+  const dir = repo(t);
+  // Same size as the committed text, written just now: the index cannot vouch for it.
+  fs.writeFileSync(path.join(dir, 'b.txt'), 'two\n');
+  expectAll(dir, 'deny', ['rm b.txt']);
+  git(dir, 'checkout', '--', 'b.txt');
+  expectAll(dir, 'allow', ['rm b.txt', 'rm build/out.js']);
+  git(dir, 'update-index', '--split-index');
+  expectAll(dir, 'deny', ['rm a.txt']);
+  // A linked worktree: `.git` is a file pointing at the index.
+  const linked = path.join(tmp(t), 'wt');
+  git(dir, 'worktree', 'add', '-q', linked);
+  fs.writeFileSync(path.join(linked, 'a.txt'), 'three\n');
+  expectAll(linked, 'deny', ['rm a.txt']);
+  expectAll(linked, 'allow', ['rm b.txt']);
+});
+
 // --- criterion 5: one table of what the guard does not read ------------------------------
 
 // 29-03's plan.md, D9 and D9 (extended): the forms it said it does not read.
@@ -218,7 +332,7 @@ const D9_FORMS = [
   'git push --delete', '--mirror', 'git pull', 'find -delete', 'a heredoc fed to `psql`',
   'npm run <script>', 'mysql -e', 'docker compose down -v', 'PowerShell',
   'npx rimraf', 'rsync --delete', 'shutil.rmtree', 'git update-ref -d', 'git reflog expire',
-  'git gc --prune=now', 'git filter-branch',
+  'git gc --prune=now', 'git filter-branch', 'git rm -rf',
 ];
 
 function unreadTable() {
@@ -242,7 +356,7 @@ test('rules-and-limits: one table names every unread form with what covers it', 
     assert.ok(table.includes(form), `the table names 29-03's D9 form ${form}`);
   }
   // This story's own limits.
-  for (const form of ['python script.py', 'heredoc', 'interpreter API']) {
+  for (const form of ['python script.py', 'interpreter API', 'base64', 'git submodule foreach', 'core.hooksPath', 'make -f']) {
     assert.ok(table.includes(form), `the table names ${form}`);
   }
 });
@@ -258,5 +372,11 @@ test("rules-and-limits: the D9 list above is 29-03's own (while its plan is in t
   const d9 = between('**D9 — Out', '**D10') + between('**D9 (extended)', '###');
   for (const form of D9_FORMS) {
     assert.ok(d9.includes(form), `${form} is in 29-03's D9`);
+  }
+  // And the other way: every form 29-03's D9 names (in backticks) is in the list above.
+  const named = [...d9.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+  assert.ok(named.length >= 15, `29-03's D9 names its forms: ${named.length}`);
+  for (const form of named) {
+    assert.ok(D9_FORMS.some((listed) => listed.includes(form) || form.includes(listed)), `29-03's D9 form ${form} is in the list`);
   }
 });
