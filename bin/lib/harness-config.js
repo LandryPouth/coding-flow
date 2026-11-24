@@ -392,14 +392,25 @@ function ensureHarnessConfig({ dryRun = false } = {}) {
   }
 
   if (!dryRun) {
-    writeJson(harnessConfigPath(), initialHarnessConfig());
+    // Proofs recorded without a harness.json were fingerprinted against the
+    // defaults: write those, not the `init` keys, so they stay valid.
+    writeJson(harnessConfigPath(), hasRecordedProofs() ? defaultHarnessConfig() : initialHarnessConfig());
     fs.mkdirSync(harnessRunsDir(), { recursive: true });
   }
 
   return true;
 }
 
+function hasRecordedProofs() {
+  try {
+    return fs.readdirSync(harnessRunsDir()).some((name) => name.endsWith("-verify.json"));
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
+  hasRecordedProofs,
   DEFAULT_REPORT_PATHS,
   harnessConfigPath,
   harnessRunsDir,

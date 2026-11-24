@@ -71,6 +71,15 @@
   `"auto"` `init` writes for `coverageFloor.high` reads as no key.
   `harness init` on an existing file merges `defaultHarnessConfig()`, not the
   `init` keys, so `--force` keeps the policy fingerprint.
+- **D8 — An unreadable file is its own state (review round 2).** A file that
+  exists but does not parse is not a missing one: `rules` names it on the
+  first line (and in `--json` `unreadable`), and each of its rules shows what
+  the consumer does in that state with source `fixed: <file> unreadable` —
+  the defaults for readConfig/readHarnessConfig, and the guard's kept primary
+  lock. `init`/`harness init` write the plain defaults when verify proofs
+  already exist in `.coding-flow/runs/`, so they stay valid; `ensureConfig`
+  takes its defaults from the registry; `next` reads the clean-round count
+  from it.
 
 ## Test Plan
 

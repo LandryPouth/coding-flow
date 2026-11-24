@@ -171,11 +171,11 @@ function ensureConfig(
   cwd,
   {
     dryRun = false,
-    storage = "local",
-    branchPerEpic = true,
-    skills = "project",
-    install = "full",
-    target = "claude",
+    storage = defaultOf("storage"),
+    branchPerEpic = defaultOf("branchPerEpic"),
+    skills = defaultOf("skills"),
+    install = defaultOf("install"),
+    target = defaultOf("target"),
   } = {},
 ) {
   const file = configPath(cwd);

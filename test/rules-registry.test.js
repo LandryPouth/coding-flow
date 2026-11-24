@@ -310,3 +310,85 @@ test('init writes coverageFloor and failOnContrarySignals with the spec values',
     assert.equal(written.failOnContrarySignals, false, args.join(' '));
   }
 });
+
+// Review round 2: a file that exists but cannot be read is not a missing file.
+function writeRaw(dir, name, text) {
+  fs.writeFileSync(path.join(dir, '.coding-flow', name), text);
+}
+
+test('an unreadable harness.json is named, and each rule shows what its consumer does without it', (t) => {
+  const dir = project(t);
+  writeRaw(dir, 'harness.json', '{"mode":"strict",');
+  const json = rulesJson(dir);
+  assert.deepEqual(json.unreadable, ['.coding-flow/harness.json']);
+  const byKey = Object.fromEntries(json.rules.map((r) => [r.key, r]));
+
+  // The guard keeps the primary lock and its destructive defaults (guard.js loadPolicy).
+  assert.deepEqual([byKey['worktrees.primaryLocked'].value, byKey['worktrees.primaryLocked'].source], [true, 'fixed: harness.json unreadable']);
+  assert.deepEqual([byKey.destructiveCommands.value, byKey.destructiveCommands.source], ['deny', 'fixed: harness.json unreadable']);
+  for (const rule of json.rules.filter((r) => r.file === '.coding-flow/harness.json')) {
+    assert.equal(rule.source, 'fixed: harness.json unreadable', rule.key);
+  }
+  assert.equal(byKey.mode.value, 'standard', 'the readers fall back to the default posture');
+  assert.equal(byKey.storage.source, 'default', 'config.json is not affected');
+
+  const plain = cli(dir, ['rules']);
+  assert.equal(plain.code, 0, plain.out);
+  assert.match(plain.out.split('\n')[0], /\.coding-flow\/harness\.json cannot be read/);
+});
+
+test('an unreadable config.json is named, and its rules show the defaults readConfig applies', (t) => {
+  const dir = project(t);
+  writeRaw(dir, 'config.json', '{"storage":');
+  const json = rulesJson(dir);
+  assert.deepEqual(json.unreadable, ['.coding-flow/config.json']);
+  for (const rule of json.rules.filter((r) => r.file === '.coding-flow/config.json')) {
+    assert.equal(rule.source, 'fixed: config.json unreadable', rule.key);
+    assert.deepEqual(rule.value, registry.defaultOf(rule.key), rule.key);
+  }
+  assert.equal(json.rules.find((r) => r.key === 'mode').source, 'default');
+  assert.match(cli(dir, ['rules']).out.split('\n')[0], /\.coding-flow\/config\.json cannot be read/);
+  assert.deepEqual(rulesJson(project(t)).unreadable, []);
+});
+
+test('init on a project that already has proofs writes no key that would make them stale', (t) => {
+  const { policyFingerprint } = require('../bin/lib/policy-fingerprint');
+  const dir = project(t, { config: { storage: 'local' } });
+  fs.mkdirSync(path.join(dir, '.coding-flow', 'runs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'runs', '2026-11-01T00-00-00-000Z-verify.json'), '{}');
+  const before = policyFingerprint(dir);
+
+  const res = cli(dir, ['init', '--minimal']);
+  assert.equal(res.code, 0, res.out);
+  const written = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'harness.json'), 'utf8'));
+  assert.equal(written.coverageFloor, undefined);
+  assert.equal(policyFingerprint(dir), before, 'existing proofs stay valid');
+});
+
+test('ensureConfig writes the registry defaults', (t) => {
+  const { ensureConfig } = require('../bin/lib/config');
+  const rule = registry.ruleFor('storage');
+  const original = rule.default;
+  rule.default = 'github';
+  t.after(() => { rule.default = original; });
+
+  const dir = project(t);
+  const { config } = ensureConfig(dir, { dryRun: true });
+  for (const key of ['storage', 'branchPerEpic', 'skills', 'install', 'target']) {
+    assert.deepEqual(config[key], registry.defaultOf(key), key);
+  }
+});
+
+test('an explicit empty list is the project value; a null target says how the reader records it', (t) => {
+  const dir = project(t, { config: { target: null, validation: { commands: ['npm test'], security: [], fix: [] } } });
+  const byKey = Object.fromEntries(rulesJson(dir).rules.map((r) => [r.key, r]));
+  assert.deepEqual([byKey['validation.security'].value, byKey['validation.security'].source], [[], 'project']);
+  assert.deepEqual([byKey['validation.fix'].value, byKey['validation.fix'].source], [[], 'project']);
+  assert.deepEqual([byKey.target.value, byKey.target.source], ['unrecognized', 'project (not a known target: recorded as "unrecognized")']);
+});
+
+test('the next-step message reads the clean-round count from the registry', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'bin', 'lib', 'next.js'), 'utf8');
+  assert.doesNotMatch(source, /two clean rounds/);
+  assert.match(source, /review\.strictCleanRounds/);
+});

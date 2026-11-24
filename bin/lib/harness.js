@@ -39,6 +39,7 @@ const {
   defaultSecretPatterns,
   defaultHarnessConfig,
   initialHarnessConfig,
+  hasRecordedProofs,
   readHarnessConfig,
   ensureHarnessConfig,
 } = require("./harness-config");
@@ -170,7 +171,11 @@ function harnessInit({ json = false, dryRun = false, force = false, mode = null 
   // A fresh file gets the keys `init` writes (story 26-06); an existing one
   // only the defaults it already resolves to, so `--force` keeps the policy
   // fingerprint, and with it every proof.
-  const config = existing ? { ...defaultHarnessConfig(), ...existing } : initialHarnessConfig();
+  const config = existing
+    ? { ...defaultHarnessConfig(), ...existing }
+    : hasRecordedProofs()
+      ? defaultHarnessConfig()
+      : initialHarnessConfig();
 
   if (mode) {
     if (!allowedModes.has(mode)) {
