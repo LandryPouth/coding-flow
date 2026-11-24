@@ -8,7 +8,7 @@ const path = require("path");
 const { cwd } = require("./context");
 const { describeScope } = require("./diff-base");
 const { coverageTier } = require("./coverage");
-const { log, normalizePortable } = require("./util");
+const { log, normalizePortable, printablePath } = require("./util");
 const { resultStatus } = require("./validation-run");
 const { NO_CONTRARY } = require("./coverage-gate");
 const { describeGrowth } = require("./complexity");
@@ -319,9 +319,56 @@ function printVerify(evidence, outputPath) {
   }
 
   printResults(evidence.results);
+  printFixerWrites(evidence);
 
   if (outputPath) {
     log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+  }
+}
+
+// Story 19-05: what the fixers rewrote, left in the tree for whoever commits.
+function printFixerWrites(evidence) {
+  printFixedFiles(evidence);
+  printHarmlessWrites(evidence);
+}
+
+function printFixedFiles({ fixedFiles, fixerStrengthened = [] }) {
+  if (fixerStrengthened.length > 0) {
+    log(`Warning: ${fixerStrengthened.length} test file(s) counted as strengthened were rewritten by a fixer in this run: ${fixerStrengthened.map(printablePath).join(", ")}`);
+    log("  a formatter's rewrite is not a stronger test; the gate's neutral rule is under review (story 19-08)");
+  }
+
+  if (fixedFiles === undefined) {
+    return;
+  }
+
+  if (fixedFiles === null) {
+    log("Fixed by the fixers: unknown (no git snapshot of the working tree).");
+    return;
+  }
+
+  if (fixedFiles.length === 0) {
+    log("Fixed by the fixers: nothing changed.");
+    return;
+  }
+
+  log("Fixed by the fixers:");
+
+  for (const file of fixedFiles) {
+    log(`  - ${printablePath(file)}`);
+  }
+
+  log("  (left in the working tree, not committed)");
+}
+
+// Changed under `.coding-flow/` during the fixers, and no write: named, not hidden.
+function printHarmlessWrites({ reformatted = [], guardLogs = [] }) {
+  if (reformatted.length > 0) {
+    log(`Reformatted, same value: ${reformatted.map(printablePath).join(", ")}`);
+  }
+
+  if (guardLogs.length > 0) {
+    log(`Written by the guard during the fixers: ${guardLogs.map(printablePath).join(", ")}`);
   }
 }
 
@@ -331,7 +378,7 @@ function printResults(results) {
     const replay = item.cache === "full" || item.cache === "partial"
       ? `, replayed from cache${item.total ? `: ${item.cached}/${item.total} tasks` : ""}`
       : "";
-    const kind = item.kind === "security" ? "security: " : "";
+    const kind = item.kind === "security" ? "security: " : item.kind === "fix" ? "fix: " : "";
     log(`- [${resultStatus(item)}] ${kind}${item.command} (${item.durationMs}ms${replay})`);
 
     if (item.outcome === "not-examined") {
@@ -359,8 +406,8 @@ function printResults(results) {
     if (!item.ok) {
       const named = Array.isArray(item.failureLines) && item.failureLines.length
         ? item.failureLines.slice(-3)
-        : item.stderrTail.trim()
-          ? item.stderrTail.trim().split(/\r?\n/).slice(-3)
+        : String(item.stderrTail || "").trim()
+          ? String(item.stderrTail).trim().split(/\r?\n/).slice(-3)
           : [];
 
       for (const line of named) {

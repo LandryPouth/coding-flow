@@ -257,6 +257,11 @@ nothing else beyond that, never your own reasoning or conclusion. Frame the prom
 adversarially: find what is wrong with this change, assume the author is
 overconfident.
 
+A review that fails is not closed by a green verify: fix every finding, then run a
+new `/flow-review` round with a fresh reviewer on the whole diff (blind first, then
+the previous findings to confirm), captured with `--round` (`/flow-review` →
+Output). STRICT needs two clean rounds in a row.
+
 ## Common Rationalizations
 
 | Rationalization | Reality |

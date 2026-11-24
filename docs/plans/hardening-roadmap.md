@@ -110,14 +110,14 @@ Corrected by the runs:
 
 | # | Epic | Why this position |
 |---|---|---|
-| 1 | `epic-06-opencode-v2-guard` | The guard is fully off on OpenCode 2 today. Small, prototype already validated on V1 1.19 and V2 2.0.30. |
-| 2 | `epic-05-guard-hardening` | Closes the measured bypasses; introduces the third decision state other epics reuse. |
-| 3 | `epic-07-proof-scope` | Every coverage and risk verdict is currently computed on the wrong diff. Nothing downstream is meaningful until this is fixed. |
-| 4 | `epic-08-evidence-levels` | Makes the strength of a proof explicit and ties it to the policy it was produced under. |
-| 5 | `epic-09-monorepo-proof` | Turns on line coverage and cache-replay honesty for the project shape actually used. |
-| 6 | `epic-10-execution-and-ship-safety` | `ship` scope, CI command policy, cross-OS matrix, releases. |
-| 7 | `epic-11-maintainability-and-measurement` | Extraction of `harness.js`, real-agent smoke suite, the benchmark, a status heuristic fix. |
-| — | `epic-12-core-first` | The audit's "core first, layers optional": verify keeps coverage/risk without stories, `--help` never acts, minimal stays minimal, a layering test, docs. Its stories slot into the waves below. |
+| 1 | [`epic-06-opencode-v2-guard`](../../epics/INDEX.md#epic-06--the-opencode-guard-runs-on-opencode-2) | The guard is fully off on OpenCode 2 today. Small, prototype already validated on V1 1.19 and V2 2.0.30. |
+| 2 | [`epic-05-guard-hardening`](../../epics/INDEX.md#epic-05--guard-hardening--real-paths-the-shells-own-cwd-and-an-honest-not-checked) | Closes the measured bypasses; introduces the third decision state other epics reuse. |
+| 3 | [`epic-07-proof-scope`](../../epics/INDEX.md#epic-07--proof-scope--a-story-is-measured-on-its-own-diff) | Every coverage and risk verdict is currently computed on the wrong diff. Nothing downstream is meaningful until this is fixed. |
+| 4 | [`epic-08-evidence-levels`](../../epics/INDEX.md#epic-08--evidence-that-knows-its-own-strength-and-the-policy-it-was-made-under) | Makes the strength of a proof explicit and ties it to the policy it was produced under. |
+| 5 | [`epic-09-monorepo-proof`](../../epics/INDEX.md#epic-09--monorepo-proof--measured-coverage-and-honest-command-results) | Turns on line coverage and cache-replay honesty for the project shape actually used. |
+| 6 | [`epic-10-execution-and-ship-safety`](../../epics/INDEX.md#epic-10--execution-and-ship-safety) | `ship` scope, CI command policy, cross-OS matrix, releases. |
+| 7 | [`epic-11-maintainability-and-measurement`](../../epics/INDEX.md#epic-11--maintainability-and-measurement) | Extraction of `harness.js`, real-agent smoke suite, the benchmark, a status heuristic fix. |
+| — | [`epic-12-core-first`](../../epics/INDEX.md#epic-12--core-first--guard-and-proof-stand-alone-everything-else-is-an-opt-in-layer) | The audit's "core first, layers optional": verify keeps coverage/risk without stories, `--help` never acts, minimal stays minimal, a layering test, docs. Its stories slot into the waves below. |
 
 ## Parallel waves
 

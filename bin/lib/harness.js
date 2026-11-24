@@ -72,6 +72,7 @@ const {
   buildHarnessPreflight,
   checkStoryEvidence,
   findReusableVerify,
+  provedCommands,
   writeVerifyEvidence,
   verifyStoryOnce,
 } = require("./evidence");
@@ -331,6 +332,47 @@ function claimKindOf(story, claim) {
   return resolved ? resolved.kind : null;
 }
 
+// `verify --dry-run`: the commands verify would run, fixers first; none executed.
+function printVerifyDryRun({ story, resolvedStory, json }) {
+  const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
+  const plan = {
+    root: cwd,
+    story: resolvedStory ? resolvedStory.relativePath : null,
+    commandSource: resolution.source,
+    commands: resolution.commands,
+    ...(resolution.fix.length > 0 ? { fix: resolution.fix, fixSource: resolution.fixSource } : {}),
+  };
+
+  if (json) {
+    log(JSON.stringify(plan, null, 2));
+    return;
+  }
+
+  log("Harness verify — dry run (no command executed).");
+  log(`Source: ${resolution.source || "none"}`);
+
+  if (resolution.fix.length > 0) {
+    log(`Fixers (run first): from ${resolution.fixSource}`);
+
+    for (const command of resolution.fix) {
+      log(`- ${command}`);
+    }
+  }
+
+  if (resolution.commands.length === 0) {
+    log(resolution.fix.length > 0 ? "No validation commands found: fixers alone prove nothing." : "No validation commands found.");
+    return;
+  }
+
+  if (resolution.fix.length > 0) {
+    log("Checks:");
+  }
+
+  for (const command of resolution.commands) {
+    log(`- ${command}`);
+  }
+}
+
 function harnessVerify({
   json = false,
   dryRun = false,
@@ -369,30 +411,7 @@ function harnessVerify({
   }
 
   if (dryRun) {
-    const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
-    const plan = {
-      root: cwd,
-      story: resolvedStory ? resolvedStory.relativePath : null,
-      commandSource: resolution.source,
-      commands: resolution.commands,
-    };
-
-    if (json) {
-      log(JSON.stringify(plan, null, 2));
-      return;
-    }
-
-    log("Harness verify — dry run (no command executed).");
-    log(`Source: ${resolution.source || "none"}`);
-
-    if (resolution.commands.length === 0) {
-      log("No validation commands found.");
-    }
-
-    for (const command of resolution.commands) {
-      log(`- ${command}`);
-    }
-
+    printVerifyDryRun({ story, resolvedStory, json });
     return;
   }
 
@@ -404,12 +423,15 @@ function harnessVerify({
   // current tree token, so `status` and `audit` already read it as verified.
   // A clean-env run is asked for a proof made without the secrets; replaying one
   // made with them would answer a different question.
-  if (!noCache && !cleanEnv) {
-    const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
+  const reuse = !noCache && !cleanEnv ? resolveValidationCommands({ storyDir: resolveStoryDir(story) }) : null;
+
+  // No check, no proof to reuse: the fixer lines alone must not find one.
+  if (reuse && reuse.commands.length > 0) {
+    const resolution = reuse;
     const reusable = findReusableVerify({
       storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
       storyDir: resolveStoryDir(story),
-      commands: resolution.commands,
+      commands: provedCommands(resolution),
       timeouts: resolution.timeouts,
       claimKind: claimKindOf(story, claim), redAtBase,
     });

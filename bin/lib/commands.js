@@ -191,7 +191,8 @@ Flags:
   --decisions  Aggregate every story's ## Decisions section instead of the run-evidence ledger.
   --verdict    Outcome recorded by review capture: pass or fail.
   --reviewer   Who ran the review capture records: self (default) or subagent.
-  --accept     Reason to record a pass despite an open P0/P1 (stored as acceptedRisk; needs the user's agreement).
+  --round      Review round review capture records: the previous round + 1 (the default). Required for a pass right after a fail.
+  --accept     Reason to record a pass despite an open P0/P1 or a failed review without a new round (stored as acceptedRisk; needs the user's agreement).
   --architecture, --tests, --security, --quality, --e2e
                Depth review capture records per dimension: quick, deep, or skipped (default).
   --p0, --p1, --p2, --p3  Finding counts by severity for review capture (default 0).

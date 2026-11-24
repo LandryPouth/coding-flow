@@ -19,7 +19,12 @@ stand-in for epic 20:
 1. Implementer agent in the story's worktree (`ai-flow worktree add --story`),
    TDD, `verify` until green, stops at `in-progress`.
 2. A fresh independent reviewer (never the implementer); P0/P1 go back to the
-   same implementer, then a re-review.
+   same implementer, then a re-review by a **new** reviewer (never the one
+   that found the defects) on the story's whole diff: blind first, then given
+   the earlier findings to confirm. Done when a fresh round finds no P0/P1;
+   STRICT needs two clean rounds in a row. At most 4 rounds, then split or
+   park the story. A contested P1 goes to a fresh skeptic first. (Since
+   2026-11-22: a same-reviewer re-review passed what the next one failed.)
 3. Close: `review capture`, `## Status: done`, unlock; land from the primary
    checkout with `ai-flow worktree land --story` (dry-run first); re-verify
    on `develop` with `--base <pre-land tip>` and re-capture the review (the
@@ -28,9 +33,14 @@ stand-in for epic 20:
 
 ## Rules
 
-- At most 2 agents at once (implementers and reviewers together); two lanes
-  run in parallel only when their files are disjoint.
+- At most 4 agents at once since 2026-11-24 (the maintainer: the machine is
+  free; was 2), implementers and reviewers together; two stories run in
+  parallel only when their files are disjoint.
 - TMPDIR under the session scratchpad, never inside a repository.
+- Every review brief says: experiments only in a throwaway repo, as
+  `set -euo pipefail; D=$(mktemp -d) && cd "$D" && …` — never `;` after a
+  mktemp or cd, never in the primary checkout (2026-11-22: a reviewer's failed
+  mktemp ran its steps in the primary checkout and committed there; repaired).
 - Never weaken or delete a test; never switch the primary checkout's branch;
   `trash`, not `rm`; English only; CHANGELOG `[Unreleased]` for every
   user-visible change.
@@ -79,7 +89,7 @@ Lane B (CLI): epic 17, a chain.
 - [x] 17-01 archive one epic — landed, re-proved, review captured
 - [x] 17-02 the index lists every epic — landed, re-proved, review captured
 - [x] 17-03 epic numbers never collide — 2 reviews (1 P1, 9 P2 fixed), landed, re-proved, review captured
-- [ ] 17-04 archive coding-flow's own epics — alone, when no worktree is open
+- [x] 17-04 archive coding-flow's own epics — epics 01–16 archived; 2 reviews (1 P1, 5 P2 fixed), review captured
 
 ### Wave 2 — no factory needed (step 0) · two lanes · *release 0.16.0*
 
@@ -87,10 +97,13 @@ Lane A: 26-06 `ai-flow rules` → 26-03 `docs check` → 26-07 we need you
 Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) → 28-01 ideas
 
 - [ ] 26-06  - [ ] 26-03  - [ ] 26-07
-- [ ] 19-05  - [ ] 26-02 (todo)  - [ ] 28-01
+- [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
+- [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
+- [x] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24) — 1 review round (0 P1, 8 P2 fixed), landed, re-proved, review captured
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
+- [ ] 29-04 commands built to evade the guard (after 29-03; from its reviews)
 
 ### Wave 2b — one workspace, several repositories (epic 30) · *release 0.17.0*
 
@@ -182,3 +195,59 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   (what to keep from "Améliorez votre IA de 1 % par jour"); wave 6, inside
   epic 22. Windows CI of PR #59: drive letters and the red-at-base sweep fixed
   (2 reviews, 1 P1), pushed; waiting for green.
+- 2026-11-22 — wave 2 started while PR #59's Windows job runs: 19-05 ∥ 29-03
+  (disjoint files). 26-06 shares `validation-run.js` and `config.js` with
+  19-05, so it runs after 19-05 lands, not beside it. 17-04 archives epics 13,
+  16 and 17 only (no open worktree there), once main has 0.15.0 and an agent
+  slot is free.
+- 2026-11-22 — review rule changed (maintainer): every re-review is a new
+  reviewer on the whole diff; STRICT needs two clean rounds; cap 4. Same
+  change planned in 20-04 (rounds, `review-not-converging`) and 21-04 (yield
+  per round); the `epic-run` skill updated.
+- 2026-11-22 — release 0.15.0 merged to main (PR #59, merge 2592244) after four
+  CI rounds; `npm publish` and `npm run release` are the maintainer's. Vault
+  run note and lessons updated. 17-04 next, when an agent slot frees.
+- 2026-11-22 — incident: 19-05's second reviewer committed a test config on
+  develop (8f7fe8f, local only, 3 min) after its mktemp failed; it reset to
+  1f58d2f and restored the file; checked clean. Review briefs now require
+  `set -euo pipefail` experiments. 19-05 round 2: FAIL (new P1, fixers alone
+  gave a green verify).
+- 2026-11-23 — 19-05 hit the review cap (4 rounds, a new P1 each). Re-scoped:
+  the fixer-only exclusion is removed (it made proof depend on run state);
+  the gate's "neutral counts as strengthened" rule moves to new story 19-08,
+  after 19-05 in lane B. 19-05 restarts its review series once re-scoped.
+  29-03 round 2: FAIL (5 P1, same class as round 1) — asked for fail-safe
+  defaults per class. Machine slowed by an unrelated long-running next-server.
+- 2026-11-23 18:10 — run paused by the maintainer ("arrête tout"). State:
+  - 19-05 (re-scoped): round-1 fixes committed (d7fbef3); its verify was
+    interrupted. On resume: re-run verify, then round 2 by a new reviewer.
+  - 29-03: round-3 backstops (only modeled syntax allowed; destructive text
+    handed to a non-inert command is unchecked) written but UNCOMMITTED in its
+    worktree; full suite was interrupted. On resume: run the suite, commit,
+    verify, then round 4 (the last) by a new reviewer.
+  - 17-04 waits for an agent slot; 19-08 planned after 19-05; 26-06 after 19-05.
+  - Heartbeat cron deleted; recreate it on resume.
+- 2026-11-24 — resumed ("continue et termine tout"); max agents 4. The
+  machine rebooted: scratchpad empty, land.sh rewritten (branch -d).
+- 2026-11-24 — 29-03 hit the review cap (4 rounds, new bypasses each). Claim
+  re-scoped (run decision, for the maintainer to review): the guard refuses
+  habitual destructive forms and marks unchecked what it cannot read; forms
+  built to evade it are the sandbox's job. Round 4's 4 P1 fixed anyway;
+  evasion forms moved to new story 29-04. 29-03 restarts a review series
+  under the new claim. 17-04: epics 01–16 archived on develop.
+- 2026-11-24 — 17-04 done. Epics 01–16 are archived on develop (436 → 247
+  files in `epics/`). 19 references now point to their INDEX entry. INDEX
+  entries carry their marker above the heading, and `archive` tells links
+  apart from mentions. Review: round 1 FAIL (1 P1, doctor out of date),
+  round 2 PASS.
+- 2026-11-24 — maintainer asked that a failed review be cleared only by a new
+  review, not by verify. epic-run already does it (step 4b); Coding Flow did
+  not. New story 19-09 (guard in `review capture`, skills paragraph), run now
+  ahead of 20-04, which keeps the automatic rounds.
+- 2026-11-24 — 19-05 landed (verify runs the declared fixers first; a fixer
+  write to tests, story roots or `.coding-flow/` is red; real prettier 3
+  checked by the last reviewer). Two review series: 4 rounds, re-scope, 4 rounds.
+- 2026-11-24 — 19-09 landed: `review capture` refuses a pass right after a
+  fail without `--round`; STRICT needs two passes in a row. The first land
+  verify went red with no failing test (machine loaded: three suites at once,
+  the suite took 11 min instead of 4); the retry was green.

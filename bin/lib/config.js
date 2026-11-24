@@ -139,6 +139,10 @@ function readConfig(cwd) {
           ...(cleanCommandList(existing.validation.security).length > 0
             ? { security: cleanCommandList(existing.validation.security) }
             : {}),
+          // Same reason: a project that declares no fixer keeps every proof it had.
+          ...(cleanCommandList(existing.validation.fix).length > 0
+            ? { fix: cleanCommandList(existing.validation.fix) }
+            : {}),
           ...(validTimeout(existing.validation.timeoutMs) ? { timeoutMs: existing.validation.timeoutMs } : {}),
         }
       : defaults.validation;

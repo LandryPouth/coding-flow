@@ -245,6 +245,34 @@ test('next recommends ship once the same STRICT story has a fresh, passing revie
   assert.match(output, /ai-flow ship/);
 });
 
+// Story 19-09: a STRICT story whose passing review follows a fail owes one
+// more clean round before it is ready to ship.
+test('next holds a STRICT story whose only clean review round follows a fail, then lets it ship after a second', (t) => {
+  const { repo } = initRepo(t);
+  const storyPath = writeStory(repo, 'epic-01-x', 'story-01-01-a', '# a\n\n## Status: done\n');
+  writeVerify(repo, storyPath, { ok: true });
+  commitAll(repo, 'init');
+
+  sh(repo, 'git', ['checkout', '-b', 'story-01-01-a']);
+  fs.writeFileSync(path.join(repo, 'payment.js'), 'module.exports = {};\n');
+  sh(repo, 'git', ['add', '.']);
+  sh(repo, 'git', ['commit', '-m', 'implement']);
+
+  run(repo, ['review', 'capture', '--story', storyPath, '--verdict', 'fail', '--p1', '1']);
+  assert.equal(run(repo, ['review', 'capture', '--story', storyPath, '--verdict', 'pass', '--round', '2']).code, 0);
+  commitAll(repo, 'chore: capture review evidence');
+
+  const held = run(repo, ['next']);
+  assert.equal(held.code, 0);
+  assert.match(held.output, /\[needs-review\]/);
+  assert.match(held.output, /needs one more review round after a failed one/);
+  assert.doesNotMatch(held.output, /ai-flow ship/);
+
+  assert.equal(run(repo, ['review', 'capture', '--story', storyPath, '--verdict', 'pass', '--round', '3']).code, 0);
+  commitAll(repo, 'chore: capture the confirming round');
+  assert.match(run(repo, ['next']).output, /\[ready-to-ship\]/);
+});
+
 test('next --json emits only the top item by default, all with --all', (t) => {
   const { repo } = initRepo(t);
   writeStory(repo, 'epic-01-x', 'story-01-01-blocked', '# blocked\n\n## Status: blocked\nfailed\n');

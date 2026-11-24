@@ -36,11 +36,26 @@ missed).
   A fix pass spent on a false P1 is the cost this removes.
 - If any P0/P1/P2: one fix process (`/coding-flow:flow-run` in driven mode
   with the findings as input and the decisions the project allows,
-  epic 22); then one verify; then each finding `resolve`d by the fix
-  process's notes (`fixed` / `documented` / `rejected` with reason). P3s are
-  recorded, fixed if the fix pass chooses.
-- Capture: verdict `pass` only if no open P0/P1; else the story is `blocked`
-  with the open findings.
+  epic 22); then one verify. P3s are recorded, fixed if the fix pass chooses.
+- **Review rounds (added 2026-11-22).** A fix is never judged by its fixer's
+  notes, nor by the reviewer that found the defect (it ticks its own list
+  instead of looking). After each fix pass a **new** reviewer process (fresh,
+  same prompt and read-only tools) reviews the story's **whole** diff blind,
+  then receives the open findings and marks each `fixed` or still open with
+  the code. A round is clean when it finds no P0/P1.
+  - Stop: STANDARD after one clean round; STRICT after **two consecutive
+    clean rounds** by fresh reviewers, the second under **another lens**
+    (security/bypass, then tests/spec) — the rule epic-run already applies
+    and story 19-09's skills state.
+  - Cap: `review.maxRounds` (default 4). A story still not clean at the cap
+    is `blocked` with reason `review-not-converging` and its open findings:
+    the story is too large or its design is fragile — split it, not review
+    it again.
+  - Each round records `review.round` (round number, lens, P0/P1/P2 found,
+    how many are new versus already known) so 21-04 can say what each extra
+    round buys.
+- Capture: verdict `pass` only once the stop rule holds and no P0/P1 is
+  open; else the story is `blocked` with the open findings.
 - On pass: the CLI writes `## Status: done` (not the agent), runs `worktree
   unlock` and `worktree autoland` (20-02 semantics), and records events.
 - STANDARD stories are reviewed too, by one generalist reviewer:
@@ -69,6 +84,15 @@ missed).
       it, then it stands.
 - [ ] Given a STANDARD story and no `reviewStandard` in config, then one
       reviewer runs.
+- [ ] Given a P1 fixed by the fix pass, then a new reviewer process (not the
+      one that found it) reviews the whole diff, and the finding is marked
+      `fixed` by that reviewer, never by the fix process.
+- [ ] Given a STRICT story whose first post-fix round is clean, then a
+      second fresh round runs before capture; given a P1 in that round, the
+      count of consecutive clean rounds restarts at zero.
+- [ ] Given four rounds that each report a new P1, then the story is
+      `blocked` with `review-not-converging` and no fifth round runs.
+- [ ] Given any round, then a `review.round` event records its counts.
 - [ ] Given `status` after a pass, then the review shows reviewer `process`
       with found and open counts.
 

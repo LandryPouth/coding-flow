@@ -102,6 +102,7 @@ function printDryRun(target, driver, json) {
       title: entry.title,
       commandSource: resolution.source,
       commands: resolution.commands,
+      ...(resolution.fix.length > 0 ? { fix: resolution.fix } : {}),
     };
   });
 
@@ -119,6 +120,10 @@ function printDryRun(target, driver, json) {
       log("    no validation commands (source: none) — would be skipped");
     } else {
       log(`    ${row.commands.length} command(s) from ${row.commandSource}: ${row.commands.join(" && ")}`);
+    }
+
+    if (row.fix) {
+      log(`    fixers first: ${row.fix.join(" && ")}`);
     }
   }
 }
