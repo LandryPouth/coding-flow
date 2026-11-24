@@ -14,6 +14,21 @@ const REWRITES = /(?:^|\s)--(?:fix|write)(?:\s|=|$)/;
 // repairs, not a formatter of the project's code.
 const OWN = /(?:@landry_pouth\/)?coding-flow\b|\bai-flow\b/;
 
+// A formatter that walks `.` also reaches Coding Flow's files, and a fixer may
+// not rewrite a story file (a reformat included): the lines that keep them out,
+// printed with the recipe, never written.
+const FORMATTER_IGNORE_LINES = [".coding-flow/", "epics/", "specs/", ".specify/"];
+const FORMATTERS = [
+  { pattern: /\bprettier\b/, file: ".prettierignore" },
+  { pattern: /\bbiome\b/, file: "biome.json (`files.includes`, as `!` patterns)" },
+  { pattern: /\bdprint\b/, file: "dprint.json (`excludes`)" },
+];
+
+function formatterIgnore(text) {
+  const formatter = FORMATTERS.find(({ pattern }) => pattern.test(text));
+  return formatter ? { ignore: { file: formatter.file, lines: FORMATTER_IGNORE_LINES } } : {};
+}
+
 function readScripts(root) {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8").replace(/^﻿/, ""));
@@ -33,7 +48,7 @@ function detectFixRecipes(root) {
     }
 
     if (REWRITES.test(text)) {
-      recipes.push({ script: name, command: `npm run ${name}` });
+      recipes.push({ script: name, command: `npm run ${name}`, ...formatterIgnore(text) });
     }
   }
 

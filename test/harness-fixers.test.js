@@ -290,14 +290,16 @@ test('the bootstrap scan suggests fixers from the package scripts, and declares 
   };
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts }));
   assert.deepEqual(detectFixRecipes(dir), [
-    { script: 'format', command: 'npm run format' },
+    { script: 'format', command: 'npm run format', ignore: { file: '.prettierignore', lines: ['.coding-flow/', 'epics/', 'specs/', '.specify/'] } },
     { script: 'lint', command: 'npm run lint -- --fix' },
   ]);
   run(dir, ['init']);
   const { output } = run(dir, ['bootstrap', '--scan']);
-  assert.match(output, /Fixer recipes for validation\.fix: `npm run format`, `npm run lint -- --fix`/);
+  const keepOut = "keep Coding Flow's files out of it: add `\\.coding-flow/`, `epics/`, `specs/`, `\\.specify/` to \\.prettierignore";
+  assert.match(output, new RegExp(`Fixer recipes for validation\\.fix: \`npm run format\` — ${keepOut}, \`npm run lint -- --fix\``));
   const scan = fs.readFileSync(path.join(dir, 'docs', 'bootstrap-scan.md'), 'utf8');
-  assert.match(scan, /## Fixer Recipes\n\nCandidates for `validation\.fix`[^\n]*\n\n- format: `npm run format`\n- lint: `npm run lint -- --fix`/);
+  assert.match(scan, new RegExp(`## Fixer Recipes\\n\\nCandidates for \`validation\\.fix\`[^\\n]*\\n\\n- format: \`npm run format\` — ${keepOut}\\n- lint: \`npm run lint -- --fix\``));
+  assert.equal(fs.existsSync(path.join(dir, '.prettierignore')), false, 'the ignore lines are printed, never written');
   const config = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'config.json'), 'utf8'));
   assert.equal(config.validation && 'fix' in config.validation, false, 'a suggestion is never enabled');
 });
@@ -548,7 +550,8 @@ test("in a project below the repository top, a fixer rewriting the story's files
 });
 
 test('in a project below the repository top, a fixer rewriting .coding-flow/ is red', (t) => {
-  const evidence = subdirProject(t, node("const f='.coding-flow/config.json';const fs=require('fs');fs.writeFileSync(f,fs.readFileSync(f,'utf8')+' ')"));
+  // A changed value: a whitespace-only reformat of a JSON file is no write.
+  const evidence = subdirProject(t, node("const f='.coding-flow/config.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify({...JSON.parse(fs.readFileSync(f,'utf8')),forged:true}))"));
   assert.equal(evidence.ok, false);
   const refusal = evidence.results.find((r) => r.command === '(fixers)');
   assert.ok(refusal, JSON.stringify(evidence.results));
@@ -719,4 +722,143 @@ test('the PR evidence block prints why the (fixers) row is red', () => {
   });
   assert.match(block, /\| fix: `\(fixers\)` \| ❌ a fixer changed epics\/x\/spec\.md \|/);
   assert.doesNotMatch(block, /exit null/);
+});
+
+// A formatter that walks the whole project, as `prettier --write .` does: every
+// JSON re-indented with tabs, every Markdown file stripped of trailing spaces.
+// `extra` runs after it (a forgery, for the red cases).
+function walkingFormatter(dir, extra = '') {
+  fs.writeFileSync(path.join(dir, 'fmt.js'), `
+const fs = require('fs'), path = require('path');
+const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
+  const p = path.join(d, e.name);
+  if (e.isDirectory()) { if (e.name !== '.git' && e.name !== 'node_modules') walk(p); return; }
+  const text = fs.readFileSync(p, 'utf8');
+  if (p.endsWith('.json')) fs.writeFileSync(p, JSON.stringify(JSON.parse(text), null, '\\t') + '\\n');
+  if (p.endsWith('.md')) fs.writeFileSync(p, text.replace(/[ \\t]+$/gm, ''));
+});
+walk('.');
+${extra}
+`);
+}
+
+const latestRun = "const r='.coding-flow/runs';const n=fs.existsSync(r)&&fs.readdirSync(r).filter((f)=>f.endsWith('-verify.json')).sort().pop();";
+
+test('a formatter walking the project re-indents the run files every verify: green each time', (t) => {
+  const dir = project(t, { fix: ['node fmt.js'], commands: [node('0')] }, { gitRepo: false });
+  walkingFormatter(dir);
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  for (const index of [1, 2, 3]) {
+    const { code, output } = verify(dir);
+    assert.equal(code, 0, `run ${index}: ${output}`);
+    assert.equal(JSON.parse(output).ok, true, `run ${index}`);
+  }
+  const runs = fs.readdirSync(path.join(dir, '.coding-flow', 'runs')).filter((name) => name.endsWith('-verify.json')).sort();
+  assert.match(fs.readFileSync(path.join(dir, '.coding-flow', 'runs', runs[0]), 'utf8'), /^\t"/m, 'the premise: the formatter rewrote a run file');
+});
+
+test('a formatter that also changes a value in a run file is red', (t) => {
+  const dir = project(t, { fix: ['node fmt.js'], commands: [node('0')] }, { gitRepo: false });
+  walkingFormatter(dir, `${latestRun}if(n){const f=path.join(r,n);fs.writeFileSync(f,JSON.stringify({...JSON.parse(fs.readFileSync(f,'utf8')),ok:'forged'}));}`);
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  assert.equal(verify(dir).code, 0, 'the premise: no run file yet, nothing forged');
+  const { code, output } = verify(dir);
+  assert.notEqual(code, 0, output);
+  assert.match(JSON.parse(output).results.find((r) => r.command === '(fixers)').toolError, /a fixer changed \.coding-flow\/runs\/.*-verify\.json/);
+});
+
+test('a formatter that also forges a new run file is red', (t) => {
+  const dir = project(t, { fix: ['node fmt.js'], commands: [node('0')] }, { gitRepo: false });
+  walkingFormatter(dir, "fs.mkdirSync('.coding-flow/runs',{recursive:true});fs.writeFileSync('.coding-flow/runs/9999-verify.json','{\"ok\":true}');");
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  const { code, output } = verify(dir);
+  assert.notEqual(code, 0, output);
+  assert.match(JSON.parse(output).results.find((r) => r.command === '(fixers)').toolError, /\.coding-flow\/runs\/9999-verify\.json/);
+});
+
+test('a formatter that reformats a story file is red, and the red names the remedy', (t) => {
+  const dir = project(t, { fix: ['node fmt.js'], commands: [node('0')] }, { gitRepo: false });
+  walkingFormatter(dir);
+  fs.mkdirSync(path.join(dir, 'epics', 'epic-02', 'story-02-01'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'epics', 'epic-02', 'story-02-01', 'story.md'), '# Story   \n');
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  const { code, output } = verify(dir);
+  assert.notEqual(code, 0, output);
+  const { toolError } = JSON.parse(output).results.find((r) => r.command === '(fixers)');
+  assert.match(toolError, /epics\/epic-02\/story-02-01\/story\.md/);
+  assert.match(toolError, /add `\.coding-flow\/`, `epics\/`, `specs\/` and `\.specify\/` to your formatter's ignore file \(e\.g\. `\.prettierignore`\)/);
+});
+
+for (const [label, rewrite] of [
+  ['truncates', "fs.writeFileSync(f,'')"],
+  ['rewrites a line of', "fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('one','two'))"],
+]) {
+  test(`a fixer that ${label} a guard log is red (appending is not: see the guard-log test above)`, (t) => {
+    const dir = ignoredRunsProject(t, node(`const fs=require('fs');const f='.coding-flow/denials.jsonl';${rewrite}`));
+    fs.writeFileSync(path.join(dir, '.coding-flow', 'denials.jsonl'), '{"tool":"one"}\n');
+    const { code, output } = verify(dir);
+    assert.notEqual(code, 0, output);
+    assert.match(JSON.parse(output).results.find((r) => r.command === '(fixers)').toolError, /\.coding-flow\/denials\.jsonl/);
+  });
+}
+
+test("with fixers declared, another story's file put back unformatted is not answered from an earlier proof", (t) => {
+  const dir = project(t, { fix: [node('0')], commands: [node('0')] }, { gitRepo: false });
+  const other = path.join(dir, 'epics', 'epic-02', 'story-02-01', 'story.md');
+  fs.mkdirSync(path.dirname(other), { recursive: true });
+  fs.writeFileSync(other, '# Story\n');
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  assert.equal(run(dir, ['verify', '--json']).code, 0);
+  assert.equal(JSON.parse(run(dir, ['verify', '--json']).output).reused, true, 'the premise: an unmoved tree is reused');
+  fs.writeFileSync(other, '# Story   \n');
+  const again = JSON.parse(run(dir, ['verify', '--json']).output);
+  assert.equal(again.reused, undefined, JSON.stringify(again));
+});
+
+test('a test outside the project root strengthened by a fixer is named in one form end to end', (t) => {
+  const top = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-fixers-top-')));
+  t.after(() => fs.rmSync(top, { recursive: true, force: true }));
+  const dir = path.join(top, 'pkg');
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  run(dir, ['init']);
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = { fix: ['node fix.js'], commands: [node('0')] };
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  fs.mkdirSync(path.join(top, 'test'));
+  fs.writeFileSync(path.join(top, 'test', 'a.test.js'), "const assert=require('assert')\nassert.ok(true)\n");
+  fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(dir, 'fix.js'), "require('fs').writeFileSync('../test/a.test.js', \"const assert = require('assert');\\nassert.ok(true);\\n\");\n");
+  const commit = (message) => {
+    git(top, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+    git(top, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', message]);
+  };
+  git(top, ['init', '-q', '-b', 'main']);
+  commit('base');
+  git(top, ['checkout', '-qb', 'story']);
+  fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = function login(password) { return password === "x"; };\n');
+  commit('auth: login');
+  const evidence = JSON.parse(run(dir, ['verify', '--json', '--no-cache', '--base', 'main']).output);
+  assert.deepEqual(evidence.fixedFiles, ['../test/a.test.js']);
+  assert.deepEqual(evidence.fixerStrengthened, ['../test/a.test.js'], JSON.stringify(evidence.coverage));
+});
+
+test('a | in a result cell of the PR evidence block is escaped', () => {
+  const { buildEvidenceBlock } = require('../bin/lib/ship');
+  const block = buildEvidenceBlock({
+    ok: false,
+    generatedAt: '2026-11-24T00:00:00.000Z',
+    results: [{ command: 'a | b', kind: 'fix', ok: false, exitCode: null, toolError: 'x | y', durationMs: 0 }],
+  });
+  assert.match(block, /\| fix: `a \\\| b` \| ❌ x \\\| y \| 0ms \|/);
 });

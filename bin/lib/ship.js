@@ -197,6 +197,9 @@ function resultLines(evidence) {
 
 // Builds the markdown evidence section (between markers) from the verify JSON.
 // One row per command, fixers labelled, then what the fixers rewrote (19-05).
+// A `|` ends a Markdown table cell, even inside a code span: escaped.
+const tableCell = (text) => String(text).replace(/\|/g, "\\|");
+
 function resultTable(evidence) {
   const lines = [];
   const results = Array.isArray(evidence.results) ? evidence.results : [];
@@ -209,7 +212,7 @@ function resultTable(evidence) {
         : item.ok ? "✅ exit 0" : item.timedOut ? "⏱ timeout" : item.toolError ? `❌ ${item.toolError}` : `❌ exit ${item.exitCode}`;
       const replay = item.cache === "full" || item.cache === "partial" ? " (replayed from cache)" : "";
       const kind = item.kind === "fix" ? "fix: " : "";
-      lines.push(`| ${kind}\`${item.command}\` | ${status}${replay} | ${item.durationMs}ms |`);
+      lines.push(`| ${kind}\`${tableCell(item.command)}\` | ${tableCell(status)}${replay} | ${item.durationMs}ms |`);
     }
     lines.push("");
   }

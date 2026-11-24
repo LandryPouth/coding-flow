@@ -295,6 +295,26 @@ function changedPaths(cwd, before, after) {
   }
 }
 
+// The bytes `file` (project-relative) holds in a snapshot tree; null when absent.
+function snapshotBlob(cwd, tree, file) {
+  try {
+    return execFileSync("git", ["cat-file", "blob", `${tree}:./${file}`], { cwd, stdio: ["ignore", "pipe", "ignore"], maxBuffer: 256 * 1024 * 1024 });
+  } catch {
+    return null;
+  }
+}
+
+// One digest of what `roots` (project-relative directories) hold in a snapshot
+// tree: the tree ids git already computed, so it costs no file read.
+function snapshotRootsDigest(cwd, tree, roots) {
+  if (!tree) {
+    return null;
+  }
+
+  const ids = roots.map((root) => `${root}=${tryExec("git", ["rev-parse", "--verify", "-q", `${tree}:./${root}`], cwd) || ""}`);
+  return crypto.createHash("sha256").update(ids.join("\n")).digest("hex").slice(0, 40);
+}
+
 // Maps a path git names from the repository top to the project root's form
 // (`../x` outside it): the one form every path verify prints is in.
 function projectPathsFromTop(cwd) {
@@ -305,4 +325,6 @@ function projectPathsFromTop(cwd) {
 
 const fromTop = (top, root) => (file) => path.relative(root, path.join(top, file)).split(path.sep).join("/");
 
-module.exports = { captureIdentity, currentTreeToken, workingTreeSnapshot, changedPaths, projectPathsFromTop, fromTop };
+module.exports = {
+  captureIdentity, currentTreeToken, workingTreeSnapshot, changedPaths, projectPathsFromTop, fromTop, snapshotBlob, snapshotRootsDigest,
+};

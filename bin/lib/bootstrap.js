@@ -801,9 +801,15 @@ function formatRecipeSections(scan) {
     ...recipeSection(
       "## Fixer Recipes",
       "Candidates for `validation.fix` (run before the checks, may rewrite files) — not declared by this scan.",
-      (scan.fixRecipes || []).map((recipe) => `- ${recipe.script}: \`${recipe.command}\``),
+      (scan.fixRecipes || []).map((recipe) => `- ${recipe.script}: \`${recipe.command}\`${formatterIgnoreNote(recipe)}`),
     ),
   ];
+}
+
+function formatterIgnoreNote(recipe) {
+  return recipe.ignore
+    ? ` — keep Coding Flow's files out of it: add ${recipe.ignore.lines.map((line) => `\`${line}\``).join(", ")} to ${recipe.ignore.file}`
+    : "";
 }
 
 function formatQualityRecipe(recipe) {
@@ -1008,7 +1014,7 @@ function bootstrapScan({ json = false, dryRun = false, force = false } = {}) {
   }
 
   if ((scan.fixRecipes || []).length > 0) {
-    log(`Fixer recipes for validation.fix: ${scan.fixRecipes.map((recipe) => `\`${recipe.command}\``).join(", ")}.`);
+    log(`Fixer recipes for validation.fix: ${scan.fixRecipes.map((recipe) => `\`${recipe.command}\`${formatterIgnoreNote(recipe)}`).join(", ")}.`);
   }
 
   log("");

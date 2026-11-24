@@ -11,7 +11,10 @@ const { execFileSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { policyFingerprint } = require("./policy-fingerprint");
-const { currentTreeToken, captureIdentity, workingTreeSnapshot, changedPaths, projectPathsFromTop } = require("./identity");
+const {
+  currentTreeToken, captureIdentity, workingTreeSnapshot, changedPaths, projectPathsFromTop, snapshotBlob, snapshotRootsDigest,
+} = require("./identity");
+const { isDeepStrictEqual } = require("util");
 const { resolveCoverageFloor } = require("./coverage");
 const {
   storyPartPath,
@@ -205,11 +208,14 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
 // What a proof's command set is: the checks, preceded by the fixers when there
 // are any (marked, so a fixer and a check of the same text differ). With no
 // fixer this is exactly the old list, and every earlier proof keeps its value.
+const FIXER_LINE = "\u0001fix\u0000";
+const isFixerLine = (line) => line.startsWith(FIXER_LINE);
+
 function provedCommands(resolution) {
   const fix = resolution.fix || [];
   const limit = (command) => (resolution.fixTimeouts && resolution.fixTimeouts[command]) || "";
   return fix.length > 0
-    ? [...fix.map((command) => `\u0001fix\u0000${command}\u0000${limit(command)}`), ...resolution.commands]
+    ? [...fix.map((command) => `${FIXER_LINE}${command}\u0000${limit(command)}`), ...resolution.commands]
     : resolution.commands;
 }
 
@@ -336,6 +342,15 @@ function findReusableVerify({
     return null;
   }
 
+  // Story 19-05: with fixers declared a proof also stands for the story roots they
+  // may not rewrite, which the tree token leaves out: another story's file put
+  // back unformatted is a change.
+  const storyRoots = commands.some(isFixerLine) ? snapshotRootsDigest(cwd, workingTreeSnapshot(cwd), STORY_ROOT_DIRS) : null;
+
+  if (commands.some(isFixerLine) && !storyRoots) {
+    return null;
+  }
+
   const untracked = untrackedDigest();
   const storyText = storyDigest(storyDir);
   const fingerprint = commandsFingerprint(commands, timeouts);
@@ -380,7 +395,8 @@ function findReusableVerify({
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
       (evidence.claim ? evidence.claim.kind : null) === claimKind &&
       evidence.untrackedDigest === untracked &&
-      evidence.storyDigest === storyText
+      evidence.storyDigest === storyText &&
+      (evidence.storyRootsDigest || null) === storyRoots
     ) {
       return { evidence, path: fullPath };
     }
@@ -463,8 +479,9 @@ function runFixers({ resolution, cleaned, storyDir }) {
     }),
     kind: "fix",
   }));
-  const changed = changedPaths(cwd, before, workingTreeSnapshot(cwd));
-  const fixedFiles = changed && changed.filter((file) => !GUARD_LOGS.has(file));
+  const after = workingTreeSnapshot(cwd);
+  const changed = changedPaths(cwd, before, after);
+  const fixedFiles = changed && changed.filter((file) => !harmlessRewrite(file, before, after));
   const forbidden = forbiddenFixes(fixedFiles || [], storyDir);
 
   if (forbidden.length > 0) {
@@ -473,14 +490,45 @@ function runFixers({ resolution, cleaned, storyDir }) {
       kind: "fix",
       ok: false,
       exitCode: null,
-      toolError: `a fixer changed ${forbidden.join(", ")}: .coding-flow/ and the story's own files are judged as written, never rewritten by a fixer`,
+      toolError: `a fixer changed ${forbidden.join(", ")}: .coding-flow/ and story files are judged as written, never rewritten by a fixer. ${FORMATTER_REMEDY}`,
       durationMs: 0,
       stdoutTail: "",
       stderrTail: "",
     });
   }
 
-  return { results, fixedFiles };
+  // What the story roots held when the fixers ran: a reuse must find them unmoved.
+  return { results, fixedFiles, storyRootsDigest: snapshotRootsDigest(cwd, before, STORY_ROOT_DIRS) };
+}
+
+// Under `.coding-flow/` a fixer may reformat, never rewrite: a JSON or JSONL file
+// read back to the same value is no write (prettier re-indents the run files
+// verify itself wrote), and a guard log may only grow (the guard appends during
+// the run). A new or removed file stays a write: a forged run file stays red.
+function harmlessRewrite(file, before, after) {
+  if (!file.startsWith(".coding-flow/")) {
+    return false;
+  }
+
+  const old = snapshotBlob(cwd, before, file);
+  const now = snapshotBlob(cwd, after, file);
+
+  if (GUARD_LOGS.has(file)) {
+    return now !== null && (old === null || now.subarray(0, old.length).equals(old));
+  }
+
+  return old !== null && now !== null && sameJsonValue(file, old, now);
+}
+
+function sameJsonValue(file, old, now) {
+  const lines = (bytes) => bytes.toString("utf8").split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line));
+  const parse = file.endsWith(".jsonl") ? lines : file.endsWith(".json") ? (bytes) => JSON.parse(bytes.toString("utf8")) : null;
+
+  try {
+    return parse !== null && isDeepStrictEqual(parse(old), parse(now));
+  } catch {
+    return false;
+  }
 }
 
 // Test files the gate counted as strengthened that a fixer also rewrote in this
@@ -526,7 +574,10 @@ function fixFirst({ storyDir, unattended, allowPlanCommands, cleaned, announce, 
 const GUARD_LOGS = new Set([".coding-flow/denials.jsonl", ".coding-flow/guard-unchecked.jsonl"]);
 // Where stories live: a fixer may rewrite none of them (another story's criteria,
 // an epic index), nor the story in scope wherever it lives, nor `.coding-flow/`.
-const STORY_ROOTS = ["epics/", "specs/", ".specify/"];
+const STORY_ROOT_DIRS = ["epics", "specs", ".specify"];
+const STORY_ROOTS = STORY_ROOT_DIRS.map((root) => `${root}/`);
+const FORMATTER_REMEDY =
+  "If it only reformatted them, add `.coding-flow/`, `epics/`, `specs/` and `.specify/` to your formatter's ignore file (e.g. `.prettierignore`).";
 
 function forbiddenFixes(fixedFiles, storyDir) {
   const storyPrefix = storyDir ? `${normalizePortable(path.relative(cwd, storyDir))}/` : null;
@@ -654,7 +705,7 @@ function verifyStoryOnce({
     environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
     unattended,
     ...(refused ? { refused } : {}),
-    ...(fixing ? { fixedFiles: fixing.fixedFiles } : {}),
+    ...(fixing ? { fixedFiles: fixing.fixedFiles, storyRootsDigest: fixing.storyRootsDigest } : {}),
     ...withFixerStrengthened(fixerStrengthened(coverage, fixing, config)),
     ...(resolution.planFixersIgnored ? { planFixersIgnored: resolution.planFixersIgnored } : {}),
     commandsOk,

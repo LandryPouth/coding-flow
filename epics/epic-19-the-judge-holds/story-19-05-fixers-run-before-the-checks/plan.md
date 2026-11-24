@@ -82,9 +82,24 @@
   `freshCommands`, the plan-command refusal, coverage, criteria, complexity,
   contrary signals, claim, story digest, policy and tree token. Audited reads
   that stay before the fixers: the story dir and diff-base request (paths and
-  refs, no content); in `harnessVerify`, the reuse lookup — it can only match a
-  proof recorded after fixers ran on this same tree, so a tree the fixers would
-  change finds none.
+  refs, no content); in `harnessVerify`, the reuse lookup. That lookup matches
+  on the tree token, which leaves out the story roots and `.coding-flow/`, so
+  (round 3 P2) with fixers declared it also matches on `storyRootsDigest`: the
+  git tree ids of `epics/`, `specs/` and `.specify/` when the fixers ran.
+  Another story's file put back unformatted is a change, never "already
+  proved". `.coding-flow/` needs no digest: a reformat of it is no write.
+- **Under `.coding-flow/`, a reformat is no write (round 3 P1):** `prettier
+  --write .` re-indents the run files verify itself writes, which made every
+  verify after the first red, forever. A JSON or JSONL file there whose parsed
+  value is unchanged is not a write and is not listed; any other change, a new
+  file or a removed one stays a forbidden write (a forged run stays red). The
+  guard logs may only grow: the old bytes must be a prefix of the new ones.
+- **Under the story roots, a reformat is still a write**, red, and the red
+  names the remedy: add `.coding-flow/`, `epics/`, `specs/` and `.specify/` to
+  the formatter's ignore file. `bootstrap --scan` prints those lines with a
+  prettier/biome/dprint recipe; it writes nothing, like every recipe.
+- **Limit:** on Windows with `core.autocrlf=true`, a fixer that changes only
+  line endings is invisible to the snapshot (git normalises them).
 - **The guard's own logs** (`.coding-flow/denials.jsonl`,
   `guard-unchecked.jsonl`) are not fixer output: the guard writes them during
   a run. Left out of `fixedFiles` and of the forbidden set.
