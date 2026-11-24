@@ -37,21 +37,21 @@ exactly where the guard stops and where the sandbox must take over.
 
 ## Acceptance Criteria
 
-- [ ] Given `python3 -c 'import os; os.system("rm -rf build")'`, then the
+- [x] Given `python3 -c 'import os; os.system("rm -rf build")'`, then the
       call is unchecked; given `python3 -c 'print(1)'`, it is allowed.
-- [ ] Given `python3 -c 'os.remove("harness" ".json")'` run in
+- [x] Given `python3 -c 'os.remove("harness" ".json")'` run in
       `.coding-flow/`, then the call is unchecked.
-- [ ] Given `git config alias.x '!rm -rf build'`, then the call is
+- [x] Given `git config alias.x '!rm -rf build'`, then the call is
       unchecked; `git config alias.st status` is allowed.
-- [ ] Given `echo 'rm -rf build' > x.sh && bash x.sh`, then the call is
+- [x] Given `echo 'rm -rf build' > x.sh && bash x.sh`, then the call is
       unchecked.
-- [ ] The rules-and-limits table names each unread form and its cover, and
+- [x] The rules-and-limits table names each unread form and its cover, and
       a test checks that every form listed in 29-03's D9 appears in it.
-- [ ] Given `psql -c 'DROP SCHEMA app CASCADE'`, then it is refused; given
+- [x] Given `psql -c 'DROP SCHEMA app CASCADE'`, then it is refused; given
       `echo "DROP DATABASE x" | psql`, then it is unchecked.
-- [ ] Given a tracked file with uncommitted changes, then `git rm -f` of it
+- [x] Given a tracked file with uncommitted changes, then `git rm -f` of it
       and `rm` of it are refused; on a clean file they are allowed.
-- [ ] 29-03's everyday-command test (Lens B) still passes unchanged.
+- [x] 29-03's everyday-command test (Lens B) still passes unchanged.
 
 ## Edge Cases
 
