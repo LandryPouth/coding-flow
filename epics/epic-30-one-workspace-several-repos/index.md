@@ -149,10 +149,10 @@ guard), at the maintainer's request on 2026-11-22.
 
 ## Maintainer cleanup on delivery
 
-- `~/.claude/skills/epic-run/SKILL.md`: remove the "Sans Coding Flow dans le
+- [ ] `~/.claude/skills/epic-run/SKILL.md`: remove the "Sans Coding Flow dans le
   projet" section's tse-binam use; per-repository worktrees come from
   `ai-flow worktree add --story`.
-- tse-binam: install with `ai-flow init --workspace` in
+- [ ] tse-binam: install with `ai-flow init --workspace` in
   `~/dev/sabytoo/tse-binam/`, move the open work order
   (`web/docs/plans/ordre-travail-2026-11-21.md`) into a workspace epic, delete
   the pointer files in `api/docs/plans/`.
