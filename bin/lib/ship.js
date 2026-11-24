@@ -206,7 +206,7 @@ function resultTable(evidence) {
       // A scanner that did not run is never a ✅, whatever its `ok` under the mode.
       const status = item.outcome === "not-examined"
         ? `⚠️ not examined (${item.notExamined})`
-        : item.ok ? "✅ exit 0" : item.timedOut ? "⏱ timeout" : `❌ exit ${item.exitCode}`;
+        : item.ok ? "✅ exit 0" : item.timedOut ? "⏱ timeout" : item.toolError ? `❌ ${item.toolError}` : `❌ exit ${item.exitCode}`;
       const replay = item.cache === "full" || item.cache === "partial" ? " (replayed from cache)" : "";
       const kind = item.kind === "fix" ? "fix: " : "";
       lines.push(`| ${kind}\`${item.command}\` | ${status}${replay} | ${item.durationMs}ms |`);

@@ -11,7 +11,7 @@ const { execFileSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { policyFingerprint } = require("./policy-fingerprint");
-const { currentTreeToken, captureIdentity, workingTreeSnapshot, changedPaths } = require("./identity");
+const { currentTreeToken, captureIdentity, workingTreeSnapshot, changedPaths, projectPathsFromTop } = require("./identity");
 const { resolveCoverageFloor } = require("./coverage");
 const {
   storyPartPath,
@@ -463,11 +463,9 @@ function runFixers({ resolution, cleaned, storyDir }) {
     }),
     kind: "fix",
   }));
-  const fixedFiles = changedPaths(cwd, before, workingTreeSnapshot(cwd));
-  const storyPrefix = storyDir ? `${normalizePortable(path.relative(cwd, storyDir))}/` : null;
-  const forbidden = (fixedFiles || []).filter(
-    (file) => file.startsWith(".coding-flow/") || (storyPrefix && file.startsWith(storyPrefix)),
-  );
+  const changed = changedPaths(cwd, before, workingTreeSnapshot(cwd));
+  const fixedFiles = changed && changed.filter((file) => !GUARD_LOGS.has(file));
+  const forbidden = forbiddenFixes(fixedFiles || [], storyDir);
 
   if (forbidden.length > 0) {
     results.push({
@@ -493,17 +491,51 @@ function fixerStrengthened(coverage, fixing, config) {
     return [];
   }
 
-  const { strengthened } = scanTestWeakening(config);
+  // The gate names files from the repository top: brought to the project root's
+  // form, the one fixedFiles is in.
+  return matchFixerStrengthened(scanTestWeakening(config).strengthened, fixing.fixedFiles, projectPathsFromTop(cwd));
+}
 
-  // The gate names files from the repository top, fixedFiles from the project root.
-  const [prefix = ""] = runGitList(["rev-parse", "--show-prefix"]);
-  const fixed = new Set(fixing.fixedFiles.flatMap((file) => [file, `${prefix}${file}`]));
-  return strengthened.filter((file) => fixed.has(file));
+function matchFixerStrengthened(strengthened, fixedFiles, toProject) {
+  const fixed = new Set(fixedFiles);
+  return strengthened.map(toProject).filter((file) => fixed.has(file));
+}
+
+const withFixerStrengthened = (files) => (files.length > 0 ? { fixerStrengthened: files } : {});
+
+// Story 19-05: the fixers run before anything reads the tree or the diff — the
+// fresh-test requirement, the commands (package.json may be reformatted), the
+// risk, the coverage, the story text, the policy — so one tree gets one verdict.
+// Resolved here only to know which fixers to run and whether they may run (no
+// check, or refused unattended: none run). `land` passes runFix: false: on the
+// target checkout a fixer would leave it dirty.
+function fixFirst({ storyDir, unattended, allowPlanCommands, cleaned, announce, runFix }) {
+  const plan = resolveValidationCommands({ storyDir });
+
+  if (!runFix || plan.fix.length === 0 || plan.commands.length === 0) {
+    return null;
+  }
+
+  const refused = planCommandsRefusal({ resolution: plan, unattended, allowPlanCommands });
+  announcePlanCommands({ announce, refused, resolution: plan });
+  return refused ? null : runFixers({ resolution: plan, cleaned, storyDir });
+}
+
+// The guard's own logs: written by the guard during a run (a parallel tool call,
+// the OpenCode plugin), never by a fixer worth naming.
+const GUARD_LOGS = new Set([".coding-flow/denials.jsonl", ".coding-flow/guard-unchecked.jsonl"]);
+// Where stories live: a fixer may rewrite none of them (another story's criteria,
+// an epic index), nor the story in scope wherever it lives, nor `.coding-flow/`.
+const STORY_ROOTS = ["epics/", "specs/", ".specify/"];
+
+function forbiddenFixes(fixedFiles, storyDir) {
+  const storyPrefix = storyDir ? `${normalizePortable(path.relative(cwd, storyDir))}/` : null;
+  return fixedFiles.filter(
+    (file) => file.startsWith(".coding-flow/") || STORY_ROOTS.some((root) => file.startsWith(root)) || (storyPrefix && file.startsWith(storyPrefix)),
+  );
 }
 
 // A fixer from plan.md is a plan command: refused unattended on the same terms.
-const withFixerStrengthened = (files) => (files.length > 0 ? { fixerStrengthened: files } : {});
-
 function planCommandsRefusal({ resolution, unattended, allowPlanCommands }) {
   const planCommands = [...planFixers(resolution), ...(resolution.source === "plan.md" ? resolution.commands : [])];
 
@@ -567,16 +599,14 @@ function verifyStoryOnce({
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
   setDiffBaseRequest({ flagBase: diffBaseFlag(), story });
+  const cleaned = cleanEnv ? cleanEnvironment() : null;
+  // The fixers run first: everything below reads the tree they leave.
+  const fixing = fixFirst({ storyDir, unattended, allowPlanCommands, cleaned, announce, runFix });
   const { config } = readHarnessConfig();
   const freshRequired = freshTestsRequired({ storyDir, config });
   const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
   const refused = planCommandsRefusal({ resolution, unattended, allowPlanCommands });
-  const cleaned = cleanEnv ? cleanEnvironment() : null;
-  announcePlanCommands({ announce, refused, resolution });
-  // `land` passes runFix: false: on the target checkout a fixer would leave it dirty.
-  const fixing = runFix && !refused && resolution.fix.length > 0 && resolution.commands.length > 0
-    ? runFixers({ resolution, cleaned, storyDir })
-    : null;
+  announcePlanCommands({ announce: announce && !fixing, refused, resolution });
 
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
@@ -648,6 +678,7 @@ module.exports = {
   checkStoryEvidence,
   commandsFingerprint,
   provedCommands,
+  matchFixerStrengthened,
   findReusableVerify,
   writeVerifyEvidence,
   verifyStoryOnce,

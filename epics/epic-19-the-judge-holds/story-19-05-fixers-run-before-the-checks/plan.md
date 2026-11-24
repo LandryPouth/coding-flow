@@ -73,6 +73,26 @@
   verify is red anyway.
 - **A `## Fixers` block ignored** (checks from the config or package.json) is
   said in a warning and recorded as `planFixersIgnored`.
+- **The fixers run before anything reads the tree (re-scoped round 2 P1, the
+  class):** the fresh-test requirement and the risk it reads were computed on
+  the pre-fixer diff, so one tree got two verdicts (green, then red when the
+  fix was committed). `verifyStoryOnce` now resolves only which fixers to run
+  (`fixFirst`), runs them, then reads everything: harness config, risk and
+  `freshTestsFor`, the commands (package.json may be reformatted) and
+  `freshCommands`, the plan-command refusal, coverage, criteria, complexity,
+  contrary signals, claim, story digest, policy and tree token. Audited reads
+  that stay before the fixers: the story dir and diff-base request (paths and
+  refs, no content); in `harnessVerify`, the reuse lookup — it can only match a
+  proof recorded after fixers ran on this same tree, so a tree the fixers would
+  change finds none.
+- **The guard's own logs** (`.coding-flow/denials.jsonl`,
+  `guard-unchecked.jsonl`) are not fixer output: the guard writes them during
+  a run. Left out of `fixedFiles` and of the forbidden set.
+- **Every story root is forbidden to a fixer** (`epics/`, `specs/`,
+  `.specify/`, and the story in scope wherever it lives), so another story's
+  criteria or an epic index cannot be ticked, with or without `--story`.
+- **Outside git** `fixedFiles` is null and the forbidden-write rule cannot
+  apply: a stated limit (`docs/rules-and-limits.md`).
 - **The snapshot reads the whole work tree from the repository top, and
   `.coding-flow/` whatever the ignore rules say** (re-scoped series, round 1
   P1-A and P2-1): most projects ignore `.coding-flow/runs/`, the manifest and

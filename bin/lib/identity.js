@@ -288,18 +288,21 @@ function changedPaths(cwd, before, after) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).replace(/\r?\n$/, "");
-    // Both sides resolved natively: /private/var on macOS, long names on Windows.
-    const here = fs.realpathSync.native(cwd);
-    const root = fs.realpathSync.native(top);
-    return listing
-      .split("\0")
-      .filter(Boolean)
-      .map((file) => path.relative(here, path.join(root, file)).split(path.sep).join("/"))
-      .sort();
+    const toProject = projectPathsFromTop(cwd);
+    return listing.split("\0").filter(Boolean).map(toProject).sort();
   } catch {
     return null;
   }
 }
 
-module.exports = { captureIdentity, currentTreeToken, workingTreeSnapshot, changedPaths };
+// Maps a path git names from the repository top to the project root's form
+// (`../x` outside it): the one form every path verify prints is in.
+function projectPathsFromTop(cwd) {
+  const top = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).replace(/\r?\n$/, "");
+  // Both sides resolved natively: /private/var on macOS, long names on Windows.
+  return fromTop(fs.realpathSync.native(top), fs.realpathSync.native(cwd));
+}
+
+const fromTop = (top, root) => (file) => path.relative(root, path.join(top, file)).split(path.sep).join("/");
+
+module.exports = { captureIdentity, currentTreeToken, workingTreeSnapshot, changedPaths, projectPathsFromTop, fromTop };
