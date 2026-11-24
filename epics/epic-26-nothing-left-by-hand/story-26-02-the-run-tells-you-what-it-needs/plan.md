@@ -40,6 +40,17 @@
   listed: the spec lists deferred criteria without excluding done stories, and a
   deferral is still a debt (28-01 also turns them into ideas). Stories under
   `specs/` are not read: `status` and `listEpics` read `epics/` only.
+- **Round 2: one scanner.** Round 1 and round 2 both found code examples read
+  as to-dos, through different readers; so `scanMarkdown` is now the only
+  parser and every reader (to-do sections, Needs you, Owner, `[~]`) filters its
+  blocks. Fences open at any indent (safe side: an unclosed one runs to the end);
+  indented code counts only outside an open list; a heading or a blank line then
+  a margin paragraph closes the list. Finished = `FINISHED_STATUSES` (done,
+  verified, stale), now shared by `story.js` with archive's gate. `Owner: human`
+  is also read in a blockquote and in front matter (`owner:` key, any case).
+  Deferred criteria come only from `## Acceptance Criteria` (the section the
+  coverage gate reads). Needs-you sub-bullets are the parent's `options`.
+  `todo` refuses an extra argument.
 - **Oldest first** = the epic's number (`epic-9` before `epic-10`), then name.
 
 - **stdin JSON, not arguments**: no quoting bugs, no shell injection from a

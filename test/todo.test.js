@@ -251,3 +251,77 @@ test('an unknown flag is refused', (t) => {
   assert.notStrictEqual(res.code, 0);
   assert.match(res.output, /unknown flag "--jsn"/);
 });
+
+// One table, one run: each case is its own epic, so every Markdown shape is
+// read by the same scanner in a single CLI call.
+const MAINTAINER_CASES = [
+  ['fence at the margin', '- [ ] real\n```\n- [ ] example\n```\n', ['real']],
+  ['fence at 2 spaces under an item', '- [ ] do this:\n  ```\n  - [ ] example\n  ```\n', ['do this:']],
+  ['fence at 4 spaces under an item', '- [ ] do this:\n    ```\n    - [ ] example\n    ```\n', ['do this:']],
+  ['fence at 6 spaces under a nested item', '- [ ] parent\n    - [ ] child:\n      ```\n      - [ ] example\n      ```\n', ['parent', 'child:']],
+  ['tilde fence', '- [ ] real\n~~~\n- [ ] example\n~~~\n', ['real']],
+  ['longer fence closed only by a run as long', '- [ ] real\n````\n```\n- [ ] example\n````\n- [ ] after\n', ['real', 'after']],
+  ['unclosed fence runs to the end', '- [ ] before\n```\n- [ ] after\n', ['before']],
+  ['indented code right after the heading', '    - [ ] code\n\n- [ ] real\n', ['real']],
+  ['indented code after a paragraph closes the list', '- [ ] a\n\nSome text.\n\n    - [ ] code\n', ['a']],
+  ['nested items at 4 spaces are listed', '- [ ] parent\n    - [ ] nested\n', ['parent', 'nested']],
+  ['a nested item after a blank line stays in the list', '- [ ] parent\n\n    - [ ] nested later\n', ['parent', 'nested later']],
+  ['empty and checked boxes', '- [] terse\n- [X] done\n- [x] done too\n', ['terse']],
+];
+
+test('table: what a to-do section lists, for every code and list shape', (t) => {
+  const repo = project(t);
+  MAINTAINER_CASES.forEach(([, body], index) => {
+    write(repo, `epics/epic-${index + 1}-case/index.md`, `# Epic\n\n## Maintainer to-do\n\n${body}`);
+  });
+  // A heading closes the list: the indented block under the next heading is code.
+  write(repo, 'epics/epic-99-heading/index.md', '## Maintainer to-do\n\n- [ ] a\n\n## Maintainer cleanup on delivery\n    - [ ] code\n');
+
+  const payload = todoJson(repo);
+  const byEpic = new Map(payload.epics.map((epic) => [epic.epic, epic.items.map((item) => item.text)]));
+  MAINTAINER_CASES.forEach(([name, , expected], index) => {
+    assert.deepStrictEqual(byEpic.get(`epic-${index + 1}-case`) || [], expected, name);
+  });
+  assert.deepStrictEqual(byEpic.get('epic-99-heading'), ['a'], 'a heading closes the list');
+});
+
+const STORY_CASES = [
+  ['blockquote Owner: human', '> Owner: human\n', ['human-owner|S']],
+  ['front matter owner, any case', null, ['human-owner|S'], '---\nOWNER: Human\ntitle: x\n---\n# S\n'],
+  ['front matter owner agent', null, [], '---\nowner: agent\n---\n# S\n'],
+  ['Owner line next to another line', 'Mode: STANDARD\nOwner: human\n', ['human-owner|S']],
+  ['a verified story is finished', 'Owner: human\n\n## Status: verified\n', []],
+  ['a stale story is finished', 'Owner: human\n\n## Status: stale\n', []],
+  ['an in-review story is not', 'Owner: human\n\n## Status: in-review\n', ['human-owner|S']],
+  ['Needs you sub-bullets are options', '## Needs you\n\n- Which provider?\n  - A: Stripe\n  - B: Adyen\n', ['needs-you|Which provider?|A: Stripe;B: Adyen']],
+  ['Needs you with a fence under the item', '## Needs you\n\n- Run this:\n    ```\n    - rm -rf data\n    ```\n', ['needs-you|Run this:']],
+  ['[~] under Tasks is bookkeeping', '## Acceptance Criteria\n\n- [~] the deferral\n\n## Tasks\n\n- [~] a task for later\n', ['deferred|the deferral']],
+];
+
+test('table: what a story lists, for owner, status, Needs you and criteria shapes', (t) => {
+  const repo = project(t);
+  STORY_CASES.forEach(([, body, , whole], index) => {
+    write(repo, `epics/epic-${index + 1}-s/story-${index + 1}-01-s/story.md`, whole || `# S\n\n${body}`);
+  });
+
+  const payload = todoJson(repo);
+  const byEpic = new Map(
+    payload.epics.map((epic) => [
+      epic.epic,
+      epic.items.map((item) => [item.kind, item.text, ...(item.options && item.options.length ? [item.options.join(';')] : [])].join('|')),
+    ]),
+  );
+  STORY_CASES.forEach(([name, , expected], index) => {
+    assert.deepStrictEqual(byEpic.get(`epic-${index + 1}-s`) || [], expected, name);
+  });
+
+  const plain = run(repo, ['todo']);
+  assert.match(plain.output, /Which provider\?.*\n\s+- A: Stripe\n\s+- B: Adyen/, 'options print under their question');
+});
+
+test('an extra argument is refused', (t) => {
+  const repo = project(t);
+  const res = run(repo, ['todo', 'done']);
+  assert.notStrictEqual(res.code, 0);
+  assert.match(res.output, /unexpected argument "done"/);
+});
