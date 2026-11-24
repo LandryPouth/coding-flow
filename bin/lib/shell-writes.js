@@ -140,6 +140,22 @@ function pastHeredocBodies(command, i, heredocs) {
   return i;
 }
 
+// `<<WORD` at the start of `text`: the delimiter is one shell word, its parts
+// joined and unquoted (`E"OF"`, `'E'OF`, `E\\OF` are all `EOF`); the body is
+// `literal` (expands nothing) when any part is quoted or escaped. Null when it is
+// not a heredoc or a part does not close (`<<E"OF`).
+const HEREDOC_WORD = /^<<(-?)[ \t]*((?:"[^"]*"|'[^']*'|\\[^\n]|[^\s;&|<>()`'"\\])+)/;
+
+function heredocWord(text) {
+  const match = HEREDOC_WORD.exec(text);
+  if (!match || /^["'\\]/.test(text.slice(match[0].length))) {
+    return null;
+  }
+  const raw = match[2];
+  const word = raw.replace(/"([^"]*)"|'([^']*)'|\\([^\n])/g, (_, double, single, escaped) => double ?? single ?? escaped);
+  return { dash: match[1] === "-", word, literal: /["'\\]/.test(raw), length: match[0].length };
+}
+
 function splitSegments(command) {
   const out = [];
   const heredocs = [];
@@ -183,9 +199,9 @@ function splitSegments(command) {
       text += "<<<"; // a here-string, not a heredoc
       i += 2;
     } else if (ch === "<" && command[i + 1] === "<") {
-      const word = /^<<(-?)\s*(?:"([^"]*)"|'([^']*)'|\\?([^\s;&|<>()]+))/.exec(command.slice(i));
-      if (word) {
-        heredocs.push({ dash: word[1] === "-", word: word[2] ?? word[3] ?? word[4] });
+      const heredoc = heredocWord(command.slice(i));
+      if (heredoc) {
+        heredocs.push(heredoc);
       }
       text += "<<";
       i += 1;
@@ -1318,8 +1334,13 @@ function readInline(r, programs) {
 // `curl … | sh`) or from a process substitution (`bash <(curl …)`) is data to
 // the splitter: it cannot be judged. `sh -s ARGS` reads stdin whatever follows
 // its options (`curl … | bash -s -- --yes`).
-function readStdinProgram(r, { segment, name, args }) {
-  const interpreter = INTERPRETERS.some(([pattern]) => pattern.test(name)) || SHELLS.has(name);
+// `source` and `.` run a file in this shell: `/dev/stdin`, `/dev/fd/N` and `<(…)` are its input.
+const SOURCES = new Set(["source", "."]);
+const STDIN_FILE = /^\/dev\/(?:stdin|fd\/\d+)$/;
+
+function readStdinProgram(r, { segment, name, args: given }) {
+  const interpreter = INTERPRETERS.some(([pattern]) => pattern.test(name)) || SHELLS.has(name) || SOURCES.has(name);
+  const args = given.filter((arg) => !STDIN_FILE.test(arg));
   const firstOperand = args.findIndex((arg) => !arg.startsWith("-") || arg === "--");
   const options = firstOperand === -1 ? args : args.slice(0, firstOperand);
   const stdinFlag = SHELLS.has(name) && options.some((arg) => /^-[A-Za-z]*s[A-Za-z]*$/.test(arg));
@@ -1506,4 +1527,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
+module.exports = { heredocWord, isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };

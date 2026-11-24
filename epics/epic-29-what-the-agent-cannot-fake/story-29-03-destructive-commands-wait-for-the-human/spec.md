@@ -38,7 +38,11 @@ wrapper can intercept"); the guard is that wrapper.
   already does for writes).
 - **Fail-open is recorded.** A command the reader cannot parse (expansion,
   heredoc into an interpreter) is allowed and recorded as `unchecked`, the
-  existing guard rule (design-decisions entry 14) — never a silent pass.
+  existing guard rule (design-decisions entry 14). The guard refuses the
+  destructive forms an agent writes by habit and marks unchecked what it cannot
+  read; a form built to evade it (unusual quoting, generated code, interpreter
+  strings) is out of this guard's reach — the protection against an adversarial
+  agent is the sandbox and permissions (design-decisions entry 10).
 - `/flow-run` gains one line: a destructive step is a `## Needs you` with its
   blast radius and rollback, never a workaround.
 

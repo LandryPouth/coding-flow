@@ -36,6 +36,8 @@ Taken by the run (2026-11-22, unattended); the maintainer reviews afterwards.
   allowed. A **shell** write, move or removal of the file is refused outright: the
   guard cannot read what it changes (the file is added to the blocked paths for
   shell targets only, so trees, links and `mv` are covered by the existing judges).
+  By design, an Edit may move `mode` from `strict` to `standard` (D19): strict
+  must never lock the user out of repairing the file through their agent.
 - **D3 — Order:** blocked writes, then secrets, then destructive commands; an
   unsettled destructive check joins the call's issues (unchecked) and never hides
   a refusal found later.
@@ -235,6 +237,51 @@ workflow is a test too (`Lens B`), so the backstops' noise is measured.
   expansion), `$((i+1))`, `cp file{,.bak}` is modelled but `git add {a,b}.js` is
   not, `npm test -- --grep "rm -rf"`, `grep rm .` style words after an unknown
   command.
+
+### Review round 4 (fresh reviewer, 4 P1) — direct fixes
+
+- **D37 — A heredoc delimiter is one shell word** (`<<E"OF"`, `<<"E"OF`,
+  `<<'E'OF`, `<<E\OF`): its parts are joined and unquoted, and the body is literal
+  when any part is quoted or escaped — one parser (`heredocWord` in
+  `shell-writes.js`) for the splitter and the destructive reader. A delimiter that
+  cannot be taken whole (`<<E"OF`) makes the line unchecked (backstop 1).
+- **D38 — `source` and `.` are interpreters**; `/dev/stdin` and `/dev/fd/N` are
+  stdin, so `source <(…)`, `… | source /dev/stdin` and `. /dev/stdin <<EOF` are
+  unchecked like `bash <<EOF`.
+- **D39 — A prefix assignment is handed text** (`PAGER='rm -rf x' git log`,
+  `GIT_EDITOR=`, `GIT_SSH_COMMAND=`, `GIT_EXTERNAL_DIFF=`, `env PAGER=… git log`):
+  every `NAME=value` before the verb is read by backstop 2.
+- **D40 — `docker run|exec|compose run IMAGE CMD…`** with no docker finding is read
+  for a hidden verb (unchecked: the container's volumes are unknown). Checked
+  for the same gap: `psql` (`\!` shell escapes not read — P2 below), `prisma` and
+  `curl`/`wget` run no command they are handed.
+
+### D-cap — the claim re-scoped after four review rounds
+
+| Round | Reviewer | P1 | Kind |
+|---|---|---|---|
+| 1 | independent | 7 | depth cap, `-c --`, wrappers under xargs/find, long-option prefixes, checkout/switch `-f`, policy file through globs/ancestors, case-insensitive names |
+| 2 | fresh, security | 5 | a crash failing open, substitutions in quotes/backticks, xargs values, wrappers hiding the verb, policy file through braces/POSIX classes/xargs |
+| 3 | fresh, bypass + false positives | 9 | here-strings, `bash -c -e`, clustered `-c`, runner `-c`, `trap`, `~+`, `$'…'`, `$IFS` verbs, `case` in a substitution — answered with two backstops |
+| 4 | fresh | 4 | partly quoted heredoc delimiters, `source <(…)`, prefix assignments, docker run |
+
+Every round found one more construct a text reader of bash does not model:
+enumeration does not converge, and four rounds is the cap. **Decided by the
+run:** the claim is re-scoped. The guard refuses the destructive forms an agent
+writes by habit and marks unchecked what it cannot read; a form built to evade it
+(unusual quoting, generated code, interpreter strings) is out of this guard's
+reach — the protection against an adversarial agent is the sandbox and
+permissions (design-decisions entry 10). spec.md's "never a silent pass" is
+replaced by that sentence. Under it, review severity is: **P1** = a habitual
+destructive form allowed silently, a removal or loosening of the policy file
+allowed silently, or a false positive blocking a core workflow; an obfuscation
+form is **P2** and goes to a follow-up story. A new review series starts at
+round 1 under this claim.
+
+P2, to story 29-04 (the run plans it): interpreter strings (`python -c`, `perl
+-e`, `ruby -e`; string concatenation defeating the policy-file text match), a
+two-step git alias (`git config alias.x '!…'`, then `git x`), script files
+(`echo … > x.sh && bash x.sh`), `psql` `\!` shell escapes.
 
 ## Security
 

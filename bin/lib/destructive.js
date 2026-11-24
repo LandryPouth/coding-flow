@@ -19,7 +19,7 @@
 // depended on but could not read (an expansion where a flag may sit).
 
 const path = require("path");
-const { splitSegments, commandOf, verbAt, tokenize, SHELLS } = require("./shell-writes");
+const { splitSegments, commandOf, verbAt, tokenize, heredocWord, SHELLS } = require("./shell-writes");
 
 const EXPANDS = /[$`]/;
 const ASK = "stop and ask the human";
@@ -685,7 +685,13 @@ function readVerb(out, command, cwd, ctx, segments, index) {
   } else if (name === "psql") {
     readPsql(out, args, cwd);
   } else if (name === "docker") {
+    // `docker run IMAGE rm -rf /w`, `docker exec c …`: a command run in a container
+    // whose volumes the guard cannot see is read as hidden when nothing else was found.
+    const before = out.findings.length;
     readDocker(out, args, cwd);
+    if (out.findings.length === before) {
+      readHiddenVerb(out, args, cwd, ctx);
+    }
   } else if (DOWNLOADERS.has(name)) {
     readDownload(out, command, cwd, segments, index);
   } else if (!isInert(command)) {
@@ -737,6 +743,12 @@ function readLine(line, start, ctx) {
       }
       readCommand(out, { ...command, raw }, cwd, ctx, segments, index);
       readHandedText(out, command, cwd, ctx);
+      // `PAGER='rm -rf x' git log`, `env GIT_EDITOR=… git commit`: a variable set
+      // for the command may be run by it, so its value is read as handed text.
+      const assignments = tokens.slice(0, verbAt(tokens)).filter((token) => /^[A-Za-z_]\w*=/.test(token));
+      if (assignments.length) {
+        readHandedText(out, { name: "(assignment)", args: assignments }, cwd, ctx);
+      }
       const split = splitString(tokens);
       if (split !== null) {
         readScript(out, split, cwd, ctx);
@@ -801,6 +813,8 @@ function syntaxView(text) {
       pending.push(heredoc);
       view.outside += "<<_";
       i += heredoc.length - 1;
+    } else if (ch === "<" && text[i + 1] === "<" && /^<<-?[ \t]*[^\s]/.test(text.slice(i))) {
+      return null; // a delimiter the reader cannot take whole
     } else if (ch === "\n" && pending.length) {
       i = pastBodies(text, i, pending);
       view.outside += "\n";
@@ -844,7 +858,7 @@ const SYNTAX_CHECKS = [
 function unmodelledSyntax(line) {
   const view = syntaxView(line);
   if (view === null) {
-    return "a quote or a substitution that does not close";
+    return "a quote, a substitution or a heredoc delimiter that does not close";
   }
   const found = SYNTAX_CHECKS.find(([, test]) => test(view));
   return found ? found[0] : null;
@@ -895,17 +909,9 @@ function readHandedText(out, command, cwd, ctx) {
 
 // --- command substitutions ---------------------------------------------------------
 
-const HEREDOC = /^<<(-?)[ \t]*(?:"([^"]*)"|'([^']*)'|(\\?)([^\s;&|<>()`'"]+))/;
-
-// `<<WORD` at `i`: `{ dash, word, literal, length }`; `literal` when the word is
-// quoted, so the body expands nothing.
+// `<<WORD` at `i`: `{ dash, word, literal, length }`, read as the splitter reads it.
 function heredocAt(text, i) {
-  const match = HEREDOC.exec(text.slice(i));
-  if (!match) {
-    return null;
-  }
-  const word = match[2] ?? match[3] ?? match[5];
-  return { dash: match[1] === "-", word, literal: match[5] === undefined || match[4] === "\\", length: match[0].length };
+  return heredocWord(text.slice(i));
 }
 
 // From the newline at `at`, past the bodies of the heredocs opened on that line.

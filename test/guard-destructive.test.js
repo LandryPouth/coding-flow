@@ -791,3 +791,54 @@ test('Lens B: the everyday workflow is allowed', (t) => {
   const dir = repo(t);
   expectAll(dir, 'allow', EVERYDAY);
 });
+
+// Review round 4: the last concrete forms before the claim was re-scoped (plan.md D-cap).
+
+test('R4-1: a heredoc delimiter is one shell word, partly quoted or escaped', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    'cat <<E"OF"\nx\nEOF\nrm -rf build',
+    'cat <<"E"OF\nx\nEOF\nrm -rf build',
+    "cat <<'E'OF\nx\nEOF\nrm -rf build",
+    'cat <<E\\OF\nx\nEOF\nrm -rf build',
+    'cat <<E"OF"\nx\nEOF\nrm .coding-flow/harness.json',
+  ]);
+  // The body of a partly quoted delimiter is literal.
+  expectAll(dir, 'allow', ['cat <<E"OF"\n$(rm -rf build)\nEOF']);
+});
+
+test('R4-2: source and . read a program from stdin or a process substitution', (t) => {
+  const dir = repo(t);
+  expectNotAllowed(dir, [
+    'source <(echo rm -rf build)',
+    '. <(echo rm -rf build)',
+    'echo rm -rf build | source /dev/stdin',
+    '. /dev/stdin <<EOF\nrm -rf build\nEOF',
+    'echo rm -rf build | . /dev/fd/0',
+  ]);
+});
+
+test('R4-3: a prefix assignment is read as the script it may become', (t) => {
+  const dir = repo(t);
+  expectNotAllowed(dir, [
+    "PAGER='rm -rf build' git log",
+    "GIT_EDITOR='git reset --hard' git commit",
+    "EDITOR='rm -rf build' crontab -e",
+    "GIT_SSH_COMMAND='rm -rf build' git fetch",
+    "GIT_EXTERNAL_DIFF='rm -rf build' git diff",
+    "env PAGER='rm -rf build' git log",
+    "PAGER='rm .coding-flow/harness.json' git log",
+  ]);
+  expectAll(dir, 'allow', ['GIT_PAGER=cat git log', 'NODE_ENV=test npm test', "MSG='hello world' echo ok"]);
+});
+
+test('R4-4: docker running a destructive command in a container is never a silent allow', (t) => {
+  const dir = repo(t);
+  expectNotAllowed(dir, [
+    'docker run -v $PWD:/w alpine rm -rf /w/build',
+    'docker exec c rm -rf /w',
+    'docker compose run app rm -rf /app/build',
+    'docker run --rm alpine sh -c "git reset --hard"',
+  ]);
+  expectAll(dir, 'allow', ['docker compose up -d', 'docker ps', 'docker run --rm alpine echo hi']);
+});
