@@ -81,6 +81,53 @@
   everyday list plus 5 (32 commands, 3 rounds, load average 11–19): before
   2.7 / 1.4 / 1.2 ms per command, after 2.6 / 1.2 / 0.8 ms — within noise.
 
+### Review round 1 (fresh reviewer: FAIL, 2 P1) — each fix has a test that failed before it
+
+- **R1-P1-1 — heredoc-written scripts were never read.** `splitSegments`
+  now keeps each heredoc's body on the segment that opened it
+  (`segment.heredocs[]`, `body`, `closed`). `cat > f <<'EOF'` / `cat <<EOF >
+  f` / `tee f <<EOF` with no input file write the body; an unquoted body that
+  expands, or `cat part.sh > f <<EOF`, is unread. `cp SRC DEST` records
+  `{ from }`: when DEST is run, SRC is read if it is a regular file of at most
+  64 KB (`host.readSmall`, a read, no spawn), else unread. The same reading
+  serves psql: a heredoc fed to psql, `psql < f.sql`, `psql -f f.sql` read the
+  SQL (destructive → unchecked, unseen → unchecked, harmless → allowed).
+- **R1-P1-2 — interpreter flag glued to its code.** `shell-writes` reads
+  `python -c"…"` (`-[bBdEhiIOqsSuvVx]*c…`), `perl -e'…'`/`-E`, `ruby -e'…'`,
+  `php -r'…'`. The prefix letters are only the switches that take no value,
+  so `perl -Mfeature=say` is not read as code. node does not accept a glued
+  `-e`.
+- **R1-P2 fixed.** Escapes decoded in literals (`\n` splits commands,
+  `\x20`, `\u…`); literals up to 4 KB read (shell-writes' 200-char cap for
+  the policy-path check is unchanged); literal argument lists
+  (`spawnSync("rm", ["-rf","build"])`, `subprocess.run([...])`) read as a
+  command. A `local` finding (rm of a modified file) inside code that runs
+  here — interpreter, written script, alias, psql `\!` — is kept, so it is
+  unchecked; `ssh`/handed text still drops it. `>|` is a write. SQL: comments
+  stripped, `DELETE FROM t` with no `WHERE`, `DROP OWNED`, `DROP COLUMN`.
+  `GIT_CONFIG_NOSYSTEM`, `GIT_PAGER` no longer make an alias unchecked; only
+  the variables that name another config file do. A plain `rm` of a change
+  that is all staged is allowed (`check.worktree`: the index keeps it);
+  `git rm -f` still counts staged changes.
+- **R1-P2 listed (table).** exec/eval/base64; `core.hooksPath`,
+  `include.path`, editing `.git/config`; `uv run`, `npx tsx -e`, awk
+  `system()`, `lua -e`, `make -f`; `bash "$PWD/x.sh"`; `docker exec … psql`
+  fed by a pipe; `git submodule foreach` (read with an unknown directory, so
+  strict refuses its checks); `git stash && rm a.txt && git stash pop`
+  (refused: noise accepted, the disk is read before the stash runs). The
+  table test now also checks 29-03's D9 in both directions (every backticked
+  form in its plan is in `D9_FORMS`); `git rm -rf` added.
+- **R1 latency — `rm FILE` without `git status`.** A plain `rm`/`unlink`
+  reads `.git/index` (v2/v3, at most 2 MB, `.git` file for worktrees): every
+  path missing, untracked, or tracked with the recorded size and mtime and
+  older than the index (git's racy rule) → no spawn. A split (`link`) or
+  sparse (`sdir`) index, a conflict, a newer format or any mismatch → `git
+  status` decides as before. Median per call, 20 runs, load ~2: base
+  (3c90919) `rm a.txt` 0.4 ms, `rm build/o.js` 0.2 ms; round 0 2.8 / 2.5 ms
+  (spawn); now 0.5 / 0.4 ms. Everyday list (32 commands): 0.8 / 0.3 / 0.3 ms
+  per command over 3 rounds. Assumption, as git's: a file rewritten to the
+  same size with its old mtime restored passes as clean.
+
 ## Test Plan
 
 `decide()` on throwaway repos for each criterion; the 29-03 Lens B list
