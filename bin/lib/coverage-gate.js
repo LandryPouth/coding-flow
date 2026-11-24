@@ -227,54 +227,70 @@ const SKIP_MARKERS = [
   /@(?:Ignore|Disabled)\b/,
 ];
 
+// Markers only feed the WEAKENING signal (assertions removed). Since story 19-08
+// round 3 they no longer decide what strengthens: that is read from the text
+// itself (see `strengtheningOf`), so an assertion form no regex knows never
+// turns a real test into a false red.
 const ASSERTION_MARKERS = [
   /\bexpect\s*\(/,
-  /\bexpect\s*\{/, // RSpec block form
-  /\bis_expected\b/,
+  /\bexpect\s*\{/,
   /\bassert(?:_\w+|[A-Z]\w*)?\s*[(.]/,
-  /\bassert(?:_\w+)?!\s*\(/, // Rust macros
-  /^\s*assert\s/, // bare assert: Python, Ruby, Elixir
-  /\bAssert\.\w+\s*\(/, // xUnit, NUnit, MSTest, JUnit 4
-  /\.should\b|\bshould\s*\(/, // chai, should.js, Cypress, RSpec — a call, never a title
+  /\bassert(?:_\w+)?!\s*\(/,
+  /^\s*assert\s/,
+  /\bAssert\.\w+\s*\(/,
+  /\bshould\b/,
   /\bpytest\.raises\s*\(/,
   /\bXCTAssert\w*\s*\(/,
   /\b(?:EXPECT|ASSERT)_\w+\s*\(/,
   /\brequire\.\w+\s*\(/,
   /\bt\.(?:is|deepEqual|throws|truthy|falsy)\s*\(/,
-  /\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\s*\(/, // Go testing
+  /\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\s*\(/,
 ];
 
-// A test case being declared. A title string is required for the JS forms, so a
-// helper named `test(` called inside a case is not read as a new case.
-const TEST_CASE_MARKERS = [
-  /\b(?:it|test|specify)\s*\(\s*['"`]/,
-  /\b(?:it|specify|scenario|test)\s+['"]/, // RSpec, Minitest, ExUnit
-  /\bdef\s+test\w*/,
-  /\bfunc\s+[Tt]est\w*\s*\(/, // Go, XCTest
-  /\bfunction\s+test\w*\s*\(/, // PHPUnit
-  /@Test\b/,
-  /#\[test\]/,
-  /\[(?:Fact|Theory|Test|TestMethod|TestCase)\b/, // .NET
-  /^\s*Scenario(?: Outline)?:/, // Gherkin
-];
-
-// Comment text never counts: an assertion commented out is not an assertion.
-// Line-level: `//` and `#` comments (not `#[` attributes, not `://` in a URL),
-// `/* … */` on one line, and the inside lines of a block comment.
+// The code on a line, comment text removed: `//` and `#` comments outside
+// quotes (`#` only at the start or after a space, never `#[` or `#!`),
+// `/* … */` on the line, and the inside lines of a block comment.
 function codeOf(line) {
-  if (/^\s*(?:\/?\*)/.test(line)) {
+  // The inside line of a block comment (` * text`); `/* … */` itself is cut below.
+  if (/^\s*\*(?!\/)/.test(line)) {
     return "";
   }
 
-  return line
-    .replace(/\/\*.*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/, "$1")
-    .replace(/(^|\s)#(?![[!]).*$/, "$1");
+  let out = "";
+  let quote = null;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+
+    if (quote) {
+      out += char;
+      if (char === "\\") {
+        out += line[index + 1] || "";
+        index += 1;
+      } else if (char === quote) {
+        quote = null;
+      }
+    } else if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      out += char;
+    } else if (line.startsWith("/*", index)) {
+      const close = line.indexOf("*/", index + 2);
+      if (close === -1) {
+        break;
+      }
+      index = close + 1;
+    } else if (line.startsWith("//", index) || (char === "#" && (index === 0 || /\s/.test(line[index - 1])) && !/[[!]/.test(line[index + 1] || ""))) {
+      break;
+    } else {
+      out += char;
+    }
+  }
+
+  return out;
 }
 
-// Occurrences, not lines (story 19-08): a formatter that splits two assertions
-// written on one line onto two lines changes the line count, not the number of
-// assertions, and must read as neutral — neither stronger nor weaker.
+// Occurrences, not lines: a formatter that splits two assertions written on one
+// line onto two lines changes the line count, not the number of assertions.
 const globalOf = (pattern) => new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
 const countMatching = (lines, patterns) =>
   lines.map(codeOf).reduce(
@@ -283,11 +299,75 @@ const countMatching = (lines, patterns) =>
   );
 const countSkipMarkers = (lines) => countMatching(lines, SKIP_MARKERS);
 
-// One test file's diff: weakened (with its findings), strengthened, or neutral.
-// Story 19-08: a file strengthens only when it adds something — a new file, an
-// assertion, a test case. A rename, a reformat, a typo or an assertion moved
-// between cases is `neutral`: not a weakening, not a proof either.
-function testChangeDirection(file, change, isNew) {
+// The words of test code, for telling new code from moved code: identifiers,
+// numbers, operators and string literals (quote style normalised), with
+// whitespace, comments, brackets, commas and semicolons dropped — what a
+// formatter adds, removes or re-splits.
+const TOKEN = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|[A-Za-z_$][\w$]*|\d[\w.]*|[^\s\w()[\]{},;]+/g;
+
+function tokensOf(lines) {
+  const tokens = [];
+
+  for (const line of lines) {
+    for (const token of codeOf(line).match(TOKEN) || []) {
+      tokens.push(/^["'`]/.test(token) ? `"${token.slice(1, -1)}"` : token);
+    }
+  }
+
+  return tokens;
+}
+
+// A multiset of tokens, consumed as added code is matched against removed code.
+function bagOf(tokens) {
+  const bag = new Map();
+  for (const token of tokens) bag.set(token, (bag.get(token) || 0) + 1);
+  return bag;
+}
+
+// Takes from `bag` every token it holds; returns the tokens it could not cover.
+function consume(bag, tokens) {
+  const left = [];
+
+  for (const token of tokens) {
+    const count = bag.get(token) || 0;
+    if (count > 0) {
+      bag.set(token, count - 1);
+    } else {
+      left.push(token);
+    }
+  }
+
+  return left;
+}
+
+// Story 19-08: a test edit strengthens unless it is provably neutral. Across
+// every test file of the diff together, the code added is matched against the
+// code removed (deleted and moved files included): a file whose added code is
+// all found there only moved, renamed, re-split or reformatted test code. Each
+// file is matched against its own removed code first, then against what is left
+// of the others'. Anything left over is new test code, whatever its framework.
+function strengtheningOf(changes, removedElsewhere) {
+  const pool = bagOf(removedElsewhere);
+  const leftovers = new Map();
+
+  for (const [file, change] of changes) {
+    const own = bagOf(tokensOf(change.removed));
+    leftovers.set(file, consume(own, tokensOf(change.added)));
+
+    // What a file removed and did not take back itself is free for the others.
+    for (const [token, count] of own) pool.set(token, (pool.get(token) || 0) + count);
+  }
+
+  const strengthened = new Set();
+  for (const [file, left] of leftovers) {
+    if (consume(pool, left).length > 0) strengthened.add(file);
+  }
+
+  return strengthened;
+}
+
+// One test file's weakening findings: skips added, assertions removed.
+function weakeningOf(file, change) {
   const delta = (patterns) => countMatching(change.added, patterns) - countMatching(change.removed, patterns);
   const skipsAdded = delta(SKIP_MARKERS);
   const assertionDelta = delta(ASSERTION_MARKERS);
@@ -305,15 +385,7 @@ function testChangeDirection(file, change, isNew) {
     });
   }
 
-  if (findings.length > 0) {
-    return { verdict: "weakened", findings };
-  }
-
-  // A new file adds a test only when it holds code, not when it is empty or
-  // only comments.
-  const holdsCode = change.added.some((line) => codeOf(line).trim() !== "");
-  const adds = (isNew && holdsCode) || assertionDelta > 0 || delta(TEST_CASE_MARKERS) > 0;
-  return { verdict: adds ? "strengthened" : "neutral", findings };
+  return findings;
 }
 
 // Per test file: did this diff make it stronger, weaker, or neither?
@@ -335,48 +407,51 @@ function scanTestWeakening(config) {
     }
   }
 
-  const deleted = new Set(deletedFilesInDiff().filter(isTest));
-  const added = new Set(addedFilesInDiff().filter(isTest));
-  const isNew = new Set(added);
+  const from = base || "HEAD";
+  const oldLines = (file) => runGitText(["show", `${from}:${file}`]).split(/\r?\n/);
+  const deleted = new Map(deletedFilesInDiff().filter(isTest).map((file) => [file, oldLines(file)]));
+  const movedFrom = [];
 
-  // An untracked test file is read whole. If it is a deleted test file moved
-  // (an `mv` not yet staged), it is compared to that file, not counted as new.
-  for (const file of added) {
+  // An untracked test file is read whole. One that replaces a deleted test file
+  // (an `mv` not yet staged) is that file moved: compared to it, and the old
+  // name is neither reported removed nor listed again.
+  for (const file of addedFilesInDiff().filter(isTest)) {
     if (byFile[file]) {
       continue;
     }
 
     const lines = readLines(path.join(cwd, file));
-    const from = base || "HEAD";
-    const moved = closestDeleted(lines, [...deleted], (gone) => runGitText(["show", `${from}:${gone}`]).split(/\r?\n/));
+    const moved = closestDeleted(lines, deleted);
     byFile[file] = { added: lines, removed: moved ? moved.lines : [] };
 
     if (moved) {
       deleted.delete(moved.file);
-      isNew.delete(file);
+      movedFrom.push(moved.file);
     }
   }
 
-  const findings = [...deleted].map((file) => ({ file, signal: "deleted", detail: "the test file was removed" }));
-  const strengthened = [];
-  const neutral = [];
+  const findings = [...deleted.keys()].map((file) => ({ file, signal: "deleted", detail: "the test file was removed" }));
+  const removedElsewhere = [...deleted.values()].flatMap((lines) => tokensOf(lines));
 
-  for (const file of deleted) {
+  for (const file of [...deleted.keys(), ...movedFrom]) {
     delete byFile[file];
   }
 
-  for (const [file, change] of Object.entries(byFile)) {
-    const direction = testChangeDirection(file, change, isNew.has(file));
-    findings.push(...direction.findings);
+  const changes = Object.entries(byFile);
+  const adding = strengtheningOf(changes, removedElsewhere);
+  const strengthened = [];
+  const neutral = [];
 
-    if (direction.verdict === "strengthened") {
-      strengthened.push(file);
-    } else if (direction.verdict === "neutral") {
-      neutral.push(file);
+  for (const [file, change] of changes) {
+    const weakened = weakeningOf(file, change);
+    findings.push(...weakened);
+
+    if (weakened.length === 0) {
+      (adding.has(file) ? strengthened : neutral).push(file);
     }
   }
 
-  return { findings, strengthened, neutral, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
+  return { findings, strengthened, neutral, movedFrom, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
 }
 
 // The merge base, else HEAD when there is one: the single tree the scan diffs
@@ -395,13 +470,14 @@ function readLines(file) {
 }
 
 // The deleted test file an untracked one most resembles, when at least half
-// of their non-blank lines are shared: a move, possibly edited.
-function closestDeleted(lines, deleted, readOld) {
+// of their non-blank lines are shared: a move, possibly edited. Used to name
+// the file once and to read its weakening against what it was; what
+// strengthens is decided by `strengtheningOf`.
+function closestDeleted(lines, deleted) {
   const mine = new Set(lines.map((line) => line.trim()).filter(Boolean));
   let best = null;
 
-  for (const file of deleted) {
-    const old = readOld(file);
+  for (const [file, old] of deleted) {
     const theirs = new Set(old.map((line) => line.trim()).filter(Boolean));
     const shared = [...mine].filter((line) => theirs.has(line)).length;
     const score = shared / Math.max(mine.size, theirs.size, 1);
@@ -418,7 +494,7 @@ function closestDeleted(lines, deleted, readOld) {
 // ones, plus a changed test file it saw no text change in (a pure rename, a
 // binary snapshot).
 function neutralTestFiles(testFiles, weakening) {
-  const decided = new Set([...weakening.strengthened, ...weakening.weakenedFiles]);
+  const decided = new Set([...weakening.strengthened, ...weakening.weakenedFiles, ...(weakening.movedFrom || [])]);
   return [...new Set([...weakening.neutral, ...testFiles.filter((file) => !decided.has(file))])];
 }
 
@@ -427,7 +503,7 @@ function untestedReason(behaviorFiles, weakened, neutral) {
 
   if (neutral.length > 0) {
     return (
-      `${changed} and no test file adds a test or an assertion: ${neutral.length} only changed without one ` +
+      `${changed} and no test file adds new test code: ${neutral.length} only moved, renamed or reformatted ` +
       `(${listFiles(neutral)})${weakened ? ", the others were weakened" : ""}. ` +
       "To prove the change, add a test or an assertion that exercises the change, or produce a coverage report " +
       "(lcov.info or coverage-final.json) so its lines are measured."

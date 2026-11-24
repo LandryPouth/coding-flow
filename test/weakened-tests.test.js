@@ -158,15 +158,13 @@ test('a strengthened test still earns the rung', (t) => {
 test('a neutral edit is not a weakening', (t) => {
   const dir = repo(t, 'weak-neutral');
   const rel = story(dir);
-  // Same assertions, renamed test: not a weakening. Since story 19-08 it is not
-  // a strengthening either: it is reported neutral and does not earn the rung.
+  // Same assertions, renamed test: direction is what is read, not effort.
   commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST.replace("'adds'", "'adds two numbers'") }, 'rename');
 
   const res = run(dir, ['verify', '--story', rel]);
 
-  assert.equal(res.code, 1, res.output);
+  assert.equal(res.code, 0, res.output);
   assert.doesNotMatch(res.output, /Tests weakened/);
-  assert.match(res.output, /\(neutral\)/);
 });
 
 test('one weakened file does not cancel a genuinely strengthened one — but it is still reported', (t) => {
@@ -421,15 +419,18 @@ test('19-08: an assertion moved from a commit into the working tree is still neu
   assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
 });
 
-test('19-08: a test title renamed to start with "should" is neutral', (t) => {
+test('19-08: a test title renamed to start with "should" is new test text, not an assertion removed', (t) => {
+  // Round 3: what strengthens is read from the text, not from markers. A new
+  // title is new test text (it strengthens, as before this story), and a
+  // "should" inside it is no assertion either way.
   const dir = repo(t, 'neutral-should');
   const rel = story(dir);
   commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST.replace("'adds'", "'should add'") }, 'auth change, title');
 
   const res = run(dir, ['verify', '--story', rel]);
 
-  assert.equal(res.code, 1, res.output);
-  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
+  assert.equal(res.code, 0, res.output);
+  assert.doesNotMatch(res.output, /Tests weakened/);
 });
 
 test('19-08: an untracked test file that is empty or only comments does not earn the rung', (t) => {
@@ -454,4 +455,81 @@ test('19-08: an assertion added inside a comment is neutral', (t) => {
 
   assert.equal(res.code, 1, res.output);
   assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
+});
+
+// --- 19-08 review round 2: the rule is inverted --------------------------
+//
+// A test edit strengthens unless it is provably neutral: every token of test
+// code it adds is found in the test code the diff removed, across all test
+// files. No framework marker decides it any more.
+
+const ANY_FRAMEWORK = [
+  ['RSpec one-liner should', 'spec/model_spec.rb', "it { is_expected.to be_valid }\n", "it { is_expected.to be_valid }\nit { should be_persisted }\n"],
+  ['Minitest refute', 'test/math_test.rb', "def test_add\n  assert_equal 3, add(1, 2)\nend\n", "def test_add\n  assert_equal 3, add(1, 2)\n  refute_nil add(0, 0)\nend\n"],
+  ['Minitest spec must_equal', 'test/math_test.rb', "it 'adds' do\n  _(add(1, 2)).must_equal 3\nend\n", "it 'adds' do\n  _(add(1, 2)).must_equal 3\n  _(add(0, 0)).must_equal 0\nend\n"],
+  ['ExUnit refute', 'test/math_test.exs', "test \"adds\" do\n  assert add(1, 2) == 3\nend\n", "test \"adds\" do\n  assert add(1, 2) == 3\n  refute add(0, 0) == 1\nend\n"],
+  ['Go table row', 'math_test.go', "var cases = []struct{ a, b, want int }{\n\t{1, 2, 3},\n}\n", "var cases = []struct{ a, b, want int }{\n\t{1, 2, 3},\n\t{0, 0, 0},\n}\n"],
+  ['Go t.Run', 'math_test.go', "func TestAdd(t *testing.T) {\n}\n", "func TestAdd(t *testing.T) {\n\tt.Run(\"zero\", func(t *testing.T) { check(t, add(0, 0), 0) })\n}\n"],
+  ['test.each row', 'src/math.test.js', "test.each([\n  [1, 2, 3],\n])('adds %i + %i', (a, b, sum) => {\n  expect(add(a, b)).toBe(sum);\n});\n", "test.each([\n  [1, 2, 3],\n  [5, 5, 10],\n])('adds %i + %i', (a, b, sum) => {\n  expect(add(a, b)).toBe(sum);\n});\n"],
+  ['pytest parametrize row', 'tests/test_math.py', "@pytest.mark.parametrize('a,b,s', [\n    (1, 2, 3),\n])\ndef test_add(a, b, s):\n    assert add(a, b) == s\n", "@pytest.mark.parametrize('a,b,s', [\n    (1, 2, 3),\n    (7, 8, 15),\n])\ndef test_add(a, b, s):\n    assert add(a, b) == s\n"],
+  ['JUnit @ValueSource', 'src/MathTest.java', "@ParameterizedTest\n@ValueSource(ints = {1})\nvoid positive(int n) { check(n); }\n", "@ParameterizedTest\n@ValueSource(ints = {1, 42})\nvoid positive(int n) { check(n); }\n"],
+  ['gtest TEST', 'math_test.cc', "TEST(Math, Adds) { EXPECT_EQ(3, add(1, 2)); }\n", "TEST(Math, Adds) { EXPECT_EQ(3, add(1, 2)); }\nTEST(Math, AddsZero) { check(add(0, 0)); }\n"],
+  ['#[tokio::test]', 'tests/math.rs', "#[test]\nfn adds() { check(add(1, 2)); }\n", "#[test]\nfn adds() { check(add(1, 2)); }\n\n#[tokio::test]\nasync fn adds_async() { check(add_async(1, 2).await); }\n"],
+  ['PHPUnit @test docblock', 'tests/MathTest.php', "/** @test */\npublic function adds() { $this->check(add(1, 2)); }\n", "/** @test */\npublic function adds() { $this->check(add(1, 2)); }\n\n/** @test */\npublic function addsZero() { $this->check(add(0, 0)); }\n"],
+  ['FluentAssertions Should()', 'MathTests.cs', "[Fact]\npublic void Adds() { Add(1, 2).Should().Be(3); }\n", "[Fact]\npublic void Adds() { Add(1, 2).Should().Be(3); Add(0, 0).Should().Be(0); }\n"],
+  ['destructured strictEqual', 'src/math.test.js', "const { strictEqual } = require('node:assert');\ntest('adds', () => {\n  strictEqual(add(1, 2), 3);\n});\n", "const { strictEqual } = require('node:assert');\ntest('adds', () => {\n  strictEqual(add(1, 2), 3);\n  strictEqual(add(0, 0), 0);\n});\n"],
+  ['// inside a string', 'src/path.test.js', "test('norm', () => {\n  expect(norm('a/b')).toBe('a/b');\n});\n", "test('norm', () => {\n  expect(norm('a/b')).toBe('a/b');\n  const p = 'a//b'; expect(norm(p)).toBe('a/b');\n});\n"],
+];
+
+for (const [name, file, before, after] of ANY_FRAMEWORK) {
+  test(`19-08: new test code strengthens in any framework — ${name}`, (t) => {
+    const dir = repo(t, 'neutral-any', { [file]: before });
+    const rel = story(dir);
+    commit(dir, { ...BEHAVIOR, [file]: after }, `auth change, ${name}`);
+
+    const res = run(dir, ['verify', '--story', rel]);
+
+    assert.equal(res.code, 0, res.output);
+    assert.match(res.output, /test file\(s\) strengthened/);
+  });
+}
+
+const TWO_CASES = "test('adds', () => {\n  expect(add(1, 2)).toBe(3);\n});\n\ntest('adds zero', () => {\n  expect(add(0, 0)).toBe(0);\n});\n";
+const ONE_CASE = "test('adds', () => {\n  expect(add(1, 2)).toBe(3);\n});\n";
+const OTHER = "test('subtracts', () => {\n  expect(sub(3, 2)).toBe(1);\n});\n";
+const MOVED_CASE = "\ntest('adds zero', () => {\n  expect(add(0, 0)).toBe(0);\n});\n";
+
+test('19-08: a test case moved from one test file into another is neutral', (t) => {
+  const dir = repo(t, 'neutral-cross-file', { 'src/a.test.js': TWO_CASES, 'src/b.test.js': OTHER });
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/a.test.js': ONE_CASE, 'src/b.test.js': OTHER + MOVED_CASE }, 'auth change, case moved');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.doesNotMatch(res.output, /strengthened/);
+  assert.ok(evidenceOf(dir).coverage.neutralTests.includes('src/b.test.js'), JSON.stringify(evidenceOf(dir).coverage));
+});
+
+test('19-08: a test case moved into a new test file is neutral', (t) => {
+  const dir = repo(t, 'neutral-cross-new', { 'src/a.test.js': TWO_CASES });
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/a.test.js': ONE_CASE, 'src/c.test.js': MOVED_CASE.trimStart() }, 'auth change, case moved out');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.doesNotMatch(res.output, /strengthened/);
+  assert.ok(evidenceOf(dir).coverage.neutralTests.includes('src/c.test.js'), JSON.stringify(evidenceOf(dir).coverage));
+});
+
+test('19-08: a file moved with an unstaged mv is named once', (t) => {
+  const dir = repo(t, 'neutral-named-once');
+  const rel = story(dir);
+  commit(dir, BEHAVIOR, 'auth change');
+  fs.renameSync(path.join(dir, 'src', 'math.test.js'), path.join(dir, 'src', 'arith.test.js'));
+
+  run(dir, ['verify', '--story', rel]);
+
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/arith.test.js']);
 });

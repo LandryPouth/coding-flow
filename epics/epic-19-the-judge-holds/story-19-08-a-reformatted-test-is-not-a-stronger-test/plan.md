@@ -83,6 +83,48 @@
   - Limit kept: a test file reading a framework or helper the markers do not
     know reads neutral; the remedy (a coverage report) is in the message.
 
+- **Round 3 decision (2026-11-24, run): the rule is inverted.** Round 2
+  found that every round of markers created new false reds (RSpec
+  `it { should … }`, Minitest `refute_*`/`must_equal`, ExUnit `refute`, Go
+  table rows and `t.Run`, `test.each` and parametrize rows, `@ValueSource`,
+  gtest `TEST(…)`, `#[tokio::test]`, PHPUnit `/** @test */`,
+  FluentAssertions, destructured `strictEqual`) and that a test case moved
+  from one file into another still earned the rung. Markers cannot converge.
+  Now a test edit **strengthens unless it is provably neutral**:
+  - *Provably neutral:* across every test file of the diff together, the
+    test code added is contained in the test code removed (`strengtheningOf`).
+    Compared as a multiset of tokens — identifiers, numbers, operators and
+    string literals with quote style normalised; whitespace, comments,
+    brackets, commas and semicolons dropped — so a reformat, a re-split line
+    (one line into several, several into one), added trailing commas or
+    arrow-parameter parentheses read as neutral. Each file is matched against
+    its own removed code first, then against what the others removed and did
+    not take back, deleted files and unstaged moves included. A fixer's
+    rewrite is judged the same way.
+  - *Anything else that adds test code strengthens*, in any framework — as
+    before this story. An added line of junk in a test file strengthens too:
+    the reviewer and the measured-coverage path are the backstop.
+  - *Weakening is unchanged:* markers stay only there (skips, `.only`,
+    assertions removed, files deleted), counted per occurrence outside
+    comments; comment stripping is now quote-aware, so `//` inside a string
+    is code.
+  - *A new test file* strengthens only with test code not found in a removed
+    test file: empty, comment-only, copied-from-a-deleted-file all read
+    neutral. `closestDeleted` no longer decides strengthening: it only names
+    an unstaged move once and reads its weakening against what it was.
+  - *Moved files are named once:* the old name of an unstaged move is not
+    listed neutral beside the new one.
+  - *Accepted P2:* an assertion inside a string, a docstring or a multi-line
+    comment no longer matters for strengthening (it is text added or moved
+    like any other). Token order is not compared: swapping two arguments
+    reads neutral (a false red, never a false green).
+  - Tests: round 1's marker tests (one per framework form) still pass — new
+    code strengthens. Two tests changed meaning on purpose: "a neutral edit is
+    not a weakening" is back to its original assertion (a renamed title is
+    new test text: it passes, as before this story), and round 1's "title
+    renamed to start with should is neutral" now asserts it is not a
+    weakening and strengthens.
+
 ## Test Plan
 
 Throwaway repos with a high-risk path, a neutral, an added-assertion and a
