@@ -101,6 +101,7 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
+- [ ] 29-04 commands built to evade the guard (after 29-03; from its reviews)
 
 ### Wave 2b — one workspace, several repositories (epic 30) · *release 0.17.0*
 
@@ -226,3 +227,9 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   - Heartbeat cron deleted; recreate it on resume.
 - 2026-11-24 — resumed ("continue et termine tout"); max agents 4. The
   machine rebooted: scratchpad empty, land.sh rewritten (branch -d).
+- 2026-11-24 — 29-03 hit the review cap (4 rounds, new bypasses each). Claim
+  re-scoped (run decision, for the maintainer to review): the guard refuses
+  habitual destructive forms and marks unchecked what it cannot read; forms
+  built to evade it are the sandbox's job. Round 4's 4 P1 fixed anyway;
+  evasion forms moved to new story 29-04. 29-03 restarts a review series
+  under the new claim. 17-04: epics 01–16 archived on develop.
