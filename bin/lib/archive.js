@@ -264,11 +264,15 @@ function buildEntry({ name, sha, stories, date }) {
 // archive maintains it.
 function linksInto(rel) {
   const name = path.posix.basename(rel);
-  const named = git(["grep", "-l", "-F", "-e", name, "--", "."], { allowFail: true }) || "";
+  // `-z` and quotePath off: a non-ASCII path comes back as written, not quoted.
+  const grep = (args) =>
+    (git(["-c", "core.quotePath=false", "grep", "-l", "-z", "-F", ...args], { allowFail: true }) || "")
+      .split("\0")
+      .filter(Boolean)
+      .map(toPortable);
+  const namedFiles = new Set(grep(["-e", name, "--", "."]));
   // A percent-encoded link never shows the name as written: read those too.
-  const encoded = git(["grep", "-l", "-F", "-e", "%", "--", "*.md", "*.markdown"], { allowFail: true }) || "";
-  const namedFiles = new Set(named.split("\n").filter(Boolean).map(toPortable));
-  const candidates = new Set([...namedFiles, ...encoded.split("\n").filter(Boolean).map(toPortable)]);
+  const candidates = new Set([...namedFiles, ...grep(["-e", "%", "--", "*.md", "*.markdown"])]);
   const links = [];
   const mentions = [];
   for (const file of [...candidates].sort()) {
@@ -301,7 +305,9 @@ function linkTargets(markdown) {
     }
     text += `${line}\n`;
   }
-  text = text.replace(/(`+)[\s\S]*?\1/g, "");
+  // A code span closes within its paragraph: a stray backtick must not pair
+  // with one past a blank line and hide the links in between.
+  text = text.replace(/(`+)(?:(?!\n[ \t]*\n)[\s\S])*?\1/g, "");
   const targets = [];
   const inline = /\]\(\s*(<[^>\n]*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
   const reference = /^\s{0,3}\[[^\]\n]+\]:\s*(<[^>\n]*>|\S+)/gm;

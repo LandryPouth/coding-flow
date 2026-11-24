@@ -1,6 +1,6 @@
 # Story 17-04 — coding-flow archives its own finished epics
 
-## Status: in-progress
+## Status: done
 
 The proof that 17-01 to 17-03 work is coding-flow using them on its own
 `epics/`. On 2026-11-10 the gate would have admitted 13 of 15 epics, all but
@@ -202,3 +202,38 @@ they point at nothing.
   ```
 
   Both warnings were in the baseline. Nothing else is reported.
+
+### Round 2 and close (2026-11-24)
+
+The fresh reviewer passed round 2 with no P0 and no P1. They checked that
+doctor is clean, that the refresh is idempotent, and that the 19 anchors
+resolve. They also recovered epics 01, 07 and 13 and found tree hashes
+matching `2592244`.
+
+Two cheap P2s were fixed before the close:
+- **Non-ASCII paths.** `git grep` used to quote them, so a real link in such
+  a file was listed as a mention under a quoted name. The grep now runs with
+  `-z` and `core.quotePath=false`.
+- **Stray backticks.** A code span used to run past a blank line, so a stray
+  backtick could hide a link further down. Code spans now close within their
+  paragraph.
+
+Tests: `a link in a file under a non-ASCII path…` and `a stray backtick does
+not swallow a link…`. Both were red before the fix and are green after.
+
+Known and accepted (P3): links inside indented code blocks and HTML comments
+still count as links. That can only add to the fix list, never hide a link.
+
+Reviews: 2 rounds. The P1 count was 1 in round 1 and 0 in round 2.
+`archive --refresh` ran last, after the status flip.
+
+
+Close-out checks:
+- `npm test`: 1770 tests, 1770 pass.
+- `verify --story`: passed. Evidence:
+  `.coding-flow/runs/2026-11-24T18-44-41-526Z-verify.json`.
+- Review captured: pass, round 2. Evidence:
+  `.coding-flow/runs/2026-11-24T18-44-56-296Z-review.json`.
+- Doctor, run after the last refresh, exit 0. It reports only the two
+  baseline warnings: the global OpenCode install is behind, and there is no
+  `v0.15.0` tag.

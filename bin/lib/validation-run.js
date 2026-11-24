@@ -33,9 +33,10 @@ function resolveStoryDir(story) {
 // Extracts the command lines under "## Commands": the lines of a fenced block, plus
 // labelled bullets (`- Command: `x``) because a model reading "a block" often writes
 // that instead, and verify must not silently find zero commands because of it.
-function parseTestsCommands(testsMarkdown) {
+// `heading` reads another section the same way (`## Fixers`, story 19-05).
+function parseTestsCommands(testsMarkdown, heading = "## commands") {
   const lines = testsMarkdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim().toLowerCase() === "## commands");
+  const start = lines.findIndex((line) => line.trim().toLowerCase() === heading);
 
   if (start === -1) {
     return [];
@@ -74,7 +75,47 @@ function parseTestsCommands(testsMarkdown) {
 
 // Source of the commands, by decreasing priority: explicit config, then the
 // story's plan.md contract, then the usual package.json scripts.
+//
+// Fixers (story 19-05) run before every check and may rewrite files:
+// `validation.fix` from the config whatever source the checks come from, else the
+// `## Fixers` block of the plan when the checks come from it too (and then
+// refused unattended exactly like plan checks). Absent, `fix` is empty and
+// verify runs as it always did.
 function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
+  const resolution = resolveCheckCommands({ storyDir, fresh });
+  const config = readConfig(cwd);
+  const declaredFix = config.validation && Array.isArray(config.validation.fix) ? config.validation.fix : [];
+
+  if (declaredFix.length > 0) {
+    const globalTimeout = config.validation && Number.isFinite(config.validation.timeoutMs) ? config.validation.timeoutMs : null;
+    // Apart from the checks' map: a fixer and a check may share a text
+    // (`npm run lint` as both) and still carry different limits.
+    const fixTimeouts = {};
+    const fix = declaredFix.map((entry) => {
+      const command = typeof entry === "string" ? entry : entry.command;
+      const timeoutMs = typeof entry === "string" ? globalTimeout : entry.timeoutMs || globalTimeout;
+
+      if (timeoutMs) {
+        fixTimeouts[command] = timeoutMs;
+      }
+
+      return command;
+    });
+
+    return { ...resolution, fix, fixSource: "config", fixTimeouts };
+  }
+
+  const planFix = storyDir ? parseTestsCommands(readStoryPart(storyDir, "plan") || "", "## fixers") : [];
+
+  if (resolution.source === "plan.md" && planFix.length > 0) {
+    return { ...resolution, fix: planFix, fixSource: "plan.md", fixTimeouts: {} };
+  }
+
+  // A `## Fixers` block whose checks come from elsewhere is not run: said, not silent.
+  return { ...resolution, fix: [], fixSource: null, fixTimeouts: {}, ...(planFix.length > 0 ? { planFixersIgnored: planFix.length } : {}) };
+}
+
+function resolveCheckCommands({ storyDir = null, fresh = false } = {}) {
   const config = readConfig(cwd);
 
   if (config.validation) {

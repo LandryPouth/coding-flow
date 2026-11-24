@@ -348,6 +348,28 @@ test('every Markdown link form into the epic is a link; code and plain mentions 
   assert.ok(!out.links.includes('docs/other.md'), 'a longer directory name is not a link into the epic');
 });
 
+test('a link in a file under a non-ASCII path is a link, named by its real path', (t) => {
+  const dir = repo(t);
+  write(dir, 'docs/é/acc.md', `See [the epic](../../${EPIC}/index.md).\n`);
+  write(dir, 'docs/é/enc.md', `See [the epic](../../epics/epic%2D08-evidence-levels/index.md).\n`);
+  commit(dir, 'accented');
+
+  const out = JSON.parse(run(dir, ['archive', EPIC, '--json']).output);
+
+  assert.deepStrictEqual(out.links, ['docs/é/acc.md', 'docs/é/enc.md']);
+  assert.deepStrictEqual(out.mentions, []);
+});
+
+test('a stray backtick does not swallow a link in a later paragraph', (t) => {
+  const dir = repo(t);
+  write(dir, 'docs/rope.md', `Use 1\` of rope.\n\n[the epic](../${EPIC}/index.md)\n\nRun \`npm test\`.\n`);
+  commit(dir, 'stray');
+
+  const out = JSON.parse(run(dir, ['archive', EPIC, '--json']).output);
+
+  assert.deepStrictEqual(out.links, ['docs/rope.md']);
+});
+
 test('a user-written INDEX.md is kept and the archived section is appended after it', (t) => {
   const dir = repo(t);
   write(dir, 'epics/INDEX.md', '# My epics\n\nHand-written notes.\n');

@@ -11,7 +11,10 @@ const { execFileSync } = require("child_process");
 
 const { cwd } = require("./context");
 const { policyFingerprint } = require("./policy-fingerprint");
-const { currentTreeToken, captureIdentity } = require("./identity");
+const {
+  currentTreeToken, captureIdentity, workingTreeSnapshot, changedPaths, projectPathsFromTop, snapshotBlob, snapshotRootsDigest,
+} = require("./identity");
+const { isDeepStrictEqual } = require("util");
 const { resolveCoverageFloor } = require("./coverage");
 const {
   storyPartPath,
@@ -44,6 +47,7 @@ const {
   contraryPolicy,
   freshTestsRequired,
   evaluateCoverage,
+  scanTestWeakening,
   readAcceptanceCriteria,
   evaluateContrarySignals,
   NO_CONTRARY,
@@ -201,6 +205,20 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
 // A different limit is a different command contract: a run that passed under a
 // 20 min limit proves nothing about the same command under 1 s. Commands with no
 // declared limit hash exactly as before, so existing proofs stay valid.
+// What a proof's command set is: the checks, preceded by the fixers when there
+// are any (marked, so a fixer and a check of the same text differ). With no
+// fixer this is exactly the old list, and every earlier proof keeps its value.
+const FIXER_LINE = "\u0001fix\u0000";
+const isFixerLine = (line) => line.startsWith(FIXER_LINE);
+
+function provedCommands(resolution) {
+  const fix = resolution.fix || [];
+  const limit = (command) => (resolution.fixTimeouts && resolution.fixTimeouts[command]) || "";
+  return fix.length > 0
+    ? [...fix.map((command) => `${FIXER_LINE}${command}\u0000${limit(command)}`), ...resolution.commands]
+    : resolution.commands;
+}
+
 function commandsFingerprint(commands, timeouts = {}) {
   const lines = commands.map((command) => (timeouts && timeouts[command] ? `${command}\u0000${timeouts[command]}` : command));
 
@@ -324,6 +342,15 @@ function findReusableVerify({
     return null;
   }
 
+  // Story 19-05: with fixers declared a proof also stands for the roots they may
+  // not rewrite, which the tree token leaves out: another story's file put back
+  // unformatted, or a `.coding-flow/` file edited, is a change.
+  const storyRoots = commands.some(isFixerLine) ? fixerRootsDigest(workingTreeSnapshot(cwd)) : null;
+
+  if (commands.some(isFixerLine) && !storyRoots) {
+    return null;
+  }
+
   const untracked = untrackedDigest();
   const storyText = storyDigest(storyDir);
   const fingerprint = commandsFingerprint(commands, timeouts);
@@ -368,7 +395,8 @@ function findReusableVerify({
       (evidence.diffBase ? evidence.diffBase.mergeBase : null) === mergeBase &&
       (evidence.claim ? evidence.claim.kind : null) === claimKind &&
       evidence.untrackedDigest === untracked &&
-      evidence.storyDigest === storyText
+      evidence.storyDigest === storyText &&
+      (evidence.fixerRootsDigest || null) === storyRoots
     ) {
       return { evidence, path: fullPath };
     }
@@ -431,6 +459,196 @@ function executeValidationCommands({ resolution, freshRequired, cleaned, refused
   });
 }
 
+// Fixers (story 19-05) run before the checks, each like any declared command: a
+// red one is a red verify. The files whose content they changed are listed,
+// from two snapshots of the working tree taken around them; null when git cannot
+// say (outside git, before the first commit), never a guessed empty list. Their
+// changes stay in the tree: the checks, and the tree token, see the fixed files.
+//
+// A file a fixer touched is the story's diff, like a hand edit, in every signal:
+// nothing depends on whether the fix is committed yet. A fixer that rewrites
+// `.coding-flow/` or the story's own files is a red run: the config, the story
+// text and its criteria are judged as written, never as a formatter left them.
+// Paths are relative to the project root, like every other path verify prints.
+function runFixers({ resolution, cleaned, storyDir }) {
+  const before = workingTreeSnapshot(cwd);
+  const results = resolution.fix.map((command) => ({
+    ...runValidationCommand(command, {
+      ...commandTimeout({ timeouts: resolution.fixTimeouts }, command),
+      ...(cleaned ? { env: cleaned.env } : {}),
+    }),
+    kind: "fix",
+  }));
+  const after = workingTreeSnapshot(cwd);
+  const changed = changedPaths(cwd, before, after);
+  const harmless = (changed || []).map((file) => ({ file, kind: harmlessRewrite(file, before, after) })).filter(({ kind }) => kind);
+  const fixedFiles = changed && changed.filter((file) => !harmless.some((entry) => entry.file === file));
+  const forbidden = forbiddenFixes(fixedFiles || [], storyDir);
+
+  if (forbidden.length > 0) {
+    results.push({
+      command: "(fixers)",
+      kind: "fix",
+      ok: false,
+      exitCode: null,
+      toolError: `a fixer changed ${forbidden.join(", ")}: .coding-flow/ and story files are judged as written, never rewritten by a fixer. ${FORMATTER_REMEDY}`,
+      durationMs: 0,
+      stdoutTail: "",
+      stderrTail: "",
+    });
+  }
+
+  // What the roots held once the fixers ran: a reuse must find them unmoved.
+  return {
+    results,
+    fixedFiles,
+    reformatted: harmless.filter(({ kind }) => kind === "reformatted").map(({ file }) => file),
+    guardLogs: harmless.filter(({ kind }) => kind === "guard-log").map(({ file }) => file),
+    fixerRootsDigest: fixerRootsDigest(after),
+  };
+}
+
+// The story roots and `.coding-flow/`, minus what changes on its own between two
+// verifies (the run files, the guard's logs).
+function fixerRootsDigest(tree) {
+  return snapshotRootsDigest(cwd, tree, [...STORY_ROOT_DIRS, ".coding-flow"], (file) => file.startsWith(".coding-flow/runs/") || GUARD_LOGS.has(file));
+}
+
+// Under `.coding-flow/` a fixer may reformat, never rewrite: a JSON or JSONL file
+// read back to the same value is "reformatted" (prettier re-indents the run files
+// verify itself wrote), and a guard log may only be the guard's own work during
+// the run ("guard-log"). Anything else is null — a write; a new or removed file
+// included: a forged run file stays red.
+function harmlessRewrite(file, before, after) {
+  if (!file.startsWith(".coding-flow/")) {
+    return null;
+  }
+
+  const old = snapshotBlob(cwd, before, file);
+  const now = snapshotBlob(cwd, after, file);
+
+  if (GUARD_LOGS.has(file)) {
+    return now !== null && (old === null || guardLogGrew(old, now)) ? "guard-log" : null;
+  }
+
+  return old !== null && now !== null && sameJsonValue(file, old, now) ? "reformatted" : null;
+}
+
+// What the guard does to its log (guard.js): appends a line, and past 256 KB keeps
+// its last 200 lines before appending. Old bytes a prefix of the new, or that
+// exact trim followed by appends; a fixer's truncation or edit is neither.
+const GUARD_LOG_TRIM = { maxBytes: 256 * 1024, keptLines: 200 };
+
+function guardLogGrew(old, now) {
+  if (now.subarray(0, old.length).equals(old)) {
+    return true;
+  }
+
+  const kept = old.toString("utf8").split("\n").filter(Boolean).slice(-GUARD_LOG_TRIM.keptLines);
+  const tail = Buffer.from(`${kept.join("\n")}\n`);
+  return old.length > GUARD_LOG_TRIM.maxBytes && kept.length > 0 && now.subarray(0, tail.length).equals(tail);
+}
+
+function sameJsonValue(file, old, now) {
+  const lines = (bytes) => bytes.toString("utf8").split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line));
+  const parse = file.endsWith(".jsonl") ? lines : file.endsWith(".json") ? (bytes) => JSON.parse(bytes.toString("utf8")) : null;
+
+  try {
+    return parse !== null && isDeepStrictEqual(parse(old), parse(now));
+  } catch {
+    return false;
+  }
+}
+
+// Test files the gate counted as strengthened that a fixer also rewrote in this
+// run: said, never excused nor refused — the verdict is the gate's (its neutral
+// rule is story 19-08's), so a reuse or a status reading it later stays sound.
+function fixerStrengthened(coverage, fixing, config) {
+  if (!fixing || !fixing.fixedFiles || fixing.fixedFiles.length === 0 || !coverage || coverage.mode !== "test-file") {
+    return [];
+  }
+
+  // The gate names files from the repository top: brought to the project root's
+  // form, the one fixedFiles is in.
+  return matchFixerStrengthened(scanTestWeakening(config).strengthened, fixing.fixedFiles, projectPathsFromTop(cwd));
+}
+
+function matchFixerStrengthened(strengthened, fixedFiles, toProject) {
+  const fixed = new Set(fixedFiles);
+  return strengthened.map(toProject).filter((file) => fixed.has(file));
+}
+
+const fixingFields = ({ fixedFiles, reformatted, guardLogs, fixerRootsDigest: digest }) => ({
+  fixedFiles,
+  ...(reformatted.length > 0 ? { reformatted } : {}),
+  ...(guardLogs.length > 0 ? { guardLogs } : {}),
+  fixerRootsDigest: digest,
+});
+
+const withFixerStrengthened = (files) => (files.length > 0 ? { fixerStrengthened: files } : {});
+
+// Story 19-05: the fixers run before anything reads the tree or the diff — the
+// fresh-test requirement, the commands (package.json may be reformatted), the
+// risk, the coverage, the story text, the policy — so one tree gets one verdict.
+// Resolved here only to know which fixers to run and whether they may run (no
+// check, or refused unattended: none run). `land` passes runFix: false: on the
+// target checkout a fixer would leave it dirty.
+function fixFirst({ storyDir, unattended, allowPlanCommands, cleaned, announce, runFix }) {
+  const plan = resolveValidationCommands({ storyDir });
+
+  if (!runFix || plan.fix.length === 0 || plan.commands.length === 0) {
+    return null;
+  }
+
+  const refused = planCommandsRefusal({ resolution: plan, unattended, allowPlanCommands });
+  announcePlanCommands({ announce, refused, resolution: plan });
+  return refused ? null : runFixers({ resolution: plan, cleaned, storyDir });
+}
+
+// The guard's own logs: written by the guard during a run (a parallel tool call,
+// the OpenCode plugin), never by a fixer worth naming.
+const GUARD_LOGS = new Set([".coding-flow/denials.jsonl", ".coding-flow/guard-unchecked.jsonl"]);
+// Where stories live: a fixer may rewrite none of them (another story's criteria,
+// an epic index), nor the story in scope wherever it lives, nor `.coding-flow/`.
+const STORY_ROOT_DIRS = ["epics", "specs", ".specify"];
+const STORY_ROOTS = STORY_ROOT_DIRS.map((root) => `${root}/`);
+const FORMATTER_REMEDY =
+  "If it only reformatted them, add `.coding-flow/`, `epics/`, `specs/` and `.specify/` to your formatter's ignore file (e.g. `.prettierignore`).";
+
+function forbiddenFixes(fixedFiles, storyDir) {
+  const storyPrefix = storyDir ? `${normalizePortable(path.relative(cwd, storyDir))}/` : null;
+  return fixedFiles.filter(
+    (file) => file.startsWith(".coding-flow/") || STORY_ROOTS.some((root) => file.startsWith(root)) || (storyPrefix && file.startsWith(storyPrefix)),
+  );
+}
+
+// A fixer from plan.md is a plan command: refused unattended on the same terms.
+function planCommandsRefusal({ resolution, unattended, allowPlanCommands }) {
+  const planCommands = [...planFixers(resolution), ...(resolution.source === "plan.md" ? resolution.commands : [])];
+
+  return planCommands.length > 0 && unattended && !allowPlanCommands && !planCommands.every(isProjectScriptInvocation)
+    ? PLAN_COMMANDS_REFUSAL
+    : null;
+}
+
+const planFixers = (resolution) => (resolution.fixSource === "plan.md" ? resolution.fix : []);
+
+function announcePlanCommands({ announce, refused, resolution }) {
+  if (announce && resolution.planFixersIgnored) {
+    log(`Warning: the ## Fixers block of plan.md is not run (${resolution.planFixersIgnored} command(s)): the checks come from ${resolution.source}, so declare fixers in validation.fix.`);
+  }
+
+  if (!announce || refused || resolution.source !== "plan.md") {
+    return;
+  }
+
+  log("Running commands from plan.md (not from .coding-flow/config.json):");
+
+  for (const command of [...planFixers(resolution), ...resolution.commands]) {
+    log(`  ${command}`);
+  }
+}
+
 function evaluateClaimFor({ refused, storyDir, config, claim, resolution, commandsOk, startedAt }) {
   return refused
     ? null
@@ -463,33 +681,27 @@ function verifyStoryOnce({
   skipCoverage = false,
   unattended = isUnattended(),
   allowPlanCommands = false,
-  cleanEnv = false, redAtBase = false, announce = false,
+  cleanEnv = false, redAtBase = false, announce = false, runFix = true,
 } = {}) {
   const resolvedStory = story ? resolveProjectPath(story) : null;
   const storyDir = resolveStoryDir(story);
   setDiffBaseRequest({ flagBase: diffBaseFlag(), story });
+  const cleaned = cleanEnv ? cleanEnvironment() : null;
+  // The fixers run first: everything below reads the tree they leave.
+  const fixing = fixFirst({ storyDir, unattended, allowPlanCommands, cleaned, announce, runFix });
   const { config } = readHarnessConfig();
   const freshRequired = freshTestsRequired({ storyDir, config });
   const resolution = resolveValidationCommands({ storyDir, fresh: freshRequired });
-  const refused =
-    resolution.source === "plan.md" && unattended && !allowPlanCommands && !resolution.commands.every(isProjectScriptInvocation)
-      ? PLAN_COMMANDS_REFUSAL
-      : null;
-  const cleaned = cleanEnv ? cleanEnvironment() : null;
-
-  if (announce && !refused && resolution.source === "plan.md") {
-    log("Running commands from plan.md (not from .coding-flow/config.json):");
-
-    for (const command of resolution.commands) {
-      log(`  ${command}`);
-    }
-  }
+  const refused = planCommandsRefusal({ resolution, unattended, allowPlanCommands });
+  announcePlanCommands({ announce: announce && !fixing, refused, resolution });
 
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const results = executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" });
-  const commandsOk = results.length > 0 && results.every((item) => item.ok);
+  const checks = executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" });
+  const results = fixing ? [...fixing.results, ...checks] : checks;
+  // A fixer proves nothing: with no check there is no green, whatever the fixers did.
+  const commandsOk = checks.length > 0 && results.every((item) => item.ok);
   // Only evaluated on a green suite: a red one is already not a proof, and
   // telling someone their failing story also lacks tests is noise.
   const coverage = !commandsOk
@@ -518,7 +730,7 @@ function verifyStoryOnce({
     commandSource: resolution.source,
     commandsFound: resolution.commands.length,
     // Recorded so a later verify can recognise this proof as still applicable.
-    commandsFingerprint: commandsFingerprint(resolution.commands, resolution.timeouts),
+    commandsFingerprint: commandsFingerprint(runFix ? provedCommands(resolution) : resolution.commands, resolution.timeouts),
     // The floor this verdict was judged against. `.coding-flow/` is outside the
     // tree token, so without it an edit to the floor would leave a stale "ok".
     coverageFloor: resolveCoverageFloor(config),
@@ -529,6 +741,9 @@ function verifyStoryOnce({
     environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
     unattended,
     ...(refused ? { refused } : {}),
+    ...(fixing ? fixingFields(fixing) : {}),
+    ...withFixerStrengthened(fixerStrengthened(coverage, fixing, config)),
+    ...(resolution.planFixersIgnored ? { planFixersIgnored: resolution.planFixersIgnored } : {}),
     commandsOk,
     // Which base every diff-derived signal below was measured from: a surprising
     // coverage or risk verdict is explained by this line before anything else.
@@ -549,6 +764,8 @@ module.exports = {
   buildHarnessPreflight,
   checkStoryEvidence,
   commandsFingerprint,
+  provedCommands,
+  matchFixerStrengthened,
   findReusableVerify,
   writeVerifyEvidence,
   verifyStoryOnce,

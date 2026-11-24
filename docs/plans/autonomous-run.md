@@ -97,7 +97,8 @@ Lane A: 26-06 `ai-flow rules` → 26-03 `docs check` → 26-07 we need you
 Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) → 28-01 ideas
 
 - [ ] 26-06  - [ ] 26-03  - [ ] 26-07
-- [ ] 19-05  - [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
+- [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
+- [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
 - [ ] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24; runs now, own lane: review.js, status, skills)
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
@@ -243,3 +244,6 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   review, not by verify. epic-run already does it (step 4b); Coding Flow did
   not. New story 19-09 (guard in `review capture`, skills paragraph), run now
   ahead of 20-04, which keeps the automatic rounds.
+- 2026-11-24 — 19-05 landed (verify runs the declared fixers first; a fixer
+  write to tests, story roots or `.coding-flow/` is red; real prettier 3
+  checked by the last reviewer). Two review series: 4 rounds, re-scope, 4 rounds.
