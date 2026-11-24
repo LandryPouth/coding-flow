@@ -49,103 +49,113 @@ function stringToken(raw) {
 // token, in order. State crosses lines: block comments, triple-quoted strings
 // and template literals.
 function lex(lines) {
-  const tokens = [];
-  const codeLines = [];
-  const stack = [{ mode: "code", depth: 0 }];
-  let comment = false;
-  let triple = null;
+  const state = { tokens: [], stack: [{ mode: "code", depth: 0 }], comment: false, triple: null, code: "", segment: "" };
+  const codeLines = lines.map((line) => lexLine(state, line));
+  return { tokens: state.tokens, codeLines };
+}
 
-  for (const line of lines) {
-    let code = "";
-    let segment = "";
-    const flush = () => {
-      for (const token of segment.match(CODE_TOKEN) || []) {
-        if (!DROPPED.has(token)) tokens.push({ text: /^[\d.]/.test(token) ? canonicalNumber(token) : token, string: false });
-      }
-      code += segment;
-      segment = "";
-    };
-    const closeString = (raw) => {
-      flush();
-      tokens.push(stringToken(raw));
-      code += '""';
-    };
+function lexLine(state, line) {
+  state.code = "";
+  state.segment = "";
 
-    if (!comment && !triple && stack.length === 1 && /^\s*\*/.test(line)) {
-      codeLines.push("");
-      continue;
-    }
-
-    let index = 0;
-    while (index < line.length) {
-      const frame = stack[stack.length - 1];
-      const char = line[index];
-
-      if (comment) {
-        const close = line.indexOf("*/", index);
-        comment = close === -1;
-        index = comment ? line.length : close + 2;
-      } else if (triple) {
-        const close = line.indexOf(triple.quote, index);
-        if (close === -1) {
-          triple.text += `${line.slice(index)}\n`;
-          index = line.length;
-        } else {
-          closeString(triple.text + line.slice(index, close));
-          triple = null;
-          index = close + 3;
-        }
-      } else if (frame.mode === "template") {
-        if (char === "\\") {
-          frame.text += line.slice(index, index + 2);
-          index += 2;
-        } else if (char === "`" || line.startsWith("${", index)) {
-          if (frame.text) closeString(frame.text);
-          frame.text = "";
-          if (char === "`") stack.pop();
-          else stack.push({ mode: "code", depth: 0 });
-          index += char === "`" ? 1 : 2;
-        } else {
-          frame.text += char;
-          index += 1;
-        }
-      } else if (line.startsWith("/*", index)) {
-        flush();
-        comment = true;
-        index += 2;
-      } else if (line.startsWith("//", index) || (char === "#" && (index === 0 || /\s/.test(line[index - 1])) && !/[[!]/.test(line[index + 1] || ""))) {
-        break;
-      } else if (line.startsWith('"""', index) || line.startsWith("'''", index)) {
-        flush();
-        triple = { quote: line.slice(index, index + 3), text: "" };
-        index += 3;
-      } else if ((char === '"' || char === "'") && closingQuote(line, index) !== -1) {
-        const close = closingQuote(line, index);
-        closeString(line.slice(index + 1, close));
-        index = close + 1;
-      } else if (char === "`") {
-        flush();
-        stack.push({ mode: "template", text: "" });
-        index += 1;
-      } else if (stack.length > 1 && char === "}" && frame.depth === 0) {
-        flush();
-        stack.pop();
-        index += 1;
-      } else {
-        if (stack.length > 1 && char === "{") frame.depth += 1;
-        if (stack.length > 1 && char === "}") frame.depth -= 1;
-        segment += char;
-        index += 1;
-      }
-    }
-
-    flush();
-    const open = stack[stack.length - 1];
-    if (open.mode === "template") open.text += "\n";
-    codeLines.push(code);
+  if (!state.comment && !state.triple && state.stack.length === 1 && /^\s*\*/.test(line)) {
+    return "";
   }
 
-  return { tokens, codeLines };
+  let index = 0;
+  while (index < line.length) {
+    const frame = state.stack[state.stack.length - 1];
+    if (state.comment) index = stepComment(state, line, index);
+    else if (state.triple) index = stepTriple(state, line, index);
+    else if (frame.mode === "template") index = stepTemplate(state, frame, line, index);
+    else index = stepCode(state, frame, line, index);
+  }
+
+  flush(state);
+  const open = state.stack[state.stack.length - 1];
+  if (open.mode === "template") open.text += "\n";
+  return state.code;
+}
+
+// The code collected so far on this line, as tokens.
+function flush(state) {
+  for (const token of state.segment.match(CODE_TOKEN) || []) {
+    if (!DROPPED.has(token)) state.tokens.push({ text: /^[\d.]/.test(token) ? canonicalNumber(token) : token, string: false });
+  }
+  state.code += state.segment;
+  state.segment = "";
+}
+
+function closeString(state, raw) {
+  flush(state);
+  state.tokens.push(stringToken(raw));
+  state.code += '""';
+}
+
+function stepComment(state, line, index) {
+  const close = line.indexOf("*/", index);
+  state.comment = close === -1;
+  return state.comment ? line.length : close + 2;
+}
+
+function stepTriple(state, line, index) {
+  const close = line.indexOf(state.triple.quote, index);
+  if (close === -1) {
+    state.triple.text += `${line.slice(index)}\n`;
+    return line.length;
+  }
+  closeString(state, state.triple.text + line.slice(index, close));
+  state.triple = null;
+  return close + 3;
+}
+
+function stepTemplate(state, frame, line, index) {
+  const char = line[index];
+  if (char === "\\") {
+    frame.text += line.slice(index, index + 2);
+    return index + 2;
+  }
+  if (char === "`" || line.startsWith("${", index)) {
+    if (frame.text) closeString(state, frame.text);
+    frame.text = "";
+    if (char === "`") state.stack.pop();
+    else state.stack.push({ mode: "code", depth: 0 });
+    return index + (char === "`" ? 1 : 2);
+  }
+  frame.text += char;
+  return index + 1;
+}
+
+const isLineComment = (line, index) =>
+  line.startsWith("//", index) || (line[index] === "#" && (index === 0 || /\s/.test(line[index - 1])) && !/[[!]/.test(line[index + 1] || ""));
+
+// One step through code; returns the next index (the line's end at a comment).
+function stepCode(state, frame, line, index) {
+  const char = line[index];
+  const inTemplate = state.stack.length > 1;
+  const close = char === '"' || char === "'" ? closingQuote(line, index) : -1;
+
+  if (isLineComment(line, index)) return line.length;
+  if (line.startsWith('"""', index) || line.startsWith("'''", index) || line.startsWith("/*", index)) {
+    flush(state);
+    if (char === "/") state.comment = true;
+    else state.triple = { quote: line.slice(index, index + 3), text: "" };
+    return index + (char === "/" ? 2 : 3);
+  }
+  if (close !== -1) {
+    closeString(state, line.slice(index + 1, close));
+    return close + 1;
+  }
+  if (char === "`" || (inTemplate && char === "}" && frame.depth === 0)) {
+    flush(state);
+    if (char === "`") state.stack.push({ mode: "template", text: "" });
+    else state.stack.pop();
+    return index + 1;
+  }
+  if (inTemplate && char === "{") frame.depth += 1;
+  if (inTemplate && char === "}") frame.depth -= 1;
+  state.segment += char;
+  return index + 1;
 }
 
 // The index of the quote closing the one at `start` on the same line, or -1:
