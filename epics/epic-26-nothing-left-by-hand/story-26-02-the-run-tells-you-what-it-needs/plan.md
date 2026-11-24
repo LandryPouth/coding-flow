@@ -16,6 +16,24 @@
 
 ## Decisions
 
+- **Split (run decision, 2026-11-24): the reader ships first.** `ai-flow todo`
+  needs nothing that is not there; `notify.command` lives in the user global
+  config, which does not exist until 24-02. This pass ships `bin/lib/todo.js`,
+  the `todo` command, `todo.headings` and their tests; the notify criteria are
+  `[~]` and owned by the notify half, run after 24-02 (`notify.js`,
+  `machine-config.js`, `run.js`, the doctor warning).
+- **One reader for 26-07**: `bin/lib/todo.js` exports `collectTodos(root,
+  { headings })`, `todoHeadings(config)`, `TODO_KINDS` and
+  `DEFAULT_TODO_HEADINGS`. Item kinds: `maintainer`, `needs-you`,
+  `human-owner`, `deferred`; each item has `text`, `source`, and `story` when it
+  comes from one.
+- **Parsing**: a heading counts at any level, case-insensitive; a section ends at
+  the next heading of the same or a higher level; headings and list items inside
+  fenced code are examples; a line indented under an item continues it. A
+  `## Needs you` written as prose is one item. `Owner: human` is read anywhere in
+  the story's files; a `done` story is not listed.
+- **Oldest first** = the epic's number (`epic-9` before `epic-10`), then name.
+
 - **stdin JSON, not arguments**: no quoting bugs, no shell injection from a
   story title.
 
@@ -26,8 +44,9 @@ config attempt; fixture epics with to-dos, Needs you, custom heading.
 
 ## Acceptance Traceability
 
-- 1–3 → `test/notify.test.js`
-- 4–5 → `test/todo.test.js`
+- 1–3 → deferred `[~]` (notify half, after 24-02)
+- 4 → `test/todo.test.js::two epics with maintainer to-dos and a Needs you story are all listed, grouped by epic`
+- 5 → `test/todo.test.js::a project's own heading set in todo.headings is listed too`
 
 ## Commands
 

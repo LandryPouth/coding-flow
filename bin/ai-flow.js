@@ -90,6 +90,7 @@ const {
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
+const { todoCommand } = require("./lib/todo");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { recoverScan } = require("./lib/recover");
 const { harnessCommand, ensureHarnessConfig, registerStoryLocator } = require("./lib/harness");
@@ -859,6 +860,8 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   });
 } else if (command === "next") {
   nextCommand({ flags });
+} else if (command === "todo") {
+  todoCommand({ json: flags.has("--json") });
 } else if (command === "bootstrap") {
   if (!flags.has("--scan")) {
     fail("bootstrap currently requires --scan");
