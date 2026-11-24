@@ -154,11 +154,17 @@ function loadPolicy(root) {
 // prefixes, word by word.
 const DESTRUCTIVE_MODES = ["deny", "warn", "off"];
 
+// An entry that names no command (`*`) or only a verb (`rm *`) would turn the check
+// off for it: ignored, and named in the refusal.
+const TOO_BROAD = (entry) => /^\s*(?:\S+\s+)?\*\s*$/.test(entry);
+
 function destructivePolicy(config) {
   const valid = config && typeof config === "object" && !Array.isArray(config);
+  const entries = valid && Array.isArray(config.allowDestructive) ? config.allowDestructive.filter((entry) => typeof entry === "string" && entry.trim()) : [];
   return {
     destructiveCommands: valid && DESTRUCTIVE_MODES.includes(config.destructiveCommands) ? config.destructiveCommands : "deny",
-    allowDestructive: valid && Array.isArray(config.allowDestructive) ? config.allowDestructive.filter((entry) => typeof entry === "string" && entry.trim()) : [],
+    allowDestructive: entries.filter((entry) => !TOO_BROAD(entry)),
+    ignoredAllow: entries.filter(TOO_BROAD),
     primaryLocked: Boolean(valid && config.worktrees && typeof config.worktrees === "object" && config.worktrees.primaryLocked === true),
   };
 }
@@ -1091,9 +1097,18 @@ const destructiveHost = {
   home: () => os.homedir(),
   onPath,
   // `{ value }`: the alias' expansion, null when `name` is none; `{ issue }` when git did not answer.
+  // Only exit 1 means "no such alias"; any other failure is no answer.
   gitAlias: (cwd, name) => {
-    const { out, issue } = gitNow(cwd, ["config", "--get", `alias.${name}`]);
-    return issue ? { issue } : { value: out === null ? null : out.replace(/\r?\n$/, "") };
+    const { out, issue, status } = gitNow(cwd, ["config", "--get", `alias.${name}`]);
+    if (issue || (out === null && status !== 1)) {
+      return { issue: issue || "git did not answer for the alias" };
+    }
+    return { value: out === null ? null : out.replace(/\r?\n$/, "") };
+  },
+  // Where git runs a `!` alias: the work tree's top; null when git does not say.
+  gitTop: (cwd) => {
+    const { out } = gitNow(cwd, ["rev-parse", "--show-toplevel"]);
+    return out ? out.trim() : null;
   },
 };
 
@@ -1110,7 +1125,7 @@ function gitNow(cwd, args) {
     if (/dubious ownership|safe\.directory/.test(String((err && err.stderr) || ""))) {
       return { out: null, issue: GIT_REFUSED };
     }
-    return { out: null };
+    return { out: null, status: err && err.status };
   }
 }
 
@@ -1220,7 +1235,8 @@ function judgeDestructive(ctx, { findings, unchecked }) {
     if (!settled.applies) {
       continue;
     }
-    const reason = destructiveReason(finding, settled.detail);
+    const ignored = policy.ignoredAllow.length ? ` (ignored allowDestructive entries, too broad: ${policy.ignoredAllow.map((entry) => JSON.stringify(entry)).join(", ")})` : "";
+    const reason = destructiveReason(finding, settled.detail) + ignored;
     if (policy.destructiveCommands === "warn") {
       warnings.push(reason);
     } else {

@@ -306,6 +306,23 @@ two-step git alias (`git config alias.x '!…'`, then `git x`), script files
 P2, to 29-04 (planned by the run): `echo "DROP DATABASE x" | psql`, `psql -c 'DROP
 TABLE/SCHEMA … CASCADE'`, `git rm -f` or a plain `rm` of a modified tracked file.
 
+### New review series, round 2 (1 P1)
+
+- **D44 — A `!` alias is read at the work tree's top**, where git runs it
+  (`git rev-parse --show-toplevel` of the command's directory, the host's
+  `gitTop`): `alias.discard=!git checkout -- .` called from a clean `sub/` sees the
+  modified top. Top unknown → null directory (discard-all and clean still refuse;
+  a named path is unchecked).
+- **D45 — Only git's exit 1 means "no such alias".** Any other failure
+  (`git -C /nonexistent rh`, a refused repository) is unchecked, as D42 said.
+- **D46 — An `allowDestructive` entry that is a bare `*` or a verb and `*`
+  (`rm *`) is ignored**, and every refusal names it, so the human sees why their
+  entry did nothing. `git clean -fdX *` (more than a verb) still works.
+
+To 29-04: the alias lookup ignores a `GIT_DIR=`/`GIT_CONFIG_GLOBAL=` prefix on the
+command. Accepted noise, strict mode only: `git submodule foreach 'git checkout
+main && git pull'` is unchecked (a branch change in an unknown directory).
+
 ## Security
 
 - **Who can lift a refusal?** Only a human edit of `harness.json`. An env var, a

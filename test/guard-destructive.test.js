@@ -878,3 +878,31 @@ test('S1-c: allowDestructive is the exact command; a trailing * allows more word
   expectAll(dir, 'allow', ['rm -rf node_modules', 'git clean -fdX', 'git clean -fdX -- build']);
   expectAll(dir, 'deny', ['rm -rf node_modules ~', 'rm -rf node_modules build', 'git clean -fdx']);
 });
+
+// Series round 2.
+
+test('S2-1: a ! alias runs from the repository top, wherever it is called', (t) => {
+  const dir = repo(t);
+  fs.mkdirSync(path.join(dir, 'sub'));
+  git(dir, 'config', 'alias.discard', '!git checkout -- .');
+  const sub = path.join(dir, 'sub');
+  assert.equal(run(dir, 'git discard', sub).decision, 'deny', 'a.txt at the top is modified: the alias would wipe it');
+  assert.equal(run(dir, 'git discard').decision, 'deny');
+});
+
+test('S2-2: an alias lookup git cannot answer is unchecked, not "no alias"', (t) => {
+  const dir = repo(t);
+  git(dir, 'config', 'alias.rh', 'reset --hard');
+  assert.equal(run(dir, 'git -C /nonexistent-coding-flow-dir rh').decision, 'unchecked');
+  assert.equal(run(dir, 'git nothing-here').decision, 'allow', 'git answering "no such alias" is no alias');
+});
+
+test('S2-3: an allowDestructive entry that is a bare * or a verb and * is ignored, and the refusal says so', (t) => {
+  const all = repo(t, { allowDestructive: ['*'] });
+  const result = run(all, 'rm -rf build');
+  assert.equal(result.decision, 'deny');
+  assert.match(result.reason, /ignored allowDestructive entr/);
+  const verb = repo(t, { allowDestructive: ['rm *', 'git clean -fdX *'] });
+  expectAll(verb, 'deny', ['rm -rf ~', 'rm -rf build']);
+  expectAll(verb, 'allow', ['git clean -fdX -- build']);
+});

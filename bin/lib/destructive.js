@@ -243,7 +243,8 @@ function readGitAlias(out, sub, rest, dir, ctx) {
   const value = found.value.trim();
   const next = { ...ctx, aliases: depth + 1 };
   if (value.startsWith("!")) {
-    readScript(out, [value.slice(1), ...rest].join(" "), dir, next);
+    // git runs it from the work tree's top; unknown, the directory is null.
+    readScript(out, [value.slice(1), ...rest].join(" "), ctx.host.gitTop(dir), next);
   } else {
     readGit(out, [...tokenize(value), ...rest], dir, next);
   }
@@ -1155,7 +1156,7 @@ function readDestructive(command, { cwd, host }) {
   if (typeof command !== "string" || !command.trim()) {
     return { findings: [], unchecked: [], touched: [], substituted: [] };
   }
-  const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), ...host };
+  const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), gitTop: () => null, ...host };
   return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0 });
 }
 
