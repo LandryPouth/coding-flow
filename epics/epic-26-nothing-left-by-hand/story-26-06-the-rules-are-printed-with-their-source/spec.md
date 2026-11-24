@@ -27,15 +27,18 @@ code inconsistencies it found are fixed.
 
 ## Acceptance Criteria
 
-- [ ] Given no config, then `ai-flow rules` lists every registry key with
+- [x] Given no config, then `ai-flow rules` lists every registry key with
       source `default`; given a project value, then source `project`.
-- [ ] Given WSL, then `run.maxAgents` shows `auto: WSL detected → 2`.
-- [ ] Given a registry default changed without the doc, then the doc test
+- [~] Given WSL, then `run.maxAgents` shows `auto: WSL detected → 2`.
+      *Deferred to 24-02 (plan.md D2): the key is not shipped, and the edge
+      case below keeps planned keys out. The `auto` source ships with
+      `coverageFloor.high` (`auto: mode standard → evidence`).*
+- [x] Given a registry default changed without the doc, then the doc test
       fails and names the key.
-- [ ] Given the land lock sizing, then it reads the single timeout constant.
-- [ ] Given `init`, then `harness.json` contains `coverageFloor` and
+- [x] Given the land lock sizing, then it reads the single timeout constant.
+- [x] Given `init`, then `harness.json` contains `coverageFloor` and
       `failOnContrarySignals` with their defaults.
-- [ ] Given `templates/RULES.md` and `skills/flow-run/SKILL.md`, then their
+- [x] Given `templates/RULES.md` and `skills/flow-run/SKILL.md`, then their
       context budgets match.
 
 ## Edge Cases

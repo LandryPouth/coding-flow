@@ -67,7 +67,7 @@ budget text compared between template and skill.
 
 ## Acceptance Traceability
 
-- 1–6 → `test/rules-registry.test.js`
+One line per criterion, in `tasks.md` (`## Acceptance Traceability`).
 
 ## Commands
 
