@@ -33,8 +33,9 @@ stand-in for epic 20:
 
 ## Rules
 
-- At most 2 agents at once (implementers and reviewers together); two lanes
-  run in parallel only when their files are disjoint.
+- At most 4 agents at once since 2026-11-24 (the maintainer: the machine is
+  free; was 2), implementers and reviewers together; two stories run in
+  parallel only when their files are disjoint.
 - TMPDIR under the session scratchpad, never inside a repository.
 - Every review brief says: experiments only in a throwaway repo, as
   `set -euo pipefail; D=$(mktemp -d) && cd "$D" && …` — never `;` after a
@@ -223,3 +224,5 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
     verify, then round 4 (the last) by a new reviewer.
   - 17-04 waits for an agent slot; 19-08 planned after 19-05; 26-06 after 19-05.
   - Heartbeat cron deleted; recreate it on resume.
+- 2026-11-24 — resumed ("continue et termine tout"); max agents 4. The
+  machine rebooted: scratchpad empty, land.sh rewritten (branch -d).
