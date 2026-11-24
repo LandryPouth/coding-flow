@@ -944,6 +944,9 @@ test('S3-2: after one git timeout, the other git lookups of the same decision ar
   const took = Date.now() - started;
   assert.equal(result.decision, 'unchecked');
   assert.ok(took < 4500, `one timeout, not four: ${took} ms`);
+  // The budget is per decision: with a git that answers, the next one looks up again.
+  process.env.PATH = process.env.PATH.split(path.delimiter).slice(1).join(path.delimiter);
+  assert.equal(run(dir, 'git nothing-here').decision, 'allow', 'the timeout budget resets on the next decision');
 });
 
 test('S3-3: a trailing * needs an operand before it; verb and flags alone are ignored', (t) => {
@@ -953,7 +956,8 @@ test('S3-3: a trailing * needs an operand before it; verb and flags alone are ig
   assert.match(run(dir, 'rm -rf build').reason, /"rm -rf \*", "git clean \*", "git clean -fdX \*"/);
 });
 
-test('S3-4: a refusal names a substituted operand whole', (t) => {
+test('S3-4: a refusal names a substituted operand whole, and keeps the quotes of a word with spaces', (t) => {
   const dir = repo(t);
   assert.match(run(dir, 'rm -rf $(ls)').reason, /rm -rf \$\(ls\)/);
+  assert.match(run(dir, "psql -c 'DROP DATABASE mydb'").reason, /psql -c 'DROP DATABASE mydb'/);
 });

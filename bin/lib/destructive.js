@@ -488,8 +488,12 @@ function readDownload(out, command, cwd, segments, index) {
 
 // --- one command, then the line --------------------------------------------------------
 
+// The command as the refusal shows it: a word with a space or a quote keeps its quotes
+// (`psql -c 'DROP DATABASE mydb'`).
+const quoted = (word) => (/[\s'"]/.test(word) ? `'${word.replace(/'/g, "'\\''")}'` : word);
+
 function add(out, found, words, cwd) {
-  out.findings.push({ ...found, words, command: words.join(" "), cwd });
+  out.findings.push({ ...found, words, command: words.map(quoted).join(" "), cwd });
 }
 
 const RUNNERS = new Set(["npx", "bunx", "pnpx"]);

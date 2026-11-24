@@ -339,6 +339,22 @@ main && git pull'` is unchecked (a branch change in an unknown directory).
 - **D50 — A substituted operand is named whole** in a refusal (`rm -rf $(ls)`, not
   `$`), when the substitution closes right after; `$(…)` otherwise.
 
+### New review series, round 4 (PASS) — last P2s
+
+- **D51 —** the docs say plainly that a `*` entry allows any later operand, `~`
+  included (the human's choice); the destructive checks name their own git
+  failures (timeout, refused repository, git off PATH, an answer over the 64 MB
+  `maxBuffer` — `ENOBUFS` is no longer read as a timeout); the timeout budget's
+  reset on the next decision is asserted; a refusal keeps the quotes of a word
+  with a space (`psql -c 'DROP DATABASE mydb'`).
+
+### Review history
+
+- **First series** (claim: never a silent pass): 4 rounds, P1 per round 7 / 5 / 9 / 4
+  — the cap, then the claim was re-scoped (D-cap).
+- **New series** (re-scoped claim): 4 rounds, P1 per round 2 / 1 / 0 / 0. Rounds 3
+  (security/robustness) and 4 (generalist) were clean in a row: STRICT done.
+
 ## Security
 
 - **Who can lift a refusal?** Only a human edit of `harness.json`. An env var, a

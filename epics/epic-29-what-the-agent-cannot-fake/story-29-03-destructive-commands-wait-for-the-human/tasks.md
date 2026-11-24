@@ -1,6 +1,6 @@
 # Tasks — 29-03
 
-## Status: in-progress
+## Status: done
 
 - [x] Scout: `guard.js` Bash path, `shell-writes.js` segments/words, the guard config reader
 - [x] `destructive.js` rules table (TDD, red→green per row)
@@ -26,9 +26,17 @@
   and any shell write or removal of `harness.json`, is refused.
 - Warn mode logs `guard-warnings.jsonl`. `/flow-run`: a destructive step is a
   `## Needs you`. Docs: `docs/rules-and-limits.md`.
-- Tests: `test/guard-destructive.test.js` (19 tests, every row and its near miss);
-  two earlier tests moved a now-refused command into its own deny assertion
-  (`guard-directory-swap`, `guard-shell`), their original premise kept.
+- Tests: `test/guard-destructive.test.js` (every row and its near miss, one test
+  per review finding, the two backstops on forms nobody listed, and the everyday
+  workflow allowed — Lens B); two earlier tests moved a now-refused command into
+  its own deny assertion (`guard-directory-swap`, `guard-shell`), their original
+  premise kept.
+- **The claim, re-scoped (plan.md D-cap):** the guard refuses the destructive forms
+  an agent writes by habit and marks unchecked what it cannot read; a form built
+  to evade it is out of its reach (sandbox and permissions, design-decisions 10).
+- **Review:** first series 4 rounds (P1 7 / 5 / 9 / 4), the cap, then the re-scope;
+  new series 4 rounds (P1 2 / 1 / 0 / 0), rounds 3 and 4 clean in a row — STRICT
+  done. Every P1 fixed with a test that failed first; P2s fixed or sent to 29-04.
 
 ### Rollback Notes
 

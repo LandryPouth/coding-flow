@@ -1127,24 +1127,31 @@ const destructiveHost = {
 // One git timeout spends the decision's budget: the lookups after it are skipped
 // (unchecked) rather than each waiting 2 s. Reset by `decideBash`.
 const GIT_MISSING = "git is not on the guard's PATH (the destructive-command check was not run)";
+// The destructive checks' own wording: GIT_TIMEOUT and GIT_REFUSED speak of the project root.
+const DESTRUCTIVE_GIT_TIMEOUT = "git did not answer in time (the destructive-command check was not run)";
+const DESTRUCTIVE_GIT_REFUSED = "git refused the repository (safe.directory: the destructive-command check was not run)";
+const GIT_TOO_LONG = "git's answer was larger than the guard reads (the destructive-command check was not run)";
 const gitBudget = { spent: false };
 
 function gitNow(cwd, args) {
   if (gitBudget.spent) {
-    return { out: null, issue: GIT_TIMEOUT };
+    return { out: null, issue: DESTRUCTIVE_GIT_TIMEOUT };
   }
   try {
-    return { out: execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 2000 }) };
+    return { out: execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 2000, maxBuffer: 64 * 1024 * 1024 }) };
   } catch (err) {
+    if (err && err.code === "ENOBUFS") {
+      return { out: null, issue: GIT_TOO_LONG }; // killed for its output, not for time
+    }
     if (err && (err.signal || err.code === "ETIMEDOUT")) {
       gitBudget.spent = true;
-      return { out: null, issue: GIT_TIMEOUT };
+      return { out: null, issue: DESTRUCTIVE_GIT_TIMEOUT };
     }
     if (err && typeof err.code === "string") {
       return { out: null, issue: GIT_MISSING }; // ENOENT, EACCES: git never ran
     }
     if (/dubious ownership|safe\.directory/.test(String((err && err.stderr) || ""))) {
-      return { out: null, issue: GIT_REFUSED };
+      return { out: null, issue: DESTRUCTIVE_GIT_REFUSED };
     }
     return { out: null, status: err && err.status };
   }
@@ -1218,8 +1225,8 @@ function destructiveReason(finding, detail) {
   return `\`${shown(finding.command)}\` is a destructive command (${finding.rule}): it destroys ${finding.destroys}${now}. Instead: ${finding.alternative}. A destructive step waits for the human: say what it would destroy and how to undo it, then ask. Only they can allow it (destructiveCommands, allowDestructive in ${POLICY_FILE}).`;
 }
 
-// An entry is the exact command, word by word; a last word `*` lets more words follow
-// (`git clean -fdX *`). `rm -rf node_modules` does not allow `rm -rf node_modules ~`.
+// An entry is the exact command, word by word; a last word `*` lets any more words
+// follow, `~` included (`git clean -fdX -- build *`). `rm -rf node_modules` does not allow `rm -rf node_modules ~`.
 function allowedByPolicy(entries, words) {
   return entries.some((entry) => {
     const expected = entry.trim().split(/\s+/);
