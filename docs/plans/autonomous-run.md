@@ -144,8 +144,8 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 ### Wave 5 — the run knows why it stopped (step 3) · *release 0.19.0*
 
 - [ ] 27-01, then 27-02…27-07 two at a time
-- [ ] 26-01, 26-02 (notify), 26-05
-- [ ] 24-01, 24-02, 24-07 → 26-04 → epic 25
+- [ ] 26-01, 26-05
+- [ ] 24-01, 24-02 → 26-02 (notify half, needs 24-02's global config), 24-07 → 26-04 → epic 25
 
 ### Wave 6 — learning (step 4) · *release 0.20.0*
 
