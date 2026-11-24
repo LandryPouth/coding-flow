@@ -56,7 +56,9 @@ function parseDimension(getFlagValue, name) {
 // after a fail must say it is that next round (`--round`): a failed review is
 // cleared by a new review of the whole diff, never by a green verify or by the
 // fixer's own word. `--accept` stays the user's way to take the risk instead.
-function resolveRound(getFlagValue, { story, verdict, last, accept }) {
+function resolveRound(getFlagValue, { story, verdict, accept }) {
+  const history = reviewHistoryByStoryDir(cwd).get(story) || [];
+  const last = history[history.length - 1] || null;
   const expected = last ? last.round + 1 : 1;
   const raw = getFlagValue("--round", null);
 
@@ -111,30 +113,16 @@ function reviewCapture({ getFlagValue, flags, json = false }) {
     fail(`--reviewer must be one of self, subagent — got "${reviewer}".`);
   }
 
-  const dimensions = {};
-  for (const name of DIMENSION_NAMES) {
-    dimensions[name] = parseDimension(getFlagValue, name);
-  }
+  const dimensions = Object.fromEntries(DIMENSION_NAMES.map((name) => [name, parseDimension(getFlagValue, name)]));
 
-  const findingCounts = {
-    p0: parseCount(getFlagValue, "--p0"),
-    p1: parseCount(getFlagValue, "--p1"),
-    p2: parseCount(getFlagValue, "--p2"),
-    p3: parseCount(getFlagValue, "--p3"),
-  };
+  const findingCounts = Object.fromEntries(["p0", "p1", "p2", "p3"].map((name) => [name, parseCount(getFlagValue, `--${name}`)]));
 
   // A pass is a claim that nothing blocking was left open. Recording one next to
   // an open P0/P1 needs a written reason, which is stored with the verdict.
   const accept = getFlagValue("--accept", null);
   const openBlocking = findingCounts.p0 + findingCounts.p1;
   const storyKey = normalizePortable(path.relative(cwd, storyDir));
-  const history = reviewHistoryByStoryDir(cwd).get(storyKey) || [];
-  const { round, after, unconfirmed } = resolveRound(getFlagValue, {
-    story: storyKey,
-    verdict,
-    last: history[history.length - 1] || null,
-    accept,
-  });
+  const { round, after, unconfirmed } = resolveRound(getFlagValue, { story: storyKey, verdict, accept });
   const needsAcceptance = (verdict === "pass" && openBlocking > 0) || unconfirmed;
 
   if (needsAcceptance && !(accept && accept.trim())) {

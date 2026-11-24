@@ -90,6 +90,26 @@ function computeLandReady(worktreePath, storyPath) {
 // follows a fail with fewer than two passing rounds in a row since: one clean
 // round after a fail is not enough at that risk. A pass the user accepted
 // (`acceptedRisk`) is their decision and is not held back.
+// What `status --json` says about a story's latest review: who, which round,
+// and the failed review it cleared, if any (story 19-09).
+function reviewFields(entry) {
+  return { reviewer: entry.reviewer, reviewRound: entry.round, ...(entry.after ? { reviewAfter: entry.after } : {}) };
+}
+
+// story-04-02: a STRICT-tier story (`reviewRequired`) that isn't a fresh pass
+// gets "(required)" — the same distinction `chainIsFinished`/`next`'s tier-4
+// check act on, so a human reading this line does not have to separately
+// re-derive the story's own risk tier. A STRICT story passed only by its own
+// author says so: `pass (self)`. Story 19-09: one clean round after a fail is
+// not enough for STRICT — `confirming` says a round is still owed.
+function reviewSuffixOf(story) {
+  if (story.review === "confirming") return "  review: pass — one more round required (STRICT)";
+  if (story.reviewRequired && story.review !== "pass") return `  review: ${story.review} (required)`;
+  if (story.review === "none") return "";
+  const selfMarker = story.reviewRequired && story.review === "pass" && story.reviewer === "self" ? " (self)" : "";
+  return `  review: ${story.review}${selfMarker}`;
+}
+
 function computeReviewStatus(root, storyPath, { strict = false } = {}) {
   const entry = latestReviewByStoryDir(root).get(storyPath);
   if (!entry) {
@@ -292,8 +312,7 @@ function buildStatusModel(config) {
         ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
         ...(staleWhy ? { staleReason: staleWhy } : {}),
         ...(contradicted ? { contradicted } : {}),
-        ...(review !== "none" && reviewEntry ? { reviewer: reviewEntry.reviewer, reviewRound: reviewEntry.round } : {}),
-        ...(review !== "none" && reviewEntry && reviewEntry.after ? { reviewAfter: reviewEntry.after } : {}),
+        ...(review !== "none" && reviewEntry ? reviewFields(reviewEntry) : {}),
         ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
       };
@@ -432,20 +451,7 @@ function status({ json = false } = {}) {
         const wtSuffix = story.worktree
           ? `  → wt: ${story.worktree} [${story.landReady}]`
           : "";
-        // story-04-02: a STRICT-tier story (`reviewRequired`) that isn't a
-        // fresh pass gets "(required)" — the same distinction `chainIsFinished`/
-        // `next`'s tier-4 check act on, so a human reading this line does not
-        // have to separately re-derive the story's own risk tier.
-        // A STRICT story passed only by its own author says so: `pass (self)`.
-        const selfMarker = story.reviewRequired && story.review === "pass" && story.reviewer === "self" ? " (self)" : "";
-        const reviewSuffix =
-          story.review === "confirming"
-            ? "  review: pass — one more round required (STRICT)"
-            : story.reviewRequired && story.review !== "pass"
-            ? `  review: ${story.review} (required)`
-            : story.review !== "none"
-              ? `  review: ${story.review}${selfMarker}`
-              : "";
+        const reviewSuffix = reviewSuffixOf(story);
         const staleSuffix = story.staleReason ? `  (${story.staleReason})` : story.contradicted ? `  (${story.contradicted})` : "";
         const scopeSuffix = story.scope ? `  coverage ${story.coverage || "?"} (${story.scope} scope)` : "";
         const warningSuffix = story.warnings
