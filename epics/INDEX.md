@@ -12,7 +12,7 @@ the proof-derived state comes from `ai-flow status`.
 - 17-01 · Archive one finished epic · done
 - 17-02 · The index lists every epic, live and archived · done
 - 17-03 · An epic number is never handed out twice · done
-- 17-04 · coding-flow archives its own finished epics · in-progress
+- 17-04 · coding-flow archives its own finished epics · done
 
 ### Epic 18 — The run remembers (`epics/epic-18-the-run-remembers/`)
 
@@ -34,6 +34,7 @@ the proof-derived state comes from `ai-flow status`.
 - 19-06 · The risk picks the tiers · —
 - 19-07 · Tests are read-only when nobody watches · —
 - 19-08 · A reformatted test is not a stronger test · planned
+- 19-09 · A failed review is cleared by a review · planned
 
 ### Epic 20 — The epic runs itself (`epics/epic-20-the-epic-runs-itself/`)
 
