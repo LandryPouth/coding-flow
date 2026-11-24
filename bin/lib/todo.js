@@ -112,112 +112,133 @@ function frontMatter(lines) {
 //   stripped), its lines kept one by one;
 // `headings` is the stack of headings the block sits under.
 function scanMarkdown(content) {
-  const all = content.replace(/^﻿/, "").split(/\r?\n/);
+  const all = content.replace(/^\uFEFF/, "").split(/\r?\n/);
   const front = frontMatter(all);
-  const blocks = [];
-  let headings = [];
-  let fence = null;
-  let afterBlank = true;
-  let inIndentedCode = false;
-  let listStack = [];
-  let last = null;
+  const state = { blocks: [], headings: [], fence: null, afterBlank: true, inIndentedCode: false, listStack: [], last: null };
 
   for (const line of all.slice(front.length)) {
-    if (fence) {
-      const mark = line.match(FENCE);
-
-      if (mark && mark[1][0] === fence[0] && mark[1].length >= fence.length && !line.trim().slice(mark[1].length).trim()) {
-        fence = null;
-      }
-
-      afterBlank = false;
+    if (consumedAsCodeOrBlank(state, line)) {
       continue;
     }
 
-    const mark = line.match(FENCE);
-
-    if (mark) {
-      fence = mark[1];
-      afterBlank = false;
-      continue;
-    }
-
-    if (!line.trim()) {
-      afterBlank = true;
-      last = null;
-      continue;
-    }
-
-    if (INDENTED_CODE.test(line) && (inIndentedCode || (afterBlank && listStack.length === 0))) {
-      inIndentedCode = true;
-      afterBlank = false;
-      continue;
-    }
-
-    inIndentedCode = false;
     const heading = line.match(HEADING);
+    const item = line.match(LIST_ITEM);
 
     if (heading) {
-      const level = heading[1].length;
-      headings = [...headings.filter((entry) => entry.level < level), { level, text: heading[2].trim() }];
-      listStack = [];
-      last = null;
-      // An indented code block may follow a heading directly.
-      afterBlank = true;
+      openHeading(state, heading);
       continue;
     }
 
-    const item = line.match(LIST_ITEM);
-    const indent = indentOf(line);
-
     if (item) {
-      const itemIndent = indentOf(item[1]);
-      listStack = listStack.filter((open) => open.indent < itemIndent);
-      const parent = listStack[listStack.length - 1] || null;
-      const block = {
-        type: "item",
-        box: item[2] === undefined ? null : item[2].toLowerCase() || " ",
-        text: item[3],
-        depth: listStack.length,
-        indent: itemIndent,
-        children: [],
-        headings,
-      };
-
-      if (parent) {
-        parent.children.push(block);
-      }
-
-      listStack.push(block);
-      blocks.push(block);
-      last = block;
-    } else if (last && !afterBlank) {
-      // A line right under a block (no blank line between) continues it, at
-      // any indent (a lazy continuation included).
-      last.text = `${last.text} ${line.trim().replace(BLOCKQUOTE, "")}`;
-
-      if (last.lines) {
-        last.lines.push(line.trim().replace(BLOCKQUOTE, ""));
-      }
-    } else if (afterBlank && listStack.length > 0 && indent > listStack[listStack.length - 1].indent) {
-      // An indented paragraph after a blank line belongs to the open item.
-      const open = listStack[listStack.length - 1];
-      open.text = `${open.text} ${line.trim()}`;
-      last = open;
+      addItem(state, item);
     } else {
-      if (indent === 0 || afterBlank) {
-        listStack = listStack.filter((open) => open.indent < indent);
-      }
-
-      const text = line.trim().replace(BLOCKQUOTE, "");
-      last = { type: "prose", text, lines: [text], headings };
-      blocks.push(last);
+      addText(state, line);
     }
 
-    afterBlank = false;
+    state.afterBlank = false;
   }
 
-  return { frontMatter: front.fields, blocks };
+  return { frontMatter: front.fields, blocks: state.blocks };
+}
+
+// Fences, blank lines and indented code: true when `line` is one of them (it is
+// then not content).
+function consumedAsCodeOrBlank(state, line) {
+  const mark = line.match(FENCE);
+
+  if (state.fence) {
+    const closes = mark && mark[1][0] === state.fence[0] && mark[1].length >= state.fence.length;
+
+    if (closes && !line.trim().slice(mark[1].length).trim()) {
+      state.fence = null;
+    }
+
+    state.afterBlank = false;
+    return true;
+  }
+
+  if (mark) {
+    state.fence = mark[1];
+    state.afterBlank = false;
+    return true;
+  }
+
+  if (!line.trim()) {
+    state.afterBlank = true;
+    state.last = null;
+    return true;
+  }
+
+  const startsCode = state.afterBlank && state.listStack.length === 0;
+
+  if (INDENTED_CODE.test(line) && (state.inIndentedCode || startsCode)) {
+    state.inIndentedCode = true;
+    state.afterBlank = false;
+    return true;
+  }
+
+  state.inIndentedCode = false;
+  return false;
+}
+
+function openHeading(state, heading) {
+  const level = heading[1].length;
+  state.headings = [...state.headings.filter((entry) => entry.level < level), { level, text: heading[2].trim() }];
+  state.listStack = [];
+  state.last = null;
+  // An indented code block may follow a heading directly.
+  state.afterBlank = true;
+}
+
+function addItem(state, item) {
+  const indent = indentOf(item[1]);
+  state.listStack = state.listStack.filter((open) => open.indent < indent);
+  const parent = state.listStack[state.listStack.length - 1] || null;
+  const block = {
+    type: "item",
+    box: item[2] === undefined ? null : item[2].toLowerCase() || " ",
+    text: item[3],
+    depth: state.listStack.length,
+    indent,
+    children: [],
+    headings: state.headings,
+  };
+
+  if (parent) {
+    parent.children.push(block);
+  }
+
+  state.listStack.push(block);
+  state.blocks.push(block);
+  state.last = block;
+}
+
+// A line that is neither a heading nor an item: it continues the block right
+// above it (no blank line between, any indent — a lazy continuation included),
+// or, after a blank line, the open item when indented under it; otherwise it
+// starts a prose paragraph, which closes the list when it sits at the margin.
+function addText(state, line) {
+  const text = line.trim().replace(BLOCKQUOTE, "");
+  const indent = indentOf(line);
+  const open = state.listStack[state.listStack.length - 1];
+
+  if (state.last && !state.afterBlank) {
+    state.last.text = `${state.last.text} ${text}`;
+
+    if (state.last.lines) {
+      state.last.lines.push(text);
+    }
+  } else if (state.afterBlank && open && indent > open.indent) {
+    open.text = `${open.text} ${text}`;
+    state.last = open;
+  } else {
+    if (indent === 0 || state.afterBlank) {
+      state.listStack = state.listStack.filter((entry) => entry.indent < indent);
+    }
+
+    state.last = { type: "prose", text, lines: [text], headings: state.headings };
+    state.blocks.push(state.last);
+  }
 }
 
 const underAny = (block, names) => {
