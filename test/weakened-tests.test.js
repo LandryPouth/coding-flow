@@ -47,7 +47,7 @@ const BASELINE_TEST = `test('adds', () => {
 // A repository whose feature branch starts from a main that ALREADY has a test
 // file — the only shape in which "the test got weaker" is a thing the diff can
 // show at all.
-function repo(t, prefix) {
+function repo(t, prefix, onMain = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `coding-flow-${prefix}-`)));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -61,7 +61,7 @@ function repo(t, prefix) {
   git(dir, ['init', '-b', 'main']);
   git(dir, ['config', 'user.email', 'test@example.com']);
   git(dir, ['config', 'user.name', 'Test']);
-  write(dir, { 'src/math.test.js': BASELINE_TEST, 'src/math.js': 'const add = (a, b) => a + b;\n' });
+  write(dir, { 'src/math.test.js': BASELINE_TEST, 'src/math.js': 'const add = (a, b) => a + b;\n', ...onMain });
   git(dir, ['add', '-A']);
   git(dir, ['commit', '-m', 'init']);
   git(dir, ['checkout', '-b', 'feat/story']);
@@ -158,13 +158,15 @@ test('a strengthened test still earns the rung', (t) => {
 test('a neutral edit is not a weakening', (t) => {
   const dir = repo(t, 'weak-neutral');
   const rel = story(dir);
-  // Same assertions, renamed test: direction is what is read, not effort.
+  // Same assertions, renamed test: not a weakening. Since story 19-08 it is not
+  // a strengthening either: it is reported neutral and does not earn the rung.
   commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST.replace("'adds'", "'adds two numbers'") }, 'rename');
 
   const res = run(dir, ['verify', '--story', rel]);
 
-  assert.equal(res.code, 0, res.output);
+  assert.equal(res.code, 1, res.output);
   assert.doesNotMatch(res.output, /Tests weakened/);
+  assert.match(res.output, /\(neutral\)/);
 });
 
 test('one weakened file does not cancel a genuinely strengthened one — but it is still reported', (t) => {
@@ -207,4 +209,146 @@ test('a declared exemption still carries the weakening it excused', (t) => {
 
   assert.equal(res.code, 0, res.output);
   assert.match(res.output, /Tests weakened in this diff/, 'an exemption excuses the gate, it does not erase the fact');
+});
+
+// --- story 19-08: a neutral edit is not a strengthening ---------------------
+//
+// A test file whose diff adds no test case and no assertion — a reformat, a
+// rename, an assertion moved between cases — is `neutral`: never weakened,
+// never strengthened, and on its own it does not earn the test-file rung.
+
+const evidenceOf = (dir) => {
+  const runsDir = path.join(dir, '.coding-flow', 'runs');
+  const file = fs.readdirSync(runsDir).filter((name) => name.endsWith('-verify.json')).sort().pop();
+  return JSON.parse(fs.readFileSync(path.join(runsDir, file), 'utf8'));
+};
+
+// The baseline, as a formatter that puts one assertion per line and re-indents
+// would leave it: same tests, same assertions.
+const REFORMATTED_TEST = `test("adds", () => {
+    expect(add(1, 2)).toBe(3);
+    expect(add(0, 0)).toBe(0);
+    expect(add(-1, 1)).toBe(0);
+});
+`;
+
+test('19-08: a test file only reformatted does not earn the rung, and is named neutral', (t) => {
+  const dir = repo(t, 'neutral-reformat');
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': REFORMATTED_TEST }, 'auth change, test reformatted');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /NOT PROVEN/);
+  assert.match(res.output, /Tests changed without a new test or assertion \(neutral\)/);
+  assert.match(res.output, /src\/math\.test\.js/);
+  assert.match(res.output, /add a test or an assertion that exercises the change, or produce a coverage report/);
+  assert.doesNotMatch(res.output, /Tests weakened/);
+  const { coverage } = evidenceOf(dir);
+  assert.equal(coverage.ok, false);
+  assert.deepEqual(coverage.neutralTests, ['src/math.test.js']);
+  assert.equal(coverage.weakenedTests, undefined);
+});
+
+test('19-08: two assertions split from one line onto two by a formatter are still neutral', (t) => {
+  const onOneLine = `test('adds', () => {\n  expect(add(1, 2)).toBe(3); expect(add(0, 0)).toBe(0);\n  expect(add(-1, 1)).toBe(0);\n});\n`;
+  const dir = repo(t, 'neutral-split', { 'src/math.test.js': onOneLine });
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST }, 'auth change, test split');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
+});
+
+test('19-08: an assertion moved from one test case to another is neutral', (t) => {
+  const twoCases = `test('adds', () => {\n  expect(add(1, 2)).toBe(3);\n  expect(add(0, 0)).toBe(0);\n});\n\ntest('adds negatives', () => {\n  expect(add(-1, 1)).toBe(0);\n});\n`;
+  const moved = `test('adds', () => {\n  expect(add(1, 2)).toBe(3);\n});\n\ntest('adds negatives', () => {\n  expect(add(0, 0)).toBe(0);\n  expect(add(-1, 1)).toBe(0);\n});\n`;
+  const dir = repo(t, 'neutral-moved', { 'src/math.test.js': twoCases });
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': moved }, 'auth change, assertion moved');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
+});
+
+test('19-08: the same test file with one assertion added earns the rung', (t) => {
+  const dir = repo(t, 'neutral-plus-one');
+  const rel = story(dir);
+  const plusOne = REFORMATTED_TEST.replace('});', '    expect(add(2, 2)).toBe(4);\n});');
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': plusOne }, 'auth change, one assertion more');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 0, res.output);
+  assert.match(res.output, /test file\(s\) strengthened/);
+  assert.equal(evidenceOf(dir).coverage.mode, 'test-file');
+  assert.equal(evidenceOf(dir).coverage.neutralTests, undefined);
+});
+
+test('19-08: a new test case with no assertion marker earns the rung', (t) => {
+  const dir = repo(t, 'neutral-new-case');
+  const rel = story(dir);
+  const withCase = `${BASELINE_TEST}\ntest('does not throw', () => {\n  add(1, 2);\n});\n`;
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': withCase }, 'auth change, one case more');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 0, res.output);
+  assert.match(res.output, /test file\(s\) strengthened/);
+});
+
+test('19-08: a new test file counts as a test added, even with no assertion marker', (t) => {
+  const dir = repo(t, 'neutral-new-file');
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/auth.test.js': "require('./auth')();\n" }, 'auth change, new test file');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 0, res.output);
+  assert.match(res.output, /test file\(s\) strengthened/);
+});
+
+test('19-08: a test file renamed without other change is neutral, not weakened', (t) => {
+  const dir = repo(t, 'neutral-rename');
+  const rel = story(dir);
+  write(dir, BEHAVIOR);
+  git(dir, ['mv', 'src/math.test.js', 'src/arithmetic.test.js']);
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'auth change, test renamed']);
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.doesNotMatch(res.output, /Tests weakened/);
+  assert.doesNotMatch(res.output, /was removed/);
+  const { coverage } = evidenceOf(dir);
+  assert.equal(coverage.weakenedTests, undefined);
+  assert.deepEqual(coverage.neutralTests, ['src/arithmetic.test.js']);
+});
+
+test('19-08: a measured coverage report decides as before, a neutral test file beside it', (t) => {
+  const writer = [
+    'const fs = require("fs"); const path = require("path");',
+    'fs.mkdirSync("coverage", { recursive: true });',
+    'fs.writeFileSync("coverage/lcov.info", ["TN:", "SF:" + path.resolve("src/auth.js"), "DA:1,1", "end_of_record", ""].join("\\n"));',
+  ].join('\n');
+  const dir = repo(t, 'neutral-measured', { 'gen-coverage.js': `${writer}\n` });
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = { commands: ['node gen-coverage.js'], quality: [] };
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': REFORMATTED_TEST }, 'auth change measured, test reformatted');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 0, res.output);
+  const { coverage } = evidenceOf(dir);
+  assert.equal(coverage.mode, 'diff-lines');
+  assert.equal(coverage.ok, true);
 });

@@ -25,15 +25,15 @@ what it is.
 
 ## Acceptance Criteria
 
-- [ ] Given a high-risk change and a test file only reformatted, then the
+- [x] Given a high-risk change and a test file only reformatted, then the
       gate does not pass in test-file mode and names the file as neutral.
-- [ ] Given the same change and a test file that adds one assertion, then
+- [x] Given the same change and a test file that adds one assertion, then
       the gate passes in test-file mode.
-- [ ] Given a test file renamed without other change, then it is neutral,
+- [x] Given a test file renamed without other change, then it is neutral,
       not weakened.
-- [ ] Given a fixer (19-05) that reformats a test file during verify, then
+- [x] Given a fixer (19-05) that reformats a test file during verify, then
       the result is the same as a hand reformat: neutral, gate not passed.
-- [ ] Given a measured coverage report, then the verdict is unchanged by
+- [x] Given a measured coverage report, then the verdict is unchanged by
       this story.
 
 ## Edge Cases

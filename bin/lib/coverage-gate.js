@@ -37,6 +37,7 @@ const {
   changedLinesForCoverage,
   parseChangedText,
   deletedFilesInDiff,
+  addedFilesInDiff,
 } = require("./diff-scope");
 const {
   RISK_RANK,
@@ -235,8 +236,25 @@ const ASSERTION_MARKERS = [
   /\bt\.(?:is|deepEqual|throws|truthy|falsy)\s*\(/,
 ];
 
+// A test case being declared. A title string is required for the JS forms, so a
+// helper named `test(` called inside a case is not read as a new case.
+const TEST_CASE_MARKERS = [
+  /\b(?:it|test|specify)\s*\(\s*['"`]/,
+  /\bdef\s+test_\w+/,
+  /\bfunc\s+Test\w+\s*\(/,
+  /@Test\b/,
+  /#\[test\]/,
+];
+
+// Occurrences, not lines (story 19-08): a formatter that splits two assertions
+// written on one line onto two lines changes the line count, not the number of
+// assertions, and must read as neutral — neither stronger nor weaker.
+const globalOf = (pattern) => new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
 const countMatching = (lines, patterns) =>
-  lines.filter((line) => patterns.some((pattern) => pattern.test(line))).length;
+  lines.reduce(
+    (total, line) => total + patterns.reduce((sum, pattern) => sum + (line.match(globalOf(pattern)) || []).length, 0),
+    0,
+  );
 const countSkipMarkers = (lines) => countMatching(lines, SKIP_MARKERS);
 
 // Per test file: did this diff make it stronger, weaker, or neither?
@@ -275,11 +293,13 @@ function scanTestWeakening(config) {
   }
 
   const strengthened = [];
+  const neutral = [];
+  const added = new Set(addedFilesInDiff());
 
   for (const [file, change] of Object.entries(byFile)) {
-    const skipsAdded = countMatching(change.added, SKIP_MARKERS) - countMatching(change.removed, SKIP_MARKERS);
-    const assertionDelta =
-      countMatching(change.added, ASSERTION_MARKERS) - countMatching(change.removed, ASSERTION_MARKERS);
+    const delta = (patterns) => countMatching(change.added, patterns) - countMatching(change.removed, patterns);
+    const skipsAdded = delta(SKIP_MARKERS);
+    const assertionDelta = delta(ASSERTION_MARKERS);
 
     if (skipsAdded > 0) {
       findings.push({
@@ -297,14 +317,53 @@ function scanTestWeakening(config) {
       });
     }
 
-    // Neutral counts as strengthened: renaming a test or fixing a typo is not a
-    // weakening, and the gate is about direction, not about effort.
-    if (skipsAdded <= 0 && assertionDelta >= 0) {
+    if (skipsAdded > 0 || assertionDelta < 0) {
+      continue;
+    }
+
+    // Story 19-08: a file strengthens only when it adds something — a new file,
+    // an assertion, a test case. A rename, a reformat, a typo or an assertion
+    // moved between cases is `neutral`: not a weakening, not a proof either.
+    if (added.has(file) || assertionDelta > 0 || delta(TEST_CASE_MARKERS) > 0) {
+      strengthened.push(file);
+    } else {
+      neutral.push(file);
+    }
+  }
+
+  // A new test file with no diff text yet (untracked) is still a test added.
+  for (const file of added) {
+    if (isTest(file) && !isScopedOut(file, config) && !byFile[file] && !findings.some((f) => f.file === file)) {
       strengthened.push(file);
     }
   }
 
-  return { findings, strengthened, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
+  return { findings, strengthened, neutral, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
+}
+
+// Test files in the diff that neither strengthen nor weaken: the scan's neutral
+// ones, plus a changed test file it saw no text change in (a pure rename, a
+// binary snapshot).
+function neutralTestFiles(testFiles, weakening) {
+  const decided = new Set([...weakening.strengthened, ...weakening.weakenedFiles]);
+  return [...new Set([...weakening.neutral, ...testFiles.filter((file) => !decided.has(file))])];
+}
+
+function untestedReason(behaviorFiles, weakened, neutral) {
+  const changed = `${behaviorFiles.length} behavior file(s) changed (${listFiles(behaviorFiles)})`;
+
+  if (neutral.length > 0) {
+    return (
+      `${changed} and no test file adds a test or an assertion: ${neutral.length} only changed without one ` +
+      `(${listFiles(neutral)})${weakened ? ", the others were weakened" : ""}. ` +
+      "To prove the change, add a test or an assertion that exercises the change, or produce a coverage report " +
+      "(lcov.info or coverage-final.json) so its lines are measured."
+    );
+  }
+
+  return weakened
+    ? `${changed} and every test file in the diff was weakened. Touching a test is not the same as covering a change.`
+    : `${changed} and no test file did. A green suite that was already green proves nothing about this change.`;
 }
 
 function listFiles(files, max = 3) {
@@ -403,7 +462,14 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   // heuristic otherwise. The stronger measure always supersedes the weaker one:
   // "a test file moved" is a proxy for "the change is covered", and a proxy is
   // only worth using while the real thing is unavailable.
-  const patch = evaluatePatchCoverage({ config, behaviorFiles, testFiles: weakening.strengthened, startedAt });
+  // The measured path reads the test files that are not weakened, neutral ones
+  // included, exactly as before story 19-08: only the test-file rung changed.
+  const patch = evaluatePatchCoverage({
+    config,
+    behaviorFiles,
+    testFiles: [...weakening.strengthened, ...weakening.neutral],
+    startedAt,
+  });
 
   if (patch) {
     const unmeasuredNote = patch.unmeasured.length
@@ -480,26 +546,21 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   // The direction of the test change decides. A diff whose test files were only
   // weakened — assertions dropped, `.skip` added, the file deleted — has not shown
   // that anything covers this change, so it lands exactly where a diff with no test
-  // change lands, and reaches the same exemption path. Neutral edits (a rename, a
-  // typo) count as strengthening: this reads direction, not effort.
+  // change lands, and reaches the same exemption path. Since story 19-08 a neutral
+  // edit (a rename, a reformat, an assertion moved) lands there too: it is named,
+  // never counted as a strengthening, so a formatter cannot earn the rung.
+  const neutral = neutralTestFiles(testFiles, weakening);
+  const withTestDirection = (result) => {
+    const withFindings = withWeakening(result);
+    return neutral.length ? { ...withFindings, neutralTests: neutral } : withFindings;
+  };
+
   if (weakening.strengthened.length > 0) {
-    return withWeakening({
+    return withTestDirection({
       required: true,
       ok: true,
       mode: "test-file",
       reason: `${weakening.strengthened.length} test file(s) strengthened alongside ${behaviorFiles.length} behavior file(s)`,
-      riskSource: risk.source,
-      changedFiles,
-      testFiles,
-    });
-  }
-
-  if (testFiles.length > 0 && weakening.findings.length === 0) {
-    return withWeakening({
-      required: true,
-      ok: true,
-      mode: "test-file",
-      reason: `${testFiles.length} test file(s) changed alongside ${behaviorFiles.length} behavior file(s)`,
       riskSource: risk.source,
       changedFiles,
       testFiles,
@@ -512,7 +573,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   const declared = readTestExemption(storyDir) || (exemption && exemption.trim() ? exemption.trim() : null);
 
   if (declared) {
-    return withWeakening({
+    return withTestDirection({
       required: true,
       ok: true,
       mode: "test-file",
@@ -525,15 +586,11 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
     });
   }
 
-  return withWeakening({
+  return withTestDirection({
     required: true,
     ok: false,
     mode: "test-file",
-    reason: weakening.findings.length
-      ? `${behaviorFiles.length} behavior file(s) changed (${listFiles(behaviorFiles)}) and every test file in the diff was ` +
-        "weakened. Touching a test is not the same as covering a change."
-      : `${behaviorFiles.length} behavior file(s) changed (${listFiles(behaviorFiles)}) and no test file did. A green suite ` +
-        "that was already green proves nothing about this change.",
+    reason: untestedReason(behaviorFiles, weakening.findings.length > 0, neutral),
     riskSource: risk.source,
     riskPaths: risk.matchedPaths,
     changedFiles,
