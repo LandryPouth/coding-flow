@@ -131,6 +131,7 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 18-07 worktrees are a setting → 18-03 notes-only edit keeps the proof →
 18-06 a ticked criterion names its proof.
 
+- [ ] 19-03 one heavy verify per machine — pulled forward 2026-11-24 (maintainer): slots for heavy runs, agents unlimited otherwise
 - [ ] 18-01  - [ ] 19-01  - [ ] 29-02  - [ ] 19-07  - [ ] 20-01
 - [ ] 18-02  - [ ] 18-07  - [ ] 18-03  - [ ] 18-06
 
@@ -263,3 +264,9 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   (1906/1906), and a third verify on develop was green. verify does not name
   the failing test yet — that is 19-01, which this makes urgent. Until then:
   at most two suites at once during a land.
+- 2026-11-24 — maintainer: limit the heavy runs, not the agents. 8 cores, 13 GB,
+  load 20+ with four suites (node --test runs ~7 workers each). Interim until
+  19-03 ships: every `npm test` / `verify` of the run goes through a
+  machine-wide slot wrapper (2 slots; the run's scratchpad `heavy.sh`, also used
+  by `land.sh`); agents themselves are not capped by load, only by the run's
+  max. 19-03 pulled to the head of wave 3.
