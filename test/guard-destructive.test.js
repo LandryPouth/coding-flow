@@ -177,8 +177,9 @@ const ALLOWED = [
     'git stash',
     'git stash push -u -m why',
     'git stash list',
-    'rm a.txt',
-    'rm -f a.txt',
+    // 29-04: a plain rm of a clean file; of the modified a.txt it is refused (guard-evasion.test.js).
+    'rm b.txt',
+    'rm -f b.txt',
     'trash build',
     'prisma migrate dev',
     'prisma db push',

@@ -1272,13 +1272,15 @@ function readScript(r, { name, args }) {
 // --- interpreters -------------------------------------------------------------
 
 // The inline program an interpreter was handed, in its flag spellings: `-c code`,
-// `-Bc code`, `-pe code`, `--eval code`, `--eval=code`, `perl -E code`, `deno eval [options] code`.
+// `-Bc code`, `-pe code`, `--eval code`, `--eval=code`, `perl -E code`, `deno eval [options] code`,
+// `php -r code`.
 const INTERPRETERS = [
   [/^python[\d.]*$/, /^-[A-Za-z]*c$/],
   [/^(node|nodejs|bun)$/, /^(-e|-p|-pe|--eval|--print)$/],
   [/^perl$/, /^-[A-Za-z\d]*[eE]$/],
   [/^ruby$/, /^-[A-Za-z]*e$/],
   [/^deno$/, /^eval$/],
+  [/^php$/, /^-r$/],
 ];
 
 function inlineCode(name, args) {
@@ -1527,4 +1529,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { heredocWord, isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
+module.exports = { heredocWord, isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, isShellLimit, inlineCode, stringLiterals, SHELLS, ARCHIVE, UNREAD_TREE };

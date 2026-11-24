@@ -1263,6 +1263,13 @@ function judgeDestructive(ctx, { findings, unchecked }) {
     if (!settled.applies) {
       continue;
     }
+    if (finding.unproven) {
+      // Read in code or in a file run later (story 29-04): unchecked, not refused.
+      if (!ctx.issues.includes(finding.unproven)) {
+        ctx.issues.push(finding.unproven);
+      }
+      continue;
+    }
     const ignored = policy.ignoredAllow.length ? ` (ignored allowDestructive entries, too broad: ${policy.ignoredAllow.map((entry) => JSON.stringify(entry)).join(", ")})` : "";
     const reason = destructiveReason(finding, settled.detail) + ignored;
     if (policy.destructiveCommands === "warn") {
