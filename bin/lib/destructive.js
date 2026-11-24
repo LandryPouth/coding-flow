@@ -622,24 +622,11 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
     out.unchecked.push({ reason: UNMODELLED, command: [command.raw || name, ...args].join(" ") });
     return;
   }
-  if (name === "eval") {
-    readScript(out, args.join(" "), cwd, ctx);
-    return;
-  }
-  if (SHELLS.has(name)) {
-    const program = shellProgram(args);
-    if (program !== undefined) {
-      readScript(out, program, cwd, ctx);
-    }
-    return;
-  }
-  if (name === "trap" && args[0] !== undefined && !/^-/.test(args[0])) {
-    readScript(out, args[0], cwd, ctx); // `trap 'cmd' EXIT` runs cmd later, in this shell
-    return;
-  }
-  const script = handedScript(command);
+  const script = scriptOf(command);
   if (script !== null) {
-    readScript(out, script, cwd, ctx);
+    if (script) {
+      readScript(out, script, cwd, ctx);
+    }
     return;
   }
   if (name === "find") {
@@ -659,6 +646,28 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
     // The paths come from xargs' input: none of them is seen.
     out.touched.push({ cwd, unseen: true, command: [name, ...args].join(" ") });
   }
+  readVerb(out, command, cwd, ctx, segments, index);
+}
+
+// The script a command runs in a shell (`eval`, `bash -c`, `trap 'cmd' EXIT`,
+// `su -c`, `watch`…): "" for a shell handed none, null when it runs none.
+function scriptOf(command) {
+  const { name, args } = command;
+  if (name === "eval") {
+    return args.join(" ");
+  }
+  if (SHELLS.has(name)) {
+    return shellProgram(args) ?? "";
+  }
+  if (name === "trap" && args[0] !== undefined && !/^-/.test(args[0])) {
+    return args[0]; // runs later, in this shell
+  }
+  return handedScript(command);
+}
+
+// One verb the reader knows, read for what it destroys or touches.
+function readVerb(out, command, cwd, ctx, segments, index) {
+  const { name, args } = command;
   if (name === "git") {
     readGit(out, args, cwd, ctx);
   } else if (name === "rm") {
