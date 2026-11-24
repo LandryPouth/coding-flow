@@ -874,8 +874,9 @@ test("S1-b: a git alias in the repository's config is resolved and read", (t) =>
 });
 
 test('S1-c: allowDestructive is the exact command; a trailing * allows more words', (t) => {
-  const dir = repo(t, { allowDestructive: ['rm -rf node_modules', 'git clean -fdX *'] });
-  expectAll(dir, 'allow', ['rm -rf node_modules', 'git clean -fdX', 'git clean -fdX -- build']);
+  // Series round 3: a trailing `*` needs an operand before it (`git clean -fdX *` is ignored).
+  const dir = repo(t, { allowDestructive: ['rm -rf node_modules', 'git clean -fdX -- build *'] });
+  expectAll(dir, 'allow', ['rm -rf node_modules', 'git clean -fdX -- build', 'git clean -fdX -- build dist']);
   expectAll(dir, 'deny', ['rm -rf node_modules ~', 'rm -rf node_modules build', 'git clean -fdx']);
 });
 
@@ -902,7 +903,57 @@ test('S2-3: an allowDestructive entry that is a bare * or a verb and * is ignore
   const result = run(all, 'rm -rf build');
   assert.equal(result.decision, 'deny');
   assert.match(result.reason, /ignored allowDestructive entr/);
-  const verb = repo(t, { allowDestructive: ['rm *', 'git clean -fdX *'] });
-  expectAll(verb, 'deny', ['rm -rf ~', 'rm -rf build']);
+  const verb = repo(t, { allowDestructive: ['rm *', 'git clean -fdX -- build *'] });
+  expectAll(verb, 'deny', ['rm -rf ~', 'rm -rf build', 'git clean -fdX']);
   expectAll(verb, 'allow', ['git clean -fdX -- build']);
+});
+
+// Series round 3 (P2s).
+
+// A PATH whose `git` is `script` (a shell body), then the real one.
+function fakeGit(t, script) {
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  const bin = tmp(t, 'destructive-git');
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\n${script.replace(/REAL_GIT/g, real)}\n`, { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${saved}`;
+  t.after(() => {
+    process.env.PATH = saved;
+  });
+}
+
+test('S3-1: git missing from the guard PATH makes a git check unchecked, never allowed', (t) => {
+  const dir = repo(t, { worktrees: { primaryLocked: true } });
+  // Roots are found with git first (the guard keeps them), then git leaves the PATH.
+  run(dir, 'true');
+  const saved = process.env.PATH;
+  process.env.PATH = path.dirname(execFileSync('sh', ['-c', 'command -v node'], { encoding: 'utf8' }).trim());
+  t.after(() => {
+    process.env.PATH = saved;
+  });
+  for (const command of ['git checkout -- .', 'git switch main']) {
+    assert.notEqual(run(dir, command).decision, 'allow', command);
+  }
+});
+
+test('S3-2: after one git timeout, the other git lookups of the same decision are skipped', (t) => {
+  const dir = repo(t);
+  fakeGit(t, 'case "$*" in *"config --get"*) exec sleep 5;; esac\nexec REAL_GIT "$@"');
+  const started = Date.now();
+  const result = run(dir, 'git aa; git bb; git cc; git dd');
+  const took = Date.now() - started;
+  assert.equal(result.decision, 'unchecked');
+  assert.ok(took < 4500, `one timeout, not four: ${took} ms`);
+});
+
+test('S3-3: a trailing * needs an operand before it; verb and flags alone are ignored', (t) => {
+  const dir = repo(t, { allowDestructive: ['rm -rf *', 'git clean *', 'git clean -fdX *', 'rm -rf node_modules *'] });
+  expectAll(dir, 'deny', ['rm -rf node_modules2 ~', 'rm -rf build', 'git clean -fdx', 'git clean -fdX']);
+  expectAll(dir, 'allow', ['rm -rf node_modules', 'rm -rf node_modules .cache']);
+  assert.match(run(dir, 'rm -rf build').reason, /"rm -rf \*", "git clean \*", "git clean -fdX \*"/);
+});
+
+test('S3-4: a refusal names a substituted operand whole', (t) => {
+  const dir = repo(t);
+  assert.match(run(dir, 'rm -rf $(ls)').reason, /rm -rf \$\(ls\)/);
 });

@@ -300,7 +300,7 @@ two-step git alias (`git config alias.x '!…'`, then `git x`), script files
   "exact command prefix" and its criterion "exactly that command"; a prefix let
   `rm -rf node_modules` allow `rm -rf node_modules ~`. An entry is now matched
   whole; a last word `*` keeps a prefix where the human wants one
-  (`git clean -fdX *`). The earlier test's `git clean -fdX -- build` moved from
+  (`git clean -fdX -- build *`, since D47). The earlier test's `git clean -fdX -- build` moved from
   allowed to refused.
 
 P2, to 29-04 (planned by the run): `echo "DROP DATABASE x" | psql`, `psql -c 'DROP
@@ -317,11 +317,27 @@ TABLE/SCHEMA … CASCADE'`, `git rm -f` or a plain `rm` of a modified tracked fi
   (`git -C /nonexistent rh`, a refused repository) is unchecked, as D42 said.
 - **D46 — An `allowDestructive` entry that is a bare `*` or a verb and `*`
   (`rm *`) is ignored**, and every refusal names it, so the human sees why their
-  entry did nothing. `git clean -fdX *` (more than a verb) still works.
+  entry did nothing. Extended by D47.
 
 To 29-04: the alias lookup ignores a `GIT_DIR=`/`GIT_CONFIG_GLOBAL=` prefix on the
 command. Accepted noise, strict mode only: `git submodule foreach 'git checkout
 main && git pull'` is unchecked (a branch change in an unknown directory).
+
+### New review series, round 3 (PASS, P2s fixed)
+
+- **D47 — A trailing `*` needs an operand before it.** An entry whose words before
+  `*` are only the verb (with git, its subcommand) and flags is ignored like D46:
+  `rm -rf *` would allow `rm -rf node_modules ~`, `git clean *` would allow
+  `-fdx`. That includes `git clean -fdX *`, so D43's example became
+  `git clean -fdX -- build *`, and the two tests that used it now use that entry.
+- **D48 — git that never ran is an issue.** `gitNow` maps a spawn error (`ENOENT`,
+  `EACCES`: git not on the guard's PATH) to "git is not on the guard's PATH":
+  a check that needs git is unchecked, never allowed (discard-all still refuses).
+- **D49 — One git timeout per decision.** After the first timeout, the remaining
+  git lookups of the same Bash decision are skipped and unchecked with the same
+  reason, so hanging lookups cost 2 s, not 2 s each. Reset at each decision.
+- **D50 — A substituted operand is named whole** in a refusal (`rm -rf $(ls)`, not
+  `$`), when the substitution closes right after; `$(…)` otherwise.
 
 ## Security
 

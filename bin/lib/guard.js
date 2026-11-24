@@ -156,7 +156,16 @@ const DESTRUCTIVE_MODES = ["deny", "warn", "off"];
 
 // An entry that names no command (`*`) or only a verb (`rm *`) would turn the check
 // off for it: ignored, and named in the refusal.
-const TOO_BROAD = (entry) => /^\s*(?:\S+\s+)?\*\s*$/.test(entry);
+// A trailing `*` needs an operand before it: `rm -rf *`, `git clean *`, `git clean -fdX *`
+// are verbs and flags only (a git subcommand counts with the verb).
+function TOO_BROAD(entry) {
+  const words = entry.trim().split(/\s+/);
+  if (words[words.length - 1] !== "*") {
+    return false;
+  }
+  const named = words.slice(0, -1).filter((word) => !word.startsWith("-"));
+  return named.length < (named[0] === "git" ? 3 : 2);
+}
 
 function destructivePolicy(config) {
   const valid = config && typeof config === "object" && !Array.isArray(config);
@@ -1115,12 +1124,24 @@ const destructiveHost = {
 // git, fresh: the work tree changes between two calls of a long-lived host, so
 // the memo `git()` keeps for roots is not used. `{ out }`, with `issue` when git
 // did not answer (a timeout, a refused repository): the check is then unchecked.
+// One git timeout spends the decision's budget: the lookups after it are skipped
+// (unchecked) rather than each waiting 2 s. Reset by `decideBash`.
+const GIT_MISSING = "git is not on the guard's PATH (the destructive-command check was not run)";
+const gitBudget = { spent: false };
+
 function gitNow(cwd, args) {
+  if (gitBudget.spent) {
+    return { out: null, issue: GIT_TIMEOUT };
+  }
   try {
     return { out: execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 2000 }) };
   } catch (err) {
     if (err && (err.signal || err.code === "ETIMEDOUT")) {
+      gitBudget.spent = true;
       return { out: null, issue: GIT_TIMEOUT };
+    }
+    if (err && typeof err.code === "string") {
+      return { out: null, issue: GIT_MISSING }; // ENOENT, EACCES: git never ran
     }
     if (/dubious ownership|safe\.directory/.test(String((err && err.stderr) || ""))) {
       return { out: null, issue: GIT_REFUSED };
@@ -1263,6 +1284,7 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   }
 
   const ctx = context(hook, root);
+  gitBudget.spent = false;
   // The destructive check is settled first, and nothing after it can lose its
   // refusal: a later check that throws still returns it (review round 2).
   const destructiveIssues = [];

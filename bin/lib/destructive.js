@@ -778,7 +778,7 @@ function readLine(line, start, ctx) {
       if (unmodelledBraces(tokens, command)) {
         out.unchecked.push({ reason: `${UNMODELLED}: brace expansion`, command: segment.text.trim() });
       }
-      readCommand(out, { ...command, raw }, cwd, ctx, segments, index);
+      readCommand(out, { ...command, raw, args: wholeLastWord(command.args, segment, segments[index + 1]) }, cwd, ctx, segments, index);
       readHandedText(out, command, cwd, ctx);
       // `PAGER='rm -rf x' git log`, `env GIT_EDITOR=… git commit`: a variable set
       // for the command may be run by it, so its value is read as handed text.
@@ -803,6 +803,17 @@ function readLine(line, start, ctx) {
     out.unchecked.push({ reason: `${UNMODELLED}: ${construct}`, command: joined });
   }
   return out;
+}
+
+// `rm -rf $(ls)`: the splitter ends the segment at `$(`, so the last word is `$`.
+// It is named whole (`$(ls)`) when the substitution closes right after.
+function wholeLastWord(args, segment, next) {
+  const last = args[args.length - 1];
+  if (segment.after !== "open" || last === undefined || !last.endsWith("$")) {
+    return args;
+  }
+  const inner = next && next.after === "close" ? next.text.trim() : "…";
+  return [...args.slice(0, -1), `${last}(${inner})`];
 }
 
 // --- backstop 1: only modelled syntax is allowed ---------------------------------------
