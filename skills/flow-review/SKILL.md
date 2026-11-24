@@ -268,7 +268,7 @@ ai-flow review capture --story <story-dir> --verdict pass|fail \
   --architecture quick|deep|skipped --tests quick|deep|skipped \
   --security quick|deep|skipped --quality quick|deep|skipped --e2e quick|deep|skipped \
   --p0 <count> --p1 <count> --p2 <count> --p3 <count> \
-  [--reviewer self|subagent] [--accept "<reason>"]
+  [--reviewer self|subagent] [--round <n>] [--accept "<reason>"]
 ```
 
 - `--verdict` is this pass's Verdict line; `--p0`..`--p3` count its `## Findings` by
@@ -280,5 +280,15 @@ ai-flow review capture --story <story-dir> --verdict pass|fail \
   `self` (the default) otherwise.
 - A `pass` with an open P0 or P1 is refused unless `--accept "<reason>"` is given —
   only with the user's agreement, never on your own. It is stored as `acceptedRisk`.
+
+After a `fail`, fix every finding, then review again: a failed review is cleared by
+a new review of the whole diff, never by a green verify or by the fixer's own word.
+The new round is a fresh reviewer (a new subagent, never the one that found the
+findings, which re-checks its list instead of hunting): blind on the whole diff
+first, then handed the previous findings to confirm each is fixed. Capture it with
+`--round <n>` — the failed round plus one; `review capture` refuses a `pass` right
+after a `fail` without it. STANDARD is clean after one such round; STRICT needs two
+clean rounds in a row (`status` shows `pass — one more round required (STRICT)`
+until then), the second under another lens.
 
 If `ai-flow` is not on `PATH`, use `npx @landry_pouth/coding-flow` instead.

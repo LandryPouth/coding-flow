@@ -971,6 +971,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     "review-missing": `has no captured review for its STRICT-tier story "${result.story}"`,
     "review-stale": `has a stale review (the tree moved since capture) for its STRICT-tier story "${result.story}"`,
     "review-failed": `has a failing review for its STRICT-tier story "${result.story}"`,
+    "review-unconfirmed": `needs one more clean review round after a failed one (STRICT: two in a row) for "${result.story}"`,
   };
 
   if (flags.has("--json")) {
