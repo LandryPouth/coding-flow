@@ -9,7 +9,7 @@
 ## Result
 
 Reader half shipped: `bin/lib/todo.js` (one Markdown scanner, `scanMarkdown`,
-behind every reader) + `ai-flow todo [--json]`; 20 tests in `test/todo.test.js`,
+behind every reader) + `ai-flow todo [--json]`; 22 tests in `test/todo.test.js`,
 two of them tables of Markdown shapes (12 to-do-section cases, 10 story cases).
 On this repository it lists 10 items: epic 26's three deferred notify criteria
 (this story's own `[~]`) and epic 27's seven cleanup items.

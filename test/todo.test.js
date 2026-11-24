@@ -325,3 +325,35 @@ test('an extra argument is refused', (t) => {
   assert.notStrictEqual(res.code, 0);
   assert.match(res.output, /unexpected argument "done"/);
 });
+
+test('a heading with a suffix still matches: parentheses, colon, dash', (t) => {
+  const repo = project(t);
+  config(repo, { todo: { headings: ['À faire côté utilisateur', 'Maintainer to-do'] } });
+  write(
+    repo,
+    'epics/epic-39-x/index.md',
+    '## À faire côté utilisateur (epics 39 et 40)\n\n- [ ] (before: deploy) drop the old column\n\n## Maintainer to-do:\n\n- [ ] colon item\n\n## Maintainer to-do — later\n\n- [ ] dash item\n\n## Maintainer to-dos\n\n- [ ] not the heading\n',
+  );
+  write(repo, 'epics/epic-39-x/story-39-01-a/story.md', '# S\n\n## Needs you (round 2)\n\n- pick a date\n');
+
+  assert.deepStrictEqual(texts(todoJson(repo)), [
+    'epic-39-x|maintainer|(before: deploy) drop the old column',
+    'epic-39-x|maintainer|colon item',
+    'epic-39-x|maintainer|dash item',
+    'epic-39-x|needs-you|pick a date',
+  ]);
+});
+
+test('Owner: human with a reason, a quoted task, HTML comments, and a finished story asking nothing', (t) => {
+  const repo = project(t);
+  write(repo, 'epics/epic-40-y/index.md', '## Maintainer to-do\n\n> - [ ] quoted task\n\n<!--\n- [ ] commented out\n-->\n<!-- - [ ] one-line comment -->\n- [ ] after the comments\n');
+  write(repo, 'epics/epic-40-y/story-40-01-a/story.md', '# Reasoned\n\nOwner: human — touches money\n\n## Status: planned\n');
+  write(repo, 'epics/epic-40-y/story-40-02-b/story.md', '# Loop\n\nOwner: human-in-the-loop\n');
+  write(repo, 'epics/epic-40-y/story-40-03-c/story.md', '# Finished\n\n## Needs you\n\n- an old question\n\n## Status: done\n');
+
+  assert.deepStrictEqual(texts(todoJson(repo)), [
+    'epic-40-y|maintainer|quoted task',
+    'epic-40-y|maintainer|after the comments',
+    'epic-40-y|human-owner|Reasoned',
+  ]);
+});

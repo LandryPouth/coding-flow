@@ -51,6 +51,15 @@
   Deferred criteria come only from `## Acceptance Criteria` (the section the
   coverage gate reads). Needs-you sub-bullets are the parent's `options`.
   `todo` refuses an extra argument.
+- **Round 3 fixes**: a heading matches when it starts with the configured text
+  followed by the end, a space, `(`, `:`, `—`, `–` or `-` (bethl writes
+  `## À faire côté utilisateur (epics 39 et 40)`); `Owner: human` may carry a
+  one-line reason; blockquoted items and lines are read; HTML comments are
+  skipped like code; a finished story's `## Needs you` is not listed (like its
+  owner). Recorded limits, not changed: a plain `- ` bullet under a to-do
+  heading is not listed (the contract is `- [ ]`; coding-flow's own epics 28-30
+  cleanup bullets are converted separately); a line opening with ``` that also
+  closes on the same line opens a fence (safe side: nothing invented).
 - **Oldest first** = the epic's number (`epic-9` before `epic-10`), then name.
 
 - **stdin JSON, not arguments**: no quoting bugs, no shell injection from a

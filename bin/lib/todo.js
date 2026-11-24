@@ -114,10 +114,13 @@ function frontMatter(lines) {
 function scanMarkdown(content) {
   const all = content.replace(/^\uFEFF/, "").split(/\r?\n/);
   const front = frontMatter(all);
-  const state = { blocks: [], headings: [], fence: null, afterBlank: true, inIndentedCode: false, listStack: [], last: null };
+  const state = { blocks: [], headings: [], fence: null, comment: false, afterBlank: true, inIndentedCode: false, listStack: [], last: null };
 
-  for (const line of all.slice(front.length)) {
-    if (consumedAsCodeOrBlank(state, line)) {
+  for (const raw of all.slice(front.length)) {
+    // A blockquote's content is read like any other (`> - [ ] task`).
+    const line = state.fence ? raw : withoutComments(state, raw.replace(/^(?: {0,3}>\s?)+/, ""));
+
+    if (line === null || consumedAsCodeOrBlank(state, line)) {
       continue;
     }
 
@@ -139,6 +142,33 @@ function scanMarkdown(content) {
   }
 
   return { frontMatter: front.fields, blocks: state.blocks };
+}
+
+// HTML comments (`<!-- … -->`, over several lines too) are not content, like
+// code. Returns the line without them, or null when nothing is left of it.
+function withoutComments(state, line) {
+  let rest = line;
+
+  if (state.comment) {
+    const end = rest.indexOf("-->");
+
+    if (end === -1) {
+      return null;
+    }
+
+    state.comment = false;
+    rest = rest.slice(end + 3);
+  }
+
+  rest = rest.replace(/<!--[\s\S]*?-->/g, "");
+  const open = rest.indexOf("<!--");
+
+  if (open !== -1) {
+    state.comment = true;
+    rest = rest.slice(0, open);
+  }
+
+  return rest !== line && !rest.trim() ? null : rest;
 }
 
 // Fences, blank lines and indented code: true when `line` is one of them (it is
@@ -241,10 +271,18 @@ function addText(state, line) {
   }
 }
 
-const underAny = (block, names) => {
-  const wanted = new Set(names.map((name) => name.toLowerCase()));
-  return block.headings.some((heading) => wanted.has(heading.text.toLowerCase()));
-};
+// A heading matches a configured name when it starts with it (any case),
+// followed by the end or by a space, `(`, `:`, `—`, `–` or `-`:
+// `## À faire côté utilisateur (epics 39 et 40)`, `## Needs you (round 2)`,
+// `## Maintainer to-do:` match; `## Maintainer to-dos` does not.
+function headingMatches(heading, name) {
+  const text = heading.toLowerCase();
+  const wanted = name.toLowerCase();
+  return text.startsWith(wanted) && /^(?:$|[\s(:—–-])/.test(text.slice(wanted.length));
+}
+
+const underAny = (block, names) =>
+  block.headings.some((heading) => names.some((name) => headingMatches(heading.text, name)));
 
 // Unchecked `- [ ]` items, at any depth, under the configured headings of an
 // epic index.
@@ -264,13 +302,16 @@ function needsYouItems(scan) {
     .map((block) => ({ text: block.text, options: block.type === "item" ? block.children.map((child) => child.text) : [] }));
 }
 
-// `Owner: human` on a line of its own — in the text, a list item, a
+// `Owner: human` at the start of a line — in the text, a list item, a
 // blockquote, or front matter (`owner: human`, any case). `Owner:
 // human-in-the-loop`, a mention inside a sentence, or code is not it.
-const OWNER_HUMAN = /^\**Owner\**\s*:\s*\**\s*human\s*\**$/i;
+// A one-line reason may follow (`Owner: human — touches money`, the form 20-05
+// writes): `human` then the end, a space or a separator, never a word joined
+// by a hyphen.
+const OWNER_HUMAN = /^\**Owner\**\s*:\s*\**\s*human\**(?=$|[\s—–:,;(.]|-(?![\p{L}\d]))/iu;
 
 function ownedByHuman(scan) {
-  if (String(scan.frontMatter.owner || "").trim().toLowerCase() === "human") {
+  if (scan.frontMatter.owner !== undefined && OWNER_HUMAN.test(`Owner: ${scan.frontMatter.owner}`)) {
     return true;
   }
 
@@ -306,10 +347,16 @@ function storyItems(root, story) {
   const spec = files.spec === null ? null : scanMarkdown(files.spec);
   const scans = [spec, ...files.others.map(scanMarkdown)].filter(Boolean);
   const item = (kind, text, extra = {}) => ({ kind, text, ...extra, story: story.name, source: story.path });
-  const items = scans.flatMap(needsYouItems).map((entry) => item("needs-you", entry.text, { options: entry.options }));
+  const items = [];
 
-  if (!FINISHED_STATUSES.has(story.status) && scans.some(ownedByHuman)) {
-    items.push(item("human-owner", story.title));
+  // A finished story asks nothing any more: its Needs you and its owner are
+  // history. Its deferred criteria stay listed (a deferral is still a debt).
+  if (!FINISHED_STATUSES.has(story.status)) {
+    items.push(...scans.flatMap(needsYouItems).map((entry) => item("needs-you", entry.text, { options: entry.options })));
+
+    if (scans.some(ownedByHuman)) {
+      items.push(item("human-owner", story.title));
+    }
   }
 
   if (spec) {
