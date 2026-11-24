@@ -10,6 +10,13 @@ epic and story files. Any PR that changes a default, a threshold or a planned
 value updates this page in the same PR. "not set" means no value exists in the
 sources: there is no default to look up.
 
+Since story 26-06 the keys `ai-flow rules` prints come from one registry,
+`bin/lib/rules-registry.js`: the config readers take their defaults from it, and
+`test/rules-registry.test.js` fails, naming the key, when a default there and
+the Default cell of its row below disagree. `ai-flow rules [<key>] [--json]`
+prints each one's value in force in a project and where it came from
+(`default`, `project`, `auto: <reason>`, `fixed`).
+
 Paths are relative to the repository root. `file:line` points at the code.
 Story references point at the story's `spec.md` unless another file is named.
 
@@ -30,31 +37,42 @@ Story references point at the story's `spec.md` unless another file is named.
 | `target` / `alsoTargets` | `claude` / `[]` | `claude`, `codex`, `gemini`, `opencode`, `antigravity`. An invalid value is read as `unrecognized` | `init --target` | `config.js:36`, `:64-67`, `:101-110` |
 | `validation.commands` | `[]`. When empty, verify uses plan.md's `## Commands`, then the package.json scripts | — | key | `config.js:68-82` |
 | `validation.quality` | `[]`. Runs like a command: a red quality check blocks | — | key | `config.js:73-82` |
-| `validation.security` | absent (only written when declared) | A scanner that cannot run is `not examined`. That is a warning, or a failure in `strict` mode | key | `config.js:139-141`; `bin/lib/evidence.js:386-394` |
+| `validation.security` | `[]` (absent from the file until declared) | A scanner that cannot run is `not examined`. That is a warning, or a failure in `strict` mode | key | `config.js:139-141`; `bin/lib/evidence.js:386-394` |
 | `validation.freshCommands` | `[]` | — | key | `config.js:136` |
-| `validation.fix` | absent (only written when declared) | Fixers run before every check and may rewrite files; the files they changed are listed as `fixedFiles` and left uncommitted. A red fixer is a red verify. `land`'s re-verify skips them, and so do red-at-base and the mutation probe: they run the checks only, so a base that is dirty only by lint reads red at base. Fixers alone, with no check, are a red verify, and do not run. A file a fixer touched is the story's diff, exactly like a hand edit, in every signal; verify warns (`fixerStrengthened`, no verdict change) when a test file the gate counted as strengthened was a fixer's rewrite — the gate's neutral-counts-as-strengthened rule is story 19-08. Fixers run before verify reads anything (risk, fresh-test requirement, commands, coverage), so one tree gets one verdict. Under `.coding-flow/` a JSON or JSONL file whose parsed value is unchanged is no write (a formatter re-indenting the run files) and is listed as `reformatted`; the guard's logs may only grow or be the guard's own trim, and are listed as `guardLogs`. Any other change there — a new, removed or rewritten file, read even where it is gitignored — or any change to a story file (`epics/`, `specs/`, `.specify/`, the story in scope), reformat included, is a red verify that names the remedy (add `.coding-flow/` and the story roots to the formatter's ignore file) — for that run: the next verify finds nothing to fix and judges those files as they now are. `fixedFiles` paths are relative to the project root; a write beside a project below the repository top reads `../…`. Outside git `fixedFiles` is null and that rule cannot apply. With fixers declared, a proof is reused only while the story roots and `.coding-flow/` (minus `runs/` and the guard logs) are unmoved. Limit: on Windows with `core.autocrlf=true` a fixer's line-ending-only change is not seen. Limit: a fixer is a command like any other, and a write outside the work tree is neither stopped nor listed. A `## Fixers` block in `plan.md` is refused unattended like plan commands | key | `bin/lib/validation-run.js` (`resolveValidationCommands`); `bin/lib/evidence.js` (`runFixers`) |
-| `validation.timeoutMs` (global) and `{ command, timeoutMs }` (per command) | not set, which means 600 000 ms (10 min) per command | none. A non-positive value is dropped | key | `config.js:112-124`, `:142`; `bin/lib/validation-run.js:97-107`, `:206` |
+| `validation.fix` | `[]` (absent from the file until declared) | Fixers run before every check and may rewrite files; the files they changed are listed as `fixedFiles` and left uncommitted. A red fixer is a red verify. `land`'s re-verify skips them, and so do red-at-base and the mutation probe: they run the checks only, so a base that is dirty only by lint reads red at base. Fixers alone, with no check, are a red verify, and do not run. A file a fixer touched is the story's diff, exactly like a hand edit, in every signal; verify warns (`fixerStrengthened`, no verdict change) when a test file the gate counted as strengthened was a fixer's rewrite — the gate's neutral-counts-as-strengthened rule is story 19-08. Fixers run before verify reads anything (risk, fresh-test requirement, commands, coverage), so one tree gets one verdict. Under `.coding-flow/` a JSON or JSONL file whose parsed value is unchanged is no write (a formatter re-indenting the run files) and is listed as `reformatted`; the guard's logs may only grow or be the guard's own trim, and are listed as `guardLogs`. Any other change there — a new, removed or rewritten file, read even where it is gitignored — or any change to a story file (`epics/`, `specs/`, `.specify/`, the story in scope), reformat included, is a red verify that names the remedy (add `.coding-flow/` and the story roots to the formatter's ignore file) — for that run: the next verify finds nothing to fix and judges those files as they now are. `fixedFiles` paths are relative to the project root; a write beside a project below the repository top reads `../…`. Outside git `fixedFiles` is null and that rule cannot apply. With fixers declared, a proof is reused only while the story roots and `.coding-flow/` (minus `runs/` and the guard logs) are unmoved. Limit: on Windows with `core.autocrlf=true` a fixer's line-ending-only change is not seen. Limit: a fixer is a command like any other, and a write outside the work tree is neither stopped nor listed. A `## Fixers` block in `plan.md` is refused unattended like plan commands | key | `bin/lib/validation-run.js` (`resolveValidationCommands`); `bin/lib/evidence.js` (`runFixers`) |
+| `validation.timeoutMs` (global) and `{ command, timeoutMs }` (per command) | `600000` ms (10 min) per command when not set — one default, read by the runner and by `land`'s lock sizing | none. A non-positive value is dropped | key | `config.js` (`readConfig`); `bin/lib/validation-run.js` (`commandTimeoutDefault`); `bin/lib/rules-registry.js` |
 | Harness policy file | `.coding-flow/harness.json`, created by `init`. A missing file means the defaults apply. An array key you set **replaces** the default list; nothing is merged | — | edit the file | `bin/lib/harness-config.js:32-34`, `:314-369`, `:371-382` |
 | `mode` | `standard` | Only the exact string `strict` tightens anything. A typo or an unreadable file reads as `standard` | key | `harness-config.js:238`; `bin/lib/guard.js:144-146` |
 | `requireTestChange` (coverage gate on/off) | `true` | — | key | `harness-config.js:242`; `bin/lib/coverage-gate.js:350-352` |
-| `minPatchCoverage` | `80` (%) of the added lines that coverage measured | number; anything else falls back to 80 | key | `harness-config.js:248`; `coverage-gate.js:182` |
+| `minPatchCoverage` | `80` % of the added lines that coverage measured | number; anything else falls back to 80 | key | `harness-config.js:248`; `coverage-gate.js:182` |
 | `coverageReports` | 6 paths (`coverage/lcov.info`, …) | — | key | `harness-config.js:16-23` |
-| `coverageFloor` (rung each risk level must reach) | not written to the file. Resolved as high → `evidence` (`verified` in strict), medium → `evidence`, low → `not-required` | rungs: `verified` > `evidence` > `exempted` > `not-required` | key `coverageFloor.{high,medium,low}` | `bin/lib/coverage.js:556-582` |
-| `failOnContrarySignals` | not written (`false`) | When `true`, a high-risk story fails on contrary signals. Read at the diff base too (HEAD in working-tree scope): `true` in either wins | key | `coverage-gate.js:640`, `:662-677` |
+| `coverageFloor.high` (rung a high-risk story must reach) | `auto`: `evidence`, or `verified` under `mode: strict`. Written by `init` since 26-06; an absent or unknown value reads the same | rungs: `verified` > `evidence` > `exempted` > `not-required` | key | `bin/lib/coverage.js` (`resolveCoverageFloor`) |
+| `coverageFloor.medium` | `evidence` (written by `init`) | same rungs | key | `coverage.js` (`resolveCoverageFloor`) |
+| `coverageFloor.low` | `not-required` (written by `init`) | same rungs | key | `coverage.js` (`resolveCoverageFloor`) |
+| `failOnContrarySignals` | `false` (written by `init` since 26-06) | When `true`, a high-risk story fails on contrary signals. Read at the diff base too (HEAD in working-tree scope): `true` in either wins | key | `coverage-gate.js:640`, `:662-677` |
 | `freshTestsFor` (risk levels where a fully cached run is not proof) | `[]` | — | key | `harness-config.js:251`; `evidence.js:397-405` |
-| `functionSize` | `{ max: 80, enforce: false }` (lines). Also a CRAP threshold of 30 | `enforce: true` turns the warning into a failure | key (`max` is the only one you can set; the CRAP threshold is fixed) | `harness-config.js:233`; `bin/lib/complexity.js:26-27`, `:585` |
-| `redAtBase` | `{ command: null, timeoutMs: null }`. A null timeout means the 10 min default | — | key | `harness-config.js:262`; `bin/lib/red-at-base.js:1051` |
+| `functionSize.max` | `80` lines. Also a CRAP threshold of 30, fixed | — | key | `harness-config.js` (`DEFAULT_FUNCTION_SIZE`); `bin/lib/complexity.js` |
+| `functionSize.enforce` | `false` | `true` turns the warning into a failure | key | `harness-config.js` (`DEFAULT_FUNCTION_SIZE`) |
+| `redAtBase.command` | `null` (`--red-at-base` then fails with an example) | — | key | `harness-config.js` (`defaultHarnessConfig`); `bin/lib/red-at-base.js` |
+| `redAtBase.timeoutMs` | `null`, which means the command default (10 min) | — | key | `bin/lib/red-at-base.js` |
 | `mutation` | absent (off). `{ command, maxMutants: 20, link: [], timeoutMs: 1800000 }`; `command` takes `{files}`; JS/TS only | runs only on a `high` risk diff (the higher of the base's and the tree's risk keys; a base with no readable `harness.json` counts as the defaults) or under `--claim refactor`; survivors fail verify only where contrary signals do (strict, or `failOnContrarySignals` on high risk, each read at the stricter of the base and the tree) | key; a survivor is excused by a `## Mutation Exemption` naming `file:line` | `bin/lib/mutation.js`; `scripts/mutation-probe.js` |
-| `highRiskPaths` / `highRiskTerms` | 24 globs / 17 terms | — | key | `harness-config.js:120-147`, `:292-310` |
-| `testGlobs`, `nonBehaviorGlobs`, `policyGlobs`, `ignoredPaths` | 13 / 27 / 15 globs / `[]` | — | key | `harness-config.js:93-109`, `:164-201`, `:210-228`, `:267` |
-| `blockedPaths`, `sensitiveGlobs`, `secretPatterns`, `secretScanAllowlist`, `requiredChecks` | 10 / 5 / 6 (5 exact, 1 heuristic) / 12 / 4 entries | `exact` patterns apply everywhere. The allowlist only relaxes `heuristic` ones | key; `doctor` warns when `blockedPaths` lacks the evidence paths | `harness-config.js:52-89`, `:205`, `:268-291`; `bin/lib/doctor.js:142` |
+| `highRiskPaths` | 24 globs | — | key | `harness-config.js` (`defaultHighRiskPaths`) |
+| `highRiskTerms` | 17 terms | — | key | `harness-config.js` (`defaultHarnessConfig`) |
+| `testGlobs` | 13 globs | — | key | `harness-config.js` (`defaultTestGlobs`) |
+| `nonBehaviorGlobs` | 27 globs | — | key | `harness-config.js` (`defaultNonBehaviorGlobs`) |
+| `policyGlobs` | 15 globs | — | key | `harness-config.js` (`defaultPolicyGlobs`) |
+| `ignoredPaths` | `[]` | — | key | `harness-config.js` (`defaultHarnessConfig`) |
+| `blockedPaths` | 10 globs | — | key; `doctor` warns when it lacks the evidence paths | `harness-config.js` (`defaultHarnessConfig`); `bin/lib/doctor.js` |
+| `sensitiveGlobs` | 5 globs | — | key | `harness-config.js` (`defaultHarnessConfig`) |
+| `requiredChecks` | 4 checks | — | key | `harness-config.js` (`defaultHarnessConfig`) |
+| `secretPatterns`, `secretScanAllowlist` | 6 (5 exact, 1 heuristic) / 12 entries. Not printed by `ai-flow rules` (no secret-looking key is) | `exact` patterns apply everywhere. The allowlist only relaxes `heuristic` ones | key | `harness-config.js` (`defaultSecretPatterns`, `defaultSecretScanAllowlist`) |
 | User global config `~/.config/coding-flow/config.json` | **does not exist yet** (planned, Part 2) | — | — | 19-03, 21-02, 24-02 |
 
 ### Proof and verify
 
 | Rule | Default | Max / threshold | Change with | Source |
 |---|---|---|---|---|
-| Per-command timeout | 600 000 ms (10 min). A timed-out command exits 124 | — | `validation.timeoutMs` / per-command `timeoutMs` | `validation-run.js:206`, `:284` |
+| Per-command timeout | 600 000 ms (10 min), the registry's `validation.timeoutMs`. A timed-out command exits 124 | — | `validation.timeoutMs` / per-command `timeoutMs` | `validation-run.js` (`commandTimeoutDefault`, `runValidationCommand`) |
 | Output buffer per command | 256 MB. Past it the result is a tool error, not a red | — | env `CODING_FLOW_MAX_OUTPUT_BYTES` | `validation-run.js:168-171`, `:289-291` |
 | Output kept in evidence | last 4 000 chars per stream | — | not configurable | `validation-run.js:280` |
 | Failure lines quoted | 12 lines, 500 chars each | — | not configurable | `bin/lib/util.js:431-432` |
@@ -127,12 +145,13 @@ Story references point at the story's `spec.md` unless another file is named.
 | Rule | Default | Max / threshold | Change with | Source |
 |---|---|---|---|---|
 | Stories per epic (skill) | 2–5 for a normal epic | cap around 5–7 | — | `skills/flow-plan/SKILL.md:42-44` |
-| Stories per epic (doctor) | — | warning `epic_too_large` above 7 | not configurable | `doctor.js:47`, `:113-120` |
+| Stories per epic (doctor), `epic.maxStories` | `7` stories | warning `epic_too_large` above it | not configurable | `doctor.js` (`EPIC_STORY_SOFT_LIMIT`, from the registry) |
 | Duplicate numbering | `duplicate_epic_number`, `duplicate_story_number` | any duplicate | — | `doctor.js:342-376` |
 | `## Stories` entry form | `N. [story-…](story-…/spec.md) — outcome *(MODE)*`, `story.md` for a single-file story; warning `story_entry_not_linked` per entry that is not that link or whose target is missing; `doctor --fix` rewrites the entry, keeping its text | — | — | `flow-plan/SKILL.md:106-116`; `bin/lib/story-links.js`; `doctor.js:385-418` |
 | Dependency tree grammar | `├──` / `└──`, one label per line, 4-character indent per level, or flat chains `s1 ── s2`. The tree is read only inside `## Backbone` | **one parent per story: `┴` or `┤` is refused** | — | `flow-plan/SKILL.md:68-95`; `bin/lib/backbone.js:108-140`, `:190-193` |
 | Generated directory hint | warning `generated_not_ignored` | more than 20 changed files under `generated/`, `__generated__/` or `gen/` in the last verify | `ignoredPaths` | `doctor.js:198-240` |
 | Recovery scan | history of 2 000 commits; 15 hotspots; "large file" = over 500 lines | — | `recover scan --history-limit N` | `bin/lib/recover.js:28-30`, `:979-987` |
+| `ai-flow rules` | prints every registered key with its value in force and its source; `doctor` ends by pointing to it | — | `rules <key>`, `--json` | `bin/lib/rules.js`, `bin/lib/rules-registry.js` |
 | Bootstrap workspace scan | — | 50 workspace members | — | `bin/lib/bootstrap.js:209` |
 | `status` open recovery findings shown | — | 5 | — | `status.js:314` |
 | `report` | — | 40 denials, 15 failures, 12 tail lines | — | `bin/lib/report.js:26-28` |
@@ -268,7 +287,6 @@ walker, critic and report on a lighter model.
 | `docs.check.include` / `.exclude` / `.ignorePaths` | `docs/**/*.md`, `README.md`, `RULES.md` | warnings only, never fails `doctor` | `config.json` | 26-03 |
 | Closer allowed paths | `epics/<epic>/`, `docs/`, `CHANGELOG.md` | anything else is reverted and listed | — | 26-04 |
 | `run --watch` refresh | 2 s | — | `--once`, `--json` | 26-05 |
-| `ai-flow rules` | prints every registry key with its effective value and source | — | — | 26-06 |
 
 Notify examples: `notify-send "Coding Flow" "$(jq -r .summary)"` on Linux;
 from WSL, a PowerShell toast through `powershell.exe -c`; a phone push with
@@ -323,17 +341,16 @@ Design: [`docs/plans/orchestration.md`](plans/orchestration.md).
 ## Inconsistencies found
 
 Found while writing this page. Items 3–8 were resolved in the plans the same
-day (2026-11-13); items 1, 2, 9 and 10 are code and are planned in epic 26
-(*the rules are written down and printed*).
+day (2026-11-13); items 1, 2, 9 and 10 were resolved in code by story 26-06.
 
-1. **Context budgets: old installed `RULES.md` vs the current skill.**
+1. *Resolved (26-06): `templates/RULES.md` states no budget and points to `/flow-run`; a test fails if it ever states one the skill does not.* **Context budgets: old installed `RULES.md` vs the current skill.**
    `RULES.md` installed by earlier versions (for example bethl's) states QUICK
    "stop after 3 searches or 5 files" and FAST "5 searches or 8 files". The
    current `templates/RULES.md` no longer carries budgets. `skills/flow-run/SKILL.md:149-150`
    says QUICK/FAST use 1–3 searches and about 5 files, and `:195-196` says to
    stop and scout after about 5 searches or 8 files outside STRICT. Projects
    that have not upgraded carry the old numbers.
-2. **Epic size.** `skills/flow-plan/SKILL.md:42` says "cap it around 5–7", but
+2. *Resolved (26-06): the skill now says an epic is warned above 7 by `doctor`, and doctor reads 7 from the registry.* **Epic size.** `skills/flow-plan/SKILL.md:42` says "cap it around 5–7", but
    `doctor` warns only above 7 (`bin/lib/doctor.js:47`). Consistent in
    effect (7 is the cap), but the skill should say "warned above 7".
 3. *Resolved.* Heavy verifies per machine are `verify.maxConcurrent`
@@ -349,12 +366,12 @@ day (2026-11-13); items 1, 2, 9 and 10 are code and are planned in epic 26
 8. *Resolved.* `verify.minFreeMemoryMb` and `verify.maxWaitMinutes` move to
    the user's global config with `maxConcurrent`; a project may only raise
    the memory floor.
-9. **The 10-minute default is defined twice.** It lives in
+9. *Resolved (26-06): one default, `validation.timeoutMs` in the registry, read by the runner (`commandTimeoutDefault`) and by `land`'s lock sizing.* **The 10-minute default is defined twice.** It lives in
    `bin/lib/validation-run.js:206` (`DEFAULT_COMMAND_TIMEOUT_MS`) and again in
    `bin/lib/worktree.js:744` (`PER_COMMAND_TIMEOUT_MS`). The comment at
    `worktree.js:729` still says the default is in `harness.js`. Changing one
    without the other mis-sizes the land lock.
-10. **Policy that is read but never written.** `coverageFloor` and
+10. *Resolved (26-06): `init` writes both (`coverageFloor.high: "auto"` keeps the mode deciding); they stay out of `defaultHarnessConfig()`, which is hashed into every proof's policy fingerprint.* **Policy that is read but never written.** `coverageFloor` and
     `failOnContrarySignals` are honoured (`coverage.js:572`,
     `coverage-gate.js:640`) but are not in `defaultHarnessConfig()`. A project
     reading its own `harness.json` cannot see that they exist or what their

@@ -368,13 +368,31 @@ function readHarnessConfig(root = cwd) {
   };
 }
 
+// The harness.json defaults are defined here, not in rules-registry.js: the
+// guard loads this file before every tool call and its module graph is a
+// budget (test/guard.test.js). The registry reads them from here (story 26-06).
+//
+// What `init` writes: the defaults, plus the keys the readers resolve without
+// them (story 26-06) so a project reading its own file sees they exist and
+// what they start at. Not merged into `defaultHarnessConfig()`: that object is
+// hashed into every proof's policy fingerprint, and growing it would turn every
+// existing proof stale on upgrade. `coverageFloor.high: "auto"` keeps the mode
+// deciding (evidence, or verified under strict), as an absent key does.
+function initialHarnessConfig() {
+  return {
+    ...defaultHarnessConfig(),
+    coverageFloor: { high: "auto", medium: "evidence", low: "not-required" },
+    failOnContrarySignals: false,
+  };
+}
+
 function ensureHarnessConfig({ dryRun = false } = {}) {
   if (fs.existsSync(harnessConfigPath())) {
     return false;
   }
 
   if (!dryRun) {
-    writeJson(harnessConfigPath(), defaultHarnessConfig());
+    writeJson(harnessConfigPath(), initialHarnessConfig());
     fs.mkdirSync(harnessRunsDir(), { recursive: true });
   }
 
@@ -392,6 +410,7 @@ module.exports = {
   defaultNonBehaviorGlobs,
   defaultPolicyGlobs,
   defaultHarnessConfig,
+  initialHarnessConfig,
   EVIDENCE_BLOCKED_PATHS,
   readHarnessConfig,
   ensureHarnessConfig,

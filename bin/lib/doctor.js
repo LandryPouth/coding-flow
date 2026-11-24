@@ -47,7 +47,10 @@ const { epicNumberCollisions } = require("./epic-numbers");
 // the WIP-limit heuristic in `/flow-plan`) — it also sits open longer before
 // auto-merge sees every story proven, so a bloated epic is slower to land, not
 // just harder to reason about.
-const EPIC_STORY_SOFT_LIMIT = 7;
+// Story 26-06: doctor says where every limit it applies is listed.
+const RULES_POINTER = "Every rule's value here and where it comes from: ai-flow rules";
+
+const EPIC_STORY_SOFT_LIMIT = require("./rules-registry").defaultOf("epic.maxStories");
 
 // The docs `/flow-plan bootstrap` is supposed to write. architecture.md is left
 // out on purpose: a brownfield project often already has one, so `init` skips it
@@ -1120,6 +1123,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     log("");
     log(report.guardPosture);
     log(binaryPathNote(report.binaryOnPath));
+    log(RULES_POINTER);
   } else {
     log("Coding Flow has installation issues:");
     for (const error of report.errors) {
@@ -1146,6 +1150,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     log("");
     log(report.guardPosture);
     log(binaryPathNote(report.binaryOnPath));
+    log(RULES_POINTER);
   }
 
   if (!report.ok) {

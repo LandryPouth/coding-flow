@@ -567,8 +567,9 @@ function defaultCoverageFloor(mode) {
   };
 }
 
-// Config wins key by key; an unknown value falls back to the mode default
-// rather than silently disarming the floor.
+// Config wins key by key; `auto` (what `init` writes for `high`, story 26-06)
+// and any unknown value fall back to the mode default rather than silently
+// disarming the floor.
 function resolveCoverageFloor(config) {
   const defaults = defaultCoverageFloor(config && config.mode);
   const given = config && config.coverageFloor && typeof config.coverageFloor === "object" ? config.coverageFloor : {};
