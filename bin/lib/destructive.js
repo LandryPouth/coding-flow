@@ -620,10 +620,10 @@ function readUnproven(out, text, cwd, ctx, reason, command, propagate = true) {
 // (concatenation, format) with a piece naming the policy file or a destructive verb is
 // unchecked: the guard cannot join what the program computes.
 const INTERPRETER_NAME = /^(?:python[\d.]*|node|nodejs|bun|deno|perl|ruby|php)$/;
-const BUILDS = /(['"`])\s*(?:\+|\.)?\s*['"`]|%\s*[(\w]|\.format\(|\bf['"]|\$\{|\.join\(|\bsprintf\b/;
+const BUILDS = /(['"\x60])\s*(?:\+|\.)?\s*['"\x60]|%\s*[(\w]|\.format\(|\bf['"]|\$\{|\.join\(|\bsprintf\b/;
 const VERB_PIECE = /^\s*(?:rm|unlink|shred|git|dropdb|psql|prisma|docker|mv)(?:\s|$)/;
 const POLICY_PIECE = /harness|coding-flow/i;
-const LITERAL = /(['"`])((?:\\.|(?!\1)[^\\])*)\1/gs;
+const LITERAL = /(['"\x60])((?:\\.|(?!\1)[^\\])*)\1/gs;
 const MAX_LITERAL = 4096;
 
 const ESCAPES = { n: "\n", t: "\t", r: "\r", 0: "\0" };
@@ -635,11 +635,15 @@ function codeLiterals(code) {
 }
 
 // `("rm", ["-rf", "build"])`, `['git', 'reset', '--hard']`: the argument vector, as a command.
+const LITERAL_LIST = /(?:(['"\x60])((?:\\.|(?!\1)[^\\])*)\1\s*,\s*)?\[((?:\s*(['"\x60])(?:\\.|(?!\4)[^\\])*\4\s*,?)+)\s*\]/gs;
+const SHELL_WORD = /^[\w./=:@%+,-]+$/;
+const shellQuote = (word) => (SHELL_WORD.test(word) ? word : ["'", word.split("'").join("'\\''"), "'"].join(""));
+
 function literalLists(code) {
   const lists = [];
-  for (const match of code.matchAll(/(?:(['"`])((?:\\.|(?!\1)[^\\])*)\1\s*,\s*)?\[((?:\s*(['"`])(?:\\.|(?!\4)[^\\])*\4\s*,?)+)\s*\]/gs)) {
-    const words = [...(match[2] === undefined ? [] : [unescape(match[2])]), ...codeLiterals(match[3])];
-    lists.push(words.map((word) => (/^[\w./=:@%+,-]+$/.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`)).join(" "));
+  for (const match of code.matchAll(LITERAL_LIST)) {
+    const head = match[2] === undefined ? [] : [unescape(match[2])];
+    lists.push([...head, ...codeLiterals(match[3])].map(shellQuote).join(" "));
   }
   return lists;
 }

@@ -172,9 +172,7 @@ function splitSegments(command) {
   let opened = []; // the heredocs this segment opened: their bodies come after the line
   const flush = (after) => {
     out.push(opened.length ? { text, before, after, heredocs: opened } : { text, before, after });
-    before = after;
-    text = "";
-    opened = [];
+    [before, text, opened] = [after, "", []];
   };
 
   for (let i = 0; i < command.length; i += 1) {
@@ -209,8 +207,7 @@ function splitSegments(command) {
     } else if (ch === "<" && command[i + 1] === "<") {
       const heredoc = heredocWord(command.slice(i));
       if (heredoc) {
-        heredocs.push(heredoc);
-        opened.push(heredoc);
+        heredocs.push(heredoc) && opened.push(heredoc);
       }
       text += "<<";
       i += 1;
@@ -240,7 +237,7 @@ function splitSegments(command) {
     }
   }
 
-  out.push(opened.length ? { text, before, after: null, heredocs: opened } : { text, before, after: null });
+  flush(null);
   return out;
 }
 
