@@ -80,6 +80,7 @@ const RULES = [
 
   // In the code, not configurable.
   { key: "epic.maxStories", file: null, scope: "fixed", default: 7, unit: "stories", doc: "doctor warns `epic_too_large` above it." },
+  { key: "review.strictCleanRounds", file: null, scope: "fixed", default: 2, unit: "rounds", story: "19-09", doc: "Passing rounds in a row a STRICT story needs after a failed review." },
 ];
 
 // Context budgets: stated by the flow-run skill, never by RULES.md (which
