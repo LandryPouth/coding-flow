@@ -680,6 +680,7 @@ at MVP stage, read by every agent glob and every `listEpics` walk.
   collision detection in the same epic.
 
 **Refused in the same decision**: a `restore` command (the recovery line is a
-plain `git checkout`), a `--force` past the gate (none found a real case),
+plain `git checkout` of a commit on the default branch, so a clone must fetch
+that branch first), a `--force` past the gate (none found a real case),
 editing documents that link into an archived epic (they are listed as "still
 links here", never rewritten), and archiving several epics in one call.

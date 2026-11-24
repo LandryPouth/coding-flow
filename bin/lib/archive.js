@@ -241,7 +241,10 @@ function buildEntry({ name, sha, stories, date }) {
   const { number, slug } = parseEpicName(name);
   const rel = `epics/${name}`;
   const lines = [
-    `### ${number ? `Epic ${number}` : name} — ${cell(epicTitle(name))} <!-- coding-flow:archived ${number || "-"} ${slug} -->`,
+    // The marker sits on its own line: on the heading it would end up in the
+    // heading's anchor, and links to the entry would miss it.
+    `<!-- coding-flow:archived ${number || "-"} ${slug} -->`,
+    `### ${number ? `Epic ${number}` : name} — ${cell(epicTitle(name))}`,
     "",
     `- Archived ${date}; the text is at \`${sha.slice(0, 7)}\` (\`${rel}\`).`,
     `- Recover: \`git checkout ${sha} -- ${rel}\``,
@@ -255,29 +258,70 @@ function buildEntry({ name, sha, stories, date }) {
 }
 
 // Tracked files outside the epic that still name it. Listed, never edited.
-// `links` are Markdown files with a link target into the epic: those dangle
-// once it is gone. `mentions` only name it (a path in prose, a test fixture).
-// epics/INDEX.md is left out: it names every epic, and archive maintains it.
+// `links` are Markdown files with a link whose target resolves into the epic:
+// those dangle once it is gone. `mentions` only name it (a path in prose or in
+// code, a test fixture). epics/INDEX.md is left out: it names every epic, and
+// archive maintains it.
 function linksInto(rel) {
-  const out = git(["grep", "-l", "-F", "-e", rel, "--", "."], { allowFail: true }) || "";
-  const files = out
-    .split("\n")
-    .filter(Boolean)
-    .map(toPortable)
-    .filter((file) => !file.startsWith(`${rel}/`) && file !== toPortable(INDEX_FILE))
-    .sort();
-  const escaped = rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const target = new RegExp(`\\]\\([^)\\s]*${escaped}(?:[/#)])`);
+  const name = path.posix.basename(rel);
+  const named = git(["grep", "-l", "-F", "-e", name, "--", "."], { allowFail: true }) || "";
+  // A percent-encoded link never shows the name as written: read those too.
+  const encoded = git(["grep", "-l", "-F", "-e", "%", "--", "*.md", "*.markdown"], { allowFail: true }) || "";
+  const namedFiles = new Set(named.split("\n").filter(Boolean).map(toPortable));
+  const candidates = new Set([...namedFiles, ...encoded.split("\n").filter(Boolean).map(toPortable)]);
   const links = [];
   const mentions = [];
-  for (const file of files) {
+  for (const file of [...candidates].sort()) {
+    if (file.startsWith(`${rel}/`) || file === toPortable(INDEX_FILE)) continue;
     let text = "";
     if (/\.(md|markdown)$/i.test(file)) {
       try { text = fs.readFileSync(path.join(cwd, file), "utf8"); } catch { text = ""; }
     }
-    (target.test(text) ? links : mentions).push(file);
+    if (linkTargets(text).some((target) => resolvesInto(target, file, rel))) links.push(file);
+    else if (namedFiles.has(file)) mentions.push(file);
   }
   return { links, mentions };
+}
+
+// Every link target in a Markdown text: inline `[x](t "title")` and `(<t>)`,
+// reference definitions `[x]: t`, and HTML `href`/`src`. Fenced code blocks and
+// code spans are dropped first: a link shown as an example is not a link.
+function linkTargets(markdown) {
+  let text = "";
+  let fence = null;
+  for (const line of markdown.split(/\r?\n/)) {
+    const open = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (open && open[1][0] === fence[0] && open[1].length >= fence.length && line.trim() === open[1].trim()) fence = null;
+      continue;
+    }
+    if (open) {
+      fence = open[1];
+      continue;
+    }
+    text += `${line}\n`;
+  }
+  text = text.replace(/(`+)[\s\S]*?\1/g, "");
+  const targets = [];
+  const inline = /\]\(\s*(<[^>\n]*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+  const reference = /^\s{0,3}\[[^\]\n]+\]:\s*(<[^>\n]*>|\S+)/gm;
+  const html = /\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+  for (const match of text.matchAll(inline)) targets.push(match[1]);
+  for (const match of text.matchAll(reference)) targets.push(match[1]);
+  for (const match of text.matchAll(html)) targets.push(match[1] ?? match[2]);
+  return targets;
+}
+
+// Whether a link target written in `file` points at `rel` or inside it.
+function resolvesInto(target, file, rel) {
+  let link = target.replace(/^<|>$/g, "").replace(/[?#].*$/, "");
+  if (!link || /^[a-z][a-z0-9+.-]*:/i.test(link)) return false;
+  try { link = decodeURIComponent(link); } catch { /* keep it as written */ }
+  const resolved = link.startsWith("/")
+    ? path.posix.normalize(link.slice(1))
+    : path.posix.normalize(path.posix.join(path.posix.dirname(file), link));
+  const clean = resolved.replace(/\/+$/, "");
+  return clean === rel || clean.startsWith(`${rel}/`);
 }
 
 function plan(name) {

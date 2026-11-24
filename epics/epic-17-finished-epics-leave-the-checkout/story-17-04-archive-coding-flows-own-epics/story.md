@@ -163,3 +163,42 @@ they point at nothing.
   and plain mentions are not` in `test/archive.test.js`. It was red before
   the change and is green after.
 
+
+### Review fixes (2026-11-24)
+
+- **INDEX anchors.** The entry marker used to sit on the heading line, where
+  it could end up in GitHub's anchor, so the 19 repointed links could miss
+  their entry. The marker now sits on its own line above the heading, so the
+  anchor is the plain heading slug. This keeps the 17-02 contract: the reader
+  finds a marker anywhere in the archived section, and old-shape entries are
+  still read. The 16 entries in this repository's `INDEX.md` were moved to
+  the new shape. The links needed no change. All 19 anchors were checked
+  against the slugs of the headings: 19 match, none missing.
+- **Recovery needs the default branch.** The recovery commit `2592244` is a
+  merge on `main`, not an ancestor of `develop`. The INDEX header, the README
+  row and design decision 18 now say to fetch the default branch first.
+- **The links that count.** `linksInto` now resolves each link target from
+  the file it is in. It covers:
+  - inline links, with a title or in angle brackets;
+  - reference definitions;
+  - HTML `href` and `src`;
+  - percent-encoded paths;
+  - root-relative paths;
+  - relative links from a sibling epic.
+
+  Fenced code blocks and code spans are skipped. Tests in
+  `test/archive.test.js`: `the entry heading is plain text…` and `every
+  Markdown link form into the epic is a link…`. Both were red before the
+  change and are green after.
+- **Doctor (P1).** `epics/INDEX.md` no longer matched the epics on disk: it
+  listed 17-04 as planned, and 29-04 was missing. `ai-flow archive --refresh`
+  now runs as the last step before the closing commit. `npm test` passes all
+  1768 tests. Doctor's output, exit 0, as run:
+
+  ```
+  Warnings:
+  - the OpenCode install for every project (/home/landry_pouth/.config/opencode) is behind this version (2 file(s) missing, e.g. skills/flow-recover/SKILL.md) — run `ai-flow upgrade --global`, then restart OpenCode
+  - version 0.15.0 has no v0.15.0 tag — after `npm publish`, run `npm run release`
+  ```
+
+  Both warnings were in the baseline. Nothing else is reported.

@@ -12,7 +12,7 @@ the proof-derived state comes from `ai-flow status`.
 - 17-01 · Archive one finished epic · done
 - 17-02 · The index lists every epic, live and archived · done
 - 17-03 · An epic number is never handed out twice · done
-- 17-04 · coding-flow archives its own finished epics · planned
+- 17-04 · coding-flow archives its own finished epics · in-progress
 
 ### Epic 18 — The run remembers (`epics/epic-18-the-run-remembers/`)
 
@@ -119,6 +119,7 @@ the proof-derived state comes from `ai-flow status`.
 - 29-01 · The diff is scanned · planned
 - 29-02 · A changed test runs, and a removed test is declared · planned
 - 29-03 · Destructive commands wait for the human · planned
+- 29-04 · Commands built to evade the guard · planned
 
 ### Epic 30 — One workspace, several repositories (`epics/epic-30-one-workspace-several-repos/`)
 
@@ -136,9 +137,11 @@ the proof-derived state comes from `ai-flow status`.
 <!-- coding-flow:archived-section -->
 
 Written by `ai-flow archive`, append-only. Each entry names the commit where
-the epic's text still exists and the command that brings it back.
+the epic's text still exists and the command that brings it back. That commit
+is on the default branch: fetch the default branch first if your clone lacks it.
 
-### Epic 01 — Multi-platform support (Codex, Gemini CLI, OpenCode, Antigravity) <!-- coding-flow:archived 01 multi-platform-support -->
+<!-- coding-flow:archived 01 multi-platform-support -->
+### Epic 01 — Multi-platform support (Codex, Gemini CLI, OpenCode, Antigravity)
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-01-multi-platform-support`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-01-multi-platform-support`
@@ -151,7 +154,8 @@ the epic's text still exists and the command that brings it back.
 | 01-04 | Commands for Gemini CLI, OpenCode, and Antigravity | done (written; proof is stale) |
 | 01-05 | Record signals from an unrecognized platform | done (written; last verify failed) |
 
-### Epic 02 — Worktree story landing <!-- coding-flow:archived 02 worktree-story-landing -->
+<!-- coding-flow:archived 02 worktree-story-landing -->
+### Epic 02 — Worktree story landing
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-02-worktree-story-landing`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-02-worktree-story-landing`
@@ -163,7 +167,8 @@ the epic's text still exists and the command that brings it back.
 | 02-03 | Verify and roll back a landed story | done (written; last verify failed) |
 | 02-04 | Surface landable worktrees in status | done (written; proof is stale) |
 
-### Epic 03 — Worktree orchestration <!-- coding-flow:archived 03 worktree-orchestration -->
+<!-- coding-flow:archived 03 worktree-orchestration -->
+### Epic 03 — Worktree orchestration
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-03-worktree-orchestration`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-03-worktree-orchestration`
@@ -174,7 +179,8 @@ the epic's text still exists and the command that brings it back.
 | 03-02 | Auto-land a finished chain | done (written; proof is stale) |
 | 03-03 | Fix the branch-per-epic policy hint | done (written; proof is stale) |
 
-### Epic 04 — Review evidence & gating <!-- coding-flow:archived 04 review-evidence -->
+<!-- coding-flow:archived 04 review-evidence -->
+### Epic 04 — Review evidence & gating
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-04-review-evidence`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-04-review-evidence`
@@ -186,7 +192,8 @@ the epic's text still exists and the command that brings it back.
 | 04-03 | Score diff risk from structural git signals | done (written; proof is stale) |
 | 04-04 | Require an independent, adversarial review pass in STRICT | done (written; proof is stale) |
 
-### Epic 05 — Guard hardening — real paths, the shell's own cwd, and an honest "not checked" <!-- coding-flow:archived 05 guard-hardening -->
+<!-- coding-flow:archived 05 guard-hardening -->
+### Epic 05 — Guard hardening — real paths, the shell's own cwd, and an honest "not checked"
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-05-guard-hardening`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-05-guard-hardening`
@@ -199,7 +206,8 @@ the epic's text still exists and the command that brings it back.
 | 05-04 | `mode: strict` fails closed | stale |
 | 05-05 | Adversarial corpus and honest limits | done (written; proof is stale) |
 
-### Epic 06 — The OpenCode guard runs on OpenCode 2 <!-- coding-flow:archived 06 opencode-v2-guard -->
+<!-- coding-flow:archived 06 opencode-v2-guard -->
+### Epic 06 — The OpenCode guard runs on OpenCode 2
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-06-opencode-v2-guard`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-06-opencode-v2-guard`
@@ -210,7 +218,8 @@ the epic's text still exists and the command that brings it back.
 | 06-02 | `doctor` knows which OpenCode major the guard must fit | stale |
 | 06-03 | This repository's OpenCode plugin without an absolute path | done (written; no verify captured) |
 
-### Epic 07 — Proof scope — a story is measured on its own diff <!-- coding-flow:archived 07 proof-scope -->
+<!-- coding-flow:archived 07 proof-scope -->
+### Epic 07 — Proof scope — a story is measured on its own diff
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-07-proof-scope`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-07-proof-scope`
@@ -221,7 +230,8 @@ the epic's text still exists and the command that brings it back.
 | 07-02 | Evidence and generated files are not "changes" | done (written; no verify captured) |
 | 07-03 | Show the scope | done (written; no verify captured) |
 
-### Epic 08 — Evidence that knows its own strength and the policy it was made under <!-- coding-flow:archived 08 evidence-levels -->
+<!-- coding-flow:archived 08 evidence-levels -->
+### Epic 08 — Evidence that knows its own strength and the policy it was made under
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-08-evidence-levels`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-08-evidence-levels`
@@ -233,7 +243,8 @@ the epic's text still exists and the command that brings it back.
 | 08-03 | Contrary signals fail strict runs | stale |
 | 08-04 | Review verdicts that hold | stale |
 
-### Epic 09 — Monorepo proof — measured coverage and honest command results <!-- coding-flow:archived 09 monorepo-proof -->
+<!-- coding-flow:archived 09 monorepo-proof -->
+### Epic 09 — Monorepo proof — measured coverage and honest command results
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-09-monorepo-proof`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-09-monorepo-proof`
@@ -244,7 +255,8 @@ the epic's text still exists and the command that brings it back.
 | 09-02 | Record cache replays | stale |
 | 09-03 | Configurable command timeout | done (written; proof is stale) |
 
-### Epic 10 — Execution and ship safety <!-- coding-flow:archived 10 execution-and-ship-safety -->
+<!-- coding-flow:archived 10 execution-and-ship-safety -->
+### Epic 10 — Execution and ship safety
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-10-execution-and-ship-safety`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-10-execution-and-ship-safety`
@@ -256,7 +268,8 @@ the epic's text still exists and the command that brings it back.
 | 10-03 | CI on Windows and macOS | done (written; no verify captured) |
 | 10-04 | Tags and releases follow npm | stale |
 
-### Epic 11 — Maintainability and measurement <!-- coding-flow:archived 11 maintainability-and-measurement -->
+<!-- coding-flow:archived 11 maintainability-and-measurement -->
+### Epic 11 — Maintainability and measurement
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-11-maintainability-and-measurement`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-11-maintainability-and-measurement`
@@ -268,7 +281,8 @@ the epic's text still exists and the command that brings it back.
 | 11-03 | Run the benchmark | done (written; no verify captured) |
 | 11-04 | `status` does not read a story's own description as progress | done (written; no verify captured) |
 
-### Epic 12 — Core first — guard and proof stand alone, everything else is an opt-in layer <!-- coding-flow:archived 12 core-first -->
+<!-- coding-flow:archived 12 core-first -->
+### Epic 12 — Core first — guard and proof stand alone, everything else is an opt-in layer
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-12-core-first`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-12-core-first`
@@ -280,7 +294,8 @@ the epic's text still exists and the command that brings it back.
 | 12-03 | Core does not depend on layers | done (written; no verify captured) |
 | 12-04 | Document the core first | done (written; no verify captured) |
 
-### Epic 13 — Proof holes, and this repository's own bar <!-- coding-flow:archived 13 proof-holes-and-own-bar -->
+<!-- coding-flow:archived 13 proof-holes-and-own-bar -->
+### Epic 13 — Proof holes, and this repository's own bar
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-13-proof-holes-and-own-bar`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-13-proof-holes-and-own-bar`
@@ -302,7 +317,8 @@ the epic's text still exists and the command that brings it back.
 | 13-13 | The guard's long tail | done (written; proof is stale) |
 | 13-14 | A deletion is a structural signal | done (written; proof is stale) |
 
-### Epic 14 — Codebase recovery (`/flow-recover`) <!-- coding-flow:archived 14 codebase-recovery -->
+<!-- coding-flow:archived 14 codebase-recovery -->
+### Epic 14 — Codebase recovery (`/flow-recover`)
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-14-codebase-recovery`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-14-codebase-recovery`
@@ -317,7 +333,8 @@ the epic's text still exists and the command that brings it back.
 | 14-06 | Security scanners are declared commands, and absence is reported | stale |
 | 14-07 | CRAP and size from lcov: rank the hotspots, stop the growth | stale |
 
-### Epic 15 — What the gauntlet still leaves <!-- coding-flow:archived 15 what-the-gauntlet-still-leaves -->
+<!-- coding-flow:archived 15 what-the-gauntlet-still-leaves -->
+### Epic 15 — What the gauntlet still leaves
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-15-what-the-gauntlet-still-leaves`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-15-what-the-gauntlet-still-leaves`
@@ -332,7 +349,8 @@ the epic's text still exists and the command that brings it back.
 | 15-06 | Did it work? Re-take the study's measures | done (written; proof is stale) |
 | 15-07 | A recipe is present only when it checks | done (written; proof is stale) |
 
-### Epic 16 — Three measured ideas from mattpocock/skills <!-- coding-flow:archived 16 ideas-from-the-skills-review -->
+<!-- coding-flow:archived 16 ideas-from-the-skills-review -->
+### Epic 16 — Three measured ideas from mattpocock/skills
 
 - Archived 2026-11-24; the text is at `2592244` (`epics/epic-16-ideas-from-the-skills-review`).
 - Recover: `git checkout 25922449c219b77e70cb26f777a615e509692a05 -- epics/epic-16-ideas-from-the-skills-review`
