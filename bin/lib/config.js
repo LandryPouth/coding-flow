@@ -87,9 +87,27 @@ function defaultConfig() {
 
 // Reads the config, merging with the defaults and validating the known values.
 // A missing or corrupt config falls back cleanly to the defaults.
+// The config file as read: `unreadable` when it exists and cannot be read or
+// parsed — readConfig then applies the defaults, as for an absent file.
+function readConfigFile(cwd) {
+  const file = configPath(cwd);
+  if (!fs.existsSync(file)) return { existing: null, unreadable: false };
+  try {
+    return { existing: JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")), unreadable: false };
+  } catch {
+    return { existing: null, unreadable: true };
+  }
+}
+
+// readConfig, and whether the file it read was unreadable.
+function readConfigReport(cwd) {
+  const { unreadable } = readConfigFile(cwd);
+  return { config: readConfig(cwd), unreadable };
+}
+
 function readConfig(cwd) {
   const defaults = defaultConfig();
-  const existing = readJson(configPath(cwd), null);
+  const { existing } = readConfigFile(cwd);
 
   if (!existing || typeof existing !== "object" || Array.isArray(existing)) {
     return { ...defaults };
@@ -285,5 +303,6 @@ module.exports = {
   configPath,
   defaultConfig,
   readConfig,
+  readConfigReport,
   ensureConfig,
 };

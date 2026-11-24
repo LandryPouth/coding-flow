@@ -80,6 +80,26 @@
   already exist in `.coding-flow/runs/`, so they stay valid; `ensureConfig`
   takes its defaults from the registry; `next` reads the clean-round count
   from it.
+- **D9 — `rules` calls each consumer's own resolver (review round 3).**
+  Three rounds found `rules` drifting from a consumer whose logic it copied,
+  so no copy is left: where the logic was inline, it was extracted into an
+  exported function that the consumer itself now calls, and `rules` calls the
+  same one. Unreadable is what the consumer reports (a parsed `null`, array or
+  string is readable; the readers apply their defaults to it).
+
+  | Key | Consumer function `rules` calls |
+  |-----|---------------------------------|
+  | config.json keys (`storage` … `validation.timeoutMs`) | `config.js` `readConfigReport` (= `readConfig`, plus `unreadable`) |
+  | `mode` | `harness-config.js` `harnessMode` (evidence.js, coverage-gate.js, guard.js `loadPolicy`) |
+  | `coverageFloor.high/medium/low` | `coverage.js` `resolveCoverageFloor`; the auto reason `defaultCoverageFloor` |
+  | `failOnContrarySignals` | `coverage-gate.js` `failsOnContrarySignals` (`contraryPolicy`) |
+  | `functionSize.max/enforce` | `complexity.js` `functionSizeSettings` |
+  | `redAtBase.command/timeoutMs` | `red-at-base.js` `redAtBaseSettings` (`runRedAtBase`) |
+  | `destructiveCommands`, `allowDestructive`, `worktrees.primaryLocked`; harness.json unreadable | `guard.js` `effectiveDestructivePolicy` (`loadPolicy` + `primaryLock`, which `settle` calls) |
+  | every other harness.json key | `harness-config.js` `readHarnessConfig` |
+
+  `init`/`harness init` look for recorded verify proofs in this checkout, the
+  primary one and every linked worktree (`git worktree list`).
 
 ## Test Plan
 

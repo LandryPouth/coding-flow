@@ -311,6 +311,17 @@ function defaultHarnessConfig() {
   };
 }
 
+// The modes `harness init --mode` accepts. Only "strict" tightens anything.
+const HARNESS_MODES = ["fast", "standard", "strict"];
+
+// The mode every consumer applies (the gates, the guard): a declared mode, or
+// "standard" for anything else — absent, a typo such as "Strict", a file that
+// is not an object.
+function harnessMode(config) {
+  const mode = config && typeof config === "object" ? config.mode : undefined;
+  return HARNESS_MODES.includes(mode) ? mode : "standard";
+}
+
 function readHarnessConfig(root = cwd) {
   const defaults = defaultHarnessConfig();
   const config = readJson(harnessConfigPath(root), null);
@@ -401,15 +412,37 @@ function ensureHarnessConfig({ dryRun = false } = {}) {
   return true;
 }
 
-function hasRecordedProofs() {
+// A verify proof recorded in this checkout, the primary checkout, or any linked
+// worktree of the repository: each was fingerprinted against the defaults, and
+// a tracked harness.json reaches the others by merge. git is read
+// lazily: this file is on the guard's path, which must not load child_process.
+function hasRecordedProofs(root = cwd) {
+  const recorded = (dir) => {
+    try {
+      return fs.readdirSync(path.join(dir, ".coding-flow", "runs")).some((name) => name.endsWith("-verify.json"));
+    } catch {
+      return false;
+    }
+  };
+  return recorded(root) || worktreeRoots(root).some(recorded);
+}
+
+function worktreeRoots(root) {
   try {
-    return fs.readdirSync(harnessRunsDir()).some((name) => name.endsWith("-verify.json"));
+    const out = require("child_process").execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+    });
+    return out.split(/\r?\n/).filter((line) => line.startsWith("worktree ")).map((line) => line.slice("worktree ".length));
   } catch {
-    return false;
+    return [];
   }
 }
 
 module.exports = {
+  HARNESS_MODES,
+  harnessMode,
   hasRecordedProofs,
   DEFAULT_REPORT_PATHS,
   harnessConfigPath,

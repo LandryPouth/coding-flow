@@ -12,8 +12,8 @@ const { isDeepStrictEqual } = require("util");
 
 const { cwd } = require("./context");
 const { log, fail } = require("./util");
-const { readConfig } = require("./config");
-const { readHarnessConfig } = require("./harness-config");
+const { readConfigReport } = require("./config");
+const { readHarnessConfig, harnessMode } = require("./harness-config");
 const { RULES, ruleFor, defaultOf } = require("./rules-registry");
 
 const FILES = { config: "config.json", harness: "harness.json" };
@@ -28,141 +28,106 @@ function has(object, dotted) {
   return Boolean(parent && typeof parent === "object" && !Array.isArray(parent) && Object.prototype.hasOwnProperty.call(parent, parts[parts.length - 1]));
 }
 
-// The value the consumer applies for a key, `undefined` when it applies none
-// (the default stands). Each entry calls, or mirrors line for line, the reader
-// that consumes the key — never the raw merged file, which passes a malformed
-// value through untouched (`"Strict"`, `"true"`, `"x"`). A key with no entry is
-// read through readConfig / readHarnessConfig, which validate it themselves.
-const FLOOR_RUNGS = ["verified", "evidence", "exempted", "not-required"];
+// The value in force for a key, as its consumer resolves it: each entry calls
+// the consumer's own resolver, never a copy of its logic (plan.md D9 lists
+// them). A key with no entry is read from readConfig / readHarnessConfig, which
+// validate it themselves; `undefined` there means the reader dropped it and
+// the default applies.
+const lazy = (file) => () => require(file);
+const coverage = lazy("./coverage");
+const coverageGate = lazy("./coverage-gate");
+const complexity = lazy("./complexity");
+const redAtBase = lazy("./red-at-base");
 
-function floorRung(read, key) {
-  const value = at(read.harness, key);
-  return FLOOR_RUNGS.includes(value) ? value : undefined;
-}
-
-function functionSize(read) {
-  return require("./complexity").functionSizeSettings(read.harness);
-}
-
-function destructive(read, field) {
-  return require("./guard").destructivePolicy(read.raw.harness)[field];
-}
-
-// config.js readConfig drops an empty `security` / `fix` list (the proof
-// fingerprint must not change) and applies none: an explicit `[]` is the
-// project's own choice, the same as the default.
-function commandList(read, key) {
-  const value = at(read.config, key);
-  if (value !== undefined) return value;
-  const raw = at(read.raw.config, key);
-  return Array.isArray(raw) && raw.length === 0 ? [] : undefined;
-}
-
-const APPLIED = {
-  "validation.security": (read) => commandList(read, "validation.security"),
-  "validation.fix": (read) => commandList(read, "validation.fix"),
-  // evidence.js, coverage-gate.js test `config.mode === "strict"`: a value
-  // outside the modes `harness init --mode` accepts (`"Strict"`) is the default.
-  mode: (read) => (["fast", "standard", "strict"].includes(read.harness.mode) ? read.harness.mode : undefined),
-  // coverage.js resolveCoverageFloor: a rung, else the mode default.
-  "coverageFloor.high": (read) => floorRung(read, "coverageFloor.high"),
-  "coverageFloor.medium": (read) => floorRung(read, "coverageFloor.medium"),
-  "coverageFloor.low": (read) => floorRung(read, "coverageFloor.low"),
-  // coverage-gate.js: `config.failOnContrarySignals === true`.
-  failOnContrarySignals: (read) => (typeof read.harness.failOnContrarySignals === "boolean" ? read.harness.failOnContrarySignals : undefined),
-  // complexity.js settings().
-  "functionSize.max": (read) => functionSize(read).max,
-  "functionSize.enforce": (read) => functionSize(read).enforced,
-  // red-at-base.js runRedAtBase(); `null` is the written "not set".
-  "redAtBase.command": (read) => {
-    const command = (read.harness.redAtBase || {}).command;
-    if (command === null) return null;
-    return typeof command === "string" && command.trim() ? command.trim() : undefined;
-  },
-  "redAtBase.timeoutMs": (read) => {
-    const timeoutMs = (read.harness.redAtBase || {}).timeoutMs;
-    return timeoutMs === null || Number.isFinite(timeoutMs) ? timeoutMs : undefined;
-  },
-  // Story 29-03's keys are read by the guard from the raw file.
-  destructiveCommands: (read) => destructive(read, "destructiveCommands"),
-  allowDestructive: (read) => destructive(read, "allowDestructive"),
-  "worktrees.primaryLocked": (read) => destructive(read, "primaryLocked"),
+const RESOLVERS = {
+  mode: (read) => harnessMode(read.harness),
+  "coverageFloor.high": (read) => coverage().resolveCoverageFloor(read.harness).high,
+  "coverageFloor.medium": (read) => coverage().resolveCoverageFloor(read.harness).medium,
+  "coverageFloor.low": (read) => coverage().resolveCoverageFloor(read.harness).low,
+  failOnContrarySignals: (read) => coverageGate().failsOnContrarySignals(read.harness),
+  "functionSize.max": (read) => complexity().functionSizeSettings(read.harness).max,
+  "functionSize.enforce": (read) => complexity().functionSizeSettings(read.harness).enforced,
+  "redAtBase.command": (read) => redAtBase().redAtBaseSettings(read.harness).command,
+  "redAtBase.timeoutMs": (read) => redAtBase().redAtBaseSettings(read.harness).timeoutMs,
+  destructiveCommands: (read) => read.guard.destructiveCommands,
+  allowDestructive: (read) => read.guard.allowDestructive,
+  "worktrees.primaryLocked": (read) => read.guard.primaryLocked,
 };
 
-// What a consumer applies when its file exists but cannot be read, where that
-// is not its default. guard.js checkDestructive: "a policy file that cannot be
-// read keeps the lock". Every other reader (readConfig, readHarnessConfig, the
-// guard's destructivePolicy) falls back to its defaults.
-const WHEN_UNREADABLE = { "worktrees.primaryLocked": true };
+// Where the guard took the primary lock from when it is not this checkout's
+// own file (guard.js primaryLock).
+const LOCK_SOURCES = {
+  primary: "project (the primary checkout's harness.json)",
+  "primary-unreadable": "fixed: the primary checkout's harness.json unreadable",
+};
 
-// What `init` writes to leave a key to its auto rule: the same as no key.
-const AUTO_MARKERS = { "coverageFloor.high": "auto" };
-
-function applied(rule, read) {
-  return APPLIED[rule.key] ? APPLIED[rule.key](read) : at(read[rule.file], rule.key);
+function resolved(rule, read) {
+  return RESOLVERS[rule.key] ? RESOLVERS[rule.key](read) : at(read[rule.file], rule.key);
 }
 
 function effective(rule, read) {
   const base = { key: rule.key, scope: rule.scope, file: rule.file ? `.coding-flow/${FILES[rule.file]}` : null, cap: rule.cap || null, doc: rule.doc };
-  const fallback = () => (rule.auto ? rule.auto(read.harness) : { value: defaultOf(rule.key), reason: null });
 
   if (!rule.file) {
     return { ...base, value: defaultOf(rule.key), source: "fixed" };
   }
 
-  // The file exists but does not parse: no project value is applied, and some
-  // consumers do more than fall back (the guard keeps the primary lock).
+  const standing = rule.auto ? rule.auto(read.harness) : { value: defaultOf(rule.key), reason: null };
+  const found = resolved(rule, read);
+  const value = found === undefined ? standing.value : found;
+
+  // The consumer reported the file unreadable: it applies what it applies
+  // without it (the guard keeps the primary lock), and no project value.
   if (read.unreadable.includes(rule.file)) {
-    const kept = Object.prototype.hasOwnProperty.call(WHEN_UNREADABLE, rule.key) ? WHEN_UNREADABLE[rule.key] : applied(rule, read);
-    return { ...base, value: kept !== undefined ? kept : fallback().value, source: `fixed: ${FILES[rule.file]} unreadable` };
+    return { ...base, value, source: `fixed: ${FILES[rule.file]} unreadable` };
   }
 
-  const inFile =
-    has(read.raw[rule.file], rule.key) && at(read.raw[rule.file], rule.key) !== AUTO_MARKERS[rule.key];
-  const value = applied(rule, read);
-
-  if (inFile && value !== undefined && isDeepStrictEqual(value, at(read.raw[rule.file], rule.key))) {
-    return { ...base, value, source: "project" };
+  if (rule.key === "worktrees.primaryLocked" && LOCK_SOURCES[read.guard.lockedBy]) {
+    return { ...base, value, source: LOCK_SOURCES[read.guard.lockedBy] };
   }
 
-  const standing = fallback();
+  const raw = at(read.raw[rule.file], rule.key);
+  // What `init` writes for an auto rule (`coverageFloor.high: "auto"`) is the
+  // same as no key.
+  const inFile = has(read.raw[rule.file], rule.key) && !(rule.auto && isDeepStrictEqual(raw, defaultOf(rule.key)));
   const source = standing.reason ? `auto: ${standing.reason}` : "default";
 
+  if (!inFile) return { ...base, value, source };
+  if (isDeepStrictEqual(value, raw)) return { ...base, value, source: "project" };
   // The reader refused the project's value and applies the default.
-  if (inFile && (value === undefined || isDeepStrictEqual(value, standing.value))) {
-    return { ...base, value: standing.value, source: `${source} (project value ignored)` };
-  }
-
+  if (isDeepStrictEqual(value, standing.value)) return { ...base, value, source: `${source} (project value ignored)` };
   // config.js readConfig records a target it does not know as "unrecognized".
-  if (inFile && rule.key === "target" && value === "unrecognized") {
+  if (rule.key === "target" && value === "unrecognized") {
     return { ...base, value, source: 'project (not a known target: recorded as "unrecognized")' };
   }
-
-  if (inFile) {
-    // The reader kept part of the value (a list with malformed entries dropped).
-    return { ...base, value, source: "project (cleaned by the reader)" };
-  }
-
-  return { ...base, value: standing.value, source };
+  // The reader kept part of the value (malformed entries dropped, trimmed).
+  return { ...base, value, source: "project (cleaned by the reader)" };
 }
 
-// A file's parsed content, `{}` when absent, or `null` when it exists and cannot
-// be read or parsed — the state the guard calls unreadable (guard.js loadPolicy).
+// The file's own content when it is a JSON object, else `{}`: only used to
+// tell whether the project sets a key, never for the value in force.
 function rawFile(root, name) {
-  const file = path.join(root, ".coding-flow", FILES[name]);
-  if (!fs.existsSync(file)) return {};
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+    const parsed = JSON.parse(fs.readFileSync(path.join(root, ".coding-flow", FILES[name]), "utf8").replace(/^\uFEFF/, ""));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
-    return null;
+    return {};
   }
 }
 
+// Unreadable is what the consumers report: readConfig's file reader for
+// config.json, the guard's loadPolicy for harness.json (a parsed `null` or
+// array is readable; the readers apply their defaults to it).
 function readProject(root) {
-  const raw = { config: rawFile(root, "config"), harness: rawFile(root, "harness") };
-  const unreadable = Object.keys(raw).filter((name) => raw[name] === null);
-  for (const name of unreadable) raw[name] = {};
-  return { raw, unreadable, config: readConfig(root), harness: readHarnessConfig(root).config };
+  const guard = require("./guard").effectiveDestructivePolicy(root);
+  const config = readConfigReport(root);
+  return {
+    raw: { config: rawFile(root, "config"), harness: rawFile(root, "harness") },
+    unreadable: [...(config.unreadable ? ["config"] : []), ...(guard.unreadable ? ["harness"] : [])],
+    guard,
+    config: config.config,
+    harness: readHarnessConfig(root).config,
+  };
 }
 
 function effectiveRules(root = cwd) {
@@ -170,8 +135,15 @@ function effectiveRules(root = cwd) {
   return RULES.map((rule) => effective(rule, read));
 }
 
-function unreadableFiles(root = cwd) {
-  return readProject(root).unreadable.map((name) => `.coding-flow/${FILES[name]}`);
+// The files `rules` must name above its table.
+function unreadableNotes(root = cwd) {
+  const read = readProject(root);
+  const files = read.unreadable.map((name) => `.coding-flow/${FILES[name]}`);
+  const lines = files.map((file) => `${file} cannot be read (invalid JSON or no permission): its rules below are what the readers apply without it.`);
+  if (read.guard.lockedBy === "primary-unreadable") {
+    lines.push(`${path.join(read.guard.primaryRoot, ".coding-flow", FILES.harness)} cannot be read: the guard keeps the primary checkout locked.`);
+  }
+  return { files, lines };
 }
 
 function shown(rule) {
@@ -191,16 +163,14 @@ function rulesCommand({ commandArgs, flags }) {
 
   const rules = effectiveRules().filter((rule) => !wanted || rule.key === wanted);
 
-  const unreadable = unreadableFiles();
+  const notes = unreadableNotes();
 
   if (flags.has("--json")) {
-    log(JSON.stringify({ unreadable, rules }, null, 2));
+    log(JSON.stringify({ unreadable: notes.files, rules }, null, 2));
     return;
   }
 
-  for (const file of unreadable) {
-    log(`${file} cannot be read (invalid JSON or no permission): its rules below are what the readers apply without it.`);
-  }
+  for (const line of notes.lines) log(line);
 
   if (wanted) {
     const [rule] = rules;
@@ -224,4 +194,4 @@ function rulesCommand({ commandArgs, flags }) {
   log("One rule in detail: ai-flow rules <key>. All rules, planned ones included: docs/rules-and-limits.md.");
 }
 
-module.exports = { rulesCommand, effectiveRules, unreadableFiles };
+module.exports = { rulesCommand, effectiveRules, unreadableNotes };

@@ -21,7 +21,7 @@ const { readStoryPart, readStoryBundle, extractSection } = require("./story");
 const { matchesPattern } = require("./util");
 const { criterionItems, readSpecDrift } = require("./spec-drift");
 const { readPolicyChanged, readBaseHarness } = require("./policy-drift");
-const { defaultHighRiskPaths, defaultNonBehaviorGlobs, defaultHarnessConfig } = require("./harness-config");
+const { defaultHighRiskPaths, defaultNonBehaviorGlobs, defaultHarnessConfig, harnessMode } = require("./harness-config");
 
 // The default non-behavior entries that are also default high-risk paths: the
 // migration and `.sql` globs (story 13-01).
@@ -636,10 +636,15 @@ const NO_CONTRARY = Object.freeze({
 // What the verdict depends on besides the tree: the mode, the flag, and the risk
 // inputs that decide whether "high" applies. `.coding-flow/` is outside the tree
 // token, so an edit to any of them must change this key to re-run a proof.
+// Only an explicit `true` turns contrary signals into a failure.
+function failsOnContrarySignals(config) {
+  return config.failOnContrarySignals === true;
+}
+
 function contraryPolicy(config) {
   return {
-    strict: config.mode === "strict",
-    failOnContrarySignals: config.failOnContrarySignals === true,
+    strict: harnessMode(config) === "strict",
+    failOnContrarySignals: failsOnContrarySignals(config),
     riskTerms: config.highRiskTerms || null,
     riskPaths: config.highRiskPaths || null,
     policyGlobs: config.policyGlobs || null,
@@ -803,6 +808,7 @@ function contraryFailures({ deletedTests, openCriteria, criteriaChanged, specInD
 }
 
 module.exports = {
+  failsOnContrarySignals,
   readAcceptanceCriteria,
   classifyChangedFiles,
   scanTestWeakening,

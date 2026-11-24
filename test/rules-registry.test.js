@@ -387,8 +387,81 @@ test('an explicit empty list is the project value; a null target says how the re
   assert.deepEqual([byKey.target.value, byKey.target.source], ['unrecognized', 'project (not a known target: recorded as "unrecognized")']);
 });
 
-test('the next-step message reads the clean-round count from the registry', () => {
-  const source = fs.readFileSync(path.join(ROOT, 'bin', 'lib', 'next.js'), 'utf8');
-  assert.doesNotMatch(source, /two clean rounds/);
-  assert.match(source, /review\.strictCleanRounds/);
+
+// Review round 3: `rules` prints what the consumers' own resolvers return, and a
+// file is unreadable only when its consumer says so.
+const { decide } = require('../bin/lib/guard');
+
+function committed(t, harnessText = null) {
+  const dir = project(t);
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  execFileSync('git', ['add', 'a.txt'], { cwd: dir });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init'], { cwd: dir });
+  if (harnessText !== null) writeRaw(dir, 'harness.json', harnessText);
+  return dir;
+}
+
+const switchDenied = (root, command, cwd = root) =>
+  decide({ tool_name: 'Bash', cwd, tool_input: { command } }, root).decision === 'deny';
+
+test('primaryLocked and unreadable agree with the guard for every shape of harness.json', (t) => {
+  const cases = ['null', '[]', '"x"', '42', '{}', '{"mode":"strict",', '{"worktrees":{"primaryLocked":true}}'];
+  for (const text of cases) {
+    const dir = committed(t, text);
+    const json = rulesJson(dir);
+    const locked = json.rules.find((r) => r.key === 'worktrees.primaryLocked');
+    assert.equal(locked.value, switchDenied(dir, 'git switch other'), text);
+    const parses = (() => { try { JSON.parse(text); return true; } catch { return false; } })();
+    assert.deepEqual(json.unreadable, parses ? [] : ['.coding-flow/harness.json'], text);
+    if (parses && text !== '{"worktrees":{"primaryLocked":true}}') assert.equal(locked.source, 'default', text);
+  }
+});
+
+test('config.json is unreadable only when readConfig cannot parse it', (t) => {
+  for (const text of ['null', '[]', '"x"', '{"storage":']) {
+    const dir = project(t);
+    writeRaw(dir, 'config.json', text);
+    const json = rulesJson(dir);
+    const parses = text !== '{"storage":';
+    assert.deepEqual(json.unreadable, parses ? [] : ['.coding-flow/config.json'], text);
+    const storage = json.rules.find((r) => r.key === 'storage');
+    assert.deepEqual([storage.value, storage.source], ['local', parses ? 'default' : 'fixed: config.json unreadable'], text);
+  }
+});
+
+function linkedWorktree(t, primary) {
+  const linked = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-rules-wt-'))), 'wt');
+  t.after(() => fs.rmSync(path.dirname(linked), { recursive: true, force: true }));
+  execFileSync('git', ['worktree', 'add', '-q', '-b', 'side', linked], { cwd: primary });
+  return linked;
+}
+
+test('from a linked worktree, primaryLocked follows the primary checkout as the guard does', (t) => {
+  for (const [text, source] of [
+    ['{"worktrees":{"primaryLocked":true}}', "project (the primary checkout's harness.json)"],
+    ['{"mode":', "fixed: the primary checkout's harness.json unreadable"],
+  ]) {
+    const primary = committed(t, text);
+    const linked = linkedWorktree(t, primary);
+    const locked = rulesJson(linked).rules.find((r) => r.key === 'worktrees.primaryLocked');
+    assert.equal(switchDenied(linked, `git -C ${primary} switch main`), true, text);
+    assert.deepEqual([locked.value, locked.source], [true, source], text);
+  }
+
+  const open = committed(t);
+  const linked = linkedWorktree(t, open);
+  assert.equal(rulesJson(linked).rules.find((r) => r.key === 'worktrees.primaryLocked').value, false);
+  assert.equal(switchDenied(linked, `git -C ${open} switch main`), false);
+});
+
+test('init in a linked worktree sees the proofs recorded in the primary checkout', (t) => {
+  const primary = committed(t);
+  fs.mkdirSync(path.join(primary, '.coding-flow', 'runs'), { recursive: true });
+  fs.writeFileSync(path.join(primary, '.coding-flow', 'runs', '2026-11-01T00-00-00-000Z-verify.json'), '{}');
+  const linked = linkedWorktree(t, primary);
+
+  const res = cli(linked, ['harness', 'init']);
+  assert.equal(res.code, 0, res.out);
+  const written = JSON.parse(fs.readFileSync(path.join(linked, '.coding-flow', 'harness.json'), 'utf8'));
+  assert.equal(written.coverageFloor, undefined, 'the plain defaults keep the recorded proofs valid');
 });
