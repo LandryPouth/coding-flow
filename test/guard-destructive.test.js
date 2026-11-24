@@ -671,3 +671,123 @@ test('R2 P2: branch -f / -M move a branch; a broken policy file keeps the primar
   fs.writeFileSync(path.join(dir, '.coding-flow', 'harness.json'), '{ broken');
   assert.equal(run(dir, 'git switch side').decision, 'deny', 'an unreadable policy file keeps the primary checkout locked');
 });
+
+// Review round 3: two backstops make "allow" mean "fully understood".
+
+function expectNotAllowed(dir, commands, cwd = dir) {
+  for (const command of commands) {
+    const result = run(dir, command, cwd);
+    assert.notEqual(result.decision, 'allow', `${command}: ${result.reason}`);
+  }
+}
+
+test('R3: each reported form ends at least unchecked', (t) => {
+  const dir = repo(t, { worktrees: { primaryLocked: true } });
+  expectNotAllowed(dir, [
+    'cat <<< "$(rm -rf build)"',
+    'cat <<< "$(git reset --hard)"',
+    'cat <<< "$(rm .coding-flow/harness.json)"',
+    "bash <<< 'git reset --hard'",
+    "sh <<< 'rm -rf build'",
+    ". /dev/stdin <<< 'rm -rf build'",
+    "bash -c -e 'rm -rf build'",
+    "bash -c -x 'rm -rf build'",
+    "bash -c +e 'rm -rf build'",
+    "script -qc 'rm -rf build'",
+    "su -lc 'rm -rf build'",
+    "npx -c 'rm -rf build'",
+    "npx --call 'rm -rf build'",
+    "npm exec -c 'rm -rf build'",
+    "pnpm exec -c 'rm -rf build'",
+    "trap 'rm -rf build' EXIT",
+    "trap 'rm .coding-flow/harness.json' EXIT",
+    "git submodule foreach 'git reset --hard'",
+    'git bisect run rm -rf build',
+    'rm ~+/.coding-flow/harness.json',
+    'rm ~-/.coding-flow/harness.json',
+    "echo $'it\\'s' \"$(rm -rf build)\"",
+    "x=$'\\''; rm -rf build",
+    'X=1 rm$IFS-rf$IFS./build',
+    'rm$IFS-rf$IFS/build',
+    'echo "$(case a in a) echo;; esac; rm -rf build)"',
+  ]);
+  // Where the fix is direct, the refusal itself.
+  expectAll(dir, 'deny', [
+    "bash -c -e 'rm -rf build'",
+    "bash -c +e 'rm -rf build'",
+    "bash -c -o errexit 'rm -rf build'",
+    "script -qc 'rm -rf build'",
+    "su -lc 'rm -rf build'",
+    "npx -c 'rm -rf build'",
+    "npx --call 'rm -rf build'",
+    "trap 'rm -rf build' EXIT",
+    "git submodule foreach 'git reset --hard'",
+    'git bisect run rm -rf build',
+  ]);
+});
+
+test('R3 backstop 1: a construct the reader does not model is unchecked, on forms nobody listed', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'unchecked', [
+    'coproc rm -rf build',
+    'coproc W { rm -rf build; }',
+    '{rm,-rf,build}',
+    'rm -{r,f} build',
+    '/bin/r? -rf build',
+    "shopt -s expand_aliases; alias x='git status'; x",
+    'echo $((x+1))',
+    'ls @(build)',
+    'IFS=,; X=rm,-rf,build; echo $X',
+    'cat ~root/notes',
+    'X=rm; $X -rf build',
+  ]);
+});
+
+test('R3 backstop 2: destructive text handed to a command that is not inert is unchecked, on forms nobody listed', (t) => {
+  const dir = repo(t);
+  // At least unchecked (the write reader already refuses an interpreter writing the policy file).
+  expectNotAllowed(dir, [
+    "ssh host 'git reset --hard'",
+    "tmux send-keys 'rm -rf build' Enter",
+    "node -e \"require('fs').unlinkSync('.coding-flow/harness.json')\"",
+    "python3 -c \"import os; os.remove('.coding-flow/harness.json')\"",
+    "make CLEAN='git clean -fdx'",
+  ]);
+  expectAll(dir, 'deny', ["busybox sh -c 'rm -rf build'", "sudo -u root busybox sh -c 'git reset --hard'"]);
+});
+
+// Lens B: the everyday workflow stays allowed.
+const EVERYDAY = [
+  "git commit -m \"$(cat <<'EOF'\nfix: don't rm -rf build (\"really\")\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\"",
+  "gh pr create --title \"fix: rm -rf guard\" --body \"$(cat <<'EOF'\n## Summary\n- git reset --hard is refused; 'quotes' and \"more\"\nEOF\n)\"",
+  'grep -rn "rm -rf" .',
+  'rg -n "git reset --hard" bin',
+  'echo "use rm -rf carefully"',
+  "printf '%s\\n' 'git push --force'",
+  'git log --oneline -5',
+  'git log --grep "reset --hard"',
+  'npm test',
+  'node bin/ai-flow.js verify --story epics/x/story-y',
+  'git push -u origin HEAD',
+  'trash build',
+  'git stash push -u -m "before rm -rf"',
+  'find . -name "*.js" -print',
+  'find . -name "*.js" | xargs grep -l foo',
+  'git ls-files | xargs wc -l',
+  'git branch -d side',
+  'git worktree remove ../wt',
+  'git restore --staged a.txt',
+  'docker compose up -d',
+  'npx prisma migrate dev',
+  'git status && git diff --stat',
+  'for f in *.js; do echo "$f"; done',
+  'echo "$(date)" `pwd`',
+  'git tag -a v1 -m "after git reset --hard"',
+  'ls -la | head -20',
+  'mkdir -p build && cp a.txt build/',
+];
+
+test('Lens B: the everyday workflow is allowed', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'allow', EVERYDAY);
+});

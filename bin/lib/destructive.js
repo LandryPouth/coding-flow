@@ -31,6 +31,8 @@ const TOO_DEEP = `a destructive-command check stops at ${MAX_DEPTH} nested scrip
 const CLI_ALIAS = "git runs an alias defined on its own command line";
 const HIDDEN_VERB = "a destructive command may be run by a command the guard does not read";
 const UNREAD_SUBSTITUTION = "a command substitution the guard cannot read";
+const UNMODELLED = "the command uses shell syntax the guard does not model";
+const HANDED_TEXT = "a command is handed text the guard reads as a destructive command";
 
 // Short options glued in one word (`-fdx`) and long options (`--force=…`), up to `--`.
 // `has(letter, name)` reads a long option as git and GNU tools do: any prefix
@@ -73,7 +75,7 @@ function operandsOf(args, valueOptions = new Set()) {
 }
 
 const resolveIn = (cwd, word, home) => {
-  if (EXPANDS.test(word)) {
+  if (EXPANDS.test(word) || /^~[^/]/.test(word)) {
     return null;
   }
   const expanded = word === "~" ? home : word.startsWith("~/") ? path.join(home, word.slice(2)) : word;
@@ -239,6 +241,19 @@ function readGit(out, args, cwd, ctx) {
   }
   const rest = args.slice(i + 1);
   const words = ["git", sub, ...rest];
+  if (sub === "submodule" && rest.includes("foreach")) {
+    // `git submodule foreach [--recursive] 'cmd'`: cmd runs in a shell in each submodule.
+    const script = rest.slice(rest.indexOf("foreach") + 1).filter((arg) => !arg.startsWith("-")).join(" ");
+    readScript(out, script, null, ctx);
+    return;
+  }
+  if (sub === "bisect" && rest[0] === "run" && rest[1] !== undefined) {
+    const command = commandFromWords(rest.slice(1));
+    if (command) {
+      readCommand(out, command, dir, ctx);
+    }
+    return;
+  }
   if (sub === "rm") {
     readRemoval(out, rest, dir);
   } else if (sub === "mv") {
@@ -301,7 +316,11 @@ function readMove(out, args, cwd, sourceMode = "remove") {
 const FIND_TESTS = new Set(["-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex"]);
 
 // Commands that never run, remove or overwrite the words they are handed.
-const INERT = new Set(["echo", "printf", "grep", "egrep", "fgrep", "rg", "ag", "which", "whereis", "type", "man", "help", "info", "cat", "head", "tail", "less", "more", "ls", "wc", "sort", "uniq", "cut", "stat", "file", "diff", "cmp", "md5sum", "sha1sum", "sha256sum", "test", "[", "true", "false", "basename", "dirname", "realpath", "readlink", "du", "jq"]);
+// Each prints, searches or measures its words and runs none of them (plan.md D34).
+// `rg --pre CMD` and `man -P CMD` run a program: then they are not inert.
+const INERT = new Set(["echo", "printf", "grep", "egrep", "fgrep", "rg", "which", "whereis", "type", "man", "help", "cat", "head", "tail", "ls", "wc", "uniq", "cut", "stat", "file", "cmp", "md5sum", "sha1sum", "sha256sum", "test", "[", "true", "false", "basename", "dirname", "realpath", "readlink", "du", "jq"]);
+const RUNS_A_PROGRAM = { rg: /^--pre(?:=|$)/, man: /^(?:-P|--pager|-H|--html)/ };
+const isInert = ({ name, args }) => INERT.has(name) && !(RUNS_A_PROGRAM[name] && args.some((arg) => RUNS_A_PROGRAM[name].test(arg)));
 
 // The commands `readCommand` reads: a later word naming one may be run by the
 // command before it.
@@ -318,7 +337,7 @@ function readFindDeletion(out, args, cwd) {
   const copiesOnto = handed !== null && COPIERS.has(handed.name);
   const ontoMatch = copiesOnto && operandsOf(handed.args).slice(-1).some((operand) => operand.includes("{}"));
   const deletes = args.includes("-delete") || (handed !== null && (REMOVERS.has(handed.name) || handed.name === "mv")) || ontoMatch;
-  if (!deletes && (handed === null || INERT.has(handed.name) || copiesOnto)) {
+  if (!deletes && (handed === null || isInert(handed) || copiesOnto)) {
     return;
   }
   const first = args.findIndex((arg) => /^[-(!]/.test(arg));
@@ -463,12 +482,18 @@ function runnerProgram(name, args) {
     return null;
   }
   for (let i = 0; i < rest.length; i += 1) {
+    if (rest[i] === "-c" || rest[i] === "--call") {
+      return { script: rest[i + 1] === undefined ? "" : rest[i + 1] }; // `npx -c 'script'` runs it in a shell
+    }
+    if (rest[i].startsWith("--call=")) {
+      return { script: rest[i].slice("--call=".length) };
+    }
     if (RUNNER_VALUE_OPTIONS.has(rest[i])) {
       i += 1;
     } else if (rest[i] === "--") {
       continue;
     } else if (!rest[i].startsWith("-")) {
-      return { name: path.basename(rest[i]).replace(/@.*$/, ""), args: rest.slice(i + 1) };
+      return { name: path.basename(rest[i]).replace(/@.*$/, ""), raw: rest[i], args: rest.slice(i + 1) };
     }
   }
   return null;
@@ -481,7 +506,7 @@ function commandFromWords(words) {
   if (path.basename(words[index] || "") === "busybox" && words[index + 1] && !words[index + 1].startsWith("-")) {
     index += 1;
   }
-  return words[index] === undefined ? null : { name: path.basename(words[index]), args: words.slice(index + 1) };
+  return words[index] === undefined ? null : { name: path.basename(words[index]), raw: words[index], args: words.slice(index + 1) };
 }
 
 // The command `xargs` or `find -exec` runs, with the words it was given.
@@ -538,7 +563,8 @@ function handedScript({ name, args }) {
     return i < args.length ? args.slice(i).join(" ") : null;
   }
   if (name === "su" || name === "script" || name === "flock") {
-    const at = args.findIndex((arg) => arg === "-c" || arg === "--command");
+    // `-c` may close a cluster: `script -qc`, `su -lc`.
+    const at = args.findIndex((arg) => /^-[A-Za-z]*c$/.test(arg) || arg === "--command");
     if (at !== -1) {
       return args[at + 1] === undefined ? null : args[at + 1];
     }
@@ -587,20 +613,28 @@ function readScript(out, program, cwd, ctx) {
 
 function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
   const { name, args } = command;
-  if (!name || EXPANDS.test(name)) {
-    return; // a substituted verb is already unchecked by the write reader
+  if (!name) {
+    return;
+  }
+  // A verb built by an expansion or a glob (`$X`, `rm$IFS-rf`, `/bin/r?`, `{rm,-rf,x}`)
+  // is tested on the raw word, before `path.basename` can hide it.
+  if (/[$`*?[{]/.test(command.raw || name) && !["[", "[[", "{"].includes(command.raw || name)) {
+    out.unchecked.push({ reason: UNMODELLED, command: [command.raw || name, ...args].join(" ") });
+    return;
   }
   if (name === "eval") {
     readScript(out, args.join(" "), cwd, ctx);
     return;
   }
   if (SHELLS.has(name)) {
-    const flag = args.findIndex((arg) => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
-    // `bash -c -- 'script'`: `--` ends the options, the script follows it.
-    const program = flag === -1 ? undefined : args[flag + 1] === "--" ? args[flag + 2] : args[flag + 1];
+    const program = shellProgram(args);
     if (program !== undefined) {
       readScript(out, program, cwd, ctx);
     }
+    return;
+  }
+  if (name === "trap" && args[0] !== undefined && !/^-/.test(args[0])) {
+    readScript(out, args[0], cwd, ctx); // `trap 'cmd' EXIT` runs cmd later, in this shell
     return;
   }
   const script = handedScript(command);
@@ -612,6 +646,10 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
     readFindDeletion(out, args, cwd);
   }
   const handed = forwarded(command) || runnerProgram(name, args);
+  if (handed && handed.script !== undefined) {
+    readScript(out, handed.script, cwd, ctx);
+    return;
+  }
   if (handed) {
     readCommand(out, handed, cwd, ctx);
     return;
@@ -641,7 +679,7 @@ function readCommand(out, command, cwd, ctx, segments = null, index = -1) {
     readDocker(out, args, cwd);
   } else if (DOWNLOADERS.has(name)) {
     readDownload(out, command, cwd, segments, index);
-  } else if (!INERT.has(name)) {
+  } else if (!isInert(command)) {
     readHiddenVerb(out, args, cwd, ctx);
   }
 }
@@ -680,8 +718,17 @@ function readLine(line, start, ctx) {
     } else if (command.name === "popd") {
       cwd = null;
     } else {
-      readCommand(out, command, cwd, ctx, segments, index);
-      const split = splitString(tokenize(segment.text.trim()));
+      const tokens = tokenize(segment.text.trim());
+      const raw = tokens[verbAt(tokens)];
+      if (UNMODELLED_KEYWORDS.has(command.name)) {
+        out.unchecked.push({ reason: `${UNMODELLED}: \`${command.name}\``, command: segment.text.trim() });
+      }
+      if (unmodelledBraces(tokens, command)) {
+        out.unchecked.push({ reason: `${UNMODELLED}: brace expansion`, command: segment.text.trim() });
+      }
+      readCommand(out, { ...command, raw }, cwd, ctx, segments, index);
+      readHandedText(out, command, cwd, ctx);
+      const split = splitString(tokens);
       if (split !== null) {
         readScript(out, split, cwd, ctx);
       }
@@ -693,7 +740,148 @@ function readLine(line, start, ctx) {
     }
   });
   readSubstitutions(out, joined, segments, start, ctx);
+  const construct = unmodelledSyntax(joined);
+  if (construct) {
+    out.unchecked.push({ reason: `${UNMODELLED}: ${construct}`, command: joined });
+  }
   return out;
+}
+
+// --- backstop 1: only modelled syntax is allowed ---------------------------------------
+
+const UNMODELLED_KEYWORDS = new Set(["case", "coproc", "select", "let"]);
+
+// The line with every quoted part, substitution and heredoc body blanked
+// (`outside`), and the text inside double quotes (`quoted`); `ansi` when it holds
+// a `$'…'`. Null when a quote or substitution does not close.
+function syntaxView(text) {
+  const view = { outside: "", quoted: "", ansi: false };
+  const pending = [];
+  let quote = null;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    const put = (s) => (quote ? (view.quoted += s) : (view.outside += s));
+    if (quote === "'") {
+      quote = ch === "'" ? null : quote;
+    } else if (ch === "\\") {
+      put("_");
+      i += 1;
+    } else if (ch === "`" || (ch === "$" && text[i + 1] === "(" && text[i + 2] !== "(")) {
+      i = ch === "`" ? closingBacktick(text, i + 1) : closingParen(text, i + 2);
+      if (i === -1) {
+        return null;
+      }
+      put(" ");
+    } else if (quote === '"') {
+      quote = ch === '"' ? null : quote;
+      view.quoted += ch === '"' ? " " : ch;
+    } else if (ch === "$" && text[i + 1] === "'") {
+      view.ansi = true;
+      i = ansiEnd(text, i + 2);
+      if (i === -1) {
+        return null;
+      }
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+      view.outside += " ";
+    } else if (ch === "<" && text.startsWith("<<<", i)) {
+      view.outside += "<<<";
+      i += 2;
+    } else if (ch === "<" && text[i + 1] === "<" && heredocAt(text, i)) {
+      const heredoc = heredocAt(text, i);
+      pending.push(heredoc);
+      view.outside += "<<_";
+      i += heredoc.length - 1;
+    } else if (ch === "\n" && pending.length) {
+      i = pastBodies(text, i, pending);
+      view.outside += "\n";
+    } else if (ch === "#" && (i === 0 || /\s/.test(text[i - 1]))) {
+      const end = text.indexOf("\n", i);
+      i = end === -1 ? text.length : end - 1;
+    } else {
+      view.outside += ch;
+    }
+  }
+  return view;
+}
+
+// `{a,b}` / `{1..3}` turn one word into several. Modelled only in the operands of
+// a command whose operands are paths the policy-file check matches as globs
+// (`rm .coding-flow/{a,b}.json`), or of an inert one; anywhere else — the verb,
+// an option (`rm -{r,f}`), a git path — it is unchecked.
+const BRACE_EXPANSION = /\{[^{}\s]*(?:,|\.\.)[^{}\s]*\}/;
+const PATH_OPERANDS = new Set([...REMOVERS, "mv", ...COPIERS, "mkdir", "touch"]);
+
+function unmodelledBraces(tokens, command) {
+  const verb = verbAt(tokens);
+  return tokens.some((token, i) => BRACE_EXPANSION.test(token) && (i <= verb || token.startsWith("-") || !(PATH_OPERANDS.has(command.name) || isInert(command))));
+}
+
+// Arithmetic evaluates the variables it names, and a variable's text may hold
+// `a[$(cmd)]`: only literal arithmetic is modelled.
+const LITERAL_ARITHMETIC = /^[\d\s+\-*/%<>=!&|^~?:,.]*$/;
+
+// What the reader understands is listed here; any other construct names itself.
+const SYNTAX_CHECKS = [
+  ["a here-string (`<<<`)", ({ outside }) => outside.includes("<<<")],
+  ["an ANSI-C string (`$'…'`)", ({ ansi }) => ansi],
+  ["`IFS`", ({ outside, quoted }) => /\$\{?IFS\b|(?:^|[\s;&|(])IFS=/.test(`${outside} ${quoted}`)],
+  ["a tilde form (`~+`, `~-`, `~user`)", ({ outside }) => /(?:^|[\s=:;&|(])~[^\s/;&|)]/.test(outside)],
+  ["an extended glob", ({ outside }) => /(?<![$<>])[@!+*?]\(/.test(outside)],
+  ["arithmetic on variables", ({ outside, quoted }) => [...`${outside} ${quoted}`.matchAll(/\(\(([\s\S]*?)\)\)/g)].some((match) => !LITERAL_ARITHMETIC.test(match[1])) || /\[\[[^\]]*\s-(?:eq|ne|lt|le|gt|ge)\s/.test(outside)],
+  ["alias expansion", ({ outside }) => /\bexpand_aliases\b/.test(outside)],
+];
+
+function unmodelledSyntax(line) {
+  const view = syntaxView(line);
+  if (view === null) {
+    return "a quote or a substitution that does not close";
+  }
+  const found = SYNTAX_CHECKS.find(([, test]) => test(view));
+  return found ? found[0] : null;
+}
+
+// --- backstop 2: destructive text handed to a command ----------------------------------
+
+// Option values that are only text: a commit or tag message, a search, a PR body.
+const TEXT_OPTIONS = {
+  git: new Set(["-m", "--message", "-F", "--file", "--grep", "--format", "--pretty", "-S", "-G", "--author", "--committer"]),
+  gh: new Set(["-b", "--body", "-t", "--title", "-n", "--notes", "-m", "--message"]),
+};
+// The policy file, or the directory holding it named whole (not `.coding-flow/runs`).
+const POLICY_TEXT = /harness\.json|\.coding-flow[\\/]?(?![\\/\w.-])/i;
+
+// The words a command is handed, minus the values of its text options.
+function handedWords({ name, args }) {
+  const text = TEXT_OPTIONS[name];
+  if (!text) {
+    return args;
+  }
+  return args.filter((arg, i) => !text.has(args[i - 1]) && ![...text].some((option) => option.startsWith("--") && arg.startsWith(`${option}=`)));
+}
+
+// A word the reader would read as a destructive command, handed to a command
+// that is not inert (`ssh host 'git reset --hard'`), or a path to the policy
+// file handed to one the reader does not read (`node -e "…harness.json…"`):
+// unchecked. The word may be text; the guard cannot tell.
+function readHandedText(out, command, cwd, ctx) {
+  if (ctx.handed || ctx.hidden || isInert(command)) {
+    return;
+  }
+  const unread = !READ_VERBS.has(command.name);
+  for (const word of handedWords(command)) {
+    const inner = { findings: [], unchecked: [], touched: [], substituted: [] };
+    // `make CLEAN='git clean -fdx'`: the value of an assignment is read too.
+    for (const text of new Set([word, word.replace(/^[\w.-]+=/, "")])) {
+      if (/\s/.test(text)) {
+        readScript(inner, text, cwd, { ...ctx, handed: true });
+      }
+    }
+    if (inner.findings.length || (unread && POLICY_TEXT.test(word))) {
+      out.unchecked.push({ reason: HANDED_TEXT, command: [command.name, ...command.args].join(" ") });
+      return;
+    }
+  }
 }
 
 // --- command substitutions ---------------------------------------------------------
@@ -733,6 +921,36 @@ function pastBodies(text, at, pending, onBody = null) {
   return i;
 }
 
+// The index of the `'` closing an ANSI-C string `$'…'` (where `\'` is a quote), or -1.
+function ansiEnd(text, from) {
+  for (let i = from; i < text.length; i += 1) {
+    if (text[i] === "\\") {
+      i += 1;
+    } else if (text[i] === "'") {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// `bash -c [-e] [+x] [-o opt] [--] 'script'`: the first word after the `-c` cluster
+// that is not an option.
+function shellProgram(args) {
+  const flag = args.findIndex((arg) => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
+  for (let i = flag === -1 ? args.length : flag + 1; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--" || arg === "-") {
+      return args[i + 1];
+    }
+    if (/^[-+][A-Za-z]*[oO]$/.test(arg)) {
+      i += 1;
+    } else if (!/^[-+][A-Za-z]+$/.test(arg)) {
+      return arg;
+    }
+  }
+  return undefined;
+}
+
 // The index of the backtick closing the one before `from`, or -1.
 function closingBacktick(text, from) {
   for (let i = from; i < text.length; i += 1) {
@@ -769,9 +987,16 @@ function closingParen(text, from) {
       }
     } else if (quote === '"') {
       quote = ch === '"' ? null : quote;
+    } else if (ch === "$" && text[i + 1] === "'") {
+      i = ansiEnd(text, i + 2);
+      if (i === -1) {
+        return -1;
+      }
     } else if (ch === "'" || ch === '"') {
       quote = ch;
-    } else if (ch === "<" && text[i + 1] === "<" && text[i + 2] !== "<" && heredocAt(text, i)) {
+    } else if (ch === "<" && text[i + 1] === "<" && text[i + 2] === "<") {
+      i += 2; // a here-string, not a heredoc
+    } else if (ch === "<" && text[i + 1] === "<" && heredocAt(text, i)) {
       const heredoc = heredocAt(text, i);
       pending.push(heredoc);
       i += heredoc.length - 1;
@@ -792,8 +1017,9 @@ function closingParen(text, from) {
   return -1;
 }
 
-// The substitutions in `text` the segment splitter does not read, as scripts;
-// null when one does not close. `expanding`: `text` is a heredoc body, where
+// Every substitution in `text`, as scripts (an unquoted one too: the segment
+// splitter reads it, and reading it again puts it under the backstops); null
+// when one does not close. `expanding`: `text` is a heredoc body, where
 // quotes are text and every `$(` runs.
 function substitutionsOf(text, expanding = false) {
   const scripts = [];
@@ -814,7 +1040,7 @@ function substitutionsOf(text, expanding = false) {
       }
       scripts.push(text.slice(i + 1, end).replace(/\\([`$\\])/g, "$1"));
       i = end;
-    } else if (ch === "$" && text[i + 1] === "(" && text[i + 2] !== "(" && (quote === '"' || expanding)) {
+    } else if (ch === "$" && text[i + 1] === "(" && text[i + 2] !== "(") {
       const end = closingParen(text, i + 2);
       if (end === -1) {
         return null;
@@ -823,11 +1049,18 @@ function substitutionsOf(text, expanding = false) {
       i = end;
     } else if (expanding) {
       continue;
+    } else if (quote === null && ch === "$" && text[i + 1] === "'") {
+      i = ansiEnd(text, i + 2);
+      if (i === -1) {
+        return null;
+      }
     } else if (ch === '"') {
       quote = quote ? null : '"';
     } else if (ch === "'" && quote === null) {
       quote = "'";
-    } else if (quote === null && ch === "<" && text[i + 1] === "<" && text[i + 2] !== "<" && heredocAt(text, i)) {
+    } else if (quote === null && ch === "<" && text[i + 1] === "<" && text[i + 2] === "<") {
+      i += 2; // a here-string, not a heredoc
+    } else if (quote === null && ch === "<" && text[i + 1] === "<" && heredocAt(text, i)) {
       const heredoc = heredocAt(text, i);
       pending.push(heredoc);
       i += heredoc.length - 1;
@@ -875,4 +1108,4 @@ function readDestructive(command, { cwd, host }) {
   return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0 });
 }
 
-module.exports = { readDestructive, substitutionsOf, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS, HIDDEN_VERB, UNREAD_SUBSTITUTION };
+module.exports = { readDestructive, substitutionsOf, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS, HIDDEN_VERB, UNREAD_SUBSTITUTION, UNMODELLED, HANDED_TEXT };

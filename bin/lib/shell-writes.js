@@ -121,6 +121,25 @@ const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 // says which separator came `before` and `after` it, and whether it closes or
 // opens a group: `after: "open"` / `"close"` apply once the segment's own text has
 // run (the text before a `(` is outside the group, the text before a `)` inside it).
+// Heredoc bodies are data: up to the delimiter line, none of it is a command.
+// From the newline at `i`, the index of the last newline of the bodies opened.
+function pastHeredocBodies(command, i, heredocs) {
+  while (heredocs.length) {
+    const { dash, word } = heredocs.shift();
+    let end = command.indexOf("\n", i + 1);
+    while (i + 1 < command.length) {
+      const stop = end === -1 ? command.length : end;
+      const line = command.slice(i + 1, stop);
+      i = stop;
+      end = command.indexOf("\n", i + 1);
+      if ((dash ? line.replace(/^\t+/, "") : line) === word) {
+        break;
+      }
+    }
+  }
+  return i;
+}
+
 function splitSegments(command) {
   const out = [];
   const heredocs = [];
@@ -149,10 +168,21 @@ function splitSegments(command) {
 
     if (ch === "\\" && i + 1 < command.length) {
       text += ch + command[(i += 1)];
+    } else if (ch === "$" && command[i + 1] === "'") {
+      // An ANSI-C string, `$'it\'s'`: `\'` is a quote inside it, not its end.
+      let end = i + 2;
+      while (end < command.length && command[end] !== "'") {
+        end += command[end] === "\\" ? 2 : 1;
+      }
+      text += command.slice(i, end + 1);
+      i = end;
     } else if (ch === '"' || ch === "'") {
       quote = ch;
       text += ch;
-    } else if (ch === "<" && command[i + 1] === "<" && command[i + 2] !== "<") {
+    } else if (ch === "<" && command.startsWith("<<<", i)) {
+      text += "<<<"; // a here-string, not a heredoc
+      i += 2;
+    } else if (ch === "<" && command[i + 1] === "<") {
       const word = /^<<(-?)\s*(?:"([^"]*)"|'([^']*)'|\\?([^\s;&|<>()]+))/.exec(command.slice(i));
       if (word) {
         heredocs.push({ dash: word[1] === "-", word: word[2] ?? word[3] ?? word[4] });
@@ -161,20 +191,7 @@ function splitSegments(command) {
       i += 1;
     } else if (ch === "\n") {
       flush("seq");
-      // Heredoc bodies are data: up to the delimiter line, none of it is a command.
-      while (heredocs.length) {
-        const { dash, word } = heredocs.shift();
-        let end = command.indexOf("\n", i + 1);
-        while (i + 1 < command.length) {
-          const stop = end === -1 ? command.length : end;
-          const line = command.slice(i + 1, stop);
-          i = stop;
-          end = command.indexOf("\n", i + 1);
-          if ((dash ? line.replace(/^\t+/, "") : line) === word) {
-            break;
-          }
-        }
-      }
+      i = pastHeredocBodies(command, i, heredocs);
     } else if (ch === "(") {
       flush("open");
     } else if (ch === ")") {
@@ -1308,6 +1325,9 @@ function readStdinProgram(r, { segment, name, args }) {
   const stdinFlag = SHELLS.has(name) && options.some((arg) => /^-[A-Za-z]*s[A-Za-z]*$/.test(arg));
   if (interpreter && segment.after === "open" && /<\s*$/.test(segment.text)) {
     r.found.push({ target: `(${name} program)`, kind: "write", unchecked: SUBSTITUTED_PROGRAM });
+  } else if (interpreter && /<<</.test(segment.text)) {
+    // `bash <<< 'script'`: the here-string is the program, whatever the operands.
+    r.found.push({ target: `(${name} program)`, kind: "write", unchecked: HEREDOC_PROGRAM });
   } else if (interpreter && (stdinFlag || args.every((arg) => arg.startsWith("-") || arg.startsWith("<")))) {
     if (segment.text.includes("<<")) {
       r.found.push({ target: `(${name} program)`, kind: "write", unchecked: HEREDOC_PROGRAM });

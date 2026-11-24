@@ -181,6 +181,61 @@ P2 dispositions:
   (`git stash pop`), and a human tightening is safe once committed; a `case`
   pattern's `)` inside `"$(…)"` ends the substitution early.
 
+### Review round 3 (fresh reviewer, 9 P1) — two backstops
+
+Three rounds each found one more construct the reader does not model:
+enumeration does not converge. Two backstops make "allow" mean "fully
+understood"; every case reported stays a test (`R3:`), and each backstop has a
+test on forms nobody listed (`R3 backstop 1`, `R3 backstop 2`). The everyday
+workflow is a test too (`Lens B`), so the backstops' noise is measured.
+
+- **D32 — Backstop 1: only modelled syntax is allowed.** Every line read (at any
+  depth) is viewed with its quoted parts, substitutions and heredoc bodies
+  blanked; a construct outside the modelled set makes the line unchecked:
+  a here-string `<<<`, an ANSI-C string `$'…'`, `$IFS`/`${IFS}`/`IFS=`, `~+`/`~-`/
+  `~user`, an extended glob `@(…)`, arithmetic on anything but literals (`$((x+1))`,
+  `((…))`, `[[ … -eq … ]]`: arithmetic evaluates a variable's text, which may hold
+  `a[$(cmd)]`), `expand_aliases`, the keywords `case`, `coproc`, `select`, `let`,
+  a quote or substitution that does not close, and a verb built by an expansion
+  or a glob (`rm$IFS-rf`, `/bin/r?`, `$X`), tested on the raw word before
+  `path.basename`. Brace expansion is modelled only in the path operands of a
+  remover, `mv`, a copier, `mkdir`/`touch` (where the policy-file check matches
+  it as a glob) or an inert command; in the verb, an option or any other
+  command it is unchecked. What the reader models is the rest: words, quotes,
+  backslashes, `;` `&&` `||` `|` `&`, subshells and groups, redirections,
+  heredocs, `$(…)` and backticks (now all read as scripts, unquoted ones too),
+  globs `* ? […]`, `~` and `~/`, assignments, `for`/`while`/`if` bodies.
+- **D33 — Backstop 2: destructive text handed to a command is unchecked.** For a
+  command that is not inert, each word it is handed (and an assignment's value,
+  `make CLEAN='git clean -fdx'`) with a space in it is read as a script; a
+  finding there makes the call unchecked (the word may be data). A word naming
+  the policy file or `.coding-flow` whole, handed to a command the reader does
+  not read (`node -e …`, `python3 -c …`), is unchecked too. Text options are
+  skipped: git's `-m/--message`, `-F/--file`, `--grep`, `--format`/`--pretty`,
+  `-S`/`-G`, `--author`/`--committer`; gh's `--body`, `--title`, `--notes`,
+  `--message` and their short forms.
+- **D34 — The inert list is short, and each entry runs none of its words:**
+  `echo printf grep egrep fgrep rg which whereis type man help cat head tail ls wc
+  uniq cut stat file cmp md5sum sha1sum sha256sum test [ true false basename
+  dirname realpath readlink du jq`. Removed from round 2's list: `less`, `more`,
+  `info` (interactive, can run commands), `sort` (`--compress-program`), `diff`,
+  `ag`. `rg --pre CMD` and `man -P`/`--pager`/`-H` run a program, so they are
+  not inert then.
+- **D35 — Direct fixes where cheap:** `<<<` is stepped over in both substitution
+  scanners and in the segment splitter (it was read as `<<` + a quoted heredoc);
+  `$'…'` is modelled in the scanners and the splitter; a here-string into an
+  interpreter is unchecked (`HEREDOC_PROGRAM`); `bash -c`'s program is the first
+  non-option word after the cluster (`-e`, `+e`, `-x`, `-o opt` skipped);
+  `script -qc`/`su -lc` (a cluster closing in `c`); `npx -c`/`--call`, `npm`/
+  `pnpm exec -c` read their script; `trap 'cmd' SIG`, `git submodule foreach
+  'cmd'` (directory unknown) and `git bisect run cmd` read as commands; `~+`,
+  `~-`, `~user` are expansions in `resolveIn`.
+- **D36 — Left as noise (standard mode allows unchecked; strict refuses it):**
+  `git push origin "$(git branch --show-current)"` (D7: the refspec is an
+  expansion), `$((i+1))`, `cp file{,.bak}` is modelled but `git add {a,b}.js` is
+  not, `npm test -- --grep "rm -rf"`, `grep rm .` style words after an unknown
+  command.
+
 ## Security
 
 - **Who can lift a refusal?** Only a human edit of `harness.json`. An env var, a
