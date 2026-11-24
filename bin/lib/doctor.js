@@ -50,6 +50,14 @@ const { epicNumberCollisions } = require("./epic-numbers");
 // Story 26-06: doctor says where every limit it applies is listed.
 const RULES_POINTER = "Every rule's value here and where it comes from: ai-flow rules";
 
+// The closing lines of both doctor outcomes: the guard's posture, where the
+// binary resolves, and where every rule's value is printed.
+function printFooter(report) {
+  log(report.guardPosture);
+  log(binaryPathNote(report.binaryOnPath));
+  log(RULES_POINTER);
+}
+
 const EPIC_STORY_SOFT_LIMIT = require("./rules-registry").defaultOf("epic.maxStories");
 
 // The docs `/flow-plan bootstrap` is supposed to write. architecture.md is left
@@ -1121,9 +1129,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     }
 
     log("");
-    log(report.guardPosture);
-    log(binaryPathNote(report.binaryOnPath));
-    log(RULES_POINTER);
+    printFooter(report);
   } else {
     log("Coding Flow has installation issues:");
     for (const error of report.errors) {
@@ -1148,9 +1154,7 @@ function doctor({ fix = false, json = false, strict = false } = {}) {
     log("");
     log("Run `ai-flow doctor --fix` to restore missing files.");
     log("");
-    log(report.guardPosture);
-    log(binaryPathNote(report.binaryOnPath));
-    log(RULES_POINTER);
+    printFooter(report);
   }
 
   if (!report.ok) {
