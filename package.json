@@ -2,7 +2,7 @@
   "name": "@landry_pouth/coding-flow",
   "version": "0.15.0",
   "description": "AI-native engineering workflow that makes Claude Code, OpenCode and Codex reliable on real projects: plan, implement, and verify with executed proof that the tests actually ran and passed — not the agent's word. Optional evidence & audit layer for teams that need governance.",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "author": "Landry Pouth",
   "type": "commonjs",
   "repository": {

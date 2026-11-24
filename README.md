@@ -401,3 +401,13 @@ It removes the files Coding Flow installed (rules, `docs/`, `.claude/skills/`, `
 - **[docs/rules-and-limits.md](docs/rules-and-limits.md)** — every rule, default, cap and threshold, shipped and planned, each with its source.
 - **[docs/plans/multi-agent-install.md](docs/plans/multi-agent-install.md)** — what Claude Code, Codex and OpenCode each actually support for enforcement, verified, and the order the port should go in.
 - **[docs/contributing.md](docs/contributing.md)** — CLI architecture, distribution channels, publishing, and the full internal-docs index (for contributors).
+
+## License
+
+[FSL-1.1-MIT](LICENSE) (Functional Source License) © Landry Pouth.
+
+- **Allowed:** read, use, modify and redistribute Coding Flow, including inside a company, for your own products and for teaching.
+- **Not allowed:** offering it, or a modified copy, as a competing commercial product or service.
+- **Each version becomes MIT two years after it is published.**
+- Versions published before 2026-11-24 (npm `0.14.0` and earlier) stay under MIT.
+- "Coding Flow" is the project's name: a published fork must use another name.
