@@ -2,8 +2,9 @@
 
 // `epics/INDEX.md`: the one file that remembers every epic once its directory
 // has left the checkout (epic 17). This module owns its archived section, which
-// is append-only — nothing on disk could regenerate it. Each entry's heading
-// carries `<!-- coding-flow:archived NN slug -->`, the marker idempotence and
+// is append-only — nothing on disk could regenerate it. Each entry carries
+// `<!-- coding-flow:archived NN slug -->` (on its own line above the heading
+// since story 17-04; on the heading line before), the marker idempotence and
 // numbering (story 17-03) read back. A hand-written INDEX.md is never rewritten:
 // the section is appended after whatever is already there.
 
@@ -21,7 +22,8 @@ const SECTION_HEADER = [
   SECTION_MARKER,
   "",
   "Written by `ai-flow archive`, append-only. Each entry names the commit where",
-  "the epic's text still exists and the command that brings it back.",
+  "the epic's text still exists and the command that brings it back. That commit",
+  "is on the default branch: fetch the default branch first if your clone lacks it.",
   "",
 ].join("\n");
 

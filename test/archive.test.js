@@ -289,6 +289,87 @@ test('tracked files outside the epic that link into it are listed, not edited', 
   assert.equal(fs.readFileSync(path.join(dir, 'docs/plan.md'), 'utf8'), `See [the epic](../${EPIC}/index.md).\n`);
 });
 
+test('only Markdown links into the epic are "still links here"; the index and plain mentions are not', (t) => {
+  const dir = repo(t);
+  write(dir, 'epics/INDEX.md', `# Epics\n\nRecover: \`git checkout abc -- ${EPIC}\`\n`);
+  write(dir, 'docs/plan.md', `See [the epic](../${EPIC}/index.md).\n`);
+  write(dir, 'docs/notes.md', `Planned as \`${EPIC}\`.\n`);
+  write(dir, 'test/fixture.test.js', `const EPIC = '${EPIC}';\n`);
+  commit(dir, 'mentions');
+
+  const res = run(dir, ['archive', EPIC]);
+
+  assert.equal(res.code, 0, res.output);
+  const [, links = '', named = ''] = res.output.split(/Still links here[^\n]*\n|Also named in[^\n]*\n/);
+  assert.match(links, /docs\/plan\.md/);
+  assert.doesNotMatch(links, /notes\.md|fixture\.test\.js|INDEX\.md/);
+  assert.match(named, /docs\/notes\.md/);
+  assert.match(named, /test\/fixture\.test\.js/);
+  assert.doesNotMatch(res.output, /^\s+- epics\/INDEX\.md$/m, 'the index is the tool\'s own file');
+});
+
+test('the entry heading is plain text, so its anchor is the heading slug; the marker sits on its own line', (t) => {
+  const dir = repo(t);
+
+  assert.equal(run(dir, ['archive', EPIC]).code, 0);
+
+  const index = fs.readFileSync(path.join(dir, 'epics/INDEX.md'), 'utf8');
+  assert.match(index, /^### Epic 08 — Evidence levels$/m, 'nothing follows the title on the heading line');
+  assert.match(index, /^<!-- coding-flow:archived 08 evidence-levels -->\n### Epic 08 — Evidence levels$/m);
+  assert.match(index, /fetch the default branch/i, 'the header says recovery needs the default branch');
+  commit(dir, 'archive');
+  const again = run(dir, ['archive', '08']);
+  assert.match(again.output, /already archived/, 'the marker is still read back');
+});
+
+test('every Markdown link form into the epic is a link; code and plain mentions are not', (t) => {
+  const dir = repo(t);
+  write(dir, 'epics/epic-09-next/index.md', '# Epic 09 — Next\n\nAfter [epic 08](../epic-08-evidence-levels/index.md).\n');
+  write(dir, 'docs/ref.md', `See [the epic][e].\n\n[e]: ../${EPIC}/index.md\n`);
+  write(dir, 'docs/title.md', `See [the epic](../${EPIC}/index.md "Epic 08").\n`);
+  write(dir, 'docs/angle.md', `See [the epic](<../${EPIC}/index.md>).\n`);
+  write(dir, 'docs/href.md', `See <a href="../${EPIC}/index.md">the epic</a>.\n`);
+  write(dir, 'docs/encoded.md', `See [the epic](../epics/epic%2D08-evidence-levels/index.md).\n`);
+  write(dir, 'docs/root.md', `See [the epic](/${EPIC}/).\n`);
+  write(dir, 'docs/fenced.md', `Example:\n\n\`\`\`md\n[the epic](../${EPIC}/index.md)\n\`\`\`\n`);
+  write(dir, 'docs/span.md', `Write \`[the epic](../${EPIC}/index.md)\` to link it.\n`);
+  write(dir, 'docs/other.md', `See [another](../epics/epic-08-evidence-levels-two/index.md).\n`);
+  commit(dir, 'links');
+
+  const res = run(dir, ['archive', EPIC, '--json']);
+
+  assert.equal(res.code, 0, res.output);
+  const out = JSON.parse(res.output);
+  assert.deepStrictEqual(out.links, [
+    'docs/angle.md', 'docs/encoded.md', 'docs/href.md', 'docs/ref.md', 'docs/root.md', 'docs/title.md',
+    'epics/epic-09-next/index.md',
+  ]);
+  for (const file of ['docs/fenced.md', 'docs/span.md']) assert.ok(out.mentions.includes(file), `${file} only shows the path`);
+  assert.ok(!out.links.includes('docs/other.md'), 'a longer directory name is not a link into the epic');
+});
+
+test('a link in a file under a non-ASCII path is a link, named by its real path', (t) => {
+  const dir = repo(t);
+  write(dir, 'docs/é/acc.md', `See [the epic](../../${EPIC}/index.md).\n`);
+  write(dir, 'docs/é/enc.md', `See [the epic](../../epics/epic%2D08-evidence-levels/index.md).\n`);
+  commit(dir, 'accented');
+
+  const out = JSON.parse(run(dir, ['archive', EPIC, '--json']).output);
+
+  assert.deepStrictEqual(out.links, ['docs/é/acc.md', 'docs/é/enc.md']);
+  assert.deepStrictEqual(out.mentions, []);
+});
+
+test('a stray backtick does not swallow a link in a later paragraph', (t) => {
+  const dir = repo(t);
+  write(dir, 'docs/rope.md', `Use 1\` of rope.\n\n[the epic](../${EPIC}/index.md)\n\nRun \`npm test\`.\n`);
+  commit(dir, 'stray');
+
+  const out = JSON.parse(run(dir, ['archive', EPIC, '--json']).output);
+
+  assert.deepStrictEqual(out.links, ['docs/rope.md']);
+});
+
 test('a user-written INDEX.md is kept and the archived section is appended after it', (t) => {
   const dir = repo(t);
   write(dir, 'epics/INDEX.md', '# My epics\n\nHand-written notes.\n');

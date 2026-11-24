@@ -20,8 +20,15 @@
 
 ## Decisions
 
-- **One fix pass, one verify**: "never verify while the code changes"; more
-  passes raise cheating.
+- **One fix pass, one verify per round**: "never verify while the code
+  changes"; more passes inside a round raise cheating.
+- **Fresh reviewer for every round, consecutive clean rounds for STRICT
+  (2026-11-22, maintainer):** a re-review by the reviewer that found the
+  defects passed stories that the next fresh reviewer failed. Seen in the
+  unattended run: 13-09 needed 5 reviews (13 P1), 13-13 three (6 P1), and a
+  fix to PR #59's CI opened a P1 its narrow re-review would not have looked
+  for. One review is a sample, not a proof; the cap (4) turns a review that
+  never converges into a signal about the story's size.
 
 ## Test Plan
 

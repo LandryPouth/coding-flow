@@ -92,6 +92,7 @@ The three stories are independent (disjoint files: `scan.js`,
 1. [story-29-01-the-diff-is-scanned](story-29-01-the-diff-is-scanned/spec.md) — `ai-flow scan`: four defect rules on introduced lines, in verify and evidence *(STANDARD — walking skeleton)*
 2. [story-29-02-a-changed-test-runs-and-a-removed-test-is-declared](story-29-02-a-changed-test-runs-and-a-removed-test-is-declared/spec.md) — collected tests, removed test ids, exit code never trusted alone *(STANDARD)*
 3. [story-29-03-destructive-commands-wait-for-the-human](story-29-03-destructive-commands-wait-for-the-human/spec.md) — guard refuses destructive commands and names the safe one *(STRICT — guard)*
+4. [story-29-04-commands-built-to-evade-the-guard](story-29-04-commands-built-to-evade-the-guard/spec.md) — interpreter strings, git alias values, written-then-run scripts; the unread forms stated with their cover *(STRICT — added 2026-11-24 from 29-03's four reviews)*
 
 ## Decisions
 

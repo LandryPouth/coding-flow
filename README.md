@@ -51,7 +51,7 @@ npx @landry_pouth/coding-flow verify           # runs your commands itself; veri
 `init --minimal` installs the guard hook, the harness config and `docs/DOGFOODING.md`. No `RULES.md`, no `epics/`, no skills. What that gives you:
 
 - **The guard** refuses to write a `.env`, a key or a secret before it reaches the disk — through the editing tools and the common shell write forms.
-- **`verify`** executes the configured commands and records verbatim pass/fail as evidence under `.coding-flow/runs/`. The evidence goes stale when the code changes afterwards, so a green result never outlives the diff it was earned on. For work tied to a story, a coverage gate checks that a risky diff carries a test (`NOT PROVEN` otherwise) and `Coverage:` names the strength of the pass; without a story, `verify` keeps the same gate as far as [epic 12](epics/epic-12-core-first/index.md) (story 12-01) has landed.
+- **`verify`** executes the configured commands and records verbatim pass/fail as evidence under `.coding-flow/runs/`. The evidence goes stale when the code changes afterwards, so a green result never outlives the diff it was earned on. For work tied to a story, a coverage gate checks that a risky diff carries a test (`NOT PROVEN` otherwise) and `Coverage:` names the strength of the pass; without a story, `verify` keeps the same gate as far as [epic 12](epics/INDEX.md#epic-12--core-first--guard-and-proof-stand-alone-everything-else-is-an-opt-in-layer) (story 12-01) has landed.
 - **`doctor`** checks the install is really wired; **`report`** collects what the machine saw (denials, failures, install health) into one redacted file you can send.
 
 What it does not guarantee: it reads shell text, not program semantics — scripts, computed paths and the rest are listed in [What the guard does not see](#what-the-guard-does-not-see). Pair it with `mode: strict` and OS-level isolation when the boundary must hold.
@@ -87,7 +87,7 @@ You never chain ten commands by hand: the `/flow-run` skill calls the harness au
 
 ## Installation
 
-**Platforms.** The test suite runs in CI on Linux (Node 18, 20, 22), macOS and Windows (Node 22). The CLI needs Node 18+ and git. On Windows the Claude Code guard hook is a POSIX `sh` command and is not covered by CI there, and `worktree autoland` can leave its landed worktree directory behind (a known open bug); the tests that depend on a POSIX shell are skipped on Windows, each with its reason (see `epics/epic-10-execution-and-ship-safety/story-10-03-ci-on-windows-and-macos/tasks.md`).
+**Platforms.** The test suite runs in CI on Linux (Node 18, 20, 22), macOS and Windows (Node 22). The CLI needs Node 18+ and git. On Windows the Claude Code guard hook is a POSIX `sh` command and is not covered by CI there, and `worktree autoland` can leave its landed worktree directory behind (a known open bug); the tests that depend on a POSIX shell are skipped on Windows, each with its reason (see `epics/epic-10-execution-and-ship-safety/story-10-03-ci-on-windows-and-macos/tasks.md` ([archived](epics/INDEX.md#epic-10--execution-and-ship-safety))).
 
 **Claude Code** installs through its plugin, once for every project. In the Claude Code prompt:
 
@@ -373,7 +373,7 @@ current machine.
 | `ai-flow report` | Collect what went wrong into one file you can send: guard denials, verify failures, risk/coverage distribution, install health. Redacted by default (`--raw` keeps absolute paths, `--json`, `--out FILE`). |
 | `ai-flow audit [--export\|--check\|--decisions]` | Aggregate the append-only ledger; export `docs/AUDIT.md`; CI gate on the latest verify; `--decisions` is the cross-epic `## Decisions` view instead (`--export` → `docs/DECISIONS.md`). |
 | `ai-flow trace [--story <path>]` | Story → commits → PR → evidence → tests chain, with missing links. |
-| `ai-flow archive <epic-dir \| NN> [--dry-run]` | A finished, merged epic leaves the checkout: staged `git rm` plus an `epics/INDEX.md` entry with its stories' proof state and the `git checkout` that brings it back. |
+| `ai-flow archive <epic-dir \| NN> [--dry-run]` | A finished, merged epic leaves the checkout: staged `git rm` plus an `epics/INDEX.md` entry with its stories' proof state and the `git checkout` that brings it back. That commit is on the default branch, so fetch it first. Markdown links into the epic are listed as "still links here", and files that only name it are listed under "also named in". |
 | `ai-flow archive --refresh [--dry-run]` | Rewrites the live section of `epics/INDEX.md`: every epic on disk and every story's written status, between markers; text outside them is never touched. `doctor` warns `epic_index_stale` when it drifts, `doctor --fix` refreshes it. |
 | `ai-flow ci init` | Scaffold a clean-room GitHub Actions workflow (per-story `run` or `verify`, then `audit --check`). |
 | `ai-flow hook install\|uninstall\|status` | Opt-in local pre-push gate running `audit --check`. |

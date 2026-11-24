@@ -338,7 +338,7 @@ test('a tree or an extraction landing on an ancestor of the project is judged as
     'tar -xf /tmp/a.tar --to-command=sh -C /tmp',
   ]);
   // A sibling of the project, not an ancestor (the project itself lives under the temp dir).
-  const sibling = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-sibling-')));
+  const sibling = shellPath(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-dir-swap-sibling-'))));
   t.after(() => fs.rmSync(sibling, { recursive: true, force: true }));
   expectDecisions(dir, 'allow', [`tar -xf /tmp/a.tar -C ${sibling}`, `unzip /tmp/a.zip -d ${sibling}`]);
 });
@@ -432,6 +432,9 @@ test('a substitution anywhere in the command line, before the source too, is unc
 
 test('rsync -e to a remote destination writes nothing here', (t) => {
   const dir = repo(t);
-  expectDecisions(dir, 'allow', ['rsync -avz -e ssh dist/ deploy@host:/var/www/', 'rsync -avze ssh src/ h:/x/', 'rsync --rsh=ssh -a src/ rsync://h/m/']);
+  expectDecisions(dir, 'allow', ['rsync -avz -e ssh dist/ deploy@host:/var/www/', 'rsync -avze ssh src/ hh:/x/', 'rsync --rsh=ssh -a src/ rsync://h/m/']);
+  // `h:/x/` is host h, or drive H: on Windows. A destination is read as the
+  // drive there (it flags more, never less), so the remote shell is unchecked.
+  expectDecisions(dir, process.platform === 'win32' ? 'unchecked' : 'allow', ['rsync -avze ssh src/ h:/x/']);
   expectDecisions(dir, 'unchecked', ['rsync -avz -e ssh deploy@host:/var/www/ src/', 'rsync -e ssh src/ build/']);
 });
