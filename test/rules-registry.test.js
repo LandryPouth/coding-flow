@@ -213,3 +213,100 @@ test('the destructive-command rules show what the guard applies', (t) => {
   const typo = byKey(project(t, { harness: { destructiveCommands: 'of' } }));
   assert.deepEqual([typo.destructiveCommands.value, typo.destructiveCommands.source], ['deny', 'default (project value ignored)']);
 });
+
+// Review round 1: every value is the one the consumer applies, read through
+// the consumer's own normalisation — never the raw merged file.
+function ruleIn(dir, key) {
+  return rulesJson(dir).rules.find((r) => r.key === key);
+}
+
+test('init then rules: the fresh coverageFloor.high of auto is an auto rule, not an ignored value', (t) => {
+  const dir = project(t);
+  fs.rmSync(path.join(dir, '.coding-flow'), { recursive: true, force: true });
+  const res = cli(dir, ['init', '--minimal']);
+  assert.equal(res.code, 0, res.out);
+
+  const high = ruleIn(dir, 'coverageFloor.high');
+  assert.deepEqual([high.value, high.source], ['evidence', 'auto: mode standard → evidence']);
+  assert.doesNotMatch(cli(dir, ['rules']).out, /project value ignored/, 'a fresh project ignores nothing');
+});
+
+test('a mode typo is shown ignored, and the auto floor names the mode it read', (t) => {
+  const typo = project(t, { harness: { mode: 'Strict' } });
+  const mode = ruleIn(typo, 'mode');
+  assert.deepEqual([mode.value, mode.source], ['standard', 'default (project value ignored)']);
+  assert.equal(ruleIn(typo, 'coverageFloor.high').source, 'auto: mode Strict → evidence');
+
+  const fast = ruleIn(project(t, { harness: { mode: 'fast' } }), 'coverageFloor.high');
+  assert.deepEqual([fast.value, fast.source], ['evidence', 'auto: mode fast → evidence']);
+});
+
+test('the auto floor matches what the coverage reader resolves', (t) => {
+  const { defaultCoverageFloor } = require('../bin/lib/coverage');
+  for (const mode of ['standard', 'strict', 'fast', 'Strict']) {
+    assert.equal(ruleIn(project(t, { harness: { mode } }), 'coverageFloor.high').value, defaultCoverageFloor(mode).high, mode);
+  }
+});
+
+test('functionSize is shown as the complexity gate reads it', (t) => {
+  const dir = project(t, { harness: { functionSize: { enforce: 'true', max: '40' } } });
+  const enforce = ruleIn(dir, 'functionSize.enforce');
+  assert.deepEqual([enforce.value, enforce.source], [false, 'default (project value ignored)']);
+  const max = ruleIn(dir, 'functionSize.max');
+  assert.deepEqual([max.value, max.source], [40, 'project (cleaned by the reader)']);
+});
+
+test('redAtBase is shown as the red-at-base run reads it', (t) => {
+  const dir = project(t, { harness: { redAtBase: { timeoutMs: 'x', command: '  npm test -- {files}  ' } } });
+  const timeout = ruleIn(dir, 'redAtBase.timeoutMs');
+  assert.deepEqual([timeout.value, timeout.source], [null, 'default (project value ignored)']);
+  const command = ruleIn(dir, 'redAtBase.command');
+  assert.deepEqual([command.value, command.source], ['npm test -- {files}', 'project (cleaned by the reader)']);
+});
+
+test('failOnContrarySignals is shown as the coverage gate reads it', (t) => {
+  const rule = ruleIn(project(t, { harness: { failOnContrarySignals: 'yes' } }), 'failOnContrarySignals');
+  assert.deepEqual([rule.value, rule.source], [false, 'default (project value ignored)']);
+});
+
+test('a malformed value read by readHarnessConfig or readConfig is shown ignored', (t) => {
+  const dir = project(t, {
+    config: { branchPerEpic: 'no', validation: { timeoutMs: -1 } },
+    harness: { requireTestChange: 'false', minPatchCoverage: '90', testGlobs: 'test/**' },
+  });
+  for (const key of ['branchPerEpic', 'validation.timeoutMs', 'requireTestChange', 'minPatchCoverage', 'testGlobs']) {
+    const rule = ruleIn(dir, key);
+    assert.equal(rule.source, 'default (project value ignored)', key);
+    assert.deepEqual(rule.value, registry.defaultOf(key), key);
+  }
+});
+
+test('harness init --force on an existing file keeps every proof valid and writes what it prints', (t) => {
+  const { policyFingerprint } = require('../bin/lib/policy-fingerprint');
+  const dir = project(t, { harness: { mode: 'standard', minPatchCoverage: 85 } });
+  const before = policyFingerprint(dir);
+
+  const dry = cli(dir, ['harness', 'init', '--force', '--dry-run']);
+  assert.equal(dry.code, 0, dry.out);
+  assert.doesNotMatch(dry.stdout, /coverageFloor|failOnContrarySignals/, 'a dry run prints only what would be written');
+
+  const res = cli(dir, ['harness', 'init', '--force']);
+  assert.equal(res.code, 0, res.out);
+  const written = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'harness.json'), 'utf8'));
+  assert.equal(written.coverageFloor, undefined);
+  assert.equal(written.failOnContrarySignals, undefined);
+  assert.equal(policyFingerprint(dir), before, 'the fingerprint is unchanged');
+});
+
+// Criterion 5, with the spec's literal values and the real `init`.
+test('init writes coverageFloor and failOnContrarySignals with the spec values', (t) => {
+  for (const args of [['init', '--minimal'], ['harness', 'init']]) {
+    const dir = project(t);
+    fs.rmSync(path.join(dir, '.coding-flow'), { recursive: true, force: true });
+    const res = cli(dir, args);
+    assert.equal(res.code, 0, res.out);
+    const written = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'harness.json'), 'utf8'));
+    assert.deepEqual(written.coverageFloor, { high: 'auto', medium: 'evidence', low: 'not-required' }, args.join(' '));
+    assert.equal(written.failOnContrarySignals, false, args.join(' '));
+  }
+});

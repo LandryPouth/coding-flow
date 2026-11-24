@@ -38,7 +38,7 @@
   printing a value no code applies would be a false rule. The `auto` scope
   ships with a real rule instead: `coverageFloor.high` prints
   `auto: mode standard → evidence` (or `strict → verified`). `run.maxAgents`
-  joins the registry, with its WSL reason, in 24-02.
+  joins the registry, with its WSL reason, in 24-02: its spec carries that criterion (added in this story's diff).
 - **D3 — `init` writes `coverageFloor` and `failOnContrarySignals`, the
   readers' defaults do not grow.** `defaultHarnessConfig()` is merged into the
   config hashed by the policy fingerprint; adding keys there would make every
@@ -59,6 +59,18 @@
   (`` `600000` ms ``, `` `80` % ``), an empty list `` `[]` ``, a list by its
   count. Rows that grouped several keys were split, one key per row, so the
   test can find each.
+- **D7 — `rules` reads each value through its consumer (review round 1).**
+  The raw merged file passes a malformed value through untouched, while the
+  consumer refuses it (`mode === "strict"`, `enforce === true`,
+  `Number.isFinite(timeoutMs)`), so printing it would claim a rule that is not
+  applied. `rules.js` holds one entry per key whose reader is not
+  `readConfig`/`readHarnessConfig`: it calls the consumer's own function
+  (`complexity.functionSizeSettings`, `guard.destructivePolicy`,
+  `coverage.defaultCoverageFloor` for the auto reason) or mirrors its one-line
+  test. `mode` accepts the three modes `harness init --mode` accepts. The
+  `"auto"` `init` writes for `coverageFloor.high` reads as no key.
+  `harness init` on an existing file merges `defaultHarnessConfig()`, not the
+  `init` keys, so `--force` keeps the policy fingerprint.
 
 ## Test Plan
 

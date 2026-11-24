@@ -55,9 +55,11 @@ const RULES = [
     defaultFrom: harnessDefault("coverageFloor.high"),
     cap: "`verified` > `evidence` > `exempted` > `not-required`",
     doc: "Rung a high-risk story must reach; `auto` follows the mode.",
+    // The coverage reader's own default, under the mode as written (a typo
+    // such as "Strict" is named, and resolves as the reader resolves it).
     auto: (harness) => {
-      const mode = harness && harness.mode === "strict" ? "strict" : "standard";
-      const value = mode === "strict" ? "verified" : "evidence";
+      const mode = harness && harness.mode !== undefined ? harness.mode : harnessDefault("mode")();
+      const value = require("./coverage").defaultCoverageFloor(mode).high;
       return { value, reason: `mode ${mode} → ${value}` };
     },
   },

@@ -27,28 +27,60 @@ function has(object, dotted) {
   return Boolean(parent && typeof parent === "object" && !Array.isArray(parent) && Object.prototype.hasOwnProperty.call(parent, parts[parts.length - 1]));
 }
 
-// The value a reader applies for a key, `undefined` when it applies none (the
-// default stands).
+// The value the consumer applies for a key, `undefined` when it applies none
+// (the default stands). Each entry calls, or mirrors line for line, the reader
+// that consumes the key — never the raw merged file, which passes a malformed
+// value through untouched (`"Strict"`, `"true"`, `"x"`). A key with no entry is
+// read through readConfig / readHarnessConfig, which validate it themselves.
+const FLOOR_RUNGS = ["verified", "evidence", "exempted", "not-required"];
+
+function floorRung(read, key) {
+  const value = at(read.harness, key);
+  return FLOOR_RUNGS.includes(value) ? value : undefined;
+}
+
+function functionSize(read) {
+  return require("./complexity").functionSizeSettings(read.harness);
+}
+
+function destructive(read, field) {
+  return require("./guard").destructivePolicy(read.raw.harness)[field];
+}
+
+const APPLIED = {
+  // evidence.js, coverage-gate.js test `config.mode === "strict"`: a value
+  // outside the modes `harness init --mode` accepts (`"Strict"`) is the default.
+  mode: (read) => (["fast", "standard", "strict"].includes(read.harness.mode) ? read.harness.mode : undefined),
+  // coverage.js resolveCoverageFloor: a rung, else the mode default.
+  "coverageFloor.high": (read) => floorRung(read, "coverageFloor.high"),
+  "coverageFloor.medium": (read) => floorRung(read, "coverageFloor.medium"),
+  "coverageFloor.low": (read) => floorRung(read, "coverageFloor.low"),
+  // coverage-gate.js: `config.failOnContrarySignals === true`.
+  failOnContrarySignals: (read) => (typeof read.harness.failOnContrarySignals === "boolean" ? read.harness.failOnContrarySignals : undefined),
+  // complexity.js settings().
+  "functionSize.max": (read) => functionSize(read).max,
+  "functionSize.enforce": (read) => functionSize(read).enforced,
+  // red-at-base.js runRedAtBase(); `null` is the written "not set".
+  "redAtBase.command": (read) => {
+    const command = (read.harness.redAtBase || {}).command;
+    if (command === null) return null;
+    return typeof command === "string" && command.trim() ? command.trim() : undefined;
+  },
+  "redAtBase.timeoutMs": (read) => {
+    const timeoutMs = (read.harness.redAtBase || {}).timeoutMs;
+    return timeoutMs === null || Number.isFinite(timeoutMs) ? timeoutMs : undefined;
+  },
+  // Story 29-03's keys are read by the guard from the raw file.
+  destructiveCommands: (read) => destructive(read, "destructiveCommands"),
+  allowDestructive: (read) => destructive(read, "allowDestructive"),
+  "worktrees.primaryLocked": (read) => destructive(read, "primaryLocked"),
+};
+
+// What `init` writes to leave a key to its auto rule: the same as no key.
+const AUTO_MARKERS = { "coverageFloor.high": "auto" };
+
 function applied(rule, read) {
-  if (rule.key === "validation.timeoutMs") {
-    const value = at(read.config, rule.key);
-    return Number.isFinite(value) && value > 0 ? value : undefined;
-  }
-
-  if (rule.key.startsWith("coverageFloor.")) {
-    const value = at(read.harness, rule.key);
-    return ["verified", "evidence", "exempted", "not-required"].includes(value) ? value : undefined;
-  }
-
-  // Story 29-03's keys are read by the guard from the raw file, not by
-  // readHarnessConfig: apply its own reading.
-  if (["destructiveCommands", "allowDestructive", "worktrees.primaryLocked"].includes(rule.key)) {
-    const policy = require("./guard").destructivePolicy(read.raw.harness);
-    const value = rule.key === "worktrees.primaryLocked" ? policy.primaryLocked : policy[rule.key];
-    return value;
-  }
-
-  return at(read[rule.file], rule.key);
+  return APPLIED[rule.key] ? APPLIED[rule.key](read) : at(read[rule.file], rule.key);
 }
 
 function effective(rule, read) {
@@ -59,7 +91,8 @@ function effective(rule, read) {
     return { ...base, value: defaultOf(rule.key), source: "fixed" };
   }
 
-  const inFile = has(read.raw[rule.file], rule.key);
+  const inFile =
+    has(read.raw[rule.file], rule.key) && at(read.raw[rule.file], rule.key) !== AUTO_MARKERS[rule.key];
   const value = applied(rule, read);
 
   if (inFile && value !== undefined && isDeepStrictEqual(value, at(read.raw[rule.file], rule.key))) {
