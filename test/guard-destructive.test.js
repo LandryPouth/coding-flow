@@ -286,10 +286,11 @@ test('npx prisma migrate reset --force is refused, naming the human', (t) => {
   assert.match(result.reason, /ask the human/);
 });
 
-test('allowDestructive allows exactly its prefix: git clean -fdX allowed, git clean -fdx still refused', (t) => {
+test('allowDestructive allows exactly its command: git clean -fdX allowed, git clean -fdx still refused', (t) => {
   const dir = repo(t, { allowDestructive: ['git clean -fdX', 'rm -rf node_modules'] });
-  expectAll(dir, 'allow', ['git clean -fdX', 'git clean -fdX -- build', 'rm -rf node_modules', 'sudo rm -rf node_modules']);
-  expectAll(dir, 'deny', ['git clean -fdx', 'git clean -fd', 'rm -rf node_modules_old', 'rm -rf build', 'git clean -fdX && git reset --hard']);
+  expectAll(dir, 'allow', ['git clean -fdX', 'rm -rf node_modules', 'sudo rm -rf node_modules']);
+  // An extra operand is another command (series round 1: exact, not a prefix; `*` opts in).
+  expectAll(dir, 'deny', ['git clean -fdX -- build', 'git clean -fdx', 'git clean -fd', 'rm -rf node_modules_old', 'rm -rf build', 'git clean -fdX && git reset --hard']);
 });
 
 test('destructiveCommands warn: the command is allowed, the warning printed and recorded', (t) => {
@@ -841,4 +842,39 @@ test('R4-4: docker running a destructive command in a container is never a silen
     'docker run --rm alpine sh -c "git reset --hard"',
   ]);
   expectAll(dir, 'allow', ['docker compose up -d', 'docker ps', 'docker run --rm alpine echo hi']);
+});
+
+// New review series, round 1 (under the re-scoped claim).
+
+test('S1-a: git submodule foreach keeps the flags of an unquoted command', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    'git submodule foreach git reset --hard',
+    'git submodule foreach --recursive git reset --hard',
+    'git submodule foreach -q git clean -fdx',
+    'git submodule foreach git push -f',
+    'git submodule foreach rm -rf node_modules',
+    'git bisect run git reset --hard',
+  ]);
+  expectAll(dir, 'allow', ['git submodule foreach git status', 'git submodule foreach --recursive git pull']);
+});
+
+test("S1-b: a git alias in the repository's config is resolved and read", (t) => {
+  const dir = repo(t);
+  git(dir, 'config', 'alias.co', 'checkout');
+  git(dir, 'config', 'alias.rh', 'reset --hard');
+  git(dir, 'config', 'alias.nuke', '!rm -rf build');
+  git(dir, 'config', 'alias.chain', 'rh');
+  git(dir, 'config', 'alias.st', 'status');
+  git(dir, 'config', 'alias.loop1', 'loop2');
+  git(dir, 'config', 'alias.loop2', 'loop1');
+  expectAll(dir, 'deny', ['git co a.txt', 'git co -- .', 'git rh', 'git nuke', 'git chain', 'cd build && git rh']);
+  expectAll(dir, 'allow', ['git st', 'git co -b side', 'git nothing-here']);
+  assert.equal(run(dir, 'git loop1').decision, 'unchecked', 'an alias loop is unchecked');
+});
+
+test('S1-c: allowDestructive is the exact command; a trailing * allows more words', (t) => {
+  const dir = repo(t, { allowDestructive: ['rm -rf node_modules', 'git clean -fdX *'] });
+  expectAll(dir, 'allow', ['rm -rf node_modules', 'git clean -fdX', 'git clean -fdX -- build']);
+  expectAll(dir, 'deny', ['rm -rf node_modules ~', 'rm -rf node_modules build', 'git clean -fdx']);
 });

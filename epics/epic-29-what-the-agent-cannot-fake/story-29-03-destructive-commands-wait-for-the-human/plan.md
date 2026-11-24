@@ -283,6 +283,29 @@ P2, to story 29-04 (the run plans it): interpreter strings (`python -c`, `perl
 two-step git alias (`git config alias.x '!…'`, then `git x`), script files
 (`echo … > x.sh && bash x.sh`), `psql` `\!` shell escapes.
 
+### New review series, round 1 (under the re-scoped claim, 2 P1)
+
+- **D41 — `git submodule foreach` keeps its command's flags.** Only foreach's own
+  leading options (`--recursive`, `-q`, `--quiet`) are skipped; every other word
+  is the command, read as a script in an unknown directory. Checked for the same
+  bug: `git bisect run` passes its words whole; no other script is built by
+  filtering `-` words. A `git clean` whose directory is unknown is refused (it
+  destroys wherever it runs), like `changes`; a named-path check still needs it.
+- **D42 — A git alias in the config is resolved.** When the subcommand is not one of
+  git's own (an alias never shadows one), `git -C <dir> config --get alias.<sub>`
+  runs (bounded, no shell; the host's `gitAlias`) and the expansion is read in its
+  place — a `!` value as a shell script. No alias: nothing. A lookup git does not
+  answer, an unknown directory, or a chain past 5 (a loop) is unchecked.
+- **D43 — `allowDestructive` is the exact command, word by word.** The spec said
+  "exact command prefix" and its criterion "exactly that command"; a prefix let
+  `rm -rf node_modules` allow `rm -rf node_modules ~`. An entry is now matched
+  whole; a last word `*` keeps a prefix where the human wants one
+  (`git clean -fdX *`). The earlier test's `git clean -fdX -- build` moved from
+  allowed to refused.
+
+P2, to 29-04 (planned by the run): `echo "DROP DATABASE x" | psql`, `psql -c 'DROP
+TABLE/SCHEMA … CASCADE'`, `git rm -f` or a plain `rm` of a modified tracked file.
+
 ## Security
 
 - **Who can lift a refusal?** Only a human edit of `harness.json`. An env var, a
@@ -302,7 +325,7 @@ two-step git alias (`git config alias.x '!…'`, then `git x`), script files
   (`git reset --soft`, `git push`, `git clean -n`, `git switch -c` in a
   linked worktree, `rm file`).
 - Wrappers: `bash -c`, `sh -c`, `env X=1`, `xargs`, `eval`, `;`/`&&`/`||`/`|`.
-- Policy: deny / warn / off, `allowDestructive` exact prefix, unreadable
+- Policy: deny / warn / off, `allowDestructive` exact command (`*` opts in to a prefix), unreadable
   `harness.json` (default policy, recorded).
 - Red→green for every denial row (break the rule, see the test fail).
 

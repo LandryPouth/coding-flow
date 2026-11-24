@@ -31,7 +31,7 @@ wrapper can intercept"); the guard is that wrapper.
   `denials.jsonl` like other guard denials.
 - **Policy** lives in `.coding-flow/harness.json` (already a path the agent
   cannot write): `destructiveCommands: "deny" | "warn" | "off"` (default
-  `deny`), `allowDestructive: ["<exact command prefix>"]`,
+  `deny`), `allowDestructive: ["<exact command>"]` (a last word `*` allows more words),
   `worktrees.primaryLocked` (default `false`; bethl sets `true`). The agent
   cannot lift a refusal by environment variable, flag or wrapper
   (`bash -c`, `sh -c`, `env`, `xargs`, `eval` are read through, as the guard

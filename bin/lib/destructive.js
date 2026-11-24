@@ -221,6 +221,35 @@ function readGitSub(sub, rest, exists) {
   }
 }
 
+// git's own commands: an alias never shadows one, so only another word is looked up.
+const GIT_BUILTINS = new Set(["add", "am", "annotate", "apply", "archive", "bisect", "blame", "branch", "bundle", "cat-file", "check-ignore", "checkout", "checkout-index", "cherry", "cherry-pick", "clean", "clone", "commit", "commit-tree", "config", "count-objects", "describe", "diff", "diff-files", "diff-index", "diff-tree", "difftool", "fetch", "filter-branch", "for-each-ref", "format-patch", "fsck", "gc", "grep", "hash-object", "help", "init", "log", "ls-files", "ls-remote", "ls-tree", "maintenance", "merge", "merge-base", "mergetool", "mv", "notes", "prune", "pull", "push", "range-diff", "rebase", "reflog", "remote", "repack", "replace", "rerere", "reset", "restore", "rev-list", "rev-parse", "revert", "rm", "shortlog", "show", "show-branch", "show-ref", "sparse-checkout", "stash", "status", "submodule", "switch", "symbolic-ref", "tag", "update-index", "update-ref", "var", "verify-commit", "verify-tag", "version", "whatchanged", "worktree", "write-tree"]);
+const MAX_ALIASES = 5;
+const ALIAS_UNREAD = "a git alias the guard could not resolve";
+
+// `git co`, `git rh`, `git nuke` with `alias.co=checkout`, `alias.rh=reset --hard`,
+// `alias.nuke=!rm -rf build` in the config: the expansion is read in its place (a
+// `!` value as a shell script). False when `sub` is no alias. A lookup that fails,
+// a directory set by expansion, or a chain past ${MAX_ALIASES} is unchecked.
+function readGitAlias(out, sub, rest, dir, ctx) {
+  const depth = ctx.aliases || 0;
+  const found = dir === null || depth >= MAX_ALIASES ? { issue: ALIAS_UNREAD } : ctx.host.gitAlias(dir, sub);
+  if (found.issue) {
+    out.unchecked.push({ reason: ALIAS_UNREAD, command: ["git", sub, ...rest].join(" ") });
+    return true;
+  }
+  if (found.value === null || found.value === undefined) {
+    return false;
+  }
+  const value = found.value.trim();
+  const next = { ...ctx, aliases: depth + 1 };
+  if (value.startsWith("!")) {
+    readScript(out, [value.slice(1), ...rest].join(" "), dir, next);
+  } else {
+    readGit(out, [...tokenize(value), ...rest], dir, next);
+  }
+  return true;
+}
+
 function readGit(out, args, cwd, ctx) {
   let dir = cwd;
   let i = 0;
@@ -241,10 +270,17 @@ function readGit(out, args, cwd, ctx) {
   }
   const rest = args.slice(i + 1);
   const words = ["git", sub, ...rest];
+  if (!GIT_BUILTINS.has(sub) && !EXPANDS.test(sub) && readGitAlias(out, sub, rest, dir, ctx)) {
+    return;
+  }
   if (sub === "submodule" && rest.includes("foreach")) {
-    // `git submodule foreach [--recursive] 'cmd'`: cmd runs in a shell in each submodule.
-    const script = rest.slice(rest.indexOf("foreach") + 1).filter((arg) => !arg.startsWith("-")).join(" ");
-    readScript(out, script, null, ctx);
+    // `git submodule foreach [--recursive] [-q] cmd…`: cmd runs in a shell in each
+    // submodule. Only foreach's own leading options are skipped; the command keeps its flags.
+    let at = rest.indexOf("foreach") + 1;
+    while (["--recursive", "-q", "--quiet"].includes(rest[at])) {
+      at += 1;
+    }
+    readScript(out, rest.slice(at).join(" "), null, ctx);
     return;
   }
   if (sub === "bisect" && rest[0] === "run" && rest[1] !== undefined) {
@@ -1119,7 +1155,7 @@ function readDestructive(command, { cwd, host }) {
   if (typeof command !== "string" || !command.trim()) {
     return { findings: [], unchecked: [], touched: [], substituted: [] };
   }
-  const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, ...host };
+  const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), ...host };
   return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0 });
 }
 

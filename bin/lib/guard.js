@@ -1090,6 +1090,11 @@ const destructiveHost = {
   exists: (file) => fs.existsSync(file),
   home: () => os.homedir(),
   onPath,
+  // `{ value }`: the alias' expansion, null when `name` is none; `{ issue }` when git did not answer.
+  gitAlias: (cwd, name) => {
+    const { out, issue } = gitNow(cwd, ["config", "--get", `alias.${name}`]);
+    return issue ? { issue } : { value: out === null ? null : out.replace(/\r?\n$/, "") };
+  },
 };
 
 // git, fresh: the work tree changes between two calls of a long-lived host, so
@@ -1125,7 +1130,8 @@ function settle(finding, policy) {
     return { applies: true, detail: "" };
   }
   if (finding.cwd === null) {
-    return check.kind === "changes" ? { applies: true, detail: "" } : { unchecked: DESTRUCTIVE_UNKNOWN_CWD };
+    // Discarding all changes or cleaning destroys wherever it runs; a named path needs the directory.
+    return check.kind === "changes" || check.kind === "clean" ? { applies: true, detail: "" } : { unchecked: DESTRUCTIVE_UNKNOWN_CWD };
   }
   if (check.kind === "primary") {
     const { out, issue } = gitNow(finding.cwd, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"]);
@@ -1176,10 +1182,14 @@ function destructiveReason(finding, detail) {
   return `\`${shown(finding.command)}\` is a destructive command (${finding.rule}): it destroys ${finding.destroys}${now}. Instead: ${finding.alternative}. A destructive step waits for the human: say what it would destroy and how to undo it, then ask. Only they can allow it (destructiveCommands, allowDestructive in ${POLICY_FILE}).`;
 }
 
-function allowedByPolicy(prefixes, words) {
-  return prefixes.some((prefix) => {
-    const expected = prefix.trim().split(/\s+/);
-    return expected.length <= words.length && expected.every((word, i) => word === words[i]);
+// An entry is the exact command, word by word; a last word `*` lets more words follow
+// (`git clean -fdX *`). `rm -rf node_modules` does not allow `rm -rf node_modules ~`.
+function allowedByPolicy(entries, words) {
+  return entries.some((entry) => {
+    const expected = entry.trim().split(/\s+/);
+    const open = expected[expected.length - 1] === "*";
+    const fixed = open ? expected.slice(0, -1) : expected;
+    return (open ? fixed.length <= words.length : fixed.length === words.length) && fixed.every((word, i) => word === words[i]);
   });
 }
 
