@@ -75,7 +75,7 @@ then, and the field 20-04 builds on.
 - [x] Refusal, `--round`, `after`, STRICT two-round count, `--accept`.
 - [x] `status --json` shows round and history (PR evidence: see Decisions).
 - [x] Skills paragraph, `plugin sync` (evals: see Decisions).
-- [ ] Run `npm test`, then `ai-flow verify --story <this story>`, the review
+- [x] Run `npm test`, then `ai-flow verify --story <this story>`, the review
       the mode requires, and add a CHANGELOG entry (Behaviour changes).
 
 ## Decisions
@@ -132,8 +132,24 @@ then, and the field 20-04 builds on.
 6. test/review-rounds.test.js::--accept captures a pass after a fail without a round, and stores the reason
 7. test/plugin.test.js::plugin check confirms skills/ <-> templates parity (`plugin check`: generated skills match templates) — the paragraph itself is prose, read in `templates/.claude/skills/flow-review/SKILL.md` (Output) and `flow-run/SKILL.md` (Review Before Done)
 
-## Status: in-progress
+## Status: done
 
 ## Result
+
+Done 2026-11-24. `review capture` refuses a pass right after a fail without
+`--round` (or `--accept`, which records what it covered); every capture
+records its round; `status --json` shows `reviewRound`, `reviewAfter`,
+`reviewCleanInARow`, `reviewHadFail`; a STRICT story is `confirming` in
+`status`, `next` and the chain gate (`review-unconfirmed`) until two passing
+rounds in a row. `flow-review` and `flow-run` carry the new-round paragraph;
+20-04's STRICT wording aligned.
+
+- Review: 1 round (fresh subagent reviewer), PASS — 0 P0, 0 P1, 8 P2, all
+  fixed (Decisions). P1 per round: 0.
+- `npm test`: 1782 pass. Verify green (3 commands), evidence
+  `.coding-flow/runs/2026-11-24T19-34-07-627Z-verify.json`; coverage not
+  required (risk low). Verify warns that criterion 7's wording changed (the
+  evals note).
+- Commits: 22d8f76, f72fc83, 749efe1, and the closing commit.
 
 ### Rollback Notes
