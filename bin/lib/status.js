@@ -91,9 +91,16 @@ function computeLandReady(worktreePath, storyPath) {
 // round after a fail is not enough at that risk. A pass the user accepted
 // (`acceptedRisk`) is their decision and is not held back.
 // What `status --json` says about a story's latest review: who, which round,
-// and the failed review it cleared, if any (story 19-09).
+// the passes in a row since the last fail, whether a fail came before, and the
+// failed review it cleared, if any (story 19-09).
 function reviewFields(entry) {
-  return { reviewer: entry.reviewer, reviewRound: entry.round, ...(entry.after ? { reviewAfter: entry.after } : {}) };
+  return {
+    reviewer: entry.reviewer,
+    reviewRound: entry.round,
+    reviewCleanInARow: entry.passesInRow,
+    reviewHadFail: entry.followsFail,
+    ...(entry.after ? { reviewAfter: entry.after } : {}),
+  };
 }
 
 // story-04-02: a STRICT-tier story (`reviewRequired`) that isn't a fresh pass
@@ -124,7 +131,8 @@ function computeReviewStatus(root, storyPath, { strict = false } = {}) {
     return "fail";
   }
 
-  return strict && entry.followsFail && entry.passesInRow < 2 && !entry.acceptedRisk ? "confirming" : "pass";
+  const roundAccepted = Array.isArray(entry.acceptedFor) && entry.acceptedFor.includes("round");
+  return strict && entry.followsFail && entry.passesInRow < 2 && !roundAccepted ? "confirming" : "pass";
 }
 
 // The diff-risk half of a story's score only depends on `root` (every story

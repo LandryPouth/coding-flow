@@ -185,5 +185,69 @@ test('--accept captures a pass after a fail without a round, and stores the reas
   assert.equal(res.code, 0, res.output);
   const evidence = readReview(repo, reviewFiles(repo).find((name) => name !== failed));
   assert.equal(evidence.acceptedRisk, 'the maintainer read the fix');
+  assert.deepEqual(evidence.acceptedFor, ['round']);
   assert.equal(evidence.after, `.coding-flow/runs/${failed}`);
+});
+
+test('an --accept for open findings does not skip the STRICT confirming round; one for the round itself does', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+  strictDoneStory(repo, storyRel);
+  capture(repo, storyRel, '--verdict', 'fail', '--p1', '1');
+
+  const forFindings = capture(repo, storyRel, '--verdict', 'pass', '--round', '2', '--p1', '1', '--accept', 'take P1');
+  assert.equal(forFindings.code, 0, forFindings.output);
+  const latest = reviewFiles(repo).at(-1);
+  assert.deepEqual(readReview(repo, latest).acceptedFor, ['open-findings']);
+  assert.equal(storyOf(repo, storyRel).review, 'confirming', 'accepting a P1 is not accepting the missing round');
+
+  capture(repo, storyRel, '--verdict', 'fail', '--p1', '1', '--round', '3');
+  const forRound = capture(repo, storyRel, '--verdict', 'pass', '--accept', 'the maintainer read the fix');
+  assert.equal(forRound.code, 0, forRound.output);
+  assert.deepEqual(readReview(repo, reviewFiles(repo).at(-1)).acceptedFor, ['round']);
+  assert.equal(storyOf(repo, storyRel).review, 'pass', 'the user accepted the round itself');
+});
+
+test('status --json keeps the history visible: passes in a row since the last fail, and whether a fail came before', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+  capture(repo, storyRel, '--verdict', 'pass');
+  let story = storyOf(repo, storyRel);
+  assert.equal(story.reviewCleanInARow, 1);
+  assert.equal(story.reviewHadFail, false);
+
+  capture(repo, storyRel, '--verdict', 'fail', '--p1', '1');
+  capture(repo, storyRel, '--verdict', 'pass', '--round', '3');
+  capture(repo, storyRel, '--verdict', 'pass', '--round', '4');
+  story = storyOf(repo, storyRel);
+  assert.equal(story.reviewCleanInARow, 2);
+  assert.equal(story.reviewHadFail, true);
+  assert.equal(story.reviewRound, 4);
+});
+
+test('--round takes only a plain whole number', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+  capture(repo, storyRel, '--verdict', 'fail', '--p1', '1');
+  const before = reviewFiles(repo);
+  for (const raw of ['0x2', '2e0', '2.0', ' 2']) {
+    const res = capture(repo, storyRel, '--verdict', 'pass', '--round', raw);
+    assert.notEqual(res.code, 0, `--round "${raw}" must be refused: ${res.output}`);
+    assert.match(res.output, /--round must be a positive whole number/);
+  }
+  assert.deepEqual(reviewFiles(repo), before);
+});
+
+test('the plain output names the round', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+  const res = capture(repo, storyRel, '--verdict', 'pass');
+  assert.equal(res.code, 0, res.output);
+  assert.match(res.output, /\(epics\/epic-01-x\/story-01-01-y: pass, round 1\)/);
+});
+
+test('a pass after a fail with an open P1 and no new round names both refusals', (t) => {
+  const { repo, storyRel } = repoWithStory(t);
+  capture(repo, storyRel, '--verdict', 'fail', '--p1', '1');
+  const res = capture(repo, storyRel, '--verdict', 'pass', '--p1', '1');
+  assert.notEqual(res.code, 0);
+  assert.match(res.output, /0 P0 and 1 P1 are open/);
+  assert.match(res.output, /a failed review is cleared by a new review of the whole diff, not by verify alone/);
+  assert.match(res.output, /--round 2/);
 });

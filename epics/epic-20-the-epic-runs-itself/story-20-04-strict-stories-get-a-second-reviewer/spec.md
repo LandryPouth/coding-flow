@@ -44,7 +44,9 @@ missed).
   then receives the open findings and marks each `fixed` or still open with
   the code. A round is clean when it finds no P0/P1.
   - Stop: STANDARD after one clean round; STRICT after **two consecutive
-    clean rounds** (the confirming round a single generalist reviewer).
+    clean rounds** by fresh reviewers, the second under **another lens**
+    (security/bypass, then tests/spec) — the rule epic-run already applies
+    and story 19-09's skills state.
   - Cap: `review.maxRounds` (default 4). A story still not clean at the cap
     is `blocked` with reason `review-not-converging` and its open findings:
     the story is too large or its design is fragile — split it, not review

@@ -437,6 +437,9 @@ function reviewHistoryByStoryDir(root) {
       round: Number.isInteger(data.round) && data.round > 0 ? data.round : 1,
       ...(data.after ? { after: data.after } : {}),
       ...(data.acceptedRisk ? { acceptedRisk: data.acceptedRisk } : {}),
+      // What the accept covered. A reason recorded before rounds existed only
+      // ever covered open findings.
+      ...(data.acceptedRisk ? { acceptedFor: Array.isArray(data.acceptedFor) ? data.acceptedFor : ["open-findings"] } : {}),
     });
   }
 

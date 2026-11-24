@@ -25,8 +25,10 @@ then, and the field 20-04 builds on.
   is cleared by a new review of the whole diff, not by verify alone", and
   gives the command.
 - The pass records `round` and `after` (the failed review's evidence file),
-  so `status --json` and the PR evidence show the history: "pass, round 2,
-  after a fail".
+  so `status --json` shows the history ("pass, round 2, after a fail"), with
+  the passing rounds in a row since the last fail and whether a fail came
+  before. The PR body does not show reviews today; that stays with 20-04
+  (Decisions).
 - A STRICT story (risk from the diff) needs two consecutive passing rounds
   after a fail before its review counts as clean in `status`; the first is
   shown as "pass — one more round required (STRICT)".
@@ -62,6 +64,11 @@ then, and the field 20-04 builds on.
   `review-not-converging`: 20-04.
 - Telling whether the reviewer was really new: the tool records what it is
   told; the skills carry the rule.
+- Renaming or moving a story directory: its review history is keyed by the
+  story path, so the moved story starts again at round 1 with no history.
+- Review evidence written in a worktree whose `.coding-flow/runs/` is
+  gitignored does not come back with the land (until 18-02, proof survives the
+  land); the rounds are then read on the worktree only.
 
 ## Tasks
 
@@ -100,15 +107,27 @@ then, and the field 20-04 builds on.
   `test/review.test.js` "latestReviewByStoryDir returns only the latest
   capture…" captured a pass right after a fail; that pass now declares
   `--round 2`. Its assertion (the later pass wins) is unchanged.
+- **An accept says what it covers** (`acceptedFor`: `open-findings`,
+  `round`, or both). Only an accept of the missing round lets a STRICT pass
+  skip its confirming round; accepting a P1 does not. A reason recorded before
+  this reads as `open-findings`.
+- **Both refusals at once.** A pass with an open P1 right after a fail without
+  a round names both gaps in one message.
+- **`--round` is a plain whole number** (`/^\d+$/`): `0x2` or `2e0` would
+  otherwise read as 2.
+- **20-04's STRICT wording aligned** (review, 2026-11-24): two consecutive
+  clean rounds by fresh reviewers, the second under another lens — the
+  epic-run rule — replacing "the confirming round a single generalist
+  reviewer" in its spec.
 - **Who reviewed is not checked.** The tool records what it is told; the
   fresh-reviewer rule lives in the skills (Out of scope).
 
 ## Acceptance Traceability
 
-1. test/review-rounds.test.js::a pass right after a failed review, without a new round, is refused and writes nothing
-2. test/review-rounds.test.js::a pass declared as the next round is captured with its round and the failed review it clears
-3. test/review-rounds.test.js::a round that skips a number is refused
-4. test/review-rounds.test.js::a STRICT story needs two consecutive passing rounds after a fail; a fail in between restarts the count
+1. test/review-rounds.test.js::a pass right after a failed review, without a new round, is refused and writes nothing; test/review-rounds.test.js::a pass after a fail with an open P1 and no new round names both refusals
+2. test/review-rounds.test.js::a pass declared as the next round is captured with its round and the failed review it clears; test/review-rounds.test.js::status --json keeps the history visible: passes in a row since the last fail, and whether a fail came before; test/review-rounds.test.js::the plain output names the round
+3. test/review-rounds.test.js::a round that skips a number is refused; test/review-rounds.test.js::--round takes only a plain whole number
+4. test/review-rounds.test.js::a STRICT story needs two consecutive passing rounds after a fail; a fail in between restarts the count; test/review-rounds.test.js::an --accept for open findings does not skip the STRICT confirming round; one for the round itself does; test/next.test.js::next holds a STRICT story whose only clean review round follows a fail, then lets it ship after a second; test/worktree-autoland.test.js::auto-land: a STRICT-tier chain whose only clean review round follows a fail blocks with reason "review-unconfirmed"
 5. test/review-rounds.test.js::with no failed review, a pass needs no new flag, and each capture is the next round
 6. test/review-rounds.test.js::--accept captures a pass after a fail without a round, and stores the reason
 7. test/plugin.test.js::plugin check confirms skills/ <-> templates parity (`plugin check`: generated skills match templates) — the paragraph itself is prose, read in `templates/.claude/skills/flow-review/SKILL.md` (Output) and `flow-run/SKILL.md` (Review Before Done)
