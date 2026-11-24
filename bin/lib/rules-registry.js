@@ -23,6 +23,7 @@
 // secret is ever registered.
 
 const harnessList = (name) => () => require("./harness-config")[name]();
+const guardDefault = (field) => () => require("./guard").destructivePolicy({})[field];
 const harnessDefault = (dotted) => () =>
   dotted.split(".").reduce((value, part) => value[part], require("./harness-config").initialHarnessConfig());
 
@@ -77,6 +78,12 @@ const RULES = [
   { key: "blockedPaths", file: "harness", scope: "project", defaultFrom: () => require("./harness-config").defaultHarnessConfig().blockedPaths, noun: "globs", doc: "Paths the guard refuses to write." },
   { key: "sensitiveGlobs", file: "harness", scope: "project", defaultFrom: () => require("./harness-config").defaultHarnessConfig().sensitiveGlobs, noun: "globs", doc: "Files harness check flags." },
   { key: "requiredChecks", file: "harness", scope: "project", defaultFrom: () => require("./harness-config").defaultHarnessConfig().requiredChecks, noun: "checks", doc: "Checks harness check runs." },
+
+  // Story 29-03: read by the guard, which defines their fallbacks
+  // (`destructivePolicy`); the human's edit only.
+  { key: "destructiveCommands", file: "harness", scope: "project", defaultFrom: guardDefault("destructiveCommands"), story: "29-03", cap: "`deny`, `warn` or `off`; anything else reads as `deny`", doc: "What the guard does with a destructive command." },
+  { key: "allowDestructive", file: "harness", scope: "project", defaultFrom: guardDefault("allowDestructive"), noun: "commands", story: "29-03", cap: "exact commands; a bare `*` or a verb-only `*` entry is ignored", doc: "Destructive commands the human allows." },
+  { key: "worktrees.primaryLocked", file: "harness", scope: "project", defaultFrom: guardDefault("primaryLocked"), story: "29-03", doc: "No branch change in the primary checkout." },
 
   // In the code, not configurable.
   { key: "epic.maxStories", file: null, scope: "fixed", default: 7, unit: "stories", doc: "doctor warns `epic_too_large` above it." },

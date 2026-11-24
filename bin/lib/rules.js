@@ -40,6 +40,14 @@ function applied(rule, read) {
     return ["verified", "evidence", "exempted", "not-required"].includes(value) ? value : undefined;
   }
 
+  // Story 29-03's keys are read by the guard from the raw file, not by
+  // readHarnessConfig: apply its own reading.
+  if (["destructiveCommands", "allowDestructive", "worktrees.primaryLocked"].includes(rule.key)) {
+    const policy = require("./guard").destructivePolicy(read.raw.harness);
+    const value = rule.key === "worktrees.primaryLocked" ? policy.primaryLocked : policy[rule.key];
+    return value;
+  }
+
   return at(read[rule.file], rule.key);
 }
 

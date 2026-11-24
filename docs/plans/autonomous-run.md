@@ -99,7 +99,7 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [ ] 26-06  - [ ] 26-03  - [ ] 26-07
 - [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
 - [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
-- [ ] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24; runs now, own lane: review.js, status, skills)
+- [x] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24) — 1 review round (0 P1, 8 P2 fixed), landed, re-proved, review captured
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
@@ -247,3 +247,7 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 - 2026-11-24 — 19-05 landed (verify runs the declared fixers first; a fixer
   write to tests, story roots or `.coding-flow/` is red; real prettier 3
   checked by the last reviewer). Two review series: 4 rounds, re-scope, 4 rounds.
+- 2026-11-24 — 19-09 landed: `review capture` refuses a pass right after a
+  fail without `--round`; STRICT needs two passes in a row. The first land
+  verify went red with no failing test (machine loaded: three suites at once,
+  the suite took 11 min instead of 4); the retry was green.

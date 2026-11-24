@@ -26,6 +26,18 @@ const {
 const { harnessRunsDir } = require("./harness-config");
 const { unwireGuards } = require("./unwire");
 
+// Written by init or the guard rather than copied from a template, so absent
+// from the manifest's file list — still Coding Flow's, still removed.
+const GENERATED_FILES = [
+  ".coding-flow/COMMANDS.md",
+  ".coding-flow/harness.json",
+  ".coding-flow/config.json",
+  ".coding-flow/denials.jsonl",
+  ".coding-flow/guard-unchecked.jsonl",
+  ".coding-flow/guard-warnings.jsonl",
+  ".coding-flow/active-story.json",
+];
+
 function collectUninstallPlan({ force = false } = {}) {
   const manifest = readJson(manifestPath(), null);
   const files = [];
@@ -84,16 +96,7 @@ function collectUninstallPlan({ force = false } = {}) {
     }
   }
 
-  // Written by init or the guard rather than copied from a template, so absent
-  // from the manifest's file list — still Coding Flow's, still removed.
-  for (const generated of [
-    ".coding-flow/COMMANDS.md",
-    ".coding-flow/harness.json",
-    ".coding-flow/config.json",
-    ".coding-flow/denials.jsonl",
-    ".coding-flow/guard-unchecked.jsonl",
-    ".coding-flow/active-story.json",
-  ]) {
+  for (const generated of GENERATED_FILES) {
     const target = path.join(cwd, generated);
 
     if (fs.existsSync(target) && !files.includes(generated)) {

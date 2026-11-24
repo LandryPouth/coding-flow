@@ -195,3 +195,21 @@ test('doctor points to ai-flow rules', (t) => {
   const res = cli(dir, ['doctor']);
   assert.match(res.out, /ai-flow rules/);
 });
+
+// The rules 29-03 added are read the way the guard reads them.
+test('the destructive-command rules show what the guard applies', (t) => {
+  const byKey = (dir) => Object.fromEntries(rulesJson(dir).rules.map((r) => [r.key, r]));
+
+  const bare = byKey(project(t));
+  assert.deepEqual([bare.destructiveCommands.value, bare.destructiveCommands.source], ['deny', 'default']);
+  assert.deepEqual([bare['worktrees.primaryLocked'].value, bare['worktrees.primaryLocked'].source], [false, 'default']);
+
+  const set = byKey(project(t, { harness: { destructiveCommands: 'deny', allowDestructive: ['rm -rf node_modules', 'rm *'], worktrees: { primaryLocked: true } } }));
+  assert.deepEqual([set.destructiveCommands.value, set.destructiveCommands.source], ['deny', 'project']);
+  assert.deepEqual(set.allowDestructive.value, ['rm -rf node_modules'], 'a too-broad entry is not applied');
+  assert.equal(set.allowDestructive.source, 'project (cleaned by the reader)');
+  assert.deepEqual([set['worktrees.primaryLocked'].value, set['worktrees.primaryLocked'].source], [true, 'project']);
+
+  const typo = byKey(project(t, { harness: { destructiveCommands: 'of' } }));
+  assert.deepEqual([typo.destructiveCommands.value, typo.destructiveCommands.source], ['deny', 'default (project value ignored)']);
+});
