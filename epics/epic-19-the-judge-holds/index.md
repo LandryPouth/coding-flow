@@ -86,6 +86,7 @@ passing. s4's detached job goes through s3's queue. s6 extends the
 6. [story-19-06-the-risk-picks-the-tiers](story-19-06-the-risk-picks-the-tiers/spec.md) *(STRICT — changes which commands prove a story)*
 7. [story-19-07-tests-are-read-only-when-nobody-watches](story-19-07-tests-are-read-only-when-nobody-watches/spec.md) *(STRICT — guard)*
 8. [story-19-08-a-reformatted-test-is-not-a-stronger-test](story-19-08-a-reformatted-test-is-not-a-stronger-test/spec.md) *(STANDARD — added 2026-11-23 from 19-05's reviews: a neutral test edit no longer earns the coverage gate)*
+9. [story-19-09-a-failed-review-is-cleared-by-a-review](story-19-09-a-failed-review-is-cleared-by-a-review/story.md) *(STANDARD — added 2026-11-24 at the maintainer's request: after a FAIL, a pass needs a new review round; STRICT needs two)*
 
 ## Decisions
 

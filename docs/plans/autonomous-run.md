@@ -89,7 +89,7 @@ Lane B (CLI): epic 17, a chain.
 - [x] 17-01 archive one epic — landed, re-proved, review captured
 - [x] 17-02 the index lists every epic — landed, re-proved, review captured
 - [x] 17-03 epic numbers never collide — 2 reviews (1 P1, 9 P2 fixed), landed, re-proved, review captured
-- [ ] 17-04 archive coding-flow's own epics — alone, when no worktree is open
+- [x] 17-04 archive coding-flow's own epics — epics 01–16 archived; 2 reviews (1 P1, 5 P2 fixed), review captured
 
 ### Wave 2 — no factory needed (step 0) · two lanes · *release 0.16.0*
 
@@ -98,6 +98,7 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 
 - [ ] 26-06  - [ ] 26-03  - [ ] 26-07
 - [ ] 19-05  - [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
+- [ ] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24; runs now, own lane: review.js, status, skills)
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
@@ -233,3 +234,12 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   built to evade it are the sandbox's job. Round 4's 4 P1 fixed anyway;
   evasion forms moved to new story 29-04. 29-03 restarts a review series
   under the new claim. 17-04: epics 01–16 archived on develop.
+- 2026-11-24 — 17-04 done. Epics 01–16 are archived on develop (436 → 247
+  files in `epics/`). 19 references now point to their INDEX entry. INDEX
+  entries carry their marker above the heading, and `archive` tells links
+  apart from mentions. Review: round 1 FAIL (1 P1, doctor out of date),
+  round 2 PASS.
+- 2026-11-24 — maintainer asked that a failed review be cleared only by a new
+  review, not by verify. epic-run already does it (step 4b); Coding Flow did
+  not. New story 19-09 (guard in `review capture`, skills paragraph), run now
+  ahead of 20-04, which keeps the automatic rounds.
