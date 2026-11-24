@@ -52,6 +52,37 @@
   whose fixer really adds an assertion, and the outside-root path-form test's
   fixer adds an assertion too, so both still exercise `fixerStrengthened`.
 
+- **Review round 1 (2026-11-24), 2 P1 fixed:**
+  - *An unstaged `mv` earned the rung:* the untracked new name counted as a
+    new test file while the old name was reported deleted. An untracked test
+    file is now read whole (`readLines`); when at least half of its non-blank
+    lines are those of a deleted test file (`closestDeleted`), it is that
+    file moved and is compared to it, so a plain move is neutral and an edited
+    move is judged by its edit.
+  - *pytest, Go, RSpec (and others) assertions were not seen:* before this
+    story every framework passed because a neutral edit passed; the markers
+    now also read bare `assert` (Python, Ruby, Elixir), `pytest.raises(`, Go
+    `t.Error/Errorf/Fatal/Fatalf/Fail/FailNow(`, RSpec `expect {` and
+    `is_expected`, Rust `assert!`/`assert_eq!`, `.NET`/JUnit `Assert.X(`; and
+    cases: RSpec/Minitest/ExUnit `it|test|specify|scenario 'x'`, `def test…`,
+    `func Test…`/`func test…`, PHPUnit `function test…(`, `.NET` `[Fact]`,
+    `[Test]`, `[TestMethod]`…, Gherkin `Scenario:`. One test per form.
+  - P2 fixed: the scan reads ONE diff, working tree vs the merge base (or
+    HEAD), so a line moved between a commit and the working tree is not
+    counted twice; `should` counts only as a call (`.should`, `should(`), not
+    inside a title; an untracked test file that is empty or only comments
+    does not strengthen; comment text (`//`, `#` except `#[`/`#!`, `/* */`,
+    block-comment lines) is stripped before counting.
+  - P2 accepted: a test split into two cases, or a new empty test case,
+    counts as strengthened — the spec reads "a new test case", and judging
+    what a case checks is mutation testing's job, not this regex's.
+  - Fixture changed: `worktree-autoland.test.js`'s `touchHighRiskFile`
+    committed a comment-only `payment.test.js` to satisfy the gate — exactly
+    the "touch a test" this story closes. It now holds one real assertion;
+    what the tests assert about auto-land is unchanged.
+  - Limit kept: a test file reading a framework or helper the markers do not
+    know reads neutral; the remedy (a coverage report) is in the message.
+
 ## Test Plan
 
 Throwaway repos with a high-risk path, a neutral, an added-assertion and a

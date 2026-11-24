@@ -4,6 +4,7 @@
 // tests weakened in the diff, open acceptance criteria and contrary signals —
 // on top of coverage.js, which parses and measures the reports.
 
+const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
@@ -228,30 +229,55 @@ const SKIP_MARKERS = [
 
 const ASSERTION_MARKERS = [
   /\bexpect\s*\(/,
+  /\bexpect\s*\{/, // RSpec block form
+  /\bis_expected\b/,
   /\bassert(?:_\w+|[A-Z]\w*)?\s*[(.]/,
-  /\bshould\b/,
+  /\bassert(?:_\w+)?!\s*\(/, // Rust macros
+  /^\s*assert\s/, // bare assert: Python, Ruby, Elixir
+  /\bAssert\.\w+\s*\(/, // xUnit, NUnit, MSTest, JUnit 4
+  /\.should\b|\bshould\s*\(/, // chai, should.js, Cypress, RSpec — a call, never a title
+  /\bpytest\.raises\s*\(/,
   /\bXCTAssert\w*\s*\(/,
   /\b(?:EXPECT|ASSERT)_\w+\s*\(/,
   /\brequire\.\w+\s*\(/,
   /\bt\.(?:is|deepEqual|throws|truthy|falsy)\s*\(/,
+  /\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\s*\(/, // Go testing
 ];
 
 // A test case being declared. A title string is required for the JS forms, so a
 // helper named `test(` called inside a case is not read as a new case.
 const TEST_CASE_MARKERS = [
   /\b(?:it|test|specify)\s*\(\s*['"`]/,
-  /\bdef\s+test_\w+/,
-  /\bfunc\s+Test\w+\s*\(/,
+  /\b(?:it|specify|scenario|test)\s+['"]/, // RSpec, Minitest, ExUnit
+  /\bdef\s+test\w*/,
+  /\bfunc\s+[Tt]est\w*\s*\(/, // Go, XCTest
+  /\bfunction\s+test\w*\s*\(/, // PHPUnit
   /@Test\b/,
   /#\[test\]/,
+  /\[(?:Fact|Theory|Test|TestMethod|TestCase)\b/, // .NET
+  /^\s*Scenario(?: Outline)?:/, // Gherkin
 ];
+
+// Comment text never counts: an assertion commented out is not an assertion.
+// Line-level: `//` and `#` comments (not `#[` attributes, not `://` in a URL),
+// `/* … */` on one line, and the inside lines of a block comment.
+function codeOf(line) {
+  if (/^\s*(?:\/?\*)/.test(line)) {
+    return "";
+  }
+
+  return line
+    .replace(/\/\*.*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/, "$1")
+    .replace(/(^|\s)#(?![[!]).*$/, "$1");
+}
 
 // Occurrences, not lines (story 19-08): a formatter that splits two assertions
 // written on one line onto two lines changes the line count, not the number of
 // assertions, and must read as neutral — neither stronger nor weaker.
 const globalOf = (pattern) => new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
 const countMatching = (lines, patterns) =>
-  lines.reduce(
+  lines.map(codeOf).reduce(
     (total, line) => total + patterns.reduce((sum, pattern) => sum + (line.match(globalOf(pattern)) || []).length, 0),
     0,
   );
@@ -283,51 +309,64 @@ function testChangeDirection(file, change, isNew) {
     return { verdict: "weakened", findings };
   }
 
-  const adds = isNew || assertionDelta > 0 || delta(TEST_CASE_MARKERS) > 0;
+  // A new file adds a test only when it holds code, not when it is empty or
+  // only comments.
+  const holdsCode = change.added.some((line) => codeOf(line).trim() !== "");
+  const adds = (isNew && holdsCode) || assertionDelta > 0 || delta(TEST_CASE_MARKERS) > 0;
   return { verdict: adds ? "strengthened" : "neutral", findings };
 }
 
 // Per test file: did this diff make it stronger, weaker, or neither?
 function scanTestWeakening(config) {
-  const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
+  const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern)) && !isScopedOut(file, config);
   const byFile = {};
-  const { mergeBase } = currentDiffBase(cwd);
-  const diffs = [["diff", "--find-renames"], ["diff", "--find-renames", "--cached"]];
+  const base = scanBase();
 
-  if (mergeBase) {
-    diffs.push(["diff", "--find-renames", mergeBase]);
-  }
-
-  for (const argsForGit of diffs) {
+  // One diff against the base, working tree included: summing the unstaged,
+  // staged and merge-base diffs counted a line moved between a commit and the
+  // working tree twice.
+  for (const argsForGit of base ? [["diff", "--find-renames", base]] : [["diff", "--find-renames"], ["diff", "--find-renames", "--cached"]]) {
     for (const [file, change] of Object.entries(parseChangedText(runGitText(argsForGit)))) {
-      if (!isTest(file) || isScopedOut(file, config)) {
-        continue;
+      if (isTest(file)) {
+        byFile[file] = byFile[file] || { added: [], removed: [] };
+        byFile[file].added.push(...change.added);
+        byFile[file].removed.push(...change.removed);
       }
-
-      if (!byFile[file]) {
-        byFile[file] = { added: [], removed: [] };
-      }
-
-      byFile[file].added.push(...change.added);
-      byFile[file].removed.push(...change.removed);
     }
   }
 
-  const findings = [];
+  const deleted = new Set(deletedFilesInDiff().filter(isTest));
+  const added = new Set(addedFilesInDiff().filter(isTest));
+  const isNew = new Set(added);
 
-  for (const file of deletedFilesInDiff()) {
-    if (isTest(file)) {
-      findings.push({ file, signal: "deleted", detail: "the test file was removed" });
-      delete byFile[file];
+  // An untracked test file is read whole. If it is a deleted test file moved
+  // (an `mv` not yet staged), it is compared to that file, not counted as new.
+  for (const file of added) {
+    if (byFile[file]) {
+      continue;
+    }
+
+    const lines = readLines(path.join(cwd, file));
+    const from = base || "HEAD";
+    const moved = closestDeleted(lines, [...deleted], (gone) => runGitText(["show", `${from}:${gone}`]).split(/\r?\n/));
+    byFile[file] = { added: lines, removed: moved ? moved.lines : [] };
+
+    if (moved) {
+      deleted.delete(moved.file);
+      isNew.delete(file);
     }
   }
 
+  const findings = [...deleted].map((file) => ({ file, signal: "deleted", detail: "the test file was removed" }));
   const strengthened = [];
   const neutral = [];
-  const added = new Set(addedFilesInDiff());
+
+  for (const file of deleted) {
+    delete byFile[file];
+  }
 
   for (const [file, change] of Object.entries(byFile)) {
-    const direction = testChangeDirection(file, change, added.has(file));
+    const direction = testChangeDirection(file, change, isNew.has(file));
     findings.push(...direction.findings);
 
     if (direction.verdict === "strengthened") {
@@ -337,14 +376,42 @@ function scanTestWeakening(config) {
     }
   }
 
-  // A new test file with no diff text yet (untracked) is still a test added.
-  for (const file of added) {
-    if (isTest(file) && !isScopedOut(file, config) && !byFile[file] && !findings.some((f) => f.file === file)) {
-      strengthened.push(file);
+  return { findings, strengthened, neutral, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
+}
+
+// The merge base, else HEAD when there is one: the single tree the scan diffs
+// the working tree against.
+function scanBase() {
+  const { mergeBase } = currentDiffBase(cwd);
+  return mergeBase || (runGitText(["rev-parse", "--verify", "-q", "HEAD"]).trim() ? "HEAD" : null);
+}
+
+function readLines(file) {
+  try {
+    return fs.readFileSync(file, "utf8").split(/\r?\n/);
+  } catch {
+    return [];
+  }
+}
+
+// The deleted test file an untracked one most resembles, when at least half
+// of their non-blank lines are shared: a move, possibly edited.
+function closestDeleted(lines, deleted, readOld) {
+  const mine = new Set(lines.map((line) => line.trim()).filter(Boolean));
+  let best = null;
+
+  for (const file of deleted) {
+    const old = readOld(file);
+    const theirs = new Set(old.map((line) => line.trim()).filter(Boolean));
+    const shared = [...mine].filter((line) => theirs.has(line)).length;
+    const score = shared / Math.max(mine.size, theirs.size, 1);
+
+    if (score >= 0.5 && (!best || score > best.score)) {
+      best = { file, lines: old, score };
     }
   }
 
-  return { findings, strengthened, neutral, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
+  return best;
 }
 
 // Test files in the diff that neither strengthen nor weaken: the scan's neutral

@@ -352,3 +352,106 @@ test('19-08: a measured coverage report decides as before, a neutral test file b
   assert.equal(coverage.mode, 'diff-lines');
   assert.equal(coverage.ok, true);
 });
+
+// --- 19-08 review round 1 --------------------------------------------------
+
+test('19-08: a test file moved with an unstaged mv is neutral, not a new test', (t) => {
+  const dir = repo(t, 'neutral-unstaged-mv');
+  const rel = story(dir);
+  commit(dir, BEHAVIOR, 'auth change');
+  fs.renameSync(path.join(dir, 'src', 'math.test.js'), path.join(dir, 'src', 'arith.test.js'));
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.doesNotMatch(res.output, /was removed/);
+  assert.doesNotMatch(res.output, /strengthened/);
+  assert.ok(evidenceOf(dir).coverage.neutralTests.includes('src/arith.test.js'), JSON.stringify(evidenceOf(dir).coverage));
+});
+
+test('19-08: a test file moved with an unstaged mv and given one more assertion earns the rung', (t) => {
+  const dir = repo(t, 'neutral-unstaged-mv-plus');
+  const rel = story(dir);
+  commit(dir, BEHAVIOR, 'auth change');
+  fs.rmSync(path.join(dir, 'src', 'math.test.js'));
+  write(dir, { 'src/arith.test.js': BASELINE_TEST.replace('});', '  expect(add(2, 2)).toBe(4);\n});') });
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 0, res.output);
+  assert.match(res.output, /test file\(s\) strengthened/);
+  assert.doesNotMatch(res.output, /was removed/);
+});
+
+const FRAMEWORKS = [
+  ['pytest bare assert', 'tests/test_math.py', 'def test_add():\n    assert add(1, 2) == 3\n', 'def test_add():\n    assert add(1, 2) == 3\n    assert add(0, 0) == 0\n'],
+  ['pytest.raises', 'tests/test_math.py', 'def test_add():\n    assert add(1, 2) == 3\n', 'def test_add():\n    assert add(1, 2) == 3\n    with pytest.raises(TypeError):\n        add(None, 1)\n'],
+  ['Go t.Fatalf', 'math_test.go', 'func TestAdd(t *testing.T) {\n\tif add(1, 2) != 3 {\n\t\tt.Errorf("bad")\n\t}\n}\n', 'func TestAdd(t *testing.T) {\n\tif add(1, 2) != 3 {\n\t\tt.Errorf("bad")\n\t}\n\tif add(0, 0) != 0 {\n\t\tt.Fatalf("bad zero")\n\t}\n}\n'],
+  ['RSpec expect block', 'spec/math_spec.rb', "it 'adds' do\n  expect(add(1, 2)).to eq 3\nend\n", "it 'adds' do\n  expect(add(1, 2)).to eq 3\n  expect { add(nil, 1) }.to raise_error(TypeError)\nend\n"],
+  ['RSpec new case', 'spec/math_spec.rb', "it 'adds' do\n  expect(add(1, 2)).to eq 3\nend\n", "it 'adds' do\n  expect(add(1, 2)).to eq 3\nend\n\nit 'adds zero' do\n  add(0, 0)\nend\n"],
+  ['Rust assert!', 'tests/math.rs', '#[test]\nfn adds() {\n    assert_eq!(add(1, 2), 3);\n}\n', '#[test]\nfn adds() {\n    assert_eq!(add(1, 2), 3);\n    assert!(add(0, 0) == 0);\n}\n'],
+  ['xUnit Assert', 'MathTests.cs', '[Fact]\npublic void Adds() {\n    Assert.Equal(3, Add(1, 2));\n}\n', '[Fact]\npublic void Adds() {\n    Assert.Equal(3, Add(1, 2));\n    Assert.True(Add(0, 0) == 0);\n}\n'],
+  ['xUnit new case', 'MathTests.cs', '[Fact]\npublic void Adds() {\n    Assert.Equal(3, Add(1, 2));\n}\n', '[Fact]\npublic void Adds() {\n    Assert.Equal(3, Add(1, 2));\n}\n\n[Fact]\npublic void AddsZero() {\n    Add(0, 0);\n}\n'],
+  ['Gherkin scenario', 'features/math.feature', 'Scenario: adds\n  Then 1 + 2 is 3\n', 'Scenario: adds\n  Then 1 + 2 is 3\n\nScenario: adds zero\n  Then 0 + 0 is 0\n'],
+];
+
+for (const [name, file, before, after] of FRAMEWORKS) {
+  test(`19-08: ${name} added to a test file earns the rung`, (t) => {
+    const dir = repo(t, 'neutral-framework', { [file]: before });
+    const rel = story(dir);
+    commit(dir, { ...BEHAVIOR, [file]: after }, `auth change, ${name}`);
+
+    const res = run(dir, ['verify', '--story', rel]);
+
+    assert.equal(res.code, 0, res.output);
+    assert.match(res.output, /test file\(s\) strengthened/);
+  });
+}
+
+test('19-08: an assertion moved from a commit into the working tree is still neutral', (t) => {
+  const twoCases = `test('adds', () => {\n  expect(add(1, 2)).toBe(3);\n  expect(add(0, 0)).toBe(0);\n});\n\ntest('adds negatives', () => {\n  expect(add(-1, 1)).toBe(0);\n});\n`;
+  const dir = repo(t, 'neutral-moved-across', { 'src/math.test.js': twoCases });
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': twoCases.replace('  expect(add(0, 0)).toBe(0);\n', '') }, 'auth change, assertion taken out');
+  write(dir, { 'src/math.test.js': twoCases.replace('  expect(add(0, 0)).toBe(0);\n', '').replace("  expect(add(-1, 1)).toBe(0);\n", "  expect(add(-1, 1)).toBe(0);\n  expect(add(0, 0)).toBe(0);\n") });
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
+});
+
+test('19-08: a test title renamed to start with "should" is neutral', (t) => {
+  const dir = repo(t, 'neutral-should');
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST.replace("'adds'", "'should add'") }, 'auth change, title');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
+});
+
+test('19-08: an untracked test file that is empty or only comments does not earn the rung', (t) => {
+  const dir = repo(t, 'neutral-untracked-empty');
+  const rel = story(dir);
+  commit(dir, BEHAVIOR, 'auth change');
+  write(dir, { 'src/junk.test.js': '', 'src/notes.test.js': '// expect(auth()).toBe(true);\n' });
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.doesNotMatch(res.output, /strengthened/);
+});
+
+test('19-08: an assertion added inside a comment is neutral', (t) => {
+  const dir = repo(t, 'neutral-comment');
+  const rel = story(dir);
+  const commented = BASELINE_TEST.replace('});', '  // expect(add(2, 2)).toBe(4);\n  /* expect(add(3, 3)).toBe(6); */\n});');
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': commented }, 'auth change, commented assertion');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
+});
