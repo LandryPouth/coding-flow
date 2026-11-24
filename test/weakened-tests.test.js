@@ -158,13 +158,15 @@ test('a strengthened test still earns the rung', (t) => {
 test('a neutral edit is not a weakening', (t) => {
   const dir = repo(t, 'weak-neutral');
   const rel = story(dir);
-  // Same assertions, renamed test: direction is what is read, not effort.
+  // Same assertions, renamed test: not a weakening. Since story 19-08 not a
+  // strengthening either — a title is a string, and renaming one is not a test.
   commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST.replace("'adds'", "'adds two numbers'") }, 'rename');
 
   const res = run(dir, ['verify', '--story', rel]);
 
-  assert.equal(res.code, 0, res.output);
+  assert.equal(res.code, 1, res.output);
   assert.doesNotMatch(res.output, /Tests weakened/);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
 });
 
 test('one weakened file does not cancel a genuinely strengthened one — but it is still reported', (t) => {
@@ -419,18 +421,16 @@ test('19-08: an assertion moved from a commit into the working tree is still neu
   assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
 });
 
-test('19-08: a test title renamed to start with "should" is new test text, not an assertion removed', (t) => {
-  // Round 3: what strengthens is read from the text, not from markers. A new
-  // title is new test text (it strengthens, as before this story), and a
-  // "should" inside it is no assertion either way.
+test('19-08: a test title renamed to start with "should" is neutral', (t) => {
   const dir = repo(t, 'neutral-should');
   const rel = story(dir);
   commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST.replace("'adds'", "'should add'") }, 'auth change, title');
 
   const res = run(dir, ['verify', '--story', rel]);
 
-  assert.equal(res.code, 0, res.output);
+  assert.equal(res.code, 1, res.output);
   assert.doesNotMatch(res.output, /Tests weakened/);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
 });
 
 test('19-08: an untracked test file that is empty or only comments does not earn the rung', (t) => {
@@ -532,4 +532,169 @@ test('19-08: a file moved with an unstaged mv is named once', (t) => {
   run(dir, ['verify', '--story', rel]);
 
   assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/arith.test.js']);
+});
+
+// --- 19-08 review round 3: real formatter output, comments, strings --------
+//
+// The "after" sides of the prettier and gofmt cases are REAL formatter output:
+// prettier 3.10.1 and `gofmt -s` run on the "before" sides on 2026-11-24,
+// pasted verbatim.
+
+const PRETTIER_BEFORE = `var assert=require('assert')
+test('adds',function(){
+  var x=-1,y=.5,z=0XAB,w=1E5,big=1.50
+  var obj={'a':1,"b":'it\\'s'}
+  assert.equal(add(x,y),'sum: '+x+y)
+  assert.ok([1,2,3].map(function(n){return !n}))
+  expect( add( 1 , 2 ) ).toBe( 3 ); expect(add(0,0)).toBe(0)
+})
+`;
+const PRETTIER_AFTER = `var assert = require("assert");
+test("adds", function () {
+  var x = -1,
+    y = 0.5,
+    z = 0xab,
+    w = 1e5,
+    big = 1.5;
+  var obj = { a: 1, b: "it's" };
+  assert.equal(add(x, y), "sum: " + x + y);
+  assert.ok(
+    [1, 2, 3].map(function (n) {
+      return !n;
+    }),
+  );
+  expect(add(1, 2)).toBe(3);
+  expect(add(0, 0)).toBe(0);
+});
+`;
+
+const GOFMT_BEFORE = `package m
+import "testing"
+func TestAdd(t *testing.T){
+  x:=-1
+  if (add(x,1)!=0){ t.Errorf("bad %d",x) }
+  cases:=[]struct{a,b,want int}{{1,2,3},{0XAB,0,0xab}}
+  for _,c:=range cases{ if add(c.a,c.b)!=c.want {t.Fatalf("x")} }
+}
+`;
+const GOFMT_AFTER = `package m
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+\tx := -1
+\tif add(x, 1) != 0 {
+\t\tt.Errorf("bad %d", x)
+\t}
+\tcases := []struct{ a, b, want int }{{1, 2, 3}, {0xAB, 0, 0xab}}
+\tfor _, c := range cases {
+\t\tif add(c.a, c.b) != c.want {
+\t\t\tt.Fatalf("x")
+\t\t}
+\t}
+}
+`;
+
+const ESLINT_BEFORE = "var add = require('./add');\ntest('adds', function () {\n  var label = 'sum ' + add(1, 2);\n  expect(label).toBe('sum 3');\n  [1, 2].forEach(function (n) { return expect(add(n, 0)).toBe(n); });\n});\n";
+const ESLINT_AFTER = "const add = require('./add');\ntest('adds', () => {\n  const label = `sum ${add(1, 2)}`;\n  expect(label).toBe('sum 3');\n  [1, 2].forEach((n) => expect(add(n, 0)).toBe(n));\n});\n";
+
+const BLACK_BEFORE = "def test_add():\n    assert add(0XFF, 1J) == 'x'\n    assert add(.5, 1E5) == {'a': 1}\n";
+const BLACK_AFTER = 'def test_add():\n    """Adds numbers."""\n    assert add(0xFF, 1j) == "x"\n    assert add(0.5, 1e5) == {"a": 1}\n';
+
+const REFORMATS = [
+  ['prettier 3 (real output)', 'src/math.test.js', PRETTIER_BEFORE, PRETTIER_AFTER],
+  ['gofmt -s (real output)', 'math_test.go', GOFMT_BEFORE, GOFMT_AFTER],
+  ['eslint --fix style (var, arrows, template literal)', 'src/add.test.js', ESLINT_BEFORE, ESLINT_AFTER],
+  ['black style (numbers, quotes, a docstring)', 'tests/test_add.py', BLACK_BEFORE, BLACK_AFTER],
+  ['a JSDoc block added', 'src/math.test.js', BASELINE_TEST, `/**\n * Covers add.\n * @see add\n */\n${BASELINE_TEST}`],
+  ['a block comment without stars added', 'src/math.test.js', BASELINE_TEST, `/*\n  expect(add(9, 9)).toBe(18);\n  more notes\n*/\n${BASELINE_TEST}`],
+  ['a Python docstring added', 'tests/test_add.py', 'def test_add():\n    assert add(1, 2) == 3\n', 'def test_add():\n    """\n    assert add(9, 9) == 18\n    """\n    assert add(1, 2) == 3\n'],
+  ['only an expected string changed (accepted false red)', 'src/math.test.js', "test('says', () => {\n  expect(say()).toBe('hi');\n});\n", "test('says', () => {\n  expect(say()).toBe('hello');\n});\n"],
+];
+
+for (const [name, file, before, after] of REFORMATS) {
+  test(`19-08: neutral — ${name}`, (t) => {
+    const dir = repo(t, 'neutral-format', { [file]: before });
+    const rel = story(dir);
+    commit(dir, { ...BEHAVIOR, [file]: after }, `auth change, ${name}`);
+
+    const res = run(dir, ['verify', '--story', rel]);
+
+    assert.equal(res.code, 1, res.output);
+    assert.doesNotMatch(res.output, /strengthened/);
+    assert.deepEqual(evidenceOf(dir).coverage.neutralTests, [file]);
+  });
+}
+
+test('19-08: a fixer writing real prettier output is neutral like the hand reformat', (t) => {
+  const dir = repo(t, 'neutral-fixer-prettier', { 'src/math.test.js': PRETTIER_BEFORE });
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = { fix: ['node fix.js'], commands: ['node -e "process.exit(0)"'], quality: [] };
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  fs.writeFileSync(path.join(dir, 'fix.js'), `require('fs').writeFileSync('src/math.test.js', ${JSON.stringify(PRETTIER_AFTER)});\n`);
+  const rel = story(dir);
+  commit(dir, BEHAVIOR, 'auth change');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
+});
+
+test('19-08: a "should" inside a title does not count as an assertion removed', (t) => {
+  const dir = repo(t, 'neutral-should-weak', { 'src/math.test.js': BASELINE_TEST.replace("'adds'", "'should add'") });
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST }, 'auth change, title');
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.doesNotMatch(res.output, /Tests weakened/);
+  assert.equal(evidenceOf(dir).coverage.weakenedTests, undefined);
+});
+
+test('19-08: an unstaged move that also reformats is a move, not a deletion', (t) => {
+  const dir = repo(t, 'neutral-mv-reformat', { 'src/math.test.js': PRETTIER_BEFORE });
+  const rel = story(dir);
+  commit(dir, BEHAVIOR, 'auth change');
+  fs.rmSync(path.join(dir, 'src', 'math.test.js'));
+  write(dir, { 'src/arith.test.js': PRETTIER_AFTER });
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.doesNotMatch(res.output, /was removed/);
+  assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/arith.test.js']);
+});
+
+test('19-08: in a project below the repository top, the test files are named in one form, from the top', (t) => {
+  const top = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-neutral-sub-')));
+  t.after(() => fs.rmSync(top, { recursive: true, force: true }));
+  const dir = path.join(top, 'pkg');
+  fs.mkdirSync(dir);
+  assert.equal(run(dir, ['init']).code, 0);
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = { commands: ['node -e "process.exit(0)"'], quality: [] };
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  git(top, ['init', '-b', 'main']);
+  git(top, ['config', 'user.email', 'test@example.com']);
+  git(top, ['config', 'user.name', 'Test']);
+  write(dir, { 'src/math.js': 'module.exports = 1;\n', 'src/math.test.js': BASELINE_TEST, 'src/other.test.js': PRETTIER_BEFORE });
+  git(top, ['add', '-A']);
+  git(top, ['commit', '-m', 'init']);
+  git(top, ['checkout', '-b', 'feat/story']);
+  const rel = story(dir);
+  write(dir, BEHAVIOR);
+  git(top, ['add', '-A']);
+  git(top, ['commit', '-m', 'auth change']);
+  // An unstaged move (the new name is untracked) and a staged reformat.
+  fs.renameSync(path.join(dir, 'src', 'math.test.js'), path.join(dir, 'src', 'arith.test.js'));
+  write(dir, { 'src/other.test.js': PRETTIER_AFTER });
+  git(top, ['add', 'pkg/src/other.test.js']);
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.deepEqual([...evidenceOf(dir).coverage.neutralTests].sort(), ['pkg/src/arith.test.js', 'pkg/src/other.test.js']);
 });

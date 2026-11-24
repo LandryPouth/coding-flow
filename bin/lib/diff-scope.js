@@ -431,10 +431,10 @@ function filesWithStatusInDiff(status) {
 
 const deletedFilesInDiff = () => filesWithStatusInDiff("D");
 // Added in the diff, or untracked: a brand-new file is new whether or not it
-// has been staged yet.
+// has been staged yet. Both named from the repository top, as `git diff` names them.
 const addedFilesInDiff = () => {
   const config = readHarnessConfig(cwd).config;
-  const untracked = filterScopedFiles(runGitList(["ls-files", "--others", "--exclude-standard"]), config);
+  const untracked = filterScopedFiles(runGitList(["ls-files", "--others", "--exclude-standard", "--full-name"]), config);
   return [...new Set([...filesWithStatusInDiff("A"), ...untracked])];
 };
 

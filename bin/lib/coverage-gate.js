@@ -40,6 +40,7 @@ const {
   deletedFilesInDiff,
   addedFilesInDiff,
 } = require("./diff-scope");
+const { tokensOf, codeLinesOf, bagOf, consume } = require("./test-tokens");
 const {
   RISK_RANK,
   scoreStoryRisk,
@@ -247,105 +248,26 @@ const ASSERTION_MARKERS = [
   /\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\s*\(/,
 ];
 
-// The code on a line, comment text removed: `//` and `#` comments outside
-// quotes (`#` only at the start or after a space, never `#[` or `#!`),
-// `/* … */` on the line, and the inside lines of a block comment.
-function codeOf(line) {
-  // The inside line of a block comment (` * text`); `/* … */` itself is cut below.
-  if (/^\s*\*(?!\/)/.test(line)) {
-    return "";
-  }
-
-  let out = "";
-  let quote = null;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-
-    if (quote) {
-      out += char;
-      if (char === "\\") {
-        out += line[index + 1] || "";
-        index += 1;
-      } else if (char === quote) {
-        quote = null;
-      }
-    } else if (char === '"' || char === "'" || char === "`") {
-      quote = char;
-      out += char;
-    } else if (line.startsWith("/*", index)) {
-      const close = line.indexOf("*/", index + 2);
-      if (close === -1) {
-        break;
-      }
-      index = close + 1;
-    } else if (line.startsWith("//", index) || (char === "#" && (index === 0 || /\s/.test(line[index - 1])) && !/[[!]/.test(line[index + 1] || ""))) {
-      break;
-    } else {
-      out += char;
-    }
-  }
-
-  return out;
-}
-
 // Occurrences, not lines: a formatter that splits two assertions written on one
 // line onto two lines changes the line count, not the number of assertions.
+// Comments and string literals are removed first, so a "should" in a test title
+// or an `expect(` in a comment is no marker.
 const globalOf = (pattern) => new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
 const countMatching = (lines, patterns) =>
-  lines.map(codeOf).reduce(
+  codeLinesOf(lines).reduce(
     (total, line) => total + patterns.reduce((sum, pattern) => sum + (line.match(globalOf(pattern)) || []).length, 0),
     0,
   );
 const countSkipMarkers = (lines) => countMatching(lines, SKIP_MARKERS);
-
-// The words of test code, for telling new code from moved code: identifiers,
-// numbers, operators and string literals (quote style normalised), with
-// whitespace, comments, brackets, commas and semicolons dropped — what a
-// formatter adds, removes or re-splits.
-const TOKEN = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|[A-Za-z_$][\w$]*|\d[\w.]*|[^\s\w()[\]{},;]+/g;
-
-function tokensOf(lines) {
-  const tokens = [];
-
-  for (const line of lines) {
-    for (const token of codeOf(line).match(TOKEN) || []) {
-      tokens.push(/^["'`]/.test(token) ? `"${token.slice(1, -1)}"` : token);
-    }
-  }
-
-  return tokens;
-}
-
-// A multiset of tokens, consumed as added code is matched against removed code.
-function bagOf(tokens) {
-  const bag = new Map();
-  for (const token of tokens) bag.set(token, (bag.get(token) || 0) + 1);
-  return bag;
-}
-
-// Takes from `bag` every token it holds; returns the tokens it could not cover.
-function consume(bag, tokens) {
-  const left = [];
-
-  for (const token of tokens) {
-    const count = bag.get(token) || 0;
-    if (count > 0) {
-      bag.set(token, count - 1);
-    } else {
-      left.push(token);
-    }
-  }
-
-  return left;
-}
 
 // Story 19-08: a test edit strengthens unless it is provably neutral. Across
 // every test file of the diff together, the code added is matched against the
 // code removed (deleted and moved files included): a file whose added code is
 // all found there only moved, renamed, re-split or reformatted test code. Each
 // file is matched against its own removed code first, then against what is left
-// of the others'. Anything left over is new test code, whatever its framework.
+// of the others'. A leftover identifier, number or operator is new test code,
+// whatever its framework; leftover strings alone (a renamed title, a changed
+// message) are not.
 function strengtheningOf(changes, removedElsewhere) {
   const pool = bagOf(removedElsewhere);
   const leftovers = new Map();
@@ -360,7 +282,7 @@ function strengtheningOf(changes, removedElsewhere) {
 
   const strengthened = new Set();
   for (const [file, left] of leftovers) {
-    if (consume(pool, left).length > 0) strengthened.add(file);
+    if (consume(pool, left).some((token) => !token.string)) strengthened.add(file);
   }
 
   return strengthened;
@@ -408,6 +330,9 @@ function scanTestWeakening(config) {
   }
 
   const from = base || "HEAD";
+  // Every name here is from the repository top, as `git diff` gives them.
+  const top = runGitText(["rev-parse", "--show-toplevel"]).trim() || cwd;
+  const prefix = runGitText(["rev-parse", "--show-prefix"]).trim();
   const oldLines = (file) => runGitText(["show", `${from}:${file}`]).split(/\r?\n/);
   const deleted = new Map(deletedFilesInDiff().filter(isTest).map((file) => [file, oldLines(file)]));
   const movedFrom = [];
@@ -420,7 +345,7 @@ function scanTestWeakening(config) {
       continue;
     }
 
-    const lines = readLines(path.join(cwd, file));
+    const lines = readLines(path.join(top, file));
     const moved = closestDeleted(lines, deleted);
     byFile[file] = { added: lines, removed: moved ? moved.lines : [] };
 
@@ -451,7 +376,7 @@ function scanTestWeakening(config) {
     }
   }
 
-  return { findings, strengthened, neutral, movedFrom, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
+  return { findings, strengthened, neutral, movedFrom, prefix, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
 }
 
 // The merge base, else HEAD when there is one: the single tree the scan diffs
@@ -470,17 +395,17 @@ function readLines(file) {
 }
 
 // The deleted test file an untracked one most resembles, when at least half
-// of their non-blank lines are shared: a move, possibly edited. Used to name
-// the file once and to read its weakening against what it was; what
+// of their tokens are shared: a move, possibly edited or reformatted. Used to
+// name the file once and to read its weakening against what it was; what
 // strengthens is decided by `strengtheningOf`.
 function closestDeleted(lines, deleted) {
-  const mine = new Set(lines.map((line) => line.trim()).filter(Boolean));
+  const mine = tokensOf(lines);
   let best = null;
 
   for (const [file, old] of deleted) {
-    const theirs = new Set(old.map((line) => line.trim()).filter(Boolean));
-    const shared = [...mine].filter((line) => theirs.has(line)).length;
-    const score = shared / Math.max(mine.size, theirs.size, 1);
+    const theirs = tokensOf(old);
+    const shared = mine.length - consume(bagOf(theirs), mine).length;
+    const score = shared / Math.max(mine.length, theirs.length, 1);
 
     if (score >= 0.5 && (!best || score > best.score)) {
       best = { file, lines: old, score };
@@ -495,7 +420,10 @@ function closestDeleted(lines, deleted) {
 // binary snapshot).
 function neutralTestFiles(testFiles, weakening) {
   const decided = new Set([...weakening.strengthened, ...weakening.weakenedFiles, ...(weakening.movedFrom || [])]);
-  return [...new Set([...weakening.neutral, ...testFiles.filter((file) => !decided.has(file))])];
+  const scanned = new Set([...decided, ...weakening.neutral]);
+  // An untracked file arrives named from the project, not the top: one name each.
+  const fromTop = (file) => (weakening.prefix && scanned.has(`${weakening.prefix}${file}`) ? `${weakening.prefix}${file}` : file);
+  return [...new Set([...weakening.neutral, ...testFiles.map(fromTop).filter((file) => !decided.has(file))])];
 }
 
 function untestedReason(behaviorFiles, weakened, neutral) {

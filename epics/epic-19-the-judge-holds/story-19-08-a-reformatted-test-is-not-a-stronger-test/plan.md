@@ -114,16 +114,45 @@
     an unstaged move once and reads its weakening against what it was.
   - *Moved files are named once:* the old name of an unstaged move is not
     listed neutral beside the new one.
-  - *Accepted P2:* an assertion inside a string, a docstring or a multi-line
-    comment no longer matters for strengthening (it is text added or moved
-    like any other). Token order is not compared: swapping two arguments
+  - *Accepted P2:* Token order is not compared: swapping two arguments
     reads neutral (a false red, never a false green).
   - Tests: round 1's marker tests (one per framework form) still pass — new
-    code strengthens. Two tests changed meaning on purpose: "a neutral edit is
-    not a weakening" is back to its original assertion (a renamed title is
-    new test text: it passes, as before this story), and round 1's "title
-    renamed to start with should is neutral" now asserts it is not a
-    weakening and strengthens.
+    code strengthens. (Round 3 made a renamed title strengthen; round 4
+    reverses that, see below.)
+
+- **Round 4 (review round 3: real formatter output).** The round-3 tokens
+  were not formatter-proof (`x=-1` read `=-`, `'it\'s'` differed from
+  `"it's"`, `.5` from `0.5`, a JSDoc's `*/` leaked) and a renamed title
+  strengthened. Decided:
+  - The lexer moved to `bin/lib/test-tokens.js` (coverage-gate.js only calls
+    it). One token per operator character, `=>` excepted and dropped with
+    `var`/`let`/`const`/`function`; strings unescaped, quote-free, and equal
+    to an identifier when they are one; numbers canonicalised through
+    `Number()`/`BigInt()` with their suffix lowercased; template text is a
+    string and `${…}` code; block comments, triple-quoted strings and template
+    literals carry their state across lines. An apostrophe with no partner on
+    its line is not a string (Gherkin's `user's`).
+  - *Strings never strengthen.* A leftover token must be an identifier, number
+    or operator; a renamed title, a docstring or a changed message is neutral.
+    So "a neutral edit is not a weakening" and the "should" title test are
+    back to asserting neutral (round 3 had made a title rename strengthen: a
+    gaming vector). Accepted narrow false red: an assertion whose only change
+    is its expected string (`toBe('hi')` → `toBe('hello')`) reads neutral.
+  - Weakening markers are counted on the same lexer's code lines, strings and
+    comments removed: a `should` in a title is no assertion either way.
+  - `closestDeleted` compares token bags, so an unstaged move that also
+    reformats is a move, not a deletion.
+  - Paths: the scan names every file from the repository top (`ls-files
+    --full-name`, as `git diff` does); a project-relative name of an untracked
+    file in the changed list is mapped to it, so a file is listed once.
+  - Fixtures: the prettier and gofmt "after" texts in the tests are real
+    output (prettier 3, `gofmt -s`, run once on 2026-11-24); the eslint and
+    black cases are hand-written from their rules.
+  - *Accepted P2 (not fixed):* copying an existing test case strengthens (its
+    tokens are not removed anywhere); `toBe(5)` → `toBeTruthy()` strengthens
+    (a new identifier); swapping two arguments is neutral (order is not
+    compared). The string-literal stripping does not know JS regex literals:
+    a quote inside `/…/` can still open a string on that line.
 
 ## Test Plan
 

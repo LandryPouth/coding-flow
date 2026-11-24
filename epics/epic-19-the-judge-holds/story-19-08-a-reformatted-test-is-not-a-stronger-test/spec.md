@@ -14,11 +14,14 @@ what it is.
 ## Requirements
 
 - In `bin/lib/coverage-gate.js`, a changed test file counts as strengthened
-  when it adds test code that the diff did not remove from a test file
-  (across all test files of the diff together), with no weakening signal.
-  Framework markers no longer decide it (decision of round 3, plan.md).
-- A test file with a neutral change (rename, reformat, re-split, a test case
-  moved from or to another test file) is listed as `neutral` in the gate's
+  when it adds an identifier, number or operator that the diff did not
+  remove from a test file (across all test files of the diff together,
+  compared as formatter-proof tokens), with no weakening signal. Strings alone
+  never strengthen. Framework markers no longer decide it (decisions of rounds
+  3 and 4, plan.md).
+- A test file with a neutral change (rename of the file or of a title,
+  reformat — real formatter output included — re-split, a test case moved
+  from or to another test file) is listed as `neutral` in the gate's
   output and evidence, never as strengthened and never as weakened.
 - When every changed test file is neutral, the gate's "test-file" mode does
   not pass; the message names the neutral files and says what would satisfy
