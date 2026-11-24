@@ -102,7 +102,8 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [x] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24) — 1 review round (0 P1, 8 P2 fixed), landed, re-proved, review captured
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
-- [ ] 29-03 destructive commands wait for the human ∥ 29-01 `ai-flow scan`
+- [x] 29-03 destructive commands wait for the human — claim re-scoped at the cap; 2 series × 4 rounds (new series P1 2/1/0/0, STRICT two clean), landed, re-proved, review captured
+- [ ] 29-01 `ai-flow scan`
 - [ ] 29-04 commands built to evade the guard (after 29-03; from its reviews)
 
 ### Wave 2b — one workspace, several repositories (epic 30) · *release 0.17.0*
@@ -251,3 +252,14 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   fail without `--round`; STRICT needs two passes in a row. The first land
   verify went red with no failing test (machine loaded: three suites at once,
   the suite took 11 min instead of 4); the retry was green.
+- 2026-11-24 — 29-03 landed. The guard refuses the destructive forms an agent
+  writes by habit (rm -rf, reset --hard, clean -f, push --force, branch -D,
+  checkout/restore on a dirty tree, stash drop, migrate reset, DROP DATABASE…),
+  names the safe alternative, and marks unchecked what it cannot read; evasion
+  forms are 29-04's. land.sh no longer uses `branch -f`.
+- 2026-11-24 — the land re-verifies of 19-09 and 29-03 went red under load
+  (load average 12–20, three suites at once, suite 4 → 11 min) with no failing
+  test the run could name: `npm test` and a coverage run on develop were green
+  (1906/1906), and a third verify on develop was green. verify does not name
+  the failing test yet — that is 19-01, which this makes urgent. Until then:
+  at most two suites at once during a land.
