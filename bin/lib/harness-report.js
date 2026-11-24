@@ -319,8 +319,7 @@ function printVerify(evidence, outputPath) {
   }
 
   printResults(evidence.results);
-  printFixedFiles(evidence);
-  printHarmlessWrites(evidence);
+  printFixerWrites(evidence);
 
   if (outputPath) {
     log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
@@ -328,6 +327,11 @@ function printVerify(evidence, outputPath) {
 }
 
 // Story 19-05: what the fixers rewrote, left in the tree for whoever commits.
+function printFixerWrites(evidence) {
+  printFixedFiles(evidence);
+  printHarmlessWrites(evidence);
+}
+
 function printFixedFiles({ fixedFiles, fixerStrengthened = [] }) {
   if (fixerStrengthened.length > 0) {
     log(`Warning: ${fixerStrengthened.length} test file(s) counted as strengthened were rewritten by a fixer in this run: ${fixerStrengthened.map(printablePath).join(", ")}`);
