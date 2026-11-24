@@ -1351,8 +1351,12 @@ function readDestructiveSafely(command, ctx, issues) {
 // A shell command writes the policy file blind: the guard cannot read what it
 // changes, so it is refused like a blocked path (story 29-03). The scripts of
 // `"$(…)"` and backticks are read too; after a `cd` their directory is unknown.
+function shellBlockedPaths(policy) {
+  return [...policy.blockedPaths, POLICY_FILE];
+}
+
 function shellWriteDenial(ctx, command, caseInsensitive, substituted) {
-  const shellCtx = { ...ctx, scopes: ctx.scopes.map((scope) => ({ ...scope, policy: { ...scope.policy, blockedPaths: [...scope.policy.blockedPaths, POLICY_FILE] } })) };
+  const shellCtx = { ...ctx, scopes: ctx.scopes.map((scope) => ({ ...scope, policy: { ...scope.policy, blockedPaths: shellBlockedPaths(scope.policy) } })) };
   for (const { script, cwd } of [{ script: command, cwd: ctx.cwd }, ...substituted]) {
     const entries = readShellWrites(script, cwd || ctx.cwd, shellHost, { trees: true });
     if (cwd === null && entries.length) {
@@ -1650,4 +1654,4 @@ function evaluate(hook, root) {
   }
 }
 
-module.exports = { guardCommand, decide, evaluate, recordUnchecked, isShellLimit, shellWriteTargets, shellWrites, loadPolicy, destructivePolicy, effectiveDestructivePolicy };
+module.exports = { guardCommand, decide, evaluate, recordUnchecked, isShellLimit, shellWriteTargets, shellWrites, loadPolicy, destructivePolicy, effectiveDestructivePolicy, shellBlockedPaths };

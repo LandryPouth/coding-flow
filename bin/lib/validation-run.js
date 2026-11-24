@@ -532,6 +532,7 @@ module.exports = {
   resolveStoryDir,
   parseTestsCommands,
   resolveValidationCommands,
+  resolveCheckCommands,
   cleanEnvironment,
   isUnattended,
   isProjectScriptInvocation,

@@ -60,9 +60,9 @@ Story references point at the story's `spec.md` unless another file is named.
 | `highRiskTerms` | 17 terms | — | key | `harness-config.js` (`defaultHarnessConfig`) |
 | `testGlobs` | 13 globs | — | key | `harness-config.js` (`defaultTestGlobs`) |
 | `nonBehaviorGlobs` | 27 globs | — | key | `harness-config.js` (`defaultNonBehaviorGlobs`) |
-| `policyGlobs` | 15 globs | — | key | `harness-config.js` (`defaultPolicyGlobs`) |
+| `policyGlobs` | 15 globs | Read at the diff base (`policyGlobsAtBase`); `.coding-flow/harness.json` and `.coding-flow/config.json` always count (`OWN_POLICY_FILES`); under `--claim refactor` the defaults and the test-runner configs always apply, plus the tree's list (`claimPolicyGlobs`) | key | `harness-config.js` (`defaultPolicyGlobs`); `policy-drift.js`; `claim.js` |
 | `ignoredPaths` | `[]` | — | key | `harness-config.js` (`defaultHarnessConfig`) |
-| `blockedPaths` | 10 globs | — | key; `doctor` warns when it lacks the evidence paths | `harness-config.js` (`defaultHarnessConfig`); `bin/lib/doctor.js` |
+| `blockedPaths` | 10 globs | The guard also refuses shell writes to `.coding-flow/harness.json` (`shellBlockedPaths`) | key; `doctor` warns when it lacks the evidence paths | `harness-config.js` (`defaultHarnessConfig`); `bin/lib/doctor.js` |
 | `sensitiveGlobs` | 5 globs | — | key | `harness-config.js` (`defaultHarnessConfig`) |
 | `requiredChecks` | 4 checks | — | key | `harness-config.js` (`defaultHarnessConfig`) |
 | `secretPatterns`, `secretScanAllowlist` | 6 (5 exact, 1 heuristic) / 12 entries. Not printed by `ai-flow rules` (no secret-looking key is) | `exact` patterns apply everywhere. The allowlist only relaxes `heuristic` ones | key | `harness-config.js` (`defaultSecretPatterns`, `defaultSecretScanAllowlist`) |

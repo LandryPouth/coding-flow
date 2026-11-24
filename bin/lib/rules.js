@@ -39,6 +39,8 @@ const coverageGate = lazy("./coverage-gate");
 const complexity = lazy("./complexity");
 const redAtBase = lazy("./red-at-base");
 const policyDrift = lazy("./policy-drift");
+const claim = lazy("./claim");
+const validationRun = lazy("./validation-run");
 
 const RESOLVERS = {
   mode: (read) => harnessMode(read.harness),
@@ -89,6 +91,30 @@ function atTheBase(rule, read, value) {
   return null;
 }
 
+// What other consumers add to a key's value, whatever the project writes: a
+// note naming it, from the consumer's own function, or null.
+const ALWAYS = {
+  // policy-drift.js readPolicyChanged; claim.js scopeFailures.
+  policyGlobs: (read) => {
+    const own = policyDrift().OWN_POLICY_FILES.join(" and ");
+    const claimed = claim().claimPolicyGlobs(read.harness).length;
+    return `${own} always count; under --claim refactor, ${claimed} globs (the defaults and test-runner configs always apply)`;
+  },
+  // guard.js shellWriteDenial.
+  blockedPaths: (read) => {
+    const policy = { blockedPaths: read.harness.blockedPaths };
+    const extra = require("./guard").shellBlockedPaths(policy).filter((entry) => !policy.blockedPaths.includes(entry));
+    return extra.length ? `the guard also refuses shell writes to ${extra.join(", ")}` : null;
+  },
+  // validation-run.js resolveCheckCommands: nothing declared, verify falls back.
+  "validation.commands": () => {
+    const { source, commands } = validationRun().resolveCheckCommands({});
+    if (source === "config") return null;
+    const fallback = source ? `${commands.length} from ${source}` : "none found";
+    return `none declared: verify runs the story plan's commands, else package.json scripts (here ${fallback})`;
+  },
+};
+
 function resolved(rule, read) {
   return RESOLVERS[rule.key] ? RESOLVERS[rule.key](read) : at(read[rule.file], rule.key);
 }
@@ -97,7 +123,7 @@ function effective(rule, read) {
   const base = { key: rule.key, scope: rule.scope, file: rule.file ? `.coding-flow/${FILES[rule.file]}` : null, cap: rule.cap || null, doc: rule.doc };
 
   if (!rule.file) {
-    return { ...base, value: defaultOf(rule.key), source: "fixed" };
+    return { ...base, value: defaultOf(rule.key), source: "fixed", note: null };
   }
 
   const standing = rule.auto ? rule.auto(read.harness) : { value: defaultOf(rule.key), reason: null };
@@ -115,7 +141,9 @@ function effective(rule, read) {
     result = sourced(rule, read, value, standing);
   }
   const based = atTheBase(rule, read, result.value);
-  return based ? { ...base, value: based.value, source: `${result.source} (${based.note})` } : { ...base, ...result };
+  const note = ALWAYS[rule.key] ? ALWAYS[rule.key](read) : null;
+  const shownResult = based ? { value: based.value, source: `${result.source} (${based.note})` } : result;
+  return { ...base, ...shownResult, note };
 }
 
 // The source of the tree's value, before the diff base is considered.
@@ -154,7 +182,10 @@ function rawFile(root, name) {
 // Unreadable is what the consumers report: readConfig's file reader for
 // config.json, the guard's loadPolicy for harness.json (a parsed `null` or
 // array is readable; the readers apply their defaults to it).
-function readProject(root) {
+// Everything is read from the current project (`cwd`), as the gates read it:
+// the base readers know no other root.
+function readProject() {
+  const root = cwd;
   const guard = require("./guard").effectiveDestructivePolicy(root);
   const config = readConfigReport(root);
   return {
@@ -169,12 +200,12 @@ function readProject(root) {
   };
 }
 
-function effectiveRules(root = cwd, read = readProject(root)) {
+function effectiveRules(read = readProject()) {
   return RULES.map((rule) => effective(rule, read));
 }
 
 // The files `rules` must name above its table.
-function unreadableNotes(root = cwd, read = readProject(root)) {
+function unreadableNotes(read = readProject()) {
   const files = read.unreadable.map((name) => `.coding-flow/${FILES[name]}`);
   const lines = files.map((file) => `${file} cannot be read (invalid JSON or no permission): its rules below are what the readers apply without it.`);
   if (read.guard.lockedBy === "primary-unreadable") {
@@ -198,9 +229,9 @@ function rulesCommand({ commandArgs, flags }) {
     fail(`unknown rule "${wanted}". Run "ai-flow rules" for the list.`);
   }
 
-  const read = readProject(cwd);
-  const rules = effectiveRules(cwd, read).filter((rule) => !wanted || rule.key === wanted);
-  const notes = unreadableNotes(cwd, read);
+  const read = readProject();
+  const rules = effectiveRules(read).filter((rule) => !wanted || rule.key === wanted);
+  const notes = unreadableNotes(read);
 
   if (flags.has("--json")) {
     log(JSON.stringify({ unreadable: notes.files, rules }, null, 2));
@@ -213,6 +244,7 @@ function rulesCommand({ commandArgs, flags }) {
     const [rule] = rules;
     log(`${rule.key}: ${shown(rule)}`);
     log(`  source: ${rule.source}${rule.file ? ` (${rule.file})` : ""}`);
+    if (rule.note) log(`  also: ${rule.note}`);
     if (rule.cap) log(`  limit: ${rule.cap}`);
     log(`  ${rule.doc}`);
     log("  More: docs/rules-and-limits.md");
@@ -223,7 +255,7 @@ function rulesCommand({ commandArgs, flags }) {
   const valueWidth = Math.max(...rules.map((rule) => shown(rule).length)) + 2;
 
   for (const rule of rules) {
-    log(`${rule.key.padEnd(width)}${shown(rule).padEnd(valueWidth)}${rule.source}`);
+    log(`${rule.key.padEnd(width)}${shown(rule).padEnd(valueWidth)}${rule.source}${rule.note ? `; also: ${rule.note}` : ""}`);
   }
 
   log("");

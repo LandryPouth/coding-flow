@@ -101,6 +101,27 @@
   | read at the diff base: `highRiskPaths`, `testGlobs`, `ignoredPaths` | `coverage-gate.js` `baseRiskConfig` and `BASE_RISK_KEYS` (`strictestRisk`) |
   | read at the diff base: `policyGlobs` | `policy-drift.js` `policyGlobsAtBase` (`readPolicyChanged`), base from `readBaseHarness` |
   | default of `coverageFloor.medium/low`, `failOnContrarySignals` | `coverage.js` `defaultCoverageFloor`, `coverage-gate.js` `failsOnContrarySignals({})` |
+  | `policyGlobs` note | `policy-drift.js` `OWN_POLICY_FILES`; `claim.js` `claimPolicyGlobs` (`scopeFailures`, `--claim refactor`) |
+  | `blockedPaths` note | `guard.js` `shellBlockedPaths` (`shellWriteDenial`) |
+  | `validation.commands` note | `validation-run.js` `resolveCheckCommands` (the plan.md / package.json fallback) |
+
+  Audit of every other reader of a printed key (new series, round 1), by
+  grep over `bin/lib/`: each reads the value `readConfig` /
+  `readHarnessConfig` / `loadPolicy` resolved and applies it as printed, or
+  re-applies the same fallback —
+  `minPatchCoverage` (`coverage-gate.js`, `claim.js`: finite else 80, the
+  reader's default), `highRiskPaths` (`risk.js`, `coverage-gate.js`: array
+  else the defaults), `testGlobs` (`claim.js`, `mutation.js`,
+  `complexity.js`), `nonBehaviorGlobs` (`complexity.js`, `recover.js`),
+  `ignoredPaths` (`diff-scope.js`), `highRiskTerms` (`risk.js`),
+  `sensitiveGlobs` (`recover.js`, `security-policy.js`), `requiredChecks`
+  (`evidence.js` adds three checks for a high-risk story — per story, not a
+  project rule), `blockedPaths` (`guard.js` `loadPolicy`, `codex-settings.js`
+  through it), `storage` (`storage/index.js`, `archive.js`), `branchPerEpic`
+  (`policy.js`), `autoMergeEpic` (`ship.js`; `--auto-merge` overrides it per
+  run), `skills`/`install`/`target` (`doctor.js`, `report.js`),
+  `validation.*` (`validation-run.js`). None applies another value; the three
+  that add to it are noted above.
 
 - **D10 — What the base holds is part of the value in force (review round
   4).** The gates judge a diff by the stricter of its base and its tree
@@ -113,6 +134,17 @@
   changes are found with the base's N globs)`. `mode: fast` is shown
   `project (treated as standard)`: every consumer compares with `"strict"`
   only. `rules` reads the project once per command.
+
+- **D11 — What a consumer always adds is a note, not a source (new series,
+  round 1).** `rules --json` carries `note`; the table prints it after the
+  source (`; also: …`), the detail view as `also:`. The source still says
+  where the key's own value came from.
+
+**Out of scope, seen in review:** `doctor`'s `epic_too_large` warning never
+shows (pre-existing, not this story's diff).
+
+**New review series** (after the split): round 1 FAIL, 1 P1 (`policyGlobs`
+under `--claim refactor`, D9 audit, D11).
 
 ## Split (review cap, 2026-11-24)
 

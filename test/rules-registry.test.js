@@ -494,3 +494,29 @@ test('mode fast is shown as treated as standard', (t) => {
   const rule = ruleIn(project(t, { harness: { mode: 'fast' } }), 'mode');
   assert.deepEqual([rule.value, rule.source], ['fast', 'project (treated as standard)']);
 });
+
+// New series, round 1: a key other consumers extend is printed with what they
+// add (claim.js claimPolicyGlobs, policy-drift.js OWN_POLICY_FILES,
+// guard.js shellBlockedPaths, validation-run.js resolveCheckCommands).
+test('policyGlobs says what readPolicyChanged and --claim refactor add to it', (t) => {
+  const { claimPolicyGlobs } = require('../bin/lib/claim');
+  const { OWN_POLICY_FILES } = require('../bin/lib/policy-drift');
+  const dir = committed(t, JSON.stringify({ policyGlobs: [] }));
+  const rule = ruleIn(dir, 'policyGlobs');
+  assert.deepEqual(rule.value, []);
+  for (const file of OWN_POLICY_FILES) assert.ok(rule.note.includes(file), rule.note);
+  assert.ok(claimPolicyGlobs({ policyGlobs: [] }).length >= 15);
+  assert.match(rule.note, new RegExp(`under --claim refactor, ${claimPolicyGlobs({ policyGlobs: [] }).length} globs`));
+  assert.match(cli(dir, ['rules']).out, /policyGlobs .*also: .*--claim refactor/);
+});
+
+test('blockedPaths and validation.commands say what the guard and verify add', (t) => {
+  const dir = project(t);
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e 0' } }));
+  const byKey = Object.fromEntries(rulesJson(dir).rules.map((r) => [r.key, r]));
+  assert.match(byKey.blockedPaths.note, /shell writes to \.coding-flow\/harness\.json/);
+  assert.match(byKey['validation.commands'].note, /here 1 from package\.json/);
+
+  const declared = ruleIn(project(t, { config: { validation: { commands: ['npm test'] } } }), 'validation.commands');
+  assert.equal(declared.note, null);
+});

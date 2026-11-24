@@ -64,4 +64,4 @@ function readPolicyChanged({ globs: own = null } = {}) {
     .sort();
 }
 
-module.exports = { readPolicyChanged, readBaseHarness, policyGlobsAtBase };
+module.exports = { readPolicyChanged, readBaseHarness, policyGlobsAtBase, OWN_POLICY_FILES };
