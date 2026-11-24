@@ -862,3 +862,97 @@ test('a | in a result cell of the PR evidence block is escaped', () => {
   });
   assert.match(block, /\| fix: `a \\\| b` \| ❌ x \\\| y \| 0ms \|/);
 });
+
+test('with fixers declared, a Coding Flow file edited by hand is not answered from an earlier proof', (t) => {
+  const dir = project(t, { fix: [node('0')], commands: [node('0')] });
+  assert.equal(run(dir, ['verify', '--json']).code, 0);
+  assert.equal(JSON.parse(run(dir, ['verify', '--json']).output).reused, true, 'the premise: an unmoved tree is reused');
+  fs.appendFileSync(path.join(dir, '.coding-flow', 'COMMANDS.md'), '\nedited\n');
+  const again = JSON.parse(run(dir, ['verify', '--json']).output);
+  assert.equal(again.reused, undefined, JSON.stringify(again));
+});
+
+test('a JSON file under .coding-flow/ reformatted to the same value is named, in the evidence, the output and the PR body', (t) => {
+  const dir = project(t, { fix: ['node fmt.js'], commands: [node('0')] }, { gitRepo: false });
+  walkingFormatter(dir);
+  git(dir, ['init', '-q']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  const evidence = JSON.parse(verify(dir).output);
+  assert.ok(evidence.reformatted.includes('.coding-flow/config.json'), JSON.stringify(evidence));
+  git(dir, ['checkout', '-q', '--', '.coding-flow/config.json']);
+  const { output } = run(dir, ['verify', '--no-cache']);
+  assert.match(output, /Reformatted, same value: [^\n]*\.coding-flow\/config\.json/);
+  const { buildEvidenceBlock } = require('../bin/lib/ship');
+  assert.match(buildEvidenceBlock(evidence), /\*\*Reformatted by the fixers, same value:\*\* [^\n]*`\.coding-flow\/config\.json`/);
+});
+
+test('a run file re-indented by a formatter is not a second ledger entry', (t) => {
+  const { syncLedger, collectAll } = require('../bin/lib/audit');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-ledger-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const runs = path.join(dir, '.coding-flow', 'runs');
+  fs.mkdirSync(runs, { recursive: true });
+  const file = path.join(runs, '2026-11-24T00-00-00-000Z-verify.json');
+  const data = { ok: true, generatedAt: '2026-11-24T00:00:00.000Z', results: [] };
+  fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
+  assert.equal(syncLedger(dir).added.length, 1);
+  fs.writeFileSync(file, `${JSON.stringify(data, null, '\t')}\n`);
+  assert.equal(syncLedger(dir).added.length, 0);
+  assert.equal(collectAll(dir).length, 1);
+});
+
+// A guard log past the guard's size bound, as the guard leaves it: it keeps its
+// last 200 lines, then appends (guard.js).
+function bigGuardLogProject(t, keep) {
+  const fixer = node(`const fs=require('fs');const f='.coding-flow/denials.jsonl';const k=fs.readFileSync(f,'utf8').split('\\\\n').filter(Boolean).slice(-${keep});fs.writeFileSync(f,k.join('\\\\n')+'\\\\n'+'{\\"tool\\":\\"new\\"}\\\\n')`);
+  const dir = ignoredRunsProject(t, fixer);
+  const line = `{"tool":"${'x'.repeat(120)}"}`;
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'denials.jsonl'), `${Array.from({ length: 2500 }, (_, i) => `${line.slice(0, -2)}${i}"}`).join('\n')}\n`);
+  return dir;
+}
+
+test("the guard trimming its own log during the fixers is the guard's work, named, not a forbidden write", (t) => {
+  const dir = bigGuardLogProject(t, 200);
+  const { code, output } = verify(dir);
+  assert.equal(code, 0, output);
+  assert.deepEqual(JSON.parse(output).guardLogs, ['.coding-flow/denials.jsonl']);
+});
+
+test('a guard log cut otherwise than the guard trims it is a forbidden write', (t) => {
+  const dir = bigGuardLogProject(t, 199);
+  const { code, output } = verify(dir);
+  assert.notEqual(code, 0, output);
+  assert.match(JSON.parse(output).results.find((r) => r.command === '(fixers)').toolError, /\.coding-flow\/denials\.jsonl/);
+});
+
+test('a guard log created during the fixers is named', (t) => {
+  const dir = ignoredRunsProject(t, node("require('fs').appendFileSync('.coding-flow/guard-unchecked.jsonl','{}\\\\n')"));
+  const { code, output } = verify(dir);
+  assert.equal(code, 0, output);
+  assert.deepEqual(JSON.parse(output).guardLogs, ['.coding-flow/guard-unchecked.jsonl']);
+});
+
+test("a Biome or dprint fixer recipe prints the exact lines each tool's ignore needs", (t) => {
+  const { detectFixRecipes } = require('../bin/lib/fix-recipes');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-fix-recipes-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { fmt: 'biome format --write .', dp: 'dprint fmt --write' } }));
+  assert.deepEqual(detectFixRecipes(dir).map((recipe) => recipe.ignore), [
+    { file: '`files.includes` in biome.json', lines: ['**', '!.coding-flow', '!epics', '!specs', '!.specify'] },
+    { file: '`excludes` in dprint.json', lines: ['.coding-flow/', 'epics/', 'specs/', '.specify/'] },
+  ]);
+});
+
+test('a file name with a newline is printed escaped, in the terminal and the PR body', { skip: process.platform === 'win32' && 'no newline in a Windows file name' }, (t) => {
+  const dir = project(t, { fix: [node("require('fs').writeFileSync('src/a\\\\nb.js','x')")], commands: [node('0')] });
+  const evidence = JSON.parse(verify(dir).output);
+  assert.deepEqual(evidence.fixedFiles, ['src/a\nb.js']);
+  fs.rmSync(path.join(dir, 'src', 'a\nb.js'));
+  const { output } = run(dir, ['verify', '--no-cache']);
+  assert.match(output, /^ {2}- src\/a\\nb\.js$/m);
+  const { buildEvidenceBlock } = require('../bin/lib/ship');
+  const block = buildEvidenceBlock(evidence);
+  assert.match(block, /`src\/a\\nb\.js`/);
+  assert.doesNotMatch(block, /src\/a\nb\.js/);
+});

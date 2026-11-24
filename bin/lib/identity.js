@@ -305,14 +305,25 @@ function snapshotBlob(cwd, tree, file) {
 }
 
 // One digest of what `roots` (project-relative directories) hold in a snapshot
-// tree: the tree ids git already computed, so it costs no file read.
-function snapshotRootsDigest(cwd, tree, roots) {
-  if (!tree) {
+// tree, minus the paths `skip` names: the blob ids git already computed, so it
+// costs no file read. Null when the tree cannot be listed.
+function snapshotRootsDigest(cwd, tree, roots, skip = () => false) {
+  const listing = tree ? tryExecRaw("git", ["ls-tree", "-r", "-z", tree, "--", ...roots], cwd) : null;
+
+  if (listing === null) {
     return null;
   }
 
-  const ids = roots.map((root) => `${root}=${tryExec("git", ["rev-parse", "--verify", "-q", `${tree}:./${root}`], cwd) || ""}`);
-  return crypto.createHash("sha256").update(ids.join("\n")).digest("hex").slice(0, 40);
+  const entries = listing.split("\0").filter((entry) => entry && !skip(entry.slice(entry.indexOf("\t") + 1)));
+  return crypto.createHash("sha256").update(entries.join("\n")).digest("hex").slice(0, 40);
+}
+
+function tryExecRaw(bin, args, cwd) {
+  try {
+    return execFileSync(bin, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 256 * 1024 * 1024 });
+  } catch {
+    return null;
+  }
 }
 
 // Maps a path git names from the repository top to the project root's form

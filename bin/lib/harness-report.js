@@ -8,7 +8,7 @@ const path = require("path");
 const { cwd } = require("./context");
 const { describeScope } = require("./diff-base");
 const { coverageTier } = require("./coverage");
-const { log, normalizePortable } = require("./util");
+const { log, normalizePortable, printablePath } = require("./util");
 const { resultStatus } = require("./validation-run");
 const { NO_CONTRARY } = require("./coverage-gate");
 const { describeGrowth } = require("./complexity");
@@ -320,6 +320,7 @@ function printVerify(evidence, outputPath) {
 
   printResults(evidence.results);
   printFixedFiles(evidence);
+  printHarmlessWrites(evidence);
 
   if (outputPath) {
     log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
@@ -329,7 +330,7 @@ function printVerify(evidence, outputPath) {
 // Story 19-05: what the fixers rewrote, left in the tree for whoever commits.
 function printFixedFiles({ fixedFiles, fixerStrengthened = [] }) {
   if (fixerStrengthened.length > 0) {
-    log(`Warning: ${fixerStrengthened.length} test file(s) counted as strengthened were rewritten by a fixer in this run: ${fixerStrengthened.join(", ")}`);
+    log(`Warning: ${fixerStrengthened.length} test file(s) counted as strengthened were rewritten by a fixer in this run: ${fixerStrengthened.map(printablePath).join(", ")}`);
     log("  a formatter's rewrite is not a stronger test; the gate's neutral rule is under review (story 19-08)");
   }
 
@@ -350,10 +351,21 @@ function printFixedFiles({ fixedFiles, fixerStrengthened = [] }) {
   log("Fixed by the fixers:");
 
   for (const file of fixedFiles) {
-    log(`  - ${file}`);
+    log(`  - ${printablePath(file)}`);
   }
 
   log("  (left in the working tree, not committed)");
+}
+
+// Changed under `.coding-flow/` during the fixers, and no write: named, not hidden.
+function printHarmlessWrites({ reformatted = [], guardLogs = [] }) {
+  if (reformatted.length > 0) {
+    log(`Reformatted, same value: ${reformatted.map(printablePath).join(", ")}`);
+  }
+
+  if (guardLogs.length > 0) {
+    log(`Written by the guard during the fixers: ${guardLogs.map(printablePath).join(", ")}`);
+  }
 }
 
 // One line per command, then what explains a non-green one.

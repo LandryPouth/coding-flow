@@ -14,7 +14,9 @@ bethl's 130 red runs (38 % of failing commands), almost all mechanical.
   config, `--clean-env` honoured).
 - Verify runs them before `validation.commands`, then records the files whose
   content changed (tree diff before/after) as `fixedFiles` in the evidence and
-  prints them.
+  prints them. Under `.coding-flow/`, a JSON file whose parsed value is
+  unchanged is listed as `reformatted` and a guard log the guard itself wrote
+  as `guardLogs` instead: every changed file is named, in one of the three.
 - Changed files are left in the working tree; verify's tree token is computed
   after the fixers, so the proof is about the fixed tree.
 - A fixer that exits non-zero is a red command like any other.

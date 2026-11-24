@@ -66,6 +66,12 @@ function normalizePortable(filePath) {
   return toPortable(filePath).replace(/^\.\//, "");
 }
 
+// A file name as one printable line: a newline or other control character in it
+// (git allows them) is shown escaped, never acted on by a terminal or a table.
+function printablePath(file) {
+  return /[\u0000-\u001f\u007f]/.test(file) ? JSON.stringify(file).slice(1, -1) : file;
+}
+
 function walkFiles(dir) {
   if (!fs.existsSync(dir)) {
     return [];
@@ -505,6 +511,7 @@ module.exports = {
   isCommandAvailable,
   binaryPathNote,
   normalizePortable,
+  printablePath,
   walkFiles,
   hashBuffer,
   hashFile,

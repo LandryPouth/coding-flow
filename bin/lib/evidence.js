@@ -342,10 +342,10 @@ function findReusableVerify({
     return null;
   }
 
-  // Story 19-05: with fixers declared a proof also stands for the story roots they
-  // may not rewrite, which the tree token leaves out: another story's file put
-  // back unformatted is a change.
-  const storyRoots = commands.some(isFixerLine) ? snapshotRootsDigest(cwd, workingTreeSnapshot(cwd), STORY_ROOT_DIRS) : null;
+  // Story 19-05: with fixers declared a proof also stands for the roots they may
+  // not rewrite, which the tree token leaves out: another story's file put back
+  // unformatted, or a `.coding-flow/` file edited, is a change.
+  const storyRoots = commands.some(isFixerLine) ? fixerRootsDigest(workingTreeSnapshot(cwd)) : null;
 
   if (commands.some(isFixerLine) && !storyRoots) {
     return null;
@@ -396,7 +396,7 @@ function findReusableVerify({
       (evidence.claim ? evidence.claim.kind : null) === claimKind &&
       evidence.untrackedDigest === untracked &&
       evidence.storyDigest === storyText &&
-      (evidence.storyRootsDigest || null) === storyRoots
+      (evidence.fixerRootsDigest || null) === storyRoots
     ) {
       return { evidence, path: fullPath };
     }
@@ -481,7 +481,8 @@ function runFixers({ resolution, cleaned, storyDir }) {
   }));
   const after = workingTreeSnapshot(cwd);
   const changed = changedPaths(cwd, before, after);
-  const fixedFiles = changed && changed.filter((file) => !harmlessRewrite(file, before, after));
+  const harmless = (changed || []).map((file) => ({ file, kind: harmlessRewrite(file, before, after) })).filter(({ kind }) => kind);
+  const fixedFiles = changed && changed.filter((file) => !harmless.some((entry) => entry.file === file));
   const forbidden = forbiddenFixes(fixedFiles || [], storyDir);
 
   if (forbidden.length > 0) {
@@ -497,27 +498,55 @@ function runFixers({ resolution, cleaned, storyDir }) {
     });
   }
 
-  // What the story roots held when the fixers ran: a reuse must find them unmoved.
-  return { results, fixedFiles, storyRootsDigest: snapshotRootsDigest(cwd, before, STORY_ROOT_DIRS) };
+  // What the roots held once the fixers ran: a reuse must find them unmoved.
+  return {
+    results,
+    fixedFiles,
+    reformatted: harmless.filter(({ kind }) => kind === "reformatted").map(({ file }) => file),
+    guardLogs: harmless.filter(({ kind }) => kind === "guard-log").map(({ file }) => file),
+    fixerRootsDigest: fixerRootsDigest(after),
+  };
+}
+
+// The story roots and `.coding-flow/`, minus what changes on its own between two
+// verifies (the run files, the guard's logs).
+function fixerRootsDigest(tree) {
+  return snapshotRootsDigest(cwd, tree, [...STORY_ROOT_DIRS, ".coding-flow"], (file) => file.startsWith(".coding-flow/runs/") || GUARD_LOGS.has(file));
 }
 
 // Under `.coding-flow/` a fixer may reformat, never rewrite: a JSON or JSONL file
-// read back to the same value is no write (prettier re-indents the run files
-// verify itself wrote), and a guard log may only grow (the guard appends during
-// the run). A new or removed file stays a write: a forged run file stays red.
+// read back to the same value is "reformatted" (prettier re-indents the run files
+// verify itself wrote), and a guard log may only be the guard's own work during
+// the run ("guard-log"). Anything else is null — a write; a new or removed file
+// included: a forged run file stays red.
 function harmlessRewrite(file, before, after) {
   if (!file.startsWith(".coding-flow/")) {
-    return false;
+    return null;
   }
 
   const old = snapshotBlob(cwd, before, file);
   const now = snapshotBlob(cwd, after, file);
 
   if (GUARD_LOGS.has(file)) {
-    return now !== null && (old === null || now.subarray(0, old.length).equals(old));
+    return now !== null && (old === null || guardLogGrew(old, now)) ? "guard-log" : null;
   }
 
-  return old !== null && now !== null && sameJsonValue(file, old, now);
+  return old !== null && now !== null && sameJsonValue(file, old, now) ? "reformatted" : null;
+}
+
+// What the guard does to its log (guard.js): appends a line, and past 256 KB keeps
+// its last 200 lines before appending. Old bytes a prefix of the new, or that
+// exact trim followed by appends; a fixer's truncation or edit is neither.
+const GUARD_LOG_TRIM = { maxBytes: 256 * 1024, keptLines: 200 };
+
+function guardLogGrew(old, now) {
+  if (now.subarray(0, old.length).equals(old)) {
+    return true;
+  }
+
+  const kept = old.toString("utf8").split("\n").filter(Boolean).slice(-GUARD_LOG_TRIM.keptLines);
+  const tail = Buffer.from(`${kept.join("\n")}\n`);
+  return old.length > GUARD_LOG_TRIM.maxBytes && kept.length > 0 && now.subarray(0, tail.length).equals(tail);
 }
 
 function sameJsonValue(file, old, now) {
@@ -548,6 +577,13 @@ function matchFixerStrengthened(strengthened, fixedFiles, toProject) {
   const fixed = new Set(fixedFiles);
   return strengthened.map(toProject).filter((file) => fixed.has(file));
 }
+
+const fixingFields = ({ fixedFiles, reformatted, guardLogs, fixerRootsDigest: digest }) => ({
+  fixedFiles,
+  ...(reformatted.length > 0 ? { reformatted } : {}),
+  ...(guardLogs.length > 0 ? { guardLogs } : {}),
+  fixerRootsDigest: digest,
+});
 
 const withFixerStrengthened = (files) => (files.length > 0 ? { fixerStrengthened: files } : {});
 
@@ -705,7 +741,7 @@ function verifyStoryOnce({
     environment: { ...captureEnvironment(), ...(cleaned ? { cleaned: true, dropped: cleaned.dropped } : {}) },
     unattended,
     ...(refused ? { refused } : {}),
-    ...(fixing ? { fixedFiles: fixing.fixedFiles, storyRootsDigest: fixing.storyRootsDigest } : {}),
+    ...(fixing ? fixingFields(fixing) : {}),
     ...withFixerStrengthened(fixerStrengthened(coverage, fixing, config)),
     ...(resolution.planFixersIgnored ? { planFixersIgnored: resolution.planFixersIgnored } : {}),
     commandsOk,

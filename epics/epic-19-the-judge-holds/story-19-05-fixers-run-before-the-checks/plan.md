@@ -84,16 +84,31 @@
   that stay before the fixers: the story dir and diff-base request (paths and
   refs, no content); in `harnessVerify`, the reuse lookup. That lookup matches
   on the tree token, which leaves out the story roots and `.coding-flow/`, so
-  (round 3 P2) with fixers declared it also matches on `storyRootsDigest`: the
-  git tree ids of `epics/`, `specs/` and `.specify/` when the fixers ran.
-  Another story's file put back unformatted is a change, never "already
-  proved". `.coding-flow/` needs no digest: a reformat of it is no write.
+  with fixers declared it also matches on `fixerRootsDigest`: the blob ids of
+  `epics/`, `specs/`, `.specify/` and `.coding-flow/` (minus `runs/` and the
+  guard logs, which change on their own) once the fixers ran. Another story's
+  file put back unformatted, or `.coding-flow/COMMANDS.md` edited by hand, is
+  a change, never "already proved". (Round 3 covered the story roots only and
+  said `.coding-flow/` needed no digest; round 4 showed a non-JSON file there
+  does — corrected.)
 - **Under `.coding-flow/`, a reformat is no write (round 3 P1):** `prettier
   --write .` re-indents the run files verify itself writes, which made every
   verify after the first red, forever. A JSON or JSONL file there whose parsed
   value is unchanged is not a write and is not listed; any other change, a new
-  file or a removed one stays a forbidden write (a forged run stays red). The
-  guard logs may only grow: the old bytes must be a prefix of the new ones.
+  file or a removed one stays a forbidden write (a forged run stays red). Such
+  a file is not dropped: it is listed as `reformatted` (evidence, terminal, PR
+  body), so every changed file is named (spec.md says so). The guard logs may
+  only be the guard's own work: old bytes a prefix of the new, or the guard's
+  exact trim past 256 KB (its last 200 lines) followed by appends; created or
+  changed, they are listed as `guardLogs`. Anything else is red.
+- **The audit ledger** knows a run by id or by file: a run file re-indented
+  hashes to a new id and is still the same run, so it is not appended again.
+- **Formatter advice is exact per tool:** `.prettierignore` and dprint's
+  `excludes` take gitignore lines; Biome's `files.includes` takes `**` first,
+  then `!.coding-flow`, `!epics`, `!specs`, `!.specify` (no trailing slash,
+  per Biome's configuration docs).
+- **File names are printed escaped** (terminal and PR body): a newline or a
+  control character in a name is shown as `\n`, never acted on.
 - **Under the story roots, a reformat is still a write**, red, and the red
   names the remedy: add `.coding-flow/`, `epics/`, `specs/` and `.specify/` to
   the formatter's ignore file. `bootstrap --scan` prints those lines with a

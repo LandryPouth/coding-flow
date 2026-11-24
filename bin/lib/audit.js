@@ -265,8 +265,9 @@ function collectAll(root) {
       byId.set(entry.id, entry);
     }
   }
+  const files = new Set([...byId.values()].map((entry) => entry.file).filter(Boolean));
   for (const entry of collectRunEntries(root)) {
-    if (!byId.has(entry.id)) {
+    if (!byId.has(entry.id) && !files.has(entry.file)) {
       byId.set(entry.id, entry);
     }
   }
@@ -277,8 +278,12 @@ function collectAll(root) {
 // Appends to the ledger the runs not yet recorded. Append-only: existing lines
 // are never rewritten.
 function syncLedger(root, { dryRun = false } = {}) {
-  const known = new Set(readLedger(root).map((entry) => entry.id));
-  const added = collectRunEntries(root).filter((entry) => !known.has(entry.id));
+  // Known by id or by run file: a run file a formatter re-indented hashes to a new
+  // id, and is still the same run (story 19-05).
+  const ledger = readLedger(root);
+  const known = new Set(ledger.map((entry) => entry.id));
+  const knownFiles = new Set(ledger.map((entry) => entry.file).filter(Boolean));
+  const added = collectRunEntries(root).filter((entry) => !known.has(entry.id) && !knownFiles.has(entry.file));
 
   if (added.length > 0 && !dryRun) {
     fs.mkdirSync(path.dirname(ledgerPath(root)), { recursive: true });

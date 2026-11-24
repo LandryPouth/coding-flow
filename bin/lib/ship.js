@@ -18,6 +18,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const { readConfig } = require("./config");
+const { printablePath } = require("./util");
 const { getStorage } = require("./storage");
 const { collectHarnessReport } = require("./harness");
 const { coverageTier } = require("./coverage");
@@ -198,7 +199,7 @@ function resultLines(evidence) {
 // Builds the markdown evidence section (between markers) from the verify JSON.
 // One row per command, fixers labelled, then what the fixers rewrote (19-05).
 // A `|` ends a Markdown table cell, even inside a code span: escaped.
-const tableCell = (text) => String(text).replace(/\|/g, "\\|");
+const tableCell = (text) => printablePath(String(text)).replace(/\|/g, "\\|");
 
 function resultTable(evidence) {
   const lines = [];
@@ -217,8 +218,10 @@ function resultTable(evidence) {
     lines.push("");
   }
 
-  if (Array.isArray(evidence.fixedFiles) && evidence.fixedFiles.length > 0) {
-    lines.push(`**Fixed by the fixers:** ${evidence.fixedFiles.map((file) => `\`${file}\``).join(", ")}`, "");
+  for (const [field, label] of [["fixedFiles", "Fixed by the fixers"], ["reformatted", "Reformatted by the fixers, same value"], ["guardLogs", "Written by the guard during the fixers"]]) {
+    if (Array.isArray(evidence[field]) && evidence[field].length > 0) {
+      lines.push(`**${label}:** ${evidence[field].map((file) => `\`${tableCell(file)}\``).join(", ")}`, "");
+    }
   }
 
   return lines;

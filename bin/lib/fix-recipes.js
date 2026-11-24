@@ -17,16 +17,18 @@ const OWN = /(?:@landry_pouth\/)?coding-flow\b|\bai-flow\b/;
 // A formatter that walks `.` also reaches Coding Flow's files, and a fixer may
 // not rewrite a story file (a reformat included): the lines that keep them out,
 // printed with the recipe, never written.
-const FORMATTER_IGNORE_LINES = [".coding-flow/", "epics/", "specs/", ".specify/"];
+// Exact for each tool: gitignore syntax for prettier and dprint; Biome's
+// `files.includes` needs `**` first, then `!dir` with no trailing slash.
+const GITIGNORE_LINES = [".coding-flow/", "epics/", "specs/", ".specify/"];
 const FORMATTERS = [
-  { pattern: /\bprettier\b/, file: ".prettierignore" },
-  { pattern: /\bbiome\b/, file: "biome.json (`files.includes`, as `!` patterns)" },
-  { pattern: /\bdprint\b/, file: "dprint.json (`excludes`)" },
+  { pattern: /\bprettier\b/, file: ".prettierignore", lines: GITIGNORE_LINES },
+  { pattern: /\bbiome\b/, file: "`files.includes` in biome.json", lines: ["**", "!.coding-flow", "!epics", "!specs", "!.specify"] },
+  { pattern: /\bdprint\b/, file: "`excludes` in dprint.json", lines: GITIGNORE_LINES },
 ];
 
 function formatterIgnore(text) {
   const formatter = FORMATTERS.find(({ pattern }) => pattern.test(text));
-  return formatter ? { ignore: { file: formatter.file, lines: FORMATTER_IGNORE_LINES } } : {};
+  return formatter ? { ignore: { file: formatter.file, lines: formatter.lines } } : {};
 }
 
 function readScripts(root) {
