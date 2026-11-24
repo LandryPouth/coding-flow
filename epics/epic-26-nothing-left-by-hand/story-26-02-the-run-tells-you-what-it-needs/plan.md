@@ -32,6 +32,14 @@
   fenced code are examples; a line indented under an item continues it. A
   `## Needs you` written as prose is one item. `Owner: human` is read anywhere in
   the story's files; a `done` story is not listed.
+- **Round 1 fixes**: code blocks (fenced and 4-space indented) are blanked
+  before any section is read; a `## Needs you` keeps its prose paragraphs next
+  to its list items; `Owner: human` must be the whole line; deferred criteria
+  come from `spec.md`/`story.md` only, outside `## Needs you`; `[]` is
+  unchecked; `todo` refuses unknown flags. A done story's `[~]` criteria stay
+  listed: the spec lists deferred criteria without excluding done stories, and a
+  deferral is still a debt (28-01 also turns them into ideas). Stories under
+  `specs/` are not read: `status` and `listEpics` read `epics/` only.
 - **Oldest first** = the epic's number (`epic-9` before `epic-10`), then name.
 
 - **stdin JSON, not arguments**: no quoting bugs, no shell injection from a

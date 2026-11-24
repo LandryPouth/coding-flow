@@ -54,138 +54,188 @@ function byEpicAge(a, b) {
   return epicNumber(a.name) - epicNumber(b.name) || a.name.localeCompare(b.name);
 }
 
-// Each section of `content` whose heading (any level) is one of `headings`,
-// case-insensitive, as its lines up to the next heading of the same or a
-// higher level.
-function sectionsUnder(content, headings) {
-  const wanted = new Set(headings.map((heading) => heading.toLowerCase()));
-  const lines = content.split(/\r?\n/);
-  const sections = [];
-  let current = null;
+// `lines` with every code block blanked (kept as empty lines, so a list item
+// or paragraph around it ends there): fenced blocks (``` or ~~~) and indented
+// blocks (4 spaces or a tab, after a blank line, outside a list). A heading,
+// a `- [ ]` or a question inside one is an example, not a to-do.
+function withoutCode(lines) {
+  const out = [];
   let fence = null;
+  let afterBlank = true;
+  let inList = false;
+  let inIndented = false;
 
   for (const line of lines) {
-    // A heading inside a fenced code block is an example, not a section.
-    const fenceMark = line.match(/^\s*(```+|~~~+)/);
+    const mark = line.match(/^ {0,3}(```+|~~~+)/);
 
-    if (fenceMark && (!fence || fenceMark[1][0] === fence[0])) {
-      fence = fence ? null : fenceMark[1];
+    if (fence || mark) {
+      if (mark && (!fence || (mark[1][0] === fence[0] && mark[1].length >= fence.length))) {
+        fence = fence ? null : mark[1];
+      }
+
+      out.push("");
+      afterBlank = false;
+      continue;
     }
 
-    const heading = fence || fenceMark ? null : line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if (!line.trim()) {
+      out.push(line);
+      afterBlank = true;
+      continue;
+    }
+
+    const indentedCode = /^( {4}|\t)/.test(line);
+
+    if (indentedCode && (inIndented || (afterBlank && !inList))) {
+      inIndented = true;
+      out.push("");
+      afterBlank = false;
+      continue;
+    }
+
+    inIndented = false;
+
+    if (LIST_ITEM.test(line)) {
+      inList = true;
+    } else if (!/^\s/.test(line)) {
+      // A line at the margin that is not an item ends the list (a lazy
+      // continuation right after an item stays part of it).
+      inList = inList && !afterBlank;
+    }
+
+    out.push(line);
+    afterBlank = false;
+  }
+
+  return out;
+}
+
+const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+
+// Splits code-free `lines` into the sections whose heading (any level) is one
+// of `headings`, case-insensitive — each running to the next heading of the
+// same or a higher level — and the lines outside them.
+function splitSections(lines, headings) {
+  const wanted = new Set(headings.map((heading) => heading.toLowerCase()));
+  const inside = [];
+  const outside = [];
+  let current = null;
+
+  for (const line of lines) {
+    const heading = line.match(HEADING);
 
     if (heading) {
       if (current && heading[1].length <= current.level) {
-        sections.push(current.lines);
+        inside.push(current.lines);
         current = null;
       }
 
       if (!current && wanted.has(heading[2].trim().toLowerCase())) {
         current = { level: heading[1].length, lines: [] };
+        continue;
       }
-
-      continue;
     }
 
-    if (current) {
-      current.lines.push(line);
-    }
+    (current ? current.lines : outside).push(line);
   }
 
   if (current) {
-    sections.push(current.lines);
+    inside.push(current.lines);
   }
 
-  return sections;
+  return { inside, outside };
 }
 
-const LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+(?:\[( |x|X|~)\]\s+)?(.*\S)\s*$/;
+// A list item, with an optional checkbox: `[ ]` or `[]` (unchecked), `[x]`,
+// `[~]`.
+const LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+(?:\[([ xX~]?)\]\s+)?(.*\S)\s*$/;
 
-// The list items among `lines`, each with its checkbox (" ", "x", "~", or null
-// when it has none) and its text, wrapped lines joined: a line indented under
-// an item, that is not itself an item, continues it.
-function listItems(lines) {
-  const items = [];
+// The blocks of code-free `lines`, in order: list items (box " ", "x", "~", or
+// null without a checkbox) with their wrapped lines joined, and prose
+// paragraphs (box null, `prose: true`). A heading ends a block and is not one.
+function blocks(lines) {
+  const out = [];
   let last = null;
 
   for (const line of lines) {
     const match = line.match(LIST_ITEM);
 
-    if (match) {
-      last = { indent: match[1].length, box: match[2] === undefined ? null : match[2].toLowerCase(), text: match[3] };
-      items.push(last);
-    } else if (last && line.trim() && line.match(/^\s*/)[0].length > last.indent) {
+    if (!line.trim() || HEADING.test(line)) {
+      last = null;
+    } else if (match) {
+      const box = match[2] === undefined ? null : match[2].toLowerCase() || " ";
+      last = { indent: match[1].length, box, text: match[3] };
+      out.push(last);
+    } else if (last && (last.prose || line.match(/^\s*/)[0].length > last.indent)) {
       last.text = `${last.text} ${line.trim()}`;
     } else {
-      last = null;
+      last = { indent: 0, box: null, prose: true, text: line.trim() };
+      out.push(last);
     }
   }
 
-  return items;
+  return out;
+}
+
+function codeFreeLines(content) {
+  return withoutCode(content.replace(/^﻿/, "").split(/\r?\n/));
 }
 
 // Unchecked `- [ ]` items under the configured headings of an epic index.
 function maintainerItems(indexContent, headings) {
-  return sectionsUnder(indexContent, headings).flatMap((lines) =>
-    listItems(lines)
-      .filter((item) => item.box === " ")
-      .map((item) => item.text),
+  return splitSections(codeFreeLines(indexContent), headings).inside.flatMap((lines) =>
+    blocks(lines)
+      .filter((block) => block.box === " ")
+      .map((block) => block.text),
   );
 }
 
-// A `## Needs you` section: each list item not checked `[x]`; a section
-// written as prose is one item (its lines joined); an empty one is nothing.
-function needsYouItems(content) {
-  return sectionsUnder(content, ["Needs you"]).flatMap((lines) => {
-    const listed = listItems(lines);
+// A story file's `## Needs you` sections: each list item not checked `[x]`
+// and each prose paragraph (a question, "Run this:"), in order. An empty
+// section is nothing. `rest` is the file outside those sections.
+function needsYou(content) {
+  const { inside, outside } = splitSections(codeFreeLines(content), ["Needs you"]);
+  const items = inside.flatMap((lines) =>
+    blocks(lines)
+      .filter((block) => block.box !== "x")
+      .map((block) => block.text),
+  );
 
-    if (listed.length > 0) {
-      return listed.filter((item) => item.box !== "x").map((item) => item.text);
-    }
-
-    const prose = lines.map((line) => line.trim()).filter(Boolean).join(" ");
-    return prose ? [prose] : [];
-  });
+  return { items, rest: outside };
 }
 
-// `lines` without the fenced code blocks: a `- [~]` in an example is not a
-// deferred criterion.
-function outsideFences(lines) {
-  let fence = null;
-  return lines.filter((line) => {
-    const mark = line.match(/^\s*(```+|~~~+)/);
+// `Owner: human` on a line of its own (list bullet and bold allowed);
+// `Owner: human-in-the-loop` or a mention inside a sentence is not it.
+const OWNER_HUMAN = /^\s*(?:[-*+]\s+)?\**Owner\**\s*:\s*\**\s*human\s*\**\s*$/i;
 
-    if (mark && (!fence || mark[1][0] === fence[0])) {
-      fence = fence ? null : mark[1];
-      return false;
-    }
+// The story's files, each read once: a single-file story answers every part
+// with story.md. `spec` is the file that holds the acceptance criteria.
+function storyFiles(storyDir) {
+  const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null);
+  const specFile = storyPartPath(storyDir, "spec");
+  const others = [...new Set(["plan", "tasks"].map((part) => storyPartPath(storyDir, part)))].filter(
+    (file) => file !== specFile,
+  );
 
-    return !fence;
-  });
-}
-
-const OWNER_HUMAN = /^\s*(?:[-*+]\s+)?\**Owner\**\s*:\s*\**\s*human\b/im;
-
-function storyParts(storyDir) {
-  // A single-file story answers every part with story.md; a split one has a
-  // file per part. Reading each file once keeps both shapes from double-counting.
-  const files = [...new Set(["spec", "plan", "tasks"].map((part) => storyPartPath(storyDir, part)))];
-  return files.filter((file) => fs.existsSync(file)).map((file) => fs.readFileSync(file, "utf8"));
+  return { spec: read(specFile), others: others.map(read).filter((content) => content !== null) };
 }
 
 function storyItems(root, story) {
-  const storyDir = path.join(root, story.path);
-  const parts = storyParts(storyDir);
+  const files = storyFiles(path.join(root, story.path));
+  const all = [files.spec, ...files.others].filter((content) => content !== null).map(needsYou);
   const item = (kind, text) => ({ kind, text, story: story.name, source: story.path });
-  const items = parts.flatMap((content) => needsYouItems(content)).map((text) => item("needs-you", text));
+  const items = all.flatMap((file) => file.items).map((text) => item("needs-you", text));
 
-  if (story.status !== "done" && parts.some((content) => OWNER_HUMAN.test(content))) {
+  if (story.status !== "done" && all.some((file) => file.rest.some((line) => OWNER_HUMAN.test(line)))) {
     items.push(item("human-owner", story.title));
   }
 
-  for (const content of parts) {
-    const deferred = listItems(outsideFences(content.split(/\r?\n/))).filter((entry) => entry.box === "~");
-    items.push(...deferred.map((entry) => item("deferred", entry.text)));
+  // Deferred criteria live in the spec (or story.md); a `[~]` task in
+  // tasks.md is bookkeeping, and one under Needs you is already listed.
+  // A done story's deferred criteria stay listed: deferring is still a debt.
+  if (files.spec !== null) {
+    const deferred = blocks(all[0].rest).filter((block) => block.box === "~");
+    items.push(...deferred.map((block) => item("deferred", block.text)));
   }
 
   return items;

@@ -76,6 +76,8 @@ const FLAGS = {
   ],
   upgrade: ["--global", "--with-skills", "--no-skills", "--no-guard", "--force", "--dry-run", "--json", "--opencode", "--help", "-h"],
   uninstall: ["--global", "--dry-run", "--force", "--json", "--target", "--help", "-h"],
+  // Read-only, but its one flag is easy to mistype into an empty-looking answer.
+  todo: ["--json", "--help", "-h"],
 };
 
 function unknownFlags(command, argv) {

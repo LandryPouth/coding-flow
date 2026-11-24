@@ -178,3 +178,76 @@ test('a wrapped item is read whole, and headings or [~] lines inside code fences
     'epic-07-w|maintainer|second item',
   ]);
 });
+
+test('a code block inside a to-do section is an example, fenced or indented', (t) => {
+  const repo = project(t);
+  write(
+    repo,
+    'epics/epic-08-c/index.md',
+    '## Maintainer to-do\n\n- [ ] real item\n\n```\n- [ ] fenced example\n```\n\nSome text:\n\n    - [ ] indented example\n\n~~~~\n- [ ] tilde example\n~~~~\n',
+  );
+
+  assert.deepStrictEqual(texts(todoJson(repo)), ['epic-08-c|maintainer|real item']);
+});
+
+test('a Needs you question followed by a fenced command lists the question, not the command', (t) => {
+  const repo = project(t);
+  write(
+    repo,
+    'epics/epic-09-d/story-09-01-a/story.md',
+    '# Story 09-01 — A\n\n## Needs you\n\nRun this to reset the dev data (it destroys local rows):\n\n```bash\n- rm -rf data\n```\n\n## Status: blocked\n',
+  );
+
+  assert.deepStrictEqual(texts(todoJson(repo)), [
+    'epic-09-d|needs-you|Run this to reset the dev data (it destroys local rows):',
+  ]);
+});
+
+test('a Needs you section mixing prose and a list keeps both, in order', (t) => {
+  const repo = project(t);
+  write(
+    repo,
+    'epics/epic-09-d/story-09-02-b/story.md',
+    '# Story 09-02 — B\n\n## Needs you\n\nWhich rounding rule applies?\n\n- half-up\n- [x] banker (ruled out)\n',
+  );
+
+  assert.deepStrictEqual(texts(todoJson(repo)), [
+    'epic-09-d|needs-you|Which rounding rule applies?',
+    'epic-09-d|needs-you|half-up',
+  ]);
+});
+
+test('Owner: human counts only on its own line, outside code', (t) => {
+  const repo = project(t);
+  write(repo, 'epics/epic-10-e/story-10-01-a/story.md', '# Story 10-01 — A\n\nOwner: human-in-the-loop\n\n## Status: planned\n');
+  write(repo, 'epics/epic-10-e/story-10-02-b/story.md', '# Story 10-02 — B\n\n```\nOwner: human\n```\n\n## Status: planned\n');
+  write(repo, 'epics/epic-10-e/story-10-03-c/story.md', '# Story 10-03 — C\n\n- **Owner:** human\n\n## Status: planned\n');
+
+  assert.deepStrictEqual(texts(todoJson(repo)), ['epic-10-e|human-owner|Story 10-03 — C']);
+});
+
+test('a [~] under Needs you is listed once, and [~] tasks in tasks.md are not criteria', (t) => {
+  const repo = project(t);
+  const dir = 'epics/epic-11-f/story-11-01-a';
+  write(repo, `${dir}/spec.md`, '# Story 11-01 — A\n\n## Acceptance Criteria\n\n- [~] the real deferral\n\n## Needs you\n\n- [~] pick a provider\n');
+  write(repo, `${dir}/tasks.md`, '# Tasks\n\n- [~] a task left for later\n\n## Status: planned\n');
+
+  assert.deepStrictEqual(texts(todoJson(repo)), [
+    'epic-11-f|needs-you|pick a provider',
+    'epic-11-f|deferred|the real deferral',
+  ]);
+});
+
+test('an empty checkbox [] is unchecked', (t) => {
+  const repo = project(t);
+  write(repo, 'epics/epic-12-g/index.md', '## Maintainer to-do\n\n- [] terse box\n');
+
+  assert.deepStrictEqual(texts(todoJson(repo)), ['epic-12-g|maintainer|terse box']);
+});
+
+test('an unknown flag is refused', (t) => {
+  const repo = project(t);
+  const res = run(repo, ['todo', '--jsn']);
+  assert.notStrictEqual(res.code, 0);
+  assert.match(res.output, /unknown flag "--jsn"/);
+});

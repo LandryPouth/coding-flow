@@ -21,7 +21,7 @@ in epic indexes and agent memory and are recalled by hand.
 - Documented examples in `docs/rules-and-limits.md`: `notify-send`
   (Linux), a PowerShell toast from WSL, an `ntfy` push.
 - `ai-flow todo [--json]`: read-only, across all epics: `## Needs you`
-  questions; stories `Owner: human` that are ready; maintainer to-do items
+  questions; stories `Owner: human` not done yet (plan.md *Decisions*); maintainer to-do items
   from epic indexes (headings from `todo.headings`, default `["Maintainer
   to-do", "Maintainer cleanup on delivery"]`, unchecked `- [ ]` lines);
   deferred criteria `[~]`; open browser checks; open risks (26-01). Grouped
@@ -50,7 +50,7 @@ in epic indexes and agent memory and are recalled by hand.
   Owner: the notify half of this story, run after 24-02 lands (recorded in
   plan.md, *Split*).
 - Open browser checks and open risks in `ai-flow todo`: they need 26-01's risk
-  register. Owner: 26-01 or 26-07, whichever lands second.
+  register. Owner: 26-07 (a task in its tasks.md).
 
 ## Edge Cases
 
