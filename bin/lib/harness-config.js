@@ -382,68 +382,22 @@ function readHarnessConfig(root = cwd) {
 // The harness.json defaults are defined here, not in rules-registry.js: the
 // guard loads this file before every tool call and its module graph is a
 // budget (test/guard.test.js). The registry reads them from here (story 26-06).
-//
-// What `init` writes: the defaults, plus the keys the readers resolve without
-// them (story 26-06) so a project reading its own file sees they exist and
-// what they start at. Not merged into `defaultHarnessConfig()`: that object is
-// hashed into every proof's policy fingerprint, and growing it would turn every
-// existing proof stale on upgrade. `coverageFloor.high: "auto"` keeps the mode
-// deciding (evidence, or verified under strict), as an absent key does.
-function initialHarnessConfig() {
-  return {
-    ...defaultHarnessConfig(),
-    coverageFloor: { high: "auto", medium: "evidence", low: "not-required" },
-    failOnContrarySignals: false,
-  };
-}
-
 function ensureHarnessConfig({ dryRun = false } = {}) {
   if (fs.existsSync(harnessConfigPath())) {
     return false;
   }
 
   if (!dryRun) {
-    // Proofs recorded without a harness.json were fingerprinted against the
-    // defaults: write those, not the `init` keys, so they stay valid.
-    writeJson(harnessConfigPath(), hasRecordedProofs() ? defaultHarnessConfig() : initialHarnessConfig());
+    writeJson(harnessConfigPath(), defaultHarnessConfig());
     fs.mkdirSync(harnessRunsDir(), { recursive: true });
   }
 
   return true;
 }
 
-// A verify proof recorded in this checkout, the primary checkout, or any linked
-// worktree of the repository: each was fingerprinted against the defaults, and
-// a tracked harness.json reaches the others by merge. git is read
-// lazily: this file is on the guard's path, which must not load child_process.
-function hasRecordedProofs(root = cwd) {
-  const recorded = (dir) => {
-    try {
-      return fs.readdirSync(path.join(dir, ".coding-flow", "runs")).some((name) => name.endsWith("-verify.json"));
-    } catch {
-      return false;
-    }
-  };
-  return recorded(root) || worktreeRoots(root).some(recorded);
-}
-
-function worktreeRoots(root) {
-  try {
-    const out = require("child_process").execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 5000,
-    });
-    return out.split(/\r?\n/).filter((line) => line.startsWith("worktree ")).map((line) => line.slice("worktree ".length));
-  } catch {
-    return [];
-  }
-}
-
 module.exports = {
   HARNESS_MODES,
   harnessMode,
-  hasRecordedProofs,
   DEFAULT_REPORT_PATHS,
   harnessConfigPath,
   harnessRunsDir,
@@ -454,7 +408,6 @@ module.exports = {
   defaultNonBehaviorGlobs,
   defaultPolicyGlobs,
   defaultHarnessConfig,
-  initialHarnessConfig,
   EVIDENCE_BLOCKED_PATHS,
   readHarnessConfig,
   ensureHarnessConfig,

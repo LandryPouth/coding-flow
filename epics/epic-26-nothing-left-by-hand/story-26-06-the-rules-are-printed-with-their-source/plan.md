@@ -39,7 +39,7 @@
   ships with a real rule instead: `coverageFloor.high` prints
   `auto: mode standard → evidence` (or `strict → verified`). `run.maxAgents`
   joins the registry, with its WSL reason, in 24-02: its spec carries that criterion (added in this story's diff).
-- **D3 — `init` writes `coverageFloor` and `failOnContrarySignals`, the
+- **D3 — *Superseded by the Split below (moved to 26-08).* `init` writes `coverageFloor` and `failOnContrarySignals`, the
   readers' defaults do not grow.** `defaultHarnessConfig()` is merged into the
   config hashed by the policy fingerprint; adding keys there would make every
   existing proof stale on upgrade. A new `initialHarnessConfig()` is what
@@ -76,8 +76,8 @@
   first line (and in `--json` `unreadable`), and each of its rules shows what
   the consumer does in that state with source `fixed: <file> unreadable` —
   the defaults for readConfig/readHarnessConfig, and the guard's kept primary
-  lock. `init`/`harness init` write the plain defaults when verify proofs
-  already exist in `.coding-flow/runs/`, so they stay valid; `ensureConfig`
+  lock. *(Removed at the Split: `init`/`harness init` writing the plain
+  defaults when verify proofs exist.)* `ensureConfig`
   takes its defaults from the registry; `next` reads the clean-round count
   from it.
 - **D9 — `rules` calls each consumer's own resolver (review round 3).**
@@ -97,9 +97,45 @@
   | `redAtBase.command/timeoutMs` | `red-at-base.js` `redAtBaseSettings` (`runRedAtBase`) |
   | `destructiveCommands`, `allowDestructive`, `worktrees.primaryLocked`; harness.json unreadable | `guard.js` `effectiveDestructivePolicy` (`loadPolicy` + `primaryLock`, which `settle` calls) |
   | every other harness.json key | `harness-config.js` `readHarnessConfig` |
+  | read at the diff base: `mode`, `failOnContrarySignals` | `coverage-gate.js` `contraryPolicyInForce` (`contraryEnforced`), base from `readBaseConfig` |
+  | read at the diff base: `highRiskPaths`, `testGlobs`, `ignoredPaths` | `coverage-gate.js` `baseRiskConfig` and `BASE_RISK_KEYS` (`strictestRisk`) |
+  | read at the diff base: `policyGlobs` | `policy-drift.js` `policyGlobsAtBase` (`readPolicyChanged`), base from `readBaseHarness` |
+  | default of `coverageFloor.medium/low`, `failOnContrarySignals` | `coverage.js` `defaultCoverageFloor`, `coverage-gate.js` `failsOnContrarySignals({})` |
 
-  `init`/`harness init` look for recorded verify proofs in this checkout, the
-  primary one and every linked worktree (`git worktree list`).
+- **D10 — What the base holds is part of the value in force (review round
+  4).** The gates judge a diff by the stricter of its base and its tree
+  (`docs/rules-and-limits.md`, Part 1 and the contrary-signals row), so a
+  tree that drops `failOnContrarySignals` or steps down from strict does not
+  turn them off for its own diff. `rules` prints the tree's value with a
+  note when the base still applies: `project (base's true still applies)`
+  (the value printed is then `true`), `(base's strict still applies to
+  contrary signals)`, `(the base's N globs also score risk)`, `(policy
+  changes are found with the base's N globs)`. `mode: fast` is shown
+  `project (treated as standard)`: every consumer compares with `"strict"`
+  only. `rules` reads the project once per command.
+
+## Split (review cap, 2026-11-24)
+
+Review history: 4 rounds, each FAIL; P1 per round 2 / 1 / 1 / 2.
+
+1. Round 1 — `init`'s `"auto"` shown as ignored; malformed values printed as
+   applied (D7).
+2. Round 2 — an unparsable `harness.json` silently read as `{}` (D8).
+3. Round 3 — `null` mistaken for unreadable; the linked worktree's primary
+   lock (D9).
+4. Round 4 — base/tree combination not shown (D10); proofs of a project in
+   a repository subdirectory missed by the cross-checkout search.
+
+Run decision at the cap: split. The change making `init` / `harness init`
+write `coverageFloor` and `failOnContrarySignals` (`initialHarnessConfig`,
+D3, the proof search) is taken out: `init` writes exactly what it wrote
+before (`defaultHarnessConfig()`), so no fingerprint can move, and round 4's
+second P1 disappears with it. It is story
+[26-08](../story-26-08-init-shows-the-rules-it-applies/story.md), with the
+fingerprint trap and its four shapes; criterion 5 moved there, and its two
+tests are marked `todo` for 26-08. `rules`, the registry, the consumer
+resolvers and the unreadable handling stay here. A new review series starts
+at round 1.
 
 ## Test Plan
 

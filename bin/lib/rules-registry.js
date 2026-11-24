@@ -25,7 +25,7 @@
 const harnessList = (name) => () => require("./harness-config")[name]();
 const guardDefault = (field) => () => require("./guard").destructivePolicy({})[field];
 const harnessDefault = (dotted) => () =>
-  dotted.split(".").reduce((value, part) => value[part], require("./harness-config").initialHarnessConfig());
+  dotted.split(".").reduce((value, part) => value[part], require("./harness-config").defaultHarnessConfig());
 
 const RULES = [
   // .coding-flow/config.json
@@ -52,7 +52,7 @@ const RULES = [
     key: "coverageFloor.high",
     file: "harness",
     scope: "auto",
-    defaultFrom: harnessDefault("coverageFloor.high"),
+    default: "auto",
     cap: "`verified` > `evidence` > `exempted` > `not-required`",
     doc: "Rung a high-risk story must reach; `auto` follows the mode.",
     // The coverage reader's own default, under the mode as written (a typo
@@ -63,9 +63,9 @@ const RULES = [
       return { value, reason: `mode ${mode} → ${value}` };
     },
   },
-  { key: "coverageFloor.medium", file: "harness", scope: "project", defaultFrom: harnessDefault("coverageFloor.medium"), doc: "Rung a medium-risk story must reach." },
-  { key: "coverageFloor.low", file: "harness", scope: "project", defaultFrom: harnessDefault("coverageFloor.low"), doc: "Rung a low-risk story must reach." },
-  { key: "failOnContrarySignals", file: "harness", scope: "project", defaultFrom: harnessDefault("failOnContrarySignals"), doc: "Contrary signals fail a high-risk story." },
+  { key: "coverageFloor.medium", file: "harness", scope: "project", defaultFrom: () => require("./coverage").defaultCoverageFloor(harnessDefault("mode")()).medium, doc: "Rung a medium-risk story must reach." },
+  { key: "coverageFloor.low", file: "harness", scope: "project", defaultFrom: () => require("./coverage").defaultCoverageFloor(harnessDefault("mode")()).low, doc: "Rung a low-risk story must reach." },
+  { key: "failOnContrarySignals", file: "harness", scope: "project", defaultFrom: () => require("./coverage-gate").failsOnContrarySignals({}), doc: "Contrary signals fail a high-risk story." },
   { key: "freshTestsFor", file: "harness", scope: "project", defaultFrom: harnessDefault("freshTestsFor"), noun: "risk levels", doc: "Risk levels where a cached run is not proof." },
   { key: "functionSize.max", file: "harness", scope: "project", defaultFrom: harnessDefault("functionSize.max"), unit: "lines", doc: "Function length past which verify warns." },
   { key: "functionSize.enforce", file: "harness", scope: "project", defaultFrom: harnessDefault("functionSize.enforce"), doc: "The function-size warning fails verify." },

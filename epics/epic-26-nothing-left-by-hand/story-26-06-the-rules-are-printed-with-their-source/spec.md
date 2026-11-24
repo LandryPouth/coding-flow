@@ -21,7 +21,7 @@ code inconsistencies it found are fixed.
   - one command-timeout constant (today `validation-run.js:206` and
     `worktree.js:744`), and the stale comment at `worktree.js:729`;
   - `coverageFloor` and `failOnContrarySignals` written by
-    `defaultHarnessConfig()`;
+    `defaultHarnessConfig()` (moved to 26-08);
   - `templates/RULES.md` and `skills/flow-run` state the same context
     budgets; `skills/flow-plan` says "warned above 7" for epic size.
 
@@ -36,8 +36,11 @@ code inconsistencies it found are fixed.
 - [x] Given a registry default changed without the doc, then the doc test
       fails and names the key.
 - [x] Given the land lock sizing, then it reads the single timeout constant.
-- [x] Given `init`, then `harness.json` contains `coverageFloor` and
+- [~] Given `init`, then `harness.json` contains `coverageFloor` and
       `failOnContrarySignals` with their defaults.
+      *Moved to story 26-08 at the review cap (plan.md, Split): writing the
+      keys moves the policy fingerprint of proofs already recorded.
+      `ai-flow rules` shows both, with their source, today.*
 - [x] Given `templates/RULES.md` and `skills/flow-run/SKILL.md`, then their
       context budgets match.
 
