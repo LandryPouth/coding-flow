@@ -257,6 +257,36 @@ const countMatching = (lines, patterns) =>
   );
 const countSkipMarkers = (lines) => countMatching(lines, SKIP_MARKERS);
 
+// One test file's diff: weakened (with its findings), strengthened, or neutral.
+// Story 19-08: a file strengthens only when it adds something — a new file, an
+// assertion, a test case. A rename, a reformat, a typo or an assertion moved
+// between cases is `neutral`: not a weakening, not a proof either.
+function testChangeDirection(file, change, isNew) {
+  const delta = (patterns) => countMatching(change.added, patterns) - countMatching(change.removed, patterns);
+  const skipsAdded = delta(SKIP_MARKERS);
+  const assertionDelta = delta(ASSERTION_MARKERS);
+  const findings = [];
+
+  if (skipsAdded > 0) {
+    findings.push({ file, signal: "skipped", detail: `${skipsAdded} skip/only marker(s) added` });
+  }
+
+  if (assertionDelta < 0) {
+    findings.push({
+      file,
+      signal: "assertions-removed",
+      detail: `${Math.abs(assertionDelta)} more assertion(s) removed than added`,
+    });
+  }
+
+  if (findings.length > 0) {
+    return { verdict: "weakened", findings };
+  }
+
+  const adds = isNew || assertionDelta > 0 || delta(TEST_CASE_MARKERS) > 0;
+  return { verdict: adds ? "strengthened" : "neutral", findings };
+}
+
 // Per test file: did this diff make it stronger, weaker, or neither?
 function scanTestWeakening(config) {
   const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
@@ -297,36 +327,12 @@ function scanTestWeakening(config) {
   const added = new Set(addedFilesInDiff());
 
   for (const [file, change] of Object.entries(byFile)) {
-    const delta = (patterns) => countMatching(change.added, patterns) - countMatching(change.removed, patterns);
-    const skipsAdded = delta(SKIP_MARKERS);
-    const assertionDelta = delta(ASSERTION_MARKERS);
+    const direction = testChangeDirection(file, change, added.has(file));
+    findings.push(...direction.findings);
 
-    if (skipsAdded > 0) {
-      findings.push({
-        file,
-        signal: "skipped",
-        detail: `${skipsAdded} skip/only marker(s) added`,
-      });
-    }
-
-    if (assertionDelta < 0) {
-      findings.push({
-        file,
-        signal: "assertions-removed",
-        detail: `${Math.abs(assertionDelta)} more assertion(s) removed than added`,
-      });
-    }
-
-    if (skipsAdded > 0 || assertionDelta < 0) {
-      continue;
-    }
-
-    // Story 19-08: a file strengthens only when it adds something — a new file,
-    // an assertion, a test case. A rename, a reformat, a typo or an assertion
-    // moved between cases is `neutral`: not a weakening, not a proof either.
-    if (added.has(file) || assertionDelta > 0 || delta(TEST_CASE_MARKERS) > 0) {
+    if (direction.verdict === "strengthened") {
       strengthened.push(file);
-    } else {
+    } else if (direction.verdict === "neutral") {
       neutral.push(file);
     }
   }
