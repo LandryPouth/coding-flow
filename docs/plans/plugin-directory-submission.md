@@ -26,7 +26,7 @@ approval."* For this plugin the security question is not incidental — see belo
 | Category | `development` |
 | Repository | https://github.com/LandryPouth/coding-flow |
 | Homepage | https://github.com/LandryPouth/coding-flow#readme |
-| License | MIT |
+| License | FSL-1.1-MIT (since 2026-11-24; check the directory accepts a source-available license before submitting) |
 | Author | Landry Pouth |
 | Version at submission | 0.8.3 (`3429745f28d059f73c814337e21b142f1b68f613`) |
 
