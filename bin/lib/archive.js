@@ -255,14 +255,29 @@ function buildEntry({ name, sha, stories, date }) {
 }
 
 // Tracked files outside the epic that still name it. Listed, never edited.
+// `links` are Markdown files with a link target into the epic: those dangle
+// once it is gone. `mentions` only name it (a path in prose, a test fixture).
+// epics/INDEX.md is left out: it names every epic, and archive maintains it.
 function linksInto(rel) {
   const out = git(["grep", "-l", "-F", "-e", rel, "--", "."], { allowFail: true }) || "";
-  return out
+  const files = out
     .split("\n")
     .filter(Boolean)
     .map(toPortable)
-    .filter((file) => !file.startsWith(`${rel}/`))
+    .filter((file) => !file.startsWith(`${rel}/`) && file !== toPortable(INDEX_FILE))
     .sort();
+  const escaped = rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const target = new RegExp(`\\]\\([^)\\s]*${escaped}(?:[/#)])`);
+  const links = [];
+  const mentions = [];
+  for (const file of files) {
+    let text = "";
+    if (/\.(md|markdown)$/i.test(file)) {
+      try { text = fs.readFileSync(path.join(cwd, file), "utf8"); } catch { text = ""; }
+    }
+    (target.test(text) ? links : mentions).push(file);
+  }
+  return { links, mentions };
 }
 
 function plan(name) {
@@ -440,6 +455,10 @@ function report(state, { json, dryRun }) {
     log("Still links here (tracked files, not edited):");
     for (const file of state.links) log(`  - ${file}`);
   }
+  if (state.mentions.length > 0) {
+    log("Also named in (no link to fix):");
+    for (const file of state.mentions) log(`  - ${file}`);
+  }
 }
 
 function refuse(state, options) {
@@ -466,7 +485,7 @@ function archive({ target, dryRun = false, json = false } = {}) {
 
   state.date = new Date().toISOString().slice(0, 10);
   state.entry = buildEntry({ name: resolved.name, sha: state.sha, stories: state.stories, date: state.date });
-  state.links = linksInto(state.rel);
+  Object.assign(state, linksInto(state.rel));
   state.files = git(["ls-files", "--", state.rel]).split("\n").filter(Boolean).length;
   state.dryRun = dryRun;
   if (!dryRun) {

@@ -289,6 +289,25 @@ test('tracked files outside the epic that link into it are listed, not edited', 
   assert.equal(fs.readFileSync(path.join(dir, 'docs/plan.md'), 'utf8'), `See [the epic](../${EPIC}/index.md).\n`);
 });
 
+test('only Markdown links into the epic are "still links here"; the index and plain mentions are not', (t) => {
+  const dir = repo(t);
+  write(dir, 'epics/INDEX.md', `# Epics\n\nRecover: \`git checkout abc -- ${EPIC}\`\n`);
+  write(dir, 'docs/plan.md', `See [the epic](../${EPIC}/index.md).\n`);
+  write(dir, 'docs/notes.md', `Planned as \`${EPIC}\`.\n`);
+  write(dir, 'test/fixture.test.js', `const EPIC = '${EPIC}';\n`);
+  commit(dir, 'mentions');
+
+  const res = run(dir, ['archive', EPIC]);
+
+  assert.equal(res.code, 0, res.output);
+  const [, links = '', named = ''] = res.output.split(/Still links here[^\n]*\n|Also named in[^\n]*\n/);
+  assert.match(links, /docs\/plan\.md/);
+  assert.doesNotMatch(links, /notes\.md|fixture\.test\.js|INDEX\.md/);
+  assert.match(named, /docs\/notes\.md/);
+  assert.match(named, /test\/fixture\.test\.js/);
+  assert.doesNotMatch(res.output, /^\s+- epics\/INDEX\.md$/m, 'the index is the tool\'s own file');
+});
+
 test('a user-written INDEX.md is kept and the archived section is appended after it', (t) => {
   const dir = repo(t);
   write(dir, 'epics/INDEX.md', '# My epics\n\nHand-written notes.\n');

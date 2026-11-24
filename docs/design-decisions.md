@@ -354,7 +354,7 @@ the claim too, and there is still no binding of a criterion to a named test.
 
 ## 10. Multi-platform support — the second freeze exception
 
-**Decided 2026-08-23.** Planned as `epics/epic-01-multi-platform-support/`
+**Decided 2026-08-23.** Planned as `epics/epic-01-multi-platform-support/` ([archived](../epics/INDEX.md#epic-01--multi-platform-support-codex-gemini-cli-opencode-antigravity))
 (five stories, not yet implemented).
 
 Entry 6 refused multi-agent support the same day it admitted `report`, on the
@@ -430,7 +430,7 @@ everyday use: ~100 a day on this repository's own log. `report` counts them;
 
 The external audit (2026-10-16) recommends treating the CLI, the proof engine and
 the guard as the product, and stories, worktrees, skills and auto-merge as
-optional layers. [Epic 12](../epics/epic-12-core-first/index.md) draws that
+optional layers. [Epic 12](../epics/INDEX.md#epic-12--core-first--guard-and-proof-stand-alone-everything-else-is-an-opt-in-layer) draws that
 boundary in code (stories 12-01 to 12-03; status in the epic index) and
 the README and QUICKSTART now present it in that
 order: **Core** first, then **Optional layers**, each with what it adds, what it

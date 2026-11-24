@@ -51,7 +51,7 @@ npx @landry_pouth/coding-flow verify           # runs your commands itself; veri
 `init --minimal` installs the guard hook, the harness config and `docs/DOGFOODING.md`. No `RULES.md`, no `epics/`, no skills. What that gives you:
 
 - **The guard** refuses to write a `.env`, a key or a secret before it reaches the disk — through the editing tools and the common shell write forms.
-- **`verify`** executes the configured commands and records verbatim pass/fail as evidence under `.coding-flow/runs/`. The evidence goes stale when the code changes afterwards, so a green result never outlives the diff it was earned on. For work tied to a story, a coverage gate checks that a risky diff carries a test (`NOT PROVEN` otherwise) and `Coverage:` names the strength of the pass; without a story, `verify` keeps the same gate as far as [epic 12](epics/epic-12-core-first/index.md) (story 12-01) has landed.
+- **`verify`** executes the configured commands and records verbatim pass/fail as evidence under `.coding-flow/runs/`. The evidence goes stale when the code changes afterwards, so a green result never outlives the diff it was earned on. For work tied to a story, a coverage gate checks that a risky diff carries a test (`NOT PROVEN` otherwise) and `Coverage:` names the strength of the pass; without a story, `verify` keeps the same gate as far as [epic 12](epics/INDEX.md#epic-12--core-first--guard-and-proof-stand-alone-everything-else-is-an-opt-in-layer) (story 12-01) has landed.
 - **`doctor`** checks the install is really wired; **`report`** collects what the machine saw (denials, failures, install health) into one redacted file you can send.
 
 What it does not guarantee: it reads shell text, not program semantics — scripts, computed paths and the rest are listed in [What the guard does not see](#what-the-guard-does-not-see). Pair it with `mode: strict` and OS-level isolation when the boundary must hold.
@@ -87,7 +87,7 @@ You never chain ten commands by hand: the `/flow-run` skill calls the harness au
 
 ## Installation
 
-**Platforms.** The test suite runs in CI on Linux (Node 18, 20, 22), macOS and Windows (Node 22). The CLI needs Node 18+ and git. On Windows the Claude Code guard hook is a POSIX `sh` command and is not covered by CI there, and `worktree autoland` can leave its landed worktree directory behind (a known open bug); the tests that depend on a POSIX shell are skipped on Windows, each with its reason (see `epics/epic-10-execution-and-ship-safety/story-10-03-ci-on-windows-and-macos/tasks.md`).
+**Platforms.** The test suite runs in CI on Linux (Node 18, 20, 22), macOS and Windows (Node 22). The CLI needs Node 18+ and git. On Windows the Claude Code guard hook is a POSIX `sh` command and is not covered by CI there, and `worktree autoland` can leave its landed worktree directory behind (a known open bug); the tests that depend on a POSIX shell are skipped on Windows, each with its reason (see `epics/epic-10-execution-and-ship-safety/story-10-03-ci-on-windows-and-macos/tasks.md` ([archived](epics/INDEX.md#epic-10--execution-and-ship-safety))).
 
 **Claude Code** installs through its plugin, once for every project. In the Claude Code prompt:
 

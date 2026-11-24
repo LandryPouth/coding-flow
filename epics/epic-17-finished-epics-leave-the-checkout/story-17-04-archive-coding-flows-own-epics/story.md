@@ -135,3 +135,31 @@ line names the path. The two tests are reported because they use
 real dead links are in `README.md`, `docs/design-decisions.md` and
 `docs/DOGFOODING.md`. Both points are logged as one DOGFOODING row (below);
 the links were left as they are.
+
+### Follow-up: references repointed, and the list sorted out (2026-11-24)
+
+**References.** 19 references to an archived epic now point to that epic's
+entry in `epics/INDEX.md`. Their text is kept and none was deleted.
+- 2 were Markdown links that dangled: `README.md` (epic 12) and
+  `docs/design-decisions.md` (epic 12). Their target is now the INDEX anchor.
+- 17 were plain path references a reader would follow. Each keeps its path
+  and gains an "archived" link to the INDEX entry:
+  - `README.md`: epic 10.
+  - `docs/design-decisions.md`: epic 01.
+  - `docs/plans/multi-agent-install.md`: epic 01, twice.
+  - `docs/DOGFOODING.md`: epics 04, 05, 06, 07 and 09.
+  - `docs/plans/hardening-roadmap.md`: epics 05 to 12, one row each.
+
+Some references were left as they are: commands quoted in old DOGFOODING
+rows, the example `epic-03-kyc` in `README.md`, and the fixture names in
+epic 17's own stories. They record what was run, or they are examples, so
+they point at nothing.
+
+**The list.** The archive command's list is now in two parts.
+- "Still links here" lists only Markdown files with a link into the epic.
+- "Also named in" lists the files that only mention it.
+- `epics/INDEX.md` is no longer listed.
+- Test: `only Markdown links into the epic are "still links here"; the index
+  and plain mentions are not` in `test/archive.test.js`. It was red before
+  the change and is green after.
+
