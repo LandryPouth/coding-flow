@@ -25,6 +25,12 @@ exactly where the guard stops and where the sandbox must take over.
   (`echo … > x.sh && bash x.sh`, `cat > x <<EOF … EOF; sh x`) is read through
   the text written to it; otherwise executing a file the line just wrote is
   unchecked.
+- Data loss through SQL beyond `DROP DATABASE`, found by 29-03's reviews:
+  `psql -c 'DROP TABLE …'` / `'DROP SCHEMA … CASCADE'` / `TRUNCATE`, and SQL
+  piped into psql (`echo "DROP DATABASE x" | psql`): refused when read,
+  unchecked when the SQL comes from stdin the guard cannot see.
+- A tracked file with uncommitted changes removed by `git rm -f` or plain
+  `rm`: refused like `git checkout -- <file>` on a modified file.
 - `docs/rules-and-limits.md` lists, in one table, every form the guard does
   not read (from 29-03's D9 and this story), each with the protection that
   covers it instead (sandbox, permissions, review).
@@ -41,6 +47,10 @@ exactly where the guard stops and where the sandbox must take over.
       unchecked.
 - [ ] The rules-and-limits table names each unread form and its cover, and
       a test checks that every form listed in 29-03's D9 appears in it.
+- [ ] Given `psql -c 'DROP SCHEMA app CASCADE'`, then it is refused; given
+      `echo "DROP DATABASE x" | psql`, then it is unchecked.
+- [ ] Given a tracked file with uncommitted changes, then `git rm -f` of it
+      and `rm` of it are refused; on a clean file they are allowed.
 - [ ] 29-03's everyday-command test (Lens B) still passes unchanged.
 
 ## Edge Cases
