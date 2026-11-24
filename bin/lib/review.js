@@ -15,6 +15,7 @@ const { cwd } = require("./context");
 const { log, fail, normalizePortable, writeTimestampedEvidence } = require("./util");
 const { captureIdentity } = require("./identity");
 const { resolveStoryDir, requireStoryScope } = require("./harness");
+const { reviewHistoryByStoryDir } = require("./audit");
 
 const DIMENSION_NAMES = ["architecture", "tests", "security", "quality", "e2e"];
 const DIMENSION_DEPTHS = new Set(["quick", "deep", "skipped"]);
@@ -49,6 +50,41 @@ function parseDimension(getFlagValue, name) {
   }
 
   return raw;
+}
+
+// Story 19-09: every capture is the story's next review round. A pass right
+// after a fail must say it is that next round (`--round`): a failed review is
+// cleared by a new review of the whole diff, never by a green verify or by the
+// fixer's own word. `--accept` stays the user's way to take the risk instead.
+function resolveRound(getFlagValue, { story, verdict, last, accept }) {
+  const expected = last ? last.round + 1 : 1;
+  const raw = getFlagValue("--round", null);
+
+  if (raw !== null) {
+    const declared = Number(raw);
+    if (!Number.isInteger(declared) || declared < 1) {
+      fail(`--round must be a positive integer, got "${raw}".`);
+    }
+    if (declared !== expected) {
+      const previous = last ? `the last review of ${story} was round ${last.round} (${last.ok ? "pass" : "fail"})` : `${story} has no review yet`;
+      fail(`--round ${declared} does not follow: ${previous}, so this one is round ${expected}.`);
+    }
+  }
+
+  const clearsFail = verdict === "pass" && Boolean(last) && !last.ok;
+  const unconfirmed = clearsFail && raw === null;
+
+  if (unconfirmed && !(accept && accept.trim())) {
+    fail(
+      `review capture refuses --verdict pass right after a failed review (round ${last.round}, ${last.file}): ` +
+        "a failed review is cleared by a new review of the whole diff, not by verify alone. " +
+        "Fix every finding, have a new reviewer read the whole diff, then run " +
+        `\`ai-flow review capture --story ${story} --verdict pass --round ${expected}\` — ` +
+        'or accept the risk with --accept "<reason>" (with the user\'s agreement).',
+    );
+  }
+
+  return { round: expected, after: clearsFail ? last.file : null, unconfirmed };
 }
 
 function reviewCapture({ getFlagValue, flags, json = false }) {
@@ -91,7 +127,15 @@ function reviewCapture({ getFlagValue, flags, json = false }) {
   // an open P0/P1 needs a written reason, which is stored with the verdict.
   const accept = getFlagValue("--accept", null);
   const openBlocking = findingCounts.p0 + findingCounts.p1;
-  const needsAcceptance = verdict === "pass" && openBlocking > 0;
+  const storyKey = normalizePortable(path.relative(cwd, storyDir));
+  const history = reviewHistoryByStoryDir(cwd).get(storyKey) || [];
+  const { round, after, unconfirmed } = resolveRound(getFlagValue, {
+    story: storyKey,
+    verdict,
+    last: history[history.length - 1] || null,
+    accept,
+  });
+  const needsAcceptance = (verdict === "pass" && openBlocking > 0) || unconfirmed;
 
   if (needsAcceptance && !(accept && accept.trim())) {
     fail(
@@ -103,9 +147,11 @@ function reviewCapture({ getFlagValue, flags, json = false }) {
 
   const evidence = {
     generatedAt: new Date().toISOString(),
-    story: normalizePortable(path.relative(cwd, storyDir)),
+    story: storyKey,
     ok: verdict === "pass",
     verdict,
+    round,
+    ...(after ? { after } : {}),
     dimensions,
     findingCounts,
     reviewer,

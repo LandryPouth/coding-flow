@@ -113,7 +113,7 @@ Story references point at the story's `spec.md` unless another file is named.
 
 | Rule | Default | Max / threshold | Change with | Source |
 |---|---|---|---|---|
-| Review capture | `--reviewer self`. Each dimension (`architecture`, `tests`, `security`, `quality`, `e2e`) defaults to `skipped`. Finding counts default to 0 | `--verdict pass` is refused while P0 + P1 > 0, unless `--accept "<reason>"` is given | flags | `bin/lib/review.js:15-18`, `:72-101` |
+| Review capture | `--reviewer self`. Each dimension (`architecture`, `tests`, `security`, `quality`, `e2e`) defaults to `skipped`. Finding counts default to 0 | `--verdict pass` is refused while P0 + P1 > 0, and right after a `fail` without `--round <failed round + 1>` (a failed review is cleared by a new review round, not by verify), unless `--accept "<reason>"` is given. A STRICT story whose review follows a fail is `confirming` in `status` until two passing rounds in a row. Every capture records `round` (previous + 1; a capture from before rounds counts as round 1) | flags | `bin/lib/review.js:15-18`, `:72-101` |
 | Review freshness | `stale` when the tree token moved since the capture | — | — | `status.js:86-97` |
 | Ship refusals | refuses when you are on the base branch, when there is no `origin`, or when there are no commits above the base | — | — | `ship.js:644-669` |
 | Ship base | origin's default branch, else `main` | — | `--base` | `ship.js:98-110` |

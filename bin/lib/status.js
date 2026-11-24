@@ -85,7 +85,12 @@ function computeLandReady(worktreePath, storyPath) {
 // review can never register as stale here — checking staleness first is
 // still correct, not just convenient: it lets the two checks read in the
 // same "freshest signal first" order the states are documented in.
-function computeReviewStatus(root, storyPath) {
+//
+// Story 19-09: `"confirming"` — a STRICT story (`strict`) whose passing review
+// follows a fail with fewer than two passing rounds in a row since: one clean
+// round after a fail is not enough at that risk. A pass the user accepted
+// (`acceptedRisk`) is their decision and is not held back.
+function computeReviewStatus(root, storyPath, { strict = false } = {}) {
   const entry = latestReviewByStoryDir(root).get(storyPath);
   if (!entry) {
     return "none";
@@ -95,7 +100,11 @@ function computeReviewStatus(root, storyPath) {
     return "stale";
   }
 
-  return entry.ok ? "pass" : "fail";
+  if (!entry.ok) {
+    return "fail";
+  }
+
+  return strict && entry.followsFail && entry.passesInRow < 2 && !entry.acceptedRisk ? "confirming" : "pass";
 }
 
 // The diff-risk half of a story's score only depends on `root` (every story
@@ -230,7 +239,6 @@ function buildStatusModel(config) {
 
       const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
       const storyRoot = wtEntry ? wtEntry.fullPath : cwd;
-      const review = computeReviewStatus(storyRoot, story.path);
       const reviewEntry = latestReviewByStoryDir(storyRoot).get(story.path);
       if (!scopeByRoot.has(storyRoot)) {
         scopeByRoot.set(storyRoot, latestVerifyScopeByStoryDir(storyRoot));
@@ -273,6 +281,7 @@ function buildStatusModel(config) {
         }
       }
       const reviewRequired = claimsDone ? computeReviewRequired(storyRoot, story, diffRiskCache) : undefined;
+      const review = computeReviewStatus(storyRoot, story.path, { strict: reviewRequired === true });
 
       return {
         ...story,
@@ -283,7 +292,8 @@ function buildStatusModel(config) {
         ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
         ...(staleWhy ? { staleReason: staleWhy } : {}),
         ...(contradicted ? { contradicted } : {}),
-        ...(review !== "none" && reviewEntry ? { reviewer: reviewEntry.reviewer } : {}),
+        ...(review !== "none" && reviewEntry ? { reviewer: reviewEntry.reviewer, reviewRound: reviewEntry.round } : {}),
+        ...(review !== "none" && reviewEntry && reviewEntry.after ? { reviewAfter: reviewEntry.after } : {}),
         ...(scope ? { scope, coverage: proof.tier } : {}),
         ...(claimsDone ? { reviewRequired } : {}),
       };
@@ -429,7 +439,9 @@ function status({ json = false } = {}) {
         // A STRICT story passed only by its own author says so: `pass (self)`.
         const selfMarker = story.reviewRequired && story.review === "pass" && story.reviewer === "self" ? " (self)" : "";
         const reviewSuffix =
-          story.reviewRequired && story.review !== "pass"
+          story.review === "confirming"
+            ? "  review: pass — one more round required (STRICT)"
+            : story.reviewRequired && story.review !== "pass"
             ? `  review: ${story.review} (required)`
             : story.review !== "none"
               ? `  review: ${story.review}${selfMarker}`

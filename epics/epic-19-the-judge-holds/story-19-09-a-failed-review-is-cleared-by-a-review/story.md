@@ -38,22 +38,23 @@ then, and the field 20-04 builds on.
 
 ## Acceptance Criteria
 
-- [ ] Given a story whose latest review is `fail`, when `review capture
+- [x] Given a story whose latest review is `fail`, when `review capture
       --verdict pass` runs without `--round`, then it exits non-zero, writes
       no evidence, and the message names the rule and the command.
-- [ ] Given the same story, `--verdict pass --round 2` is captured, records
+- [x] Given the same story, `--verdict pass --round 2` is captured, records
       `round: 2` and `after: <fail evidence>`, and `status --json` shows it.
-- [ ] Given `--round 3` right after a round-1 fail (a skipped number), then
+- [x] Given `--round 3` right after a round-1 fail (a skipped number), then
       it is refused.
-- [ ] Given a STRICT story, a first passing round after a fail leaves its
+- [x] Given a STRICT story, a first passing round after a fail leaves its
       review not clean in `status`; a second consecutive pass makes it clean;
       a fail in between restarts the count.
-- [ ] Given a story with no failed review, `review capture --verdict pass`
+- [x] Given a story with no failed review, `review capture --verdict pass`
       behaves exactly as before (no new flag required).
-- [ ] `--accept "<reason>"` captures a pass after a fail without a round, and
+- [x] `--accept "<reason>"` captures a pass after a fail without a round, and
       the reason is stored.
-- [ ] The two skills carry the paragraph; `plugin sync` run, `plugin check`
-      green, evals updated in the same commit.
+- [x] The two skills carry the paragraph; `plugin sync` run, `plugin check`
+      green, evals updated in the same commit. (Evals: no change — the
+      descriptions they read did not change; see Decisions.)
 
 ## Out of scope
 
@@ -64,13 +65,55 @@ then, and the field 20-04 builds on.
 
 ## Tasks
 
-- [ ] Refusal, `--round`, `after`, STRICT two-round count, `--accept`.
-- [ ] `status --json` and PR evidence show round and history.
-- [ ] Skills paragraph, `plugin sync`, evals.
+- [x] Refusal, `--round`, `after`, STRICT two-round count, `--accept`.
+- [x] `status --json` shows round and history (PR evidence: see Decisions).
+- [x] Skills paragraph, `plugin sync` (evals: see Decisions).
 - [ ] Run `npm test`, then `ai-flow verify --story <this story>`, the review
       the mode requires, and add a CHANGELOG entry (Behaviour changes).
 
-## Status: planned
+## Decisions
+
+- **Every capture is a round.** `round` is recorded on every capture, the
+  previous round + 1 by default (a file from before rounds reads as round 1),
+  so 20-04 finds the series already numbered. `--round` is a declaration that
+  must equal that next number; only a pass right after a fail *requires* it.
+  A declared number that skips or repeats is refused, whatever the verdict.
+- **`after` is the evidence file** (`.coding-flow/runs/<name>-review.json`),
+  the path from the project root, recorded only on a pass that clears a fail.
+- **STRICT confirmation is a status, not a refusal.** The second clean round
+  cannot be refused at capture time (the first one is legitimate); `status`
+  shows `confirming` (text: `pass — one more round required (STRICT)`), and
+  `next` and the chain gate (`review-unconfirmed`) treat it as not yet clean.
+  STRICT is the story's risk as `status` already scores it
+  (`computeReviewRequired`), never a second model. A pass the user accepted
+  (`acceptedRisk`) is not held back.
+- **The latest review is still chosen as before** (the first file with the
+  latest timestamp); the history only adds the run of passes since the last
+  fail.
+- **PR evidence unchanged.** The PR body renders verify evidence only — no
+  review appears there today. Adding reviews to it is a new surface; 20-04
+  records `review.round` events and owns that. `status --json` carries the
+  history now.
+- **Evals unchanged.** The skill descriptions did not change, and trigger
+  evals only read descriptions; the new paragraphs are body text.
+- **One existing test's setup follows the new rule.**
+  `test/review.test.js` "latestReviewByStoryDir returns only the latest
+  capture…" captured a pass right after a fail; that pass now declares
+  `--round 2`. Its assertion (the later pass wins) is unchanged.
+- **Who reviewed is not checked.** The tool records what it is told; the
+  fresh-reviewer rule lives in the skills (Out of scope).
+
+## Acceptance Traceability
+
+1. test/review-rounds.test.js::a pass right after a failed review, without a new round, is refused and writes nothing
+2. test/review-rounds.test.js::a pass declared as the next round is captured with its round and the failed review it clears
+3. test/review-rounds.test.js::a round that skips a number is refused
+4. test/review-rounds.test.js::a STRICT story needs two consecutive passing rounds after a fail; a fail in between restarts the count
+5. test/review-rounds.test.js::with no failed review, a pass needs no new flag, and each capture is the next round
+6. test/review-rounds.test.js::--accept captures a pass after a fail without a round, and stores the reason
+7. test/plugin.test.js::plugin check confirms skills/ <-> templates parity (`plugin check`: generated skills match templates) — the paragraph itself is prose, read in `templates/.claude/skills/flow-review/SKILL.md` (Output) and `flow-run/SKILL.md` (Review Before Done)
+
+## Status: in-progress
 
 ## Result
 
