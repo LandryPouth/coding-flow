@@ -354,10 +354,56 @@ decisions match at base (0 weaker, 179 stronger at HEAD).
   `xargs` nested 4.5 s (both readers overflow the stack: unchecked), `rm` with
   65 000 globs 3.5 s, `rm {a,a,…}` 3.2 s, every other shape ≤ 2.3 s;
   `rm -rf .git; rm {a,a,…}` 0.2 s. The cap stays at 256 KB, now in UTF-8
-  bytes: 6.4 s is under the 20 s bound with room for a loaded machine.
+  bytes. **Corrected in series 2 round 3:** "6.4 s worst case" was false — it
+  held for those 16 shapes only. Many short segments under the cap cost far
+  more (see the round-3 findings below: 98 s to over 120 s), as they did at
+  3c90919. The whole-call time is out of this story's scope: story 29-06.
 - **P2.** In the limits table: an overwrite of a modified file (`> a.txt`,
   `truncate -s0`, `cp`/`mv` onto it); `rm '*.txt'` and `rm \*.txt` refused as
   a glob (noise); padding a line past the 3 s budget makes it unchecked.
+
+## Review findings
+
+### Series 2 Round 3 — FAIL (differential + structural)
+
+- [~] P1-1 whole-call time is unbounded: at ~262 KB, `git checkout -- sub/qN;`×7000
+  → 105 s, `git zzN;`×11000 → 98 s (alias spawns), `cd dN && rm c.txt;`×11000 →
+  >120 s (quadratic realpath/lstat) — the 60 s hook timeout (`.claude/settings.json`)
+  lets the call through. Pre-existing at 3c90919 (no cap at all there) and on the
+  frozen side, which this story must not edit. Coordinator decision: (a) the false
+  "6.4 s worst case" claim is corrected here, in tasks.md, CHANGELOG.md and
+  `docs/rules-and-limits.md` (a new row: the hook timeout can decide, story 29-06);
+  (b) the fix is story 29-06 (`epics/epic-29-what-the-agent-cannot-fake/story-29-06-a-long-command-cannot-outrun-the-guard/story.md`),
+  added to epic 29's index; (c) the whole-call time is **out of scope** for 29-04.
+- [x] P1-2 `pathspecsIn` dropped a path outside the cwd's repository, so `settle`
+  answered `applies: false`: from a linked worktree, `rm ../locked/sub/c.txt` and
+  `rm /abs/…/locked/sub/c.txt` were allowed while `cd ../locked && rm sub/c.txt` was
+  refused. Fixed: a shell removal's word is resolved on disk (its directory through
+  `realpath`, up to the first glob component), its own repository is found from that
+  directory, and `git status` runs there (one call per repository, the paths
+  `:(literal)`/`:(glob)` relative to its top); git failing there is unchecked; a
+  path in no repository is still no repository's to lose. Refusals name the files
+  from the cwd (`../locked/sub/c.txt`). Test: `series 2 round 3: a path in another
+  repository is checked in that repository` (linked-worktree layout, relative,
+  absolute, glob, mixed, and a broken repository → not allowed); failed before.
+- [x] P2 `indexHolds` answered `rm link/c.txt` (link → sub) from `lstat`, which
+  follows the directory symlink: allowed. Now the fast path is skipped when the
+  path's directory on disk is not its spelling (a symlinked directory, `..` through
+  one) or the word starts with `~`; `git status` then checks the real path (the
+  same `pathspecsIn` resolution), so it is refused. Test: `series 2 round 3: a path
+  through a symlinked directory is not answered from the index` (`link/c.txt`,
+  `link/deep/e.txt`, `link/*.txt`, a link into another repository); failed before.
+- [x] P2 the frozen-judge pin test only rejected `function` outside the markers.
+  It now lists the code lines outside them (comments and blank lines aside) and
+  requires exactly `"use strict"`, the two requires, `let loadPolicy`, `use` and
+  the export: any other line fails.
+- [~] P2 `aliases…; rm sub/*.txt` (48 s) ends unchecked: the same whole-call cost as
+  P1-1 (one alias lookup per segment); covered by story 29-06, not fixed here.
+
+Measured after the fix (in-process `decide()`, fresh process, load ~12): `rm` with
+15 000 words 0.4 → 0.7 s; 14 000 globs 1.3 → 1.8 s; 30 000 distinct directories
+0.8 → 2.2 s (one `realpath` and one repository walk per distinct directory,
+memoized per call; the cap on distinct directories is 29-06's).
 
 ## Test Plan
 

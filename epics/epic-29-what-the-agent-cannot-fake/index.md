@@ -93,6 +93,7 @@ The three stories are independent (disjoint files: `scan.js`,
 2. [story-29-02-a-changed-test-runs-and-a-removed-test-is-declared](story-29-02-a-changed-test-runs-and-a-removed-test-is-declared/spec.md) — collected tests, removed test ids, exit code never trusted alone *(STANDARD)*
 3. [story-29-03-destructive-commands-wait-for-the-human](story-29-03-destructive-commands-wait-for-the-human/spec.md) — guard refuses destructive commands and names the safe one *(STRICT — guard)*
 4. [story-29-04-commands-built-to-evade-the-guard](story-29-04-commands-built-to-evade-the-guard/spec.md) — interpreter strings, git alias values, written-then-run scripts; the unread forms stated with their cover *(STRICT — added 2026-11-24 from 29-03's four reviews)*
+6. [story-29-06-a-long-command-cannot-outrun-the-guard](story-29-06-a-long-command-cannot-outrun-the-guard/story.md) — one deadline over the whole call, refused when it runs out, so the hook's 60 s timeout never decides *(STRICT — added 2026-11-25: 29-04's round 3 measured lines under the cap at 98–120 s, a fail-open already at 3c90919 and on 29-03's frozen side)*
 
 ## Decisions
 

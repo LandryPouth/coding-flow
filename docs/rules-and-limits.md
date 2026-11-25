@@ -147,12 +147,13 @@ means to get past it, the cover is the sandbox and the permissions
 | a line that costs the destructive reader more than 3 s (thousands of segments, words or `\!` lines; padding added on purpose) | the rest is unchecked, never allowed; 29-03's reader still decides in full, and a refusal from it stands | `strict` refuses it |
 | a modified file overwritten rather than removed: `> a.txt`, `truncate -s0 a.txt`, `cp b.txt a.txt`, `mv b.txt a.txt` | not judged as a loss of uncommitted changes (only `rm`, `unlink` and `git rm -f` are) | `git stash`; review |
 | a glob quoted or escaped for `rm` (`rm '*.txt'`, `rm \*.txt`), which removes a file named `*.txt` | read as a glob, so refused when a modified file matches: accepted noise | the human |
-| a command longer than 256 KB (UTF-8 bytes) | refused unread: the worst case measured at the cap is 6.4 s with both readers, and the cap keeps the hook far from its 60 s timeout. Refused rather than unchecked, which `standard` would let run | a write tool for the content; a script file |
+| a command longer than 256 KB (UTF-8 bytes) | refused unread. Refused rather than unchecked, which `standard` would let run. The cap does not bound the time of a call under it: lines of a few hundred KB built from thousands of `git checkout --` segments, alias lookups or `cd` hops were measured at 98 s to over 120 s, past the hook's 60 s timeout (story 29-06 bounds the whole call) | a write tool for the content; a script file |
 | `git rm -rf` of committed files only | allowed: the files come back from the commit (`git rm -f` of a file with uncommitted changes is refused since 29-04) | git history |
 | a file run that this line did not write: `python script.py`, `node x.js`, `bash script.sh`, or one named through an expansion (`bash "$PWD/x.sh"`) | not read | review of the file; the sandbox |
 | a file downloaded, or copied from a file larger than 64 KB or not on disk, then run on the same line; a heredoc body that expands (`<<EOF` with `$X`) | unchecked: the content is not read | the sandbox |
 | a program built at run time (format, join, decoding, base64) | unchecked only when a piece names the policy file or a destructive verb; otherwise not read | the sandbox |
 | `rm` of a modified tracked file named by an expansion (`rm "$f"`), or after a `cd` the guard cannot follow | not judged | `trash`; review |
+| a call whose reading costs more than the hook's 60 s timeout (thousands of segments, each a `git status` or an alias lookup) | the timeout decides, not the guard: the call can run unchecked. Pre-existing at 29-03 | story 29-06 (one deadline over the whole call, refused when it runs out) |
 | a command run in a container (`docker run IMAGE rm -rf /w`) | unchecked: the container's volumes are unknown | the container's own mounts; the human |
 
 ### Intensity and context budgets

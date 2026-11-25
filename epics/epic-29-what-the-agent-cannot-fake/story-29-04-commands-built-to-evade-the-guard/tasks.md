@@ -32,8 +32,11 @@ config-changing prefix. It refuses `DROP SCHEMA|TABLE|OWNED|COLUMN`,
 of a tracked file with uncommitted changes — named, or matched by a glob or
 brace (series 2 round 1). `rm` of a clean file is answered from `.git/index`
 without a spawn. The new reader has a 3 s budget (then unchecked); a command
-over 256 KB (UTF-8 bytes) is refused unread; the worst case at the cap is
-6.4 s. A shell `rm` word reaches git as `:(literal)`/`:(glob)`, a git error is
+over 256 KB (UTF-8 bytes) is refused unread. The time of a whole call is
+*not* bounded (out of scope, story 29-06): lines under the cap were measured
+at 98 s to over 120 s (series 2 round 3), past the hook's 60 s timeout, as
+at 3c90919. A removal is checked in the repository that holds the path
+(another worktree's, or through a symlinked directory: series 2 round 3). A shell `rm` word reaches git as `:(literal)`/`:(glob)`, a git error is
 unchecked, never clean. `shell-writes.js` keeps 29-03's behaviour (only
 additive data: heredoc bodies on segments, two exports). What is still not
 read is one table in `docs/rules-and-limits.md`. Latency: in-process 1.2 →
@@ -41,7 +44,9 @@ read is one table in `docs/rules-and-limits.md`. Latency: in-process 1.2 →
 
 Review history: first series 2/3/1/2 P1 (cap reached in round 4, re-scoped to
 the strictest of two readers); series 2 round 1: 1 P1 (globs); round 2: 4 P1 (a regression through the
-shared judging, git errors, pathspec words, worst-case time), all fixed (plan.md).
+shared judging, git errors, pathspec words, worst-case time), all fixed;
+round 3: 2 P1 — a path in another repository fixed, whole-call time moved
+to 29-06 (plan.md).
 
 ## Acceptance Traceability
 
