@@ -297,7 +297,7 @@ When the boundary must hold, use `mode: strict` plus OS-level isolation — a co
 
 **Story status** — `ai-flow status` (add `--json`), or `/flow-status` without leaving Claude Code, lists epics/stories and their state, backed by executed proof, not prose: an explicit `## Status` override wins, otherwise the latest `verify` (green → `verified`, red → `blocked`, code changed since → `stale`), and only then a fallback heuristic. So `verified` means the machine actually ran the validation and it passed.
 
-**What to do next** — `status` describes state, `ai-flow next` (or `/flow-next`) decides: it ranks that same state (blocked stories first, then a "done" claim with no captured verify behind it, then stale proof, then a proven story with unshipped work, then a planned story with no worktree yet) and prints the one command worth running right now (`--all` for the whole ranked queue). It is read-only and scoped to the checkout it runs from — with several worktrees open in parallel, each terminal's `next` answers for *that* worktree, not a global view across all of them.
+**What to do next** — `status` describes state, `ai-flow next` (or `/flow-next`) decides: it ranks that same state (blocked stories first, then a "done" claim with no captured verify behind it, then stale proof, then a proven story with unshipped work, then a planned story with no worktree yet) and prints the one command worth running right now (`--all` for the whole ranked queue). It is read-only and scoped to the checkout it runs from — with several worktrees open in parallel, each terminal's `next` answers for *that* worktree, not a global view across all of them. When something only you can do is waiting — a `## Human to-do` item such as `- [ ] (before: deploy) Run the backfill in production`, a Needs you question — `next` prints it first, under **We need you**, `before: deploy` items on top; `ship` and `land` repeat the `before: deploy` ones, and `ai-flow todo done <id>` ticks one.
 
 **Parallel work (worktrees)** — *optional* support to develop genuinely independent features in parallel, each in its own Git worktree, without any runtime dependency:
 
@@ -399,7 +399,7 @@ current machine.
 | `ai-flow upgrade` | Update installed files without overwriting local changes, for every recorded agent, and re-wire the guards to the current version. A `--minimal` install stays minimal. |
 | `ai-flow doctor` | Check files, skills, frontmatter, manifest. `--fix` restores missing files, `--strict` adds checks. |
 | `ai-flow status` | List epics/stories, inferred status, and the linked worktree. |
-| `ai-flow next` | Rank that state and print the one command worth running now (`--all` for the whole queue). |
+| `ai-flow next` | Rank that state and print the one command worth running now (`--all` for the whole queue), under a **We need you** block when an action only you can take is waiting (`## Human to-do`, Needs you questions). |
 | `ai-flow run [--epic\|--story <path>]` | Verify a batch of stories and emit one aggregated proof report. `--driver` is a reserved executor seam (only `none` today); `--dry-run` shows the plan. |
 | `ai-flow bootstrap --scan` | Scan an existing codebase into `docs/bootstrap-scan.md`. |
 | `ai-flow recover scan [--json]` | Read-only recovery scan: hotspots, test map, secrets in the tree and history (never the matched value), tracked sensitive and large files. `--history-limit N` bounds the history scan (default 2 000 commits). |

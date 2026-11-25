@@ -10,6 +10,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow status [--json]
   ai-flow next [--all] [--json]
   ai-flow todo [--json]   (read-only: everything waiting on a human, across all epics)
+  ai-flow todo done <id> [--dry-run]  (ticks that one checkbox, nothing else)
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
   ai-flow verify --story path [--json] [--dry-run] [--claim refactor] [--test-exemption "reason"]
                [--policy-change "reason"] [--allow-plan-commands] [--clean-env] [--red-at-base]
@@ -81,7 +82,7 @@ const FLAGS = {
   upgrade: ["--global", "--with-skills", "--no-skills", "--no-guard", "--force", "--dry-run", "--json", "--opencode", "--help", "-h"],
   uninstall: ["--global", "--dry-run", "--force", "--json", "--target", "--help", "-h"],
   // Read-only, but its one flag is easy to mistype into an empty-looking answer.
-  todo: ["--json", "--help", "-h"],
+  todo: ["--json", "--dry-run", "--help", "-h"],
 };
 
 function unknownFlags(command, argv) {

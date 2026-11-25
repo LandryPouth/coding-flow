@@ -1094,12 +1094,31 @@ function worktreeLand(name, { cwd, story, dryRun = false }) {
         }
 
         landCleanup(root, match, branch, found);
-        log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
+        announceLanded(root, branch, found);
       },
       { waitTimeoutMs, staleMs },
     );
   } catch (err) {
     fail(err.message);
+  }
+}
+
+function announceLanded(root, branch, found) {
+  log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
+  sayDeployTodos(root, found);
+}
+
+// story-26-07: the landed stories' open `before: deploy` items, said out loud
+// after the land — `found.story` for a land, `found.stories` (every story of
+// the chain) for an autoland. Never blocks, never fails the land: a read error
+// says nothing.
+function sayDeployTodos(root, found) {
+  try {
+    const { openDeployTodos, printDeployTodos } = require("./todo");
+    const stories = found && found.stories ? found.stories : found && found.story ? [found.story.path] : [];
+    printDeployTodos(openDeployTodos(root, stories));
+  } catch {
+    // best effort only
   }
 }
 
@@ -1186,6 +1205,7 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
 }
 
 module.exports = {
+  sayDeployTodos,
   worktreeCommand,
   collectWorktrees,
   realDirtyLines,

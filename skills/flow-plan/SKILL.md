@@ -212,6 +212,24 @@ rediscovering the project. Mark `scout pre-step: yes` only for broad, cross-modu
 high-risk discovery. Name security and permissions when behavior is privileged, data
 ownership and migration when persistence changes. No micro-stories ("create DTO").
 
+## Human To-Do
+
+An action only a human can take — run a backfill in production, set an
+environment variable, create an account, sign off the terms — that the plan
+already knows of (a planned step no agent can do) is written when the story is
+planned, as one checkbox line under `## Human to-do` in the story file (or the
+epic `index.md`), never as prose in `## Result` or a chat report:
+
+```markdown
+## Human to-do
+
+- [ ] (before: deploy) Run scripts/backfill-agent-handles.ts in production, then deploy
+```
+
+`when` is `deploy`, `next-story` or `later`. Name where a value lives, never the
+value. `ai-flow next` opens with these items, and `ship` and `land` repeat the
+`before: deploy` ones; only the maintainer ticks them.
+
 ## Clarify First (opt-in)
 
 When ambiguity could cause rework, pressure-test the request before writing stories:

@@ -126,6 +126,7 @@ the proof-derived state comes from `ai-flow status`.
 - 29-03 · Destructive commands wait for the human · done
 - 29-04 · Commands built to evade the guard · planned
 - 29-08 · Auto-merge waits for the checks · in-progress
+- 29-09 · Each story ships itself · planned
 
 ### Epic 30 — One workspace, several repositories (`epics/epic-30-one-workspace-several-repos/`)
 

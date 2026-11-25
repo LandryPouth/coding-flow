@@ -90,7 +90,7 @@ const {
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
-const { todoCommand } = require("./lib/todo");
+const { todoCommand, todoDoneCommand, printUncapturedTodos } = require("./lib/todo");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { recoverScan } = require("./lib/recover");
 const { harnessCommand, ensureHarnessConfig, registerStoryLocator } = require("./lib/harness");
@@ -110,7 +110,7 @@ const { traceCommand } = require("./lib/trace");
 const { archiveCommand } = require("./lib/archive");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
-const { worktreeCommand, storyWorkElsewhere } = require("./lib/worktree");
+const { worktreeCommand, storyWorkElsewhere, sayDeployTodos } = require("./lib/worktree");
 
 // `verify --story` run from a checkout that is not where the story's work is
 // would prove this checkout's copy — green on the wrong tree, recorded as
@@ -128,7 +128,7 @@ function refuseVerifyAwayFromStoryWork(story) {
       `  cd ${elsewhere.relative} && ai-flow verify --story ${story}`,
   );
 }
-const { decidePlacement, autoLandIfChainFinished } = require("./lib/worktree-plan");
+const { decidePlacement, autoLandIfChainFinished, chainStoryPaths } = require("./lib/worktree-plan");
 const { shipCommand } = require("./lib/ship");
 const { protectCommand, protectOnInit } = require("./lib/protect");
 const { runCommand } = require("./lib/run");
@@ -890,11 +890,23 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
 } else if (command === "todo") {
   const extra = commandArgs.filter((arg) => !arg.startsWith("-"));
 
-  if (extra.length > 0) {
-    fail(`unexpected argument "${extra[0]}" for "todo". Run "ai-flow todo --help".`);
-  }
+  if (extra[0] === "done") {
+    if (extra.length !== 2) {
+      fail('"todo done" takes one id: ai-flow todo done <id> (ids are printed by "ai-flow todo").');
+    }
 
-  todoCommand({ json: flags.has("--json") });
+    try {
+      todoDoneCommand(extra[1], { dryRun: flags.has("--dry-run") });
+    } catch (error) {
+      fail(error.message);
+    }
+  } else if (extra.length > 0) {
+    fail(`unexpected argument "${extra[0]}" for "todo". Run "ai-flow todo --help".`);
+  } else if (flags.has("--dry-run")) {
+    fail('--dry-run only applies to "todo done": "ai-flow todo" writes nothing.');
+  } else {
+    todoCommand({ json: flags.has("--json") });
+  }
 } else if (command === "bootstrap") {
   if (!flags.has("--scan")) {
     fail("bootstrap currently requires --scan");
@@ -917,12 +929,20 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
 } else if (command === "harness") {
   if (commandArgs[0] === "verify") refuseVerifyAwayFromStoryWork(getFlagValue("--story", null));
   harnessCommand({ commandArgs, getFlagValue, flags });
+
+  if (commandArgs[0] === "verify" && !flags.has("--json") && !flags.has("--dry-run")) {
+    printUncapturedTodos(cwd, getFlagValue("--story", null));
+  }
 } else if (command === "verify") {
   // Top-level alias of `harness verify`. The harness namespace earns itself for
   // preflight/check/evidence, which nobody types by hand; verify is the one a
   // user reaches for — re-proving a story that went `stale` after a small edit.
   refuseVerifyAwayFromStoryWork(getFlagValue("--story", null));
   harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
+
+  if (!flags.has("--json") && !flags.has("--dry-run")) {
+    printUncapturedTodos(cwd, getFlagValue("--story", null));
+  }
 } else if (command === "report") {
   reportCommand({ getFlagValue, flags });
 } else if (command === "rules") {
@@ -1015,6 +1035,13 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     log(JSON.stringify(result, null, 2));
   } else if (result.landed) {
     log(`Landed: chain ${result.chainId} ("${result.worktreeName}") merged and its worktree removed.`);
+    let stories = [story];
+    try {
+      stories = chainStoryPaths(cwd, epic, story);
+    } catch {
+      // best effort: the landed story alone is still said.
+    }
+    sayDeployTodos(cwd, { stories });
   } else if (result.reason === "chain-not-finished") {
     log(`Chain ${result.chainId} is not finished yet — nothing to land.`);
   } else if (reviewGateMessages[result.reason]) {

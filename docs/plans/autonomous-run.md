@@ -29,12 +29,23 @@ stand-in for epic 20:
    checkout with `ai-flow worktree land --story` (dry-run first); re-verify
    on `develop` with `--base <pre-land tip>` and re-capture the review (the
    land deletes the worktree's `runs/` until story 18-02 ships).
+   **Since 2026-11-25 (maintainer): one PR per story, auto-merged on green.**
+   `main` and `develop` are protected (the 5 CI test jobs are required), so
+   instead of the local land: merge `origin/develop` into the story branch,
+   verify only if the tree changed, push the branch, `ai-flow ship` (PR to
+   `develop` with the proof), `gh pr merge --auto --merge`. After the merge,
+   fast-forward the primary checkout's `develop` (`git merge --ff-only
+   origin/develop`) and remove the worktree. A red CI is fixed on the same
+   branch like a red verify. Never `--auto` on a base without required checks
+   (check `gh api …/branches/<base>/protection/required_status_checks` first):
+   GitHub would merge at once. Release PRs (develop → main) at wave ends use
+   the same rule.
 4. Tick the story below, commit.
 
 ## Rules
 
-- At most 4 agents at once since 2026-11-24 (the maintainer: the machine is
-  free; was 2), implementers and reviewers together; two stories run in
+- At most 2 agents at once since 2026-11-25 (the maintainer works on bethl on
+  the same machine; was 4 from 2026-11-24), implementers and reviewers together; two stories run in
   parallel only when their files are disjoint.
 - TMPDIR under the session scratchpad, never inside a repository.
 - Every review brief says: experiments only in a throwaway repo, as
@@ -98,7 +109,7 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 
 - [x] 26-06 `ai-flow rules` — split at the cap (series 1: 4 rounds, P1 2/1/1/2; init change → new 26-08); series 2: P1 1/0; landed, re-proved, review captured
 - [x] 26-03 `docs check` — 4 rounds (P1 1/2/3/1), split at the cap → 26-09 (folder mentions under --changed); landed, re-proved
-- [ ] 26-07
+- [x] 26-07 — PR #64, auto-merged 2026-11-25 (macOS symlinked tmp fix on the way)
 - [ ] 26-09 a moved folder is checked too (split from 26-03)
 - [x] 26-08 init shows the rules it applies (split from 26-06) — STRICT, 2 rounds (P1 0/0), landed, re-proved, review captured
 - [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
@@ -110,6 +121,8 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [x] 29-03 destructive commands wait for the human — claim re-scoped at the cap; 2 series × 4 rounds (new series P1 2/1/0/0, STRICT two clean), landed, re-proved, review captured
+- [ ] 34-01 the to-do list reads at a glance (maintainer, 2026-11-25: 50 items on bethl in one block) — NEXT free agent slot, ahead of 19-11
+- [ ] 34-02 `next` answers in seconds (bethl: >110 s) — in parallel with 34-01 (disjoint files)
 - [ ] 19-11 one tree is proved once (from this run, 2026-11-25: land skips its re-verify on a fast-forward; flow-run stops running the suite before verify) — next free agent slot
 - [ ] 29-01 `ai-flow scan`
 - [ ] 29-04 commands built to evade the guard (after 29-03; from its reviews)
