@@ -42,8 +42,10 @@ Judged one by one. Before the skip rules D2–D5 the same run gave 94 findings,
   (lower-case placeholder words are names now).
 - **Research notes (7)** — `docs/research/**`, quoting other projects.
 
-Three findings now say `deleted in <sha>` (`README.md:90`, `DOGFOODING.md:99`,
-`multi-agent-install.md:207`); none gets a look-alike.
+Ten findings say `deleted in <sha>` — the archived epics' files and folders
+(`README.md:90`, `DOGFOODING.md:88-91`, `:99`, `design-decisions.md:357`,
+`multi-agent-install.md:77`, `:129`) and `multi-agent-install.md:207`; none
+gets a look-alike.
 
 Follow-up (not in this story): fix the 9 archived-epic references, and give
 this repository a `docs.check` config — `exclude: ["docs/research/**"]` and an

@@ -445,3 +445,94 @@ test('a fence marker inside an indented code block does not open a fence', (t) =
   });
   assert.deepEqual(brief(check(dir).findings), ['docs/a.md:6 path src/after.js']);
 });
+
+// Review round 2, P1: what git recorded beats what a comment still says.
+test('a path git recorded renamed or deleted is reported even when code still names it', (t) => {
+  const dir = repo(t, {
+    'src/old.ts': 'export const a = 1;\n',
+    'src/dead.ts': 'export const b = 2;\n',
+    'docs/a.md': 'See `src/old.ts` and `src/dead.ts`.\n',
+  });
+  git(dir, ['mv', 'src/old.ts', 'src/new.ts']);
+  git(dir, ['rm', '-q', 'src/dead.ts']);
+  write(dir, { 'src/other.ts': '// moved from src/old.ts; src/dead.ts is gone\nexport {};\n' });
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-q', '-m', 'move']);
+  const result = check(dir);
+  assert.deepEqual(brief(result.findings), ['docs/a.md:1 path src/old.ts -> src/new.ts', 'docs/a.md:1 path src/dead.ts']);
+  assert.ok(result.findings[1].deleted);
+});
+
+// Review round 2, P1: Next.js route folders are path segments, not globs.
+test('route segments like [locale], (group) and [...slug] are judged; a partial bracket or a glob is not', (t) => {
+  const dir = repo(t, {
+    'apps/web/app/[locale]/page.tsx': '\n',
+    'apps/web/app/[locale]/old/View.tsx': '\n',
+    'apps/web/app/(group)/x/[id]/page.tsx': '\n',
+    'apps/web/app/[...slug]/page.tsx': '\n',
+    'apps/web/pages/[id].tsx': '\n',
+    'docs/a.md': [
+      '`apps/web/app/[locale]/page.tsx`, `apps/web/app/(group)/x/[id]/page.tsx`, `apps/web/app/[...slug]/page.tsx`,',
+      '`apps/web/pages/[id].tsx`, `apps/web/app/[locale]/old/View.tsx`, `apps/web/app/(group)/x/[id]/gone.tsx`,',
+      '`apps/web/pages/[slug].tsx`, `apps/web/src/[ab]*.js`.',
+      '',
+    ].join('\n'),
+  });
+  git(dir, ['rm', '-q', 'apps/web/app/[locale]/old/View.tsx']);
+  git(dir, ['commit', '-q', '-m', 'drop view']);
+  const result = check(dir);
+  assert.deepEqual(brief(result.findings), [
+    'docs/a.md:2 path apps/web/app/[locale]/old/View.tsx',
+    'docs/a.md:2 path apps/web/app/(group)/x/[id]/gone.tsx',
+  ]);
+  assert.ok(result.findings[0].deleted);
+});
+
+// Review round 2, P2: a folder git recorded deleted or moved.
+test('a deleted folder says deleted in <sha>; a moved folder suggests its new place', (t) => {
+  const dir = repo(t, {
+    'src/agency/a.ts': 'a\n',
+    'src/agency/b.ts': 'b\n',
+    'src/agency-console/agency/c.ts': 'c\n',
+    'lib/old/x.ts': 'x\n',
+    'docs/a.md': 'See `src/agency/` and `lib/old/`.\n',
+  });
+  git(dir, ['rm', '-q', '-r', 'src/agency']);
+  git(dir, ['mv', 'lib/old', 'lib/fresh']);
+  git(dir, ['commit', '-q', '-m', 'reshape']);
+  const result = check(dir);
+  assert.deepEqual(brief(result.findings), ['docs/a.md:1 path src/agency/', 'docs/a.md:1 path lib/old/ -> lib/fresh']);
+  assert.ok(result.findings[0].deleted);
+});
+
+// Review round 2, P2: subshells, pushd/popd, comments.
+test('a subshell cd ends at its parenthesis, pushd/popd stack, and a comment is not a command', (t) => {
+  const dir = repo(t, {
+    'package.json': JSON.stringify({ name: 'root', scripts: { test: 'x' } }),
+    'apps/web/package.json': JSON.stringify({ name: 'web', scripts: { dev: 'x' } }),
+    'docs/a.md': [
+      '```bash',
+      '(cd apps/web && npm run dev)',
+      'npm run dev',
+      'pushd apps/web',
+      'npm run dev',
+      'popd',
+      'npm run dev',
+      '# cd apps/web && npm run nothing',
+      '```',
+      '',
+    ].join('\n'),
+  });
+  assert.deepEqual(brief(check(dir).findings), ['docs/a.md:3 script dev', 'docs/a.md:7 script dev']);
+});
+
+// Review round 2, P2: a filter naming no package of a workspace.
+test('pnpm --filter naming no package of the workspace is reported', (t) => {
+  const dir = repo(t, {
+    'pnpm-workspace.yaml': 'packages:\n  - apps/*\n',
+    'package.json': JSON.stringify({ name: 'root' }),
+    'apps/api/package.json': JSON.stringify({ name: 'api', scripts: { seed: 'x' } }),
+    'docs/a.md': '```bash\npnpm --filter apii run seed\npnpm --filter api run seed\n```\n',
+  });
+  assert.deepEqual(brief(check(dir).findings), ['docs/a.md:2 script apii: seed -> api']);
+});

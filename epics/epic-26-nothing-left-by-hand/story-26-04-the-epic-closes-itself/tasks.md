@@ -8,6 +8,8 @@
       doc only when it names a changed path, so a changed doc whose new link
       points nowhere is skipped — run it without `--changed` at closure, or
       pass the changed docs as paths.
+      The pnpm short form (`pnpm --filter X generate`, no `run`) is out of
+      26-03's scope; it found little on bethl.
 - [ ] Run `npm test`, then `ai-flow verify --story <this story>`, the review
       the mode requires, and add a CHANGELOG entry.
 

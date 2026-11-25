@@ -40,16 +40,22 @@
   `Dockerfile`, `Makefile`…): it writes, reads or installs it. Never
   `.coding-flow/**` (every verify record lists changed and deleted files),
   notes, changelogs or untracked files — review round 1 found run records
-  hiding 68 of 200 deleted paths on bethl. Limit, accepted: a code or test
-  string that still names an old path hides it.
+  hiding 68 of 200 deleted paths on bethl. And never a path git recorded
+  renamed or deleted — file or folder: history wins over a comment that still
+  names it (review round 2: a Prisma comment and a generated tracked file hid
+  bethl's renamed `address-projection.service.ts`). Limit, accepted: a code
+  string naming a path git has no record of hides it.
 - **D5 — Suggestions are evidence first.** One `git log -M --diff-filter=RD`
   (after `git diff HEAD` for uncommitted changes) gives each path's latest
   event: a rename is followed to a path that exists; a deletion gives
-  `deleted in <sha>` and **no** look-alike. Otherwise the one same-named file
-  elsewhere (a move), else an edit distance of one in seven characters among
-  the folder's entries and the path's namesakes (an index by base name and by
-  folder, not the whole tree: 900 findings over 30 000 files in 4.7 s under a
-  load of ~20). `doctor` asks for no suggestion (count only).
+  `deleted in <sha>` and **no** look-alike; a folder is matched through the
+  files recorded under it (deleted → `deleted in`, moved → its new place).
+  Otherwise the one same-named file elsewhere (a move), else an edit distance
+  of one in seven characters (an adjacent swap counts one) on the name among
+  the folder's entries, or on the folder among the path's namesakes (round 2:
+  a whole-path distance offered `page.tsx` for `gone.tsx`). An index by base
+  name and by folder, not the whole tree: 900 findings over 30 000 files in
+  4.7 s under a load of ~20. `doctor` asks for no suggestion (count only).
 - **D6 — One Markdown reader, linear.** `bin/lib/docs-markdown.js`: fences
   open at any indent (inside list items too) on three or more `` ` `` or `~`;
   indented code only outside a list and after a blank line; HTML comments
@@ -86,6 +92,17 @@
   list) a ``` is text, not a fence.
 
 
+- **D12 — Route segments are folder names** (round 2). `[locale]`,
+  `[[...slug]]`, `(group)` as a whole segment are judged like any folder; a
+  bracket inside a segment (`[id].tsx`) is judged when the literal path
+  exists and read as a pattern, not reported, when it does not.
+- **D13 — Shell, kept simple** (round 2). A `cd` inside `( … )` ends at the
+  closing parenthesis; `pushd` / `popd` keep a stack; a `#` starts a comment
+  that is not read (so `# … from the root` does not reset a `cd`: accepted
+  and documented). In a workspace, a `--filter` / `-w` naming no package is
+  reported with the closest package name. Outside git the walk never starts
+  at `/` and stops at 20 000 files.
+
 ## Test Plan
 
 Fixture repo with a renamed file, a missing script, a broken anchor,
@@ -111,3 +128,16 @@ npm test
   suggestion index (D5), exit codes (D7), an indented ``` (D11). The
   `--changed` gap (a changed doc whose new link points nowhere) is kept as
   specified and noted in 26-04's tasks and in docs/rules-and-limits.md.
+
+## Review round 2 (FAIL, 2 P1)
+
+- P1-a a comment or generated tracked file naming a path git recorded as
+  renamed hid it (bethl) → D4: history first; test "a path git recorded
+  renamed or deleted is reported even when code still names it".
+- P1-b Next.js route paths were never judged → D12; test "route segments like
+  [locale], (group) and [...slug] are judged; a partial bracket or a glob is
+  not".
+- P2s with a failing test first: deleted and moved folders (D5), subshell /
+  pushd / popd / comments and a filter naming no package (D13). The walk
+  limit outside git (D13) has no automated test: a test cannot run at `/`.
+  The pnpm short form is noted in 26-04's tasks as out of scope.
