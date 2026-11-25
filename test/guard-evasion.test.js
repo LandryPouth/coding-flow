@@ -1137,6 +1137,17 @@ test('series 3 round 3: code or SQL that starts with, substitutes or uses a vari
   assert.match(run(dir, `Q='DROP TABLE x'; psql -c "$Q"`).reason, /an expansion the guard cannot see/);
 });
 
+// The documented cost of the same-line rule: a harmless variable set on the line is unchecked too.
+test('series 3 round 4: a harmless variable set on the same line still makes the code or SQL unchecked', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'unchecked', [
+    `N=3; python3 -c "print($N * 2)"`,
+    `T=users; psql -c "SELECT count(*) FROM $T"`,
+  ]);
+  assert.match(run(dir, `N=3; python3 -c "print($N * 2)"`).reason, /an expansion the guard cannot see/);
+  assert.match(run(dir, `T=users; psql -c "SELECT count(*) FROM $T"`).reason, /an expansion the guard cannot see/);
+});
+
 test('series 3 round 3: a glob in the run word is matched against the files the line wrote', (t) => {
   const dir = repo(t);
   expectAll(dir, 'allow', [
