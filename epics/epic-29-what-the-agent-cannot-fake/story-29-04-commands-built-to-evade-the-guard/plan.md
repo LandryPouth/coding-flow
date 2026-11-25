@@ -531,3 +531,11 @@ Held: 19/21 mutants caught; all 8 criteria have deciding tests; frozen side unch
   - Fixed: "the line runs a destructive command the guard read inside code (<form>: `<command>`, <rule>); this write was NOT checked — ask the human before running it" (hook path; the OpenCode plugin's own stderr line is unchanged).
 
 Held: 17 commands agree across hook and OpenCode plugin; denials name command, reason, damage, safe alternative, how to ask; no message calls a dangerous command safe; `plugin check` clean; Policy Change matches harness.json exactly.
+
+### Series 4 Round 3 — FAIL (merge with 29-05; keepCauses)
+
+- [ ] P1 bin/lib/guard.js:1587 (`strictestReading`) — 29-05 regressed for Git Bash drive paths on win32: the frozen reader has no `nativeShellPath`, reads `/c/Users/x/repo` as missing, reports a bare unresolved alias; `git -C /c/Users/x/repo st` and `cd /c/Users/x/repo && git st` (alias.st=status) go allow (develop) → unchecked (HEAD), refused in strict; `C:/…` unaffected; no test — fix: in guard.js (frozen side untouched), drop the frozen reader's bare unresolved-alias reason when the new reader resolved that same alias; win32 test with a `/c/…` alias that must stay allowed.
+- [ ] P2 .opencode/plugins/coding-flow-guard.js:201 — OpenCode stderr lacks "— ask the human before running it" while CHANGELOG.md:17 claims it host-agnostically — fix: use `uncheckedLine` there.
+
+Held: windows-paths 19/19; 20 Windows-shaped commands identical develop vs HEAD on win32 and linux; combined forms decided as documented; keepCauses only rewrites text after every deny, cannot weaken one; its mutants (no-op, no swap) fail S3-2.
+Series 4 round 4 is the last of the series: if it fails, narrow the claim and park.
