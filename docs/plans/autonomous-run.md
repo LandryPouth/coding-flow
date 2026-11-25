@@ -112,7 +112,21 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [ ] 29-01 `ai-flow scan`
 - [ ] 29-04 commands built to evade the guard (after 29-03; from its reviews)
 
-### Wave 2b — one workspace, several repositories (epic 30) · *release 0.17.0*
+### Wave 2a — the run spends its tokens on work (epic 31) · FIRST after wave 2, before 2b (maintainer, 2026-11-25) · *release 0.17.0* (epic 30 moves to 0.18.0)
+
+Measured on this run (148 agents): implementers 75 % of input tokens at ~220 k context per turn,
+because the same agent was resumed for every fix round; 3–4 reviews per story; the long stories
+all promised over an open input space. Until 31-01 lands, each fix round gets a FRESH implementer
+briefed from the story files (findings as checkbox lines under `## Review findings` in plan.md).
+
+Order: 31-01 (walking skeleton) → 31-02 ‖ 31-03 ‖ 31-04 (disjoint files)
+
+- [ ] 31-01 a fix round starts from a brief
+- [ ] 31-02 the reviewer reads one pack
+- [ ] 31-03 an open promise is split before code
+- [ ] 31-04 the run says what it cost
+
+### Wave 2b — one workspace, several repositories (epic 30) · *release 0.18.0*
 
 Added 2026-11-22 at the maintainer's request (asked 2026-11-21 for tse-binam:
 `api/` + `web/` in one container folder). After wave 2 because s3 judges
