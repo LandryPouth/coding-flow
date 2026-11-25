@@ -59,6 +59,16 @@ protection auto du projet dans lequel il est installé".
 
 Held: additive POST when checks exist; full PUT only with no checks, every returned field translated; rulesets left alone; `init` prints each write and honours `--dry-run`/`--no-protect`/`protectBranches:false`; `upgrade` never protects; `ship` never arms on any read/PUT failure; 18/18 with request bodies asserted.
 
+### Round 2 — FAIL (real-world repositories and their failure answers)
+
+- [ ] P1 protect.js:179-186, :273 — the union of checks over the last 5 PRs is required: a check that runs only on some paths (`paths:` filter) or only on fork PRs gets required after one PR ran it, then blocks every PR that doesn't run it (fake-gh repro: PRs show [test], [test], [api-tests] → requires api-tests, test) — fix: require only checks seen on EVERY recent PR that had checks (intersection); list the rest as "not required (not on every pull request)"; fake-gh test.
+- [ ] P1 protect.js:240, :409, ship.js:654 — a plan limit (bethl: private repo on GitHub Free, 403 "Upgrade to GitHub Pro or make this repository public") is reported as an auth problem ("Next: check `gh auth status`", "has no required status checks … Next: run `ai-flow protect`") and the dry run still prints "nothing to change" — fix: on that 403 say "branch protection is not available on this plan (private repository on GitHub Free)" and give a real next step (merge on green by hand, or 29-09's watch-and-merge); never print "nothing to change" when something was blocked.
+- [ ] P2 doctor `checkAutoMergeGate` / protect.js:431 stays silent on the plan limit — warn.
+- [ ] P2 ship.js:649 may write the protection before `gh pr merge --auto` even when the repository has auto-merge disabled (`allow_auto_merge: false`) — check it first and say so.
+- [ ] P2 legacy commit statuses are not read ("needs CI first" for such repos); required checks that no longer run are never flagged — state both as limits.
+
+Held: coding-flow dry run clean (exit 0, nothing sent); bethl exit 2, nothing written; `ship` never arms on a failed read/PUT; push-only checks excluded; no-PR and no-checks cases blocked clearly; mutation of the round-1 fix fails 3/23.
+
 ## Acceptance Criteria
 
 - [ ] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
