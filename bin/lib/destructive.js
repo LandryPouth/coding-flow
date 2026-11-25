@@ -19,7 +19,7 @@
 // depended on but could not read (an expansion where a flag may sit).
 
 const path = require("path");
-const { splitSegments, commandOf, verbAt, tokenize, heredocWord, SHELLS } = require("./shell-writes");
+const { splitSegments, commandOf, verbAt, tokenize, heredocWord, nativeShellPath, SHELLS } = require("./shell-writes");
 
 const EXPANDS = /[$`]/;
 const ASK = "stop and ask the human";
@@ -74,23 +74,23 @@ function operandsOf(args, valueOptions = new Set()) {
   return out;
 }
 
-const resolveIn = (cwd, word, home) => {
+const resolveIn = (cwd, word, { home, platform }) => {
   if (EXPANDS.test(word) || /^~[^/]/.test(word)) {
     return null;
   }
-  const expanded = word === "~" ? home : word.startsWith("~/") ? path.join(home, word.slice(2)) : word;
+  const expanded = word === "~" ? home : word.startsWith("~/") ? path.join(home, word.slice(2)) : nativeShellPath(word, platform);
   if (path.isAbsolute(expanded)) {
     return path.resolve(expanded);
   }
   return cwd === null ? null : path.resolve(cwd, expanded);
 };
 
-function cdTarget(cwd, args, home) {
+function cdTarget(cwd, args, ctx) {
   const operand = args.find((arg) => !arg.startsWith("-") || arg === "-");
   if (operand === undefined) {
-    return home;
+    return ctx.home;
   }
-  return operand === "-" ? null : resolveIn(cwd, operand, home);
+  return operand === "-" ? null : resolveIn(cwd, operand, ctx);
 }
 
 // --- git --------------------------------------------------------------------------
@@ -234,7 +234,9 @@ function readGitAlias(out, sub, rest, dir, ctx) {
   const depth = ctx.aliases || 0;
   const found = dir === null || depth >= MAX_ALIASES ? { issue: ALIAS_UNREAD } : ctx.host.gitAlias(dir, sub);
   if (found.issue) {
-    out.unchecked.push({ reason: ALIAS_UNREAD, command: ["git", sub, ...rest].join(" ") });
+    // The host's own cause (git timed out, git missing) is kept: it says what to fix.
+    const reason = found.issue === ALIAS_UNREAD ? ALIAS_UNREAD : `${ALIAS_UNREAD}: ${found.issue}`;
+    out.unchecked.push({ reason, command: ["git", sub, ...rest].join(" ") });
     return true;
   }
   if (found.value === null || found.value === undefined) {
@@ -259,7 +261,7 @@ function readGit(out, args, cwd, ctx) {
       out.unchecked.push({ reason: CLI_ALIAS, command: ["git", ...args].join(" ") });
     }
     if (args[i] === "-C") {
-      dir = args[i + 1] === undefined ? dir : resolveIn(dir, args[i + 1], ctx.home);
+      dir = args[i + 1] === undefined ? dir : resolveIn(dir, args[i + 1], ctx);
       i += 2;
     } else {
       i += GIT_VALUE_GLOBALS.has(args[i]) ? 2 : 1;
@@ -304,7 +306,7 @@ function readGit(out, args, cwd, ctx) {
     return;
   }
   const exists = (word) => {
-    const at = resolveIn(dir, word, ctx.home);
+    const at = resolveIn(dir, word, ctx);
     return at !== null && ctx.host.exists(at);
   };
   const found = [].concat(readGitSub(sub, rest, exists) || []);
@@ -769,7 +771,7 @@ function readLine(line, start, ctx) {
     const piped = segment.before === "pipe" || segment.after === "pipe";
     if (command.name === "cd" || command.name === "pushd") {
       if (!piped) {
-        cwd = cdTarget(cwd, command.args, ctx.home);
+        cwd = cdTarget(cwd, command.args, ctx);
       }
     } else if (command.name === "popd") {
       cwd = null;
@@ -1172,7 +1174,7 @@ function readDestructive(command, { cwd, host }) {
     return { findings: [], unchecked: [], touched: [], substituted: [] };
   }
   const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), gitTop: () => null, ...host };
-  return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0 });
+  return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), platform: safeHost.platform || process.platform, depth: 0 });
 }
 
 module.exports = { readDestructive, substitutionsOf, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS, HIDDEN_VERB, UNREAD_SUBSTITUTION, UNMODELLED, HANDED_TEXT };

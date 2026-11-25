@@ -1061,7 +1061,7 @@ function reaches(cwd, operand, mode, policies, caseInsensitive) {
 // tests (none, or one that matches) let it through.
 function findReaches(cwd, { starts, tests }, policies, caseInsensitive) {
   return starts.some((start) => {
-    const from = path.resolve(cwd, start);
+    const from = path.resolve(cwd, expandHome(start));
     return policies.some(({ file }) => {
       const inside = path.relative(from, file);
       if (inside.startsWith("..") || path.isAbsolute(inside)) {

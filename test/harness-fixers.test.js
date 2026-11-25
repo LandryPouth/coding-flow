@@ -276,11 +276,24 @@ test('outside git the fixer still runs first, and the changed files are unknown,
 });
 
 test('a fixer with its own time limit is killed at it, like any declared command', (t) => {
-  const dir = project(t, { fix: [{ command: node('setTimeout(()=>{},5000)'), timeoutMs: 300 }], commands: [node('0')] });
+  // The fixer records when it started, writes a marker 2 s after that and lives
+  // 20 s. Where the whole tree is killed (Windows, story 29-05), the marker never
+  // appears, however late the fixer started, and the project directory is free
+  // at once: the cleanup above has no retries. The limit (1 s) leaves a slow
+  // Windows node time to start, and is still well before the marker.
+  const late = node("const fs=require('fs');fs.writeFileSync('started.txt',String(Date.now()));setTimeout(()=>fs.writeFileSync('late.txt','x'),2000);setTimeout(()=>{},20000)");
+  const dir = project(t, { fix: [{ command: late, timeoutMs: 1000 }], commands: [node('0')] });
   const evidence = JSON.parse(verify(dir).output);
   const fixer = evidence.results.find((r) => r.kind === 'fix');
   assert.equal(fixer.timedOut, true);
   assert.equal(evidence.ok, false);
+  const startFile = path.join(dir, 'started.txt');
+  assert.equal(fs.existsSync(startFile), true, 'the fixer never started: the kill proves nothing');
+  if (process.platform === 'win32') {
+    const fixerStarted = Number(fs.readFileSync(startFile, 'utf8'));
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, fixerStarted + 3500 - Date.now()));
+    assert.equal(fs.existsSync(path.join(dir, 'late.txt')), false, 'the fixer outlived its time limit');
+  }
 });
 
 test('--dry-run lists the fixers and runs none', (t) => {
@@ -993,7 +1006,10 @@ test('a run file re-indented by a formatter is not a second ledger entry', (t) =
 // A guard log past the guard's size bound, as the guard leaves it: it keeps its
 // last 200 lines, then appends (guard.js).
 function bigGuardLogProject(t, keep) {
-  const fixer = node(`const fs=require('fs');const f='.coding-flow/denials.jsonl';const k=fs.readFileSync(f,'utf8').split('\\\\n').filter(Boolean).slice(-${keep});fs.writeFileSync(f,k.join('\\\\n')+'\\\\n'+'{\\"tool\\":\\"new\\"}\\\\n')`);
+  // The newline is built, not escaped: `\n` reaches node as a newline through sh's
+  // double quotes but as a backslash and an n through cmd.exe's, where the split
+  // then found one line and the "trim" kept the whole file.
+  const fixer = node(`const fs=require('fs');const f='.coding-flow/denials.jsonl';const n=String.fromCharCode(10);const k=fs.readFileSync(f,'utf8').split(n).filter(Boolean).slice(-${keep});fs.writeFileSync(f,k.join(n)+n+'{\\"tool\\":\\"new\\"}'+n)`);
   const dir = ignoredRunsProject(t, fixer);
   const line = `{"tool":"${'x'.repeat(120)}"}`;
   fs.writeFileSync(path.join(dir, '.coding-flow', 'denials.jsonl'), `${Array.from({ length: 2500 }, (_, i) => `${line.slice(0, -2)}${i}"}`).join('\n')}\n`);
