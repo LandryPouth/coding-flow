@@ -125,6 +125,8 @@ the proof-derived state comes from `ai-flow status`.
 - 29-02 · A changed test runs, and a removed test is declared · planned
 - 29-03 · Destructive commands wait for the human · done
 - 29-04 · Commands built to evade the guard · planned
+- 29-08 · Auto-merge waits for the checks · in-progress
+- 29-09 · Each story ships itself · planned
 
 ### Epic 30 — One workspace, several repositories (`epics/epic-30-one-workspace-several-repos/`)
 
@@ -140,7 +142,7 @@ the proof-derived state comes from `ai-flow status`.
 - 31-01 · A fix round starts from a brief · —
 - 31-02 · The reviewer reads one pack · —
 - 31-03 · An open promise is split before code · —
-- 31-04 · A finished story leaves the checkout · planned
+- 31-04 · A finished story leaves the checkout · in-progress
 
 ### Epic 32 — The maintainer's bench (`epics/epic-32-the-maintainers-bench/`)
 
