@@ -141,6 +141,16 @@ Order: 32-01 (walking skeleton) → 32-02 ‖ 32-03 ‖ 32-04 (disjoint files)
 - [ ] 32-03 a waste becomes a proposal
 - [ ] 32-04 a change is tried in two arms
 
+### Wave 2a″ — the shapes are checked (epic 33) · right after epic 32, before 2b (maintainer, 2026-11-25: "fais ce que tu recommandes pour le ts")
+
+JSDoc types + `tsc --noEmit --checkJs` through `npx`, no rewrite, no build, no dependency.
+Ships with the next npm release after it (only `docs/contributing.md` and CI change for users: nothing).
+
+Order: 33-01 (walking skeleton) → 33-02
+
+- [ ] 33-01 the evidence has a type
+- [ ] 33-02 the guard and verify are typed
+
 ### Wave 2b — one workspace, several repositories (epic 30) · *release 0.18.0*
 
 Added 2026-11-22 at the maintainer's request (asked 2026-11-21 for tse-binam:

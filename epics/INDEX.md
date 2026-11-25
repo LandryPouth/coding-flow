@@ -147,6 +147,11 @@ the proof-derived state comes from `ai-flow status`.
 - 32-03 · A waste becomes a proposal · —
 - 32-04 · A change is tried in two arms · —
 
+### Epic 33 — The shapes are checked (`epics/epic-33-the-shapes-are-checked/`)
+
+- 33-01 · The evidence has a type · planned
+- 33-02 · The guard and verify are typed · planned
+
 <!-- coding-flow:index:end -->
 
 ## Archived epics
