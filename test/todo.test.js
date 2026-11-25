@@ -321,9 +321,15 @@ test('table: what a story lists, for owner, status, Needs you and criteria shape
 
 test('an extra argument is refused', (t) => {
   const repo = project(t);
-  const res = run(repo, ['todo', 'done']);
+  // `done` became a subcommand in story 26-07; any other word is still refused,
+  // and `done` without its one id is refused too.
+  const res = run(repo, ['todo', 'list']);
   assert.notStrictEqual(res.code, 0);
-  assert.match(res.output, /unexpected argument "done"/);
+  assert.match(res.output, /unexpected argument "list"/);
+
+  const bare = run(repo, ['todo', 'done']);
+  assert.notStrictEqual(bare.code, 0);
+  assert.match(bare.output, /"todo done" takes one id/);
 });
 
 test('a heading with a suffix still matches: parentheses, colon, dash', (t) => {

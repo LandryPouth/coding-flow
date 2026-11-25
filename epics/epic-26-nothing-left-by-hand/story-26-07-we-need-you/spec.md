@@ -71,27 +71,27 @@ the orchestrator's chat report and the vault run note).
 
 ## Acceptance Criteria
 
-- [ ] Given a story with `- [ ] (before: deploy) Run the backfill` under
+- [x] Given a story with `- [ ] (before: deploy) Run the backfill` under
       `## Human to-do`, when `ai-flow next` runs, then `We need you (1)` is
       printed above the recommendation with that line and its id.
-- [ ] Given open items of all three `when` values, a `## Needs you` question
+- [x] Given open items of all three `when` values, a `## Needs you` question
       and a ready `Owner: human` story, then `next` lists `deploy` items first,
       then `next-story` items and the question, then one `+ N later` line.
-- [ ] Given no ranked command and one open to-do, then `next` prints `No command
+- [x] Given no ranked command and one open to-do, then `next` prints `No command
       to run — but we need you:` and never `Nothing waiting on you`.
-- [ ] Given a landed epic whose index holds an open `before: deploy` item, then
+- [x] Given a landed epic whose index holds an open `before: deploy` item, then
       `next` still lists it.
-- [ ] Given `ai-flow todo done <id>`, then only that line becomes `- [x]` and
+- [x] Given `ai-flow todo done <id>`, then only that line becomes `- [x]` and
       neither `next` nor `todo` lists it again.
-- [ ] Given a story `## Result` containing "avant le déploiement" and no open
+- [x] Given a story `## Result` containing "avant le déploiement" and no open
       `## Human to-do` item, then `verify` passes with a `todo.uncaptured`
       warning naming the line, and `doctor` reports the same.
-- [ ] Given a branch whose stories carry an open `before: deploy` item, then
+- [x] Given a branch whose stories carry an open `before: deploy` item, then
       `ai-flow ship` prints it and the PR body has a `Before you deploy`
       section listing it; with none, the section is absent.
-- [ ] Given a to-do line containing a value matching a secret pattern, then
+- [x] Given a to-do line containing a value matching a secret pattern, then
       doctor errors and `next`/`todo` print it masked.
-- [ ] Given `next --json`, then the payload holds `needsYou` with `id`, `when`,
+- [x] Given `next --json`, then the payload holds `needsYou` with `id`, `when`,
       `epic`, `story`, `text`, `source`.
 
 ## Edge Cases

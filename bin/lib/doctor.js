@@ -458,14 +458,50 @@ function checkEpicIndex(warnings) {
   });
 }
 
-// What `doctor` reads from the epics and docs on disk: size, numbering, story
-// links, the index, and the docs' stale references (story 26-03).
-function checkEpicFiles(warnings) {
+// story-26-07: `## Human to-do` items. A secret-looking value is an error (the
+// line is printed masked); a missing or unknown `when` and uncaptured prose in a
+// `## Result` are warnings.
+function checkHumanTodos(errors, warnings) {
+  let todo;
+  let payload;
+  try {
+    todo = require("./todo");
+    payload = todo.collectTodos(cwd, { headings: todo.todoHeadings(readConfig(cwd)) });
+  } catch {
+    return; // best-effort only — never block doctor on a storage read failure.
+  }
+
+  for (const item of payload.epics.flatMap((epic) => epic.items)) {
+    const where = item.line ? `${item.source}:${item.line}` : item.source;
+
+    if (item.secret && (item.kind === "human-todo" || item.kind === "maintainer")) {
+      errors.push({ code: "todo_secret", file: item.source, message: `${where}: a to-do holds a value matching the secret pattern "${item.secret}": ${item.text} — write where the value lives, never the value` });
+    }
+
+    if (item.whenIssue) {
+      warnings.push({ code: "todo_when", file: item.source, message: `${where}: (before: …) is ${item.whenIssue}, read as "later" — write one of ${todo.WHEN_VALUES.map((value) => `(before: ${value})`).join(", ")}` });
+    }
+  }
+
+  const config = readConfig(cwd);
+  for (const epic of listEpicsQuietly()) {
+    for (const story of epic.stories) {
+      for (const entry of todo.uncapturedTodoLines(cwd, path.join(cwd, story.path), config)) {
+        warnings.push({ code: "todo_uncaptured", file: entry.source, message: `${entry.source}:${entry.line}: the Result says something only a human can do, with no open \`## Human to-do\` item: "${entry.text}" — write \`- [ ] (before: deploy|next-story|later) …\` under \`## Human to-do\`` });
+      }
+    }
+  }
+}
+
+// What `doctor` reads from the epics on disk: size, numbering, story links, the
+// index, the human to-dos, and the docs' stale references (story 26-03).
+function checkEpicFiles(warnings, errors = []) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
   checkEpicNumberCollisions(warnings);
   checkStoryLinks(warnings);
   checkEpicIndex(warnings);
+  checkHumanTodos(errors, warnings);
   checkStaleDocs(warnings);
 }
 
@@ -807,6 +843,7 @@ function collectMinimalReport({ strict = false } = {}) {
   checkReleaseTag(warnings);
   checkStoryLinks(warnings);
   checkEpicIndex(warnings);
+  checkHumanTodos(errors, warnings);
   checkStaleDocs(warnings);
 
   return {
@@ -1030,7 +1067,7 @@ function collectDoctorReport({ strict = false } = {}) {
   // fire on the `doctor` a user actually runs. A warning, never an error —
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
-  checkEpicFiles(warnings);
+  checkEpicFiles(warnings, errors);
   checkGeneratedDirectories(warnings);
   checkOriginHead(warnings);
   checkReleaseTag(warnings);

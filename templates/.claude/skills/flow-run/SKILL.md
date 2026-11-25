@@ -307,6 +307,23 @@ Stop and report — do not push through — when:
 - the story has a line beginning `Assumption (unconfirmed):`: it is not implemented
   until the user confirms it.
 
+## Human To-Do
+
+An action only a human can take — run a backfill in production, set an
+environment variable, create an account, sign off the terms — is written the
+moment it appears, as one checkbox line under `## Human to-do` in the story file
+(or the epic `index.md`), never as prose in `## Result` or a chat report:
+
+```markdown
+## Human to-do
+
+- [ ] (before: deploy) Run scripts/backfill-agent-handles.ts in production, then deploy
+```
+
+`when` is `deploy`, `next-story` or `later`. Name where a value lives, never the
+value. `ai-flow next` opens with these items, and `ship` and `land` repeat the
+`before: deploy` ones; only the maintainer ticks them.
+
 ## Rollback Notes
 
 STANDARD and STRICT, before implementing: the files and areas likely to change,
