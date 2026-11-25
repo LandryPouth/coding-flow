@@ -176,3 +176,11 @@ npm test
 - [x] P2 `cd my-app` (folder absent from the repo) → don't judge scripts after a cd into an absent folder.
 - [x] P2 the walk outside git is depth-first with a 20,000-file cap and can exhaust it before docs/ → breadth-first, `docs/` first; say on stderr when the cap was hit.
 - [x] P2 a namesake-only suggestion (bethl `apps/admin` → `apps/web/app/[locale]/admin`) is weak → only suggest when the basename and parent context match.
+
+### Round 4 — FAIL (real docs, last round of the series) → split to 26-09
+
+- [ ] P1 docs-check.js:661 `--changed` keeps a doc only when a mention equals a changed file; a doc naming only a moved/deleted *folder* is never read (bethl: `git mv packages/geo packages/geodata` → `docs/geo/research.md:143` missed by `--changed`, reported by the full check). **Split to 26-09** at the review cap. The criterion as written ("docs mentioning a file changed") holds; the folder case is new scope.
+- [ ] P2 a path under a moved folder (`packages/geo/dist`) stays skipped as git-ignored (D4) even when history records its parent as moved → 26-09.
+- [ ] P2 a branch name in backticks (`docs/complete-documentation`) is reported as a missing path → 26-09.
+
+Held on real docs (bethl, tradescript, tse-binam, ai-learn, this repo): exit codes, doctor warns and exits 0, no writes, bethl 31 findings each judged (24 planned paths, 2 renames with correct suggestions, 4 prose about removed things, 1 branch name), tradescript 14/14 true positives, round 3's cd/filter/placeholder rules, history read 0.72 s on bethl.

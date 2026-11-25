@@ -1,6 +1,6 @@
 # Story 26-03 — Tasks
 
-## Status: in-progress
+## Status: done
 
 - [x] Path, script and link checks with suggestions.
 - [x] `--changed <base>`, doctor line, config keys.
