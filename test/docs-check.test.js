@@ -313,6 +313,25 @@ test('doctor prints the finding count and the command, and does not fail on it',
   assert.ok(!clean.warnings.some((w) => w.code === 'docs_stale'));
 });
 
+// Story 26-09, review round 1: doctor counts what `docs check` reports — a
+// git-ignored path under a moved folder included.
+test('doctor counts a git-ignored path under a moved folder, as docs check does', (t) => {
+  const dir = repo(t, {
+    '.gitignore': 'dist/\n',
+    'packages/geo/src/index.ts': 'i\n',
+    'docs/a.md': 'Build output: `packages/geo/dist`.\n',
+    '.coding-flow/config.json': JSON.stringify({ install: 'minimal' }),
+    '.coding-flow/harness.json': '{}',
+  });
+  git(dir, ['mv', 'packages/geo', 'packages/geodata']);
+  git(dir, ['commit', '-q', '-m', 'move']);
+  assert.equal(check(dir).findings.length, 1);
+  const report = JSON.parse(cli(dir, ['doctor', '--json']).stdout);
+  const line = report.warnings.find((w) => w.code === 'docs_stale');
+  assert.ok(line, JSON.stringify(report.warnings));
+  assert.match(line.message, /1 finding/);
+});
+
 test('a 10 KB adversarial line is read in linear time', (t) => {
   const dir = repo(t, { 'src/a.js': '\n' });
   const lines = [
@@ -700,8 +719,36 @@ test('a backticked branch name is not reported as a missing path', (t) => {
       '',
     ].join('\n'),
   });
-  git(dir, ['branch', 'docs/topic-branch']);
+  for (const name of ['docs/complete-documentation', 'docs/old-work', 'docs/landing', 'docs/topic-branch']) git(dir, ['branch', name]);
   git(dir, ['update-ref', 'refs/remotes/origin/docs/remote-only', 'HEAD']);
   const result = check(dir);
   assert.deepEqual(brief(result.findings), ['docs/a.md:9 path docs/missing.md']);
+});
+
+// Story 26-09, review round 1: the word "branch" near a span does not make it a
+// branch — only a local or remote branch of that name does.
+test('a missing path next to the word branch is still reported', (t) => {
+  const dir = repo(t, {
+    '.github/workflows/ci.yml': 'on: push\n',
+    'docs/x.md': 'x\n',
+    'docs/gone/a.md': 'a\n',
+    'docs/a.md': [
+      'Branch protection is in `.github/rules.yml`.',
+      "The branch's spec: `docs/spec.md`.",
+      'Le module est branché dans `docs/module.md`.',
+      '85 % branches on `docs/gone/`.',
+      'Branch: `docs/real-branch`.',
+      '',
+    ].join('\n'),
+  });
+  git(dir, ['rm', '-q', '-r', 'docs/gone']);
+  git(dir, ['commit', '-q', '-m', 'drop gone']);
+  // A branch that shares a path git recorded as deleted does not hide it.
+  git(dir, ['branch', 'docs/gone']);
+  git(dir, ['branch', 'docs/real-branch']);
+  const result = check(dir);
+  assert.deepEqual(
+    result.findings.map((f) => `${f.file}:${f.line} ${f.target}`),
+    ['docs/a.md:1 .github/rules.yml', 'docs/a.md:2 docs/spec.md', 'docs/a.md:3 docs/module.md', 'docs/a.md:4 docs/gone/'],
+  );
 });

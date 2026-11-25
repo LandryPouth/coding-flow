@@ -495,7 +495,7 @@ function scanDoc(doc, context) {
     const { spans, prose } = inlineParts(line, state);
     for (const span of spans) {
       add(index + 1, scriptFindings(span.text, docDir, context.packages, {}, exists));
-      add(index + 1, pathFindings(span.text, doc, context, mentions, line.slice(0, span.column)));
+      add(index + 1, pathFindings(span.text, doc, context, mentions));
     }
     for (const target of linkTargets(prose)) add(index + 1, linkFindings(target, doc, context, mentions));
   });
@@ -503,8 +503,7 @@ function scanDoc(doc, context) {
   return { findings, mentions };
 }
 
-// `before` is the line's text before the span: `Branch: \`x/y\`` names a branch.
-function pathFindings(span, doc, context, mentions, before = "") {
+function pathFindings(span, doc, context, mentions) {
   const value = pathCandidate(span);
   if (!value) return [];
   const { judged, places } = pathPlaces(value, path.posix.dirname(doc), context.root);
@@ -520,10 +519,11 @@ function pathFindings(span, doc, context, mentions, before = "") {
   if (isPattern(value) || context.suffixes().has(path.posix.normalize(value).replace(/^\.\//, "").replace(/\/+$/, ""))) return [];
   if (inside.some((place) => context.ignoredByConfig(place))) return [];
   if (!recorded && !moved && context.namedByCode(value)) return [];
-  if (context.namesBranch(value, before)) return [];
+  // A path git recorded as moved or deleted is a path, whatever branch shares its name.
+  if (!recorded && !moved && context.namesBranch(value)) return [];
   // Under a folder git recorded as moved, a path is judged even when git
   // ignores it (no `places`: generated output the move left behind).
-  if (moved && context.suggest) return [{ kind: "path", target: value, suggestion: moved }];
+  if (moved) return [{ kind: "path", target: value, suggestion: moved }];
   return [{ kind: "path", target: value, places: inside, ...suggestPath(recorded || inside[0], context) }];
 }
 
@@ -599,10 +599,9 @@ function scanContext(root, settings, suggest) {
       if (!anchorCache.has(file)) anchorCache.set(file, anchorsOf(fs.readFileSync(path.join(root, file), "utf8")));
       return anchorCache.get(file);
     },
-    // A branch, not a path: named right after "Branch" / "Branche" in the
-    // line, or the name of a local or remote branch (`origin/x` and `x`).
-    namesBranch(value, before) {
-      if (BRANCH_WORD.test(before)) return true;
+    // A branch, not a path: the name of a local or remote branch (`origin/x`
+    // and `x`). No word rule: "Branch protection is in `.github/x.yml`" is a path.
+    namesBranch(value) {
       if (!branches) branches = inGit ? branchNames(root) : new Set();
       return branches.has(value.replace(/\/+$/, ""));
     },
@@ -611,8 +610,6 @@ function scanContext(root, settings, suggest) {
     },
   };
 }
-
-const BRANCH_WORD = /\bbranch(?:e|es)?\b[^`.!?]{0,24}$/i;
 
 function branchNames(root) {
   const out = new Set();
