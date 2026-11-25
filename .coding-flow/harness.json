@@ -101,6 +101,7 @@
     "bin/lib/codex-settings.js",
     "bin/lib/codex-probe.js",
     "bin/lib/shell-writes.js",
+    "bin/lib/destructive.js",
     "bin/lib/archive-members.js",
     "bin/lib/risk.js",
     "bin/lib/harness-config.js",
@@ -119,6 +120,7 @@
     "scripts/test-env-guard.js",
     "bin/lib/diff-base.js",
     "bin/lib/config.js",
+    "bin/lib/rules-registry.js",
     "bin/lib/spec-drift.js",
     "bin/lib/settings.js"
   ],

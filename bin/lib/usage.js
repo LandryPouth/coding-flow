@@ -9,6 +9,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
   ai-flow next [--all] [--json]
+  ai-flow todo [--json]   (read-only: everything waiting on a human, across all epics)
   ai-flow run [--story path | --epic name] [--driver none] [--dry-run] [--json]
   ai-flow verify --story path [--json] [--dry-run] [--claim refactor] [--test-exemption "reason"]
                [--policy-change "reason"] [--allow-plan-commands] [--clean-env] [--red-at-base]
@@ -26,6 +27,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow archive <epic-dir | NN> [--dry-run] [--json]   (a finished, merged epic leaves the checkout)
   ai-flow archive --refresh [--dry-run] [--json]   (rewrite epics/INDEX.md's live section: every epic, every story's written status)
   ai-flow report [--raw] [--json] [--out file]
+  ai-flow rules [<key>] [--json]   (every rule's value in this project and where it comes from)
   ai-flow ci init [--force] [--dry-run]
   ai-flow plugin sync|check [--json] [--dry-run]
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]
@@ -75,6 +77,8 @@ const FLAGS = {
   ],
   upgrade: ["--global", "--with-skills", "--no-skills", "--no-guard", "--force", "--dry-run", "--json", "--opencode", "--help", "-h"],
   uninstall: ["--global", "--dry-run", "--force", "--json", "--target", "--help", "-h"],
+  // Read-only, but its one flag is easy to mistype into an empty-looking answer.
+  todo: ["--json", "--help", "-h"],
 };
 
 function unknownFlags(command, argv) {

@@ -31,27 +31,31 @@ wrapper can intercept"); the guard is that wrapper.
   `denials.jsonl` like other guard denials.
 - **Policy** lives in `.coding-flow/harness.json` (already a path the agent
   cannot write): `destructiveCommands: "deny" | "warn" | "off"` (default
-  `deny`), `allowDestructive: ["<exact command prefix>"]`,
+  `deny`), `allowDestructive: ["<exact command>"]` (a last word `*` allows more words),
   `worktrees.primaryLocked` (default `false`; bethl sets `true`). The agent
   cannot lift a refusal by environment variable, flag or wrapper
   (`bash -c`, `sh -c`, `env`, `xargs`, `eval` are read through, as the guard
   already does for writes).
 - **Fail-open is recorded.** A command the reader cannot parse (expansion,
   heredoc into an interpreter) is allowed and recorded as `unchecked`, the
-  existing guard rule (design-decisions entry 14) — never a silent pass.
+  existing guard rule (design-decisions entry 14). The guard refuses the
+  destructive forms an agent writes by habit and marks unchecked what it cannot
+  read; a form built to evade it (unusual quoting, generated code, interpreter
+  strings) is out of this guard's reach — the protection against an adversarial
+  agent is the sandbox and permissions (design-decisions entry 10).
 - `/flow-run` gains one line: a destructive step is a `## Needs you` with its
   blast radius and rollback, never a workaround.
 
 ## Acceptance Criteria
 
-- [ ] Given `git reset --hard HEAD~1`, when the guard evaluates it, then it is denied with the rule, the files at risk and `git stash push -u` as the alternative, and a line is appended to `denials.jsonl`.
-- [ ] Given `cd repo && git push origin +main`, when the guard evaluates it, then it is denied (the `+refspec` form).
-- [ ] Given `worktrees.primaryLocked: true` and `git switch develop` run in the primary checkout, then it is denied; the same command in a linked worktree is allowed.
-- [ ] Given `bash -c "rm -rf build"`, then it is denied and the refusal names `trash build`.
-- [ ] Given `npx prisma migrate reset --force`, then it is denied.
-- [ ] Given `allowDestructive: ["git clean -fdX"]` in `harness.json`, then exactly that command is allowed and `git clean -fdx` is still denied.
-- [ ] Given `destructiveCommands: "warn"`, then the command is allowed and the warning is printed and recorded.
-- [ ] Given an agent Edit to `.coding-flow/harness.json`, then it stays refused (existing blocked path), so the agent cannot allow itself.
+- [x] Given `git reset --hard HEAD~1`, when the guard evaluates it, then it is denied with the rule, the files at risk and `git stash push -u` as the alternative, and a line is appended to `denials.jsonl`.
+- [x] Given `cd repo && git push origin +main`, when the guard evaluates it, then it is denied (the `+refspec` form).
+- [x] Given `worktrees.primaryLocked: true` and `git switch develop` run in the primary checkout, then it is denied; the same command in a linked worktree is allowed.
+- [x] Given `bash -c "rm -rf build"`, then it is denied and the refusal names `trash build`.
+- [x] Given `npx prisma migrate reset --force`, then it is denied.
+- [x] Given `allowDestructive: ["git clean -fdX"]` in `harness.json`, then exactly that command is allowed and `git clean -fdx` is still denied.
+- [x] Given `destructiveCommands: "warn"`, then the command is allowed and the warning is printed and recorded.
+- [x] Given an agent Edit to `.coding-flow/harness.json`, then a change that loosens the destructive policy is refused (the file was not a blocked path: see plan.md D2), so the agent cannot allow itself.
 
 ## Edge Cases
 

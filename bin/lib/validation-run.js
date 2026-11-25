@@ -13,6 +13,7 @@ const { cwd } = require("./context");
 const { readConfig } = require("./config");
 const { readStoryPart, resolveProjectPath } = require("./story");
 const { readJson, selectFailureLines } = require("./util");
+const { defaultOf } = require("./rules-registry");
 
 function resolveStoryDir(story) {
   if (!story) {
@@ -244,7 +245,12 @@ function detectCacheState(output) {
   return { cache: "unknown" };
 }
 
-const DEFAULT_COMMAND_TIMEOUT_MS = 600000;
+// The one per-command time limit when the project sets none (story 26-06: it
+// was defined twice, here and in worktree.js). Read at call time from the
+// rules registry, so land's lock sizing and this runner cannot disagree.
+function commandTimeoutDefault() {
+  return defaultOf("validation.timeoutMs");
+}
 
 // Variables a clean-env run drops, by NAME only: the values are never read or recorded.
 const SECRET_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|ACCESS_?KEY)/i;
@@ -305,7 +311,7 @@ function isUnattended() {
 
 function runValidationCommand(
   command,
-  { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env, cwd: runCwd = cwd, keepOutput = false } = {},
+  { timeoutMs = commandTimeoutDefault(), env, cwd: runCwd = cwd, keepOutput = false } = {},
 ) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
@@ -526,11 +532,13 @@ module.exports = {
   resolveStoryDir,
   parseTestsCommands,
   resolveValidationCommands,
+  resolveCheckCommands,
   cleanEnvironment,
   isUnattended,
   isProjectScriptInvocation,
   runValidationCommand,
   commandTimeout,
+  commandTimeoutDefault,
   securityOutcome,
   resultStatus,
   captureEnvironment,

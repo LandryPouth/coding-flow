@@ -22,7 +22,7 @@ const { readStoryPart, readStoryBundle, extractSection } = require("./story");
 const { matchesPattern } = require("./util");
 const { criterionItems, readSpecDrift } = require("./spec-drift");
 const { readPolicyChanged, readBaseHarness } = require("./policy-drift");
-const { defaultHighRiskPaths, defaultNonBehaviorGlobs, defaultHarnessConfig } = require("./harness-config");
+const { defaultHighRiskPaths, defaultNonBehaviorGlobs, defaultHarnessConfig, harnessMode } = require("./harness-config");
 
 // The default non-behavior entries that are also default high-risk paths: the
 // migration and `.sql` globs (story 13-01).
@@ -783,10 +783,15 @@ const NO_CONTRARY = Object.freeze({
 // What the verdict depends on besides the tree: the mode, the flag, and the risk
 // inputs that decide whether "high" applies. `.coding-flow/` is outside the tree
 // token, so an edit to any of them must change this key to re-run a proof.
+// Only an explicit `true` turns contrary signals into a failure.
+function failsOnContrarySignals(config) {
+  return config.failOnContrarySignals === true;
+}
+
 function contraryPolicy(config) {
   return {
-    strict: config.mode === "strict",
-    failOnContrarySignals: config.failOnContrarySignals === true,
+    strict: harnessMode(config) === "strict",
+    failOnContrarySignals: failsOnContrarySignals(config),
     riskTerms: config.highRiskTerms || null,
     riskPaths: config.highRiskPaths || null,
     policyGlobs: config.policyGlobs || null,
@@ -818,27 +823,44 @@ function readBaseConfig() {
   return readBaseHarness(base) || {};
 }
 
+// The config the diff is also scored with: the defaults, with the base's risk
+// keys where the base declares them.
+function baseRiskConfig(atBase) {
+  const baseRisk = { ...defaultHarnessConfig() };
+  for (const key of BASE_RISK_KEYS) {
+    if (atBase && Array.isArray(atBase[key])) baseRisk[key] = atBase[key];
+  }
+  return baseRisk;
+}
+
 // The higher of the tree's risk and the diff scored with the base's risk keys.
 function strictestRisk({ storyDir, config, atBase = readBaseConfig() }) {
   const tree = scoreCombinedRisk({ storyDir, config }).level;
   if (tree === "high" || !atBase) return tree;
 
-  const baseRisk = { ...defaultHarnessConfig() };
-  for (const key of BASE_RISK_KEYS) {
-    if (Array.isArray(atBase[key])) baseRisk[key] = atBase[key];
-  }
-
+  const baseRisk = baseRiskConfig(atBase);
   const atBaseLevel = scoreDiffRisk(riskPathsInDiff(cwd, baseRisk), baseRisk).level;
   return RISK_RANK[atBaseLevel] > RISK_RANK[tree] ? atBaseLevel : tree;
+}
+
+// The contrary-signal policy in force: the tree's (`policy`) and the base's,
+// the stricter wins, so a diff cannot step down from strict or drop
+// failOnContrarySignals to pass itself.
+function contraryPolicyInForce(policy, atBase) {
+  const base = atBase ? contraryPolicy(atBase) : { strict: false, failOnContrarySignals: false };
+  return {
+    strict: policy.strict || base.strict,
+    failOnContrarySignals: policy.failOnContrarySignals || base.failOnContrarySignals,
+  };
 }
 
 // A caller that already scored the risk passes `atBase` and `risk`, so neither
 // is read twice.
 function contraryEnforced({ storyDir, config, policy, atBase = readBaseConfig(), risk = null }) {
-  const basePolicy = atBase ? contraryPolicy(atBase) : { strict: false, failOnContrarySignals: false };
+  const inForce = contraryPolicyInForce(policy, atBase);
 
-  if (policy.strict || basePolicy.strict) return true;
-  if (!policy.failOnContrarySignals && !basePolicy.failOnContrarySignals) return false;
+  if (inForce.strict) return true;
+  if (!inForce.failOnContrarySignals) return false;
 
   return (risk || strictestRisk({ storyDir, config, atBase })) === "high";
 }
@@ -950,6 +972,10 @@ function contraryFailures({ deletedTests, openCriteria, criteriaChanged, specInD
 }
 
 module.exports = {
+  failsOnContrarySignals,
+  contraryPolicyInForce,
+  baseRiskConfig,
+  BASE_RISK_KEYS,
   readAcceptanceCriteria,
   classifyChangedFiles,
   scanTestWeakening,

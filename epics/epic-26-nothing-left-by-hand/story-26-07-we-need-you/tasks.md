@@ -7,6 +7,8 @@
 - [ ] `next`: We need you block above the recommendation, ordering, 5-line cap
       and `later` count, all epics including landed ones, empty-queue message,
       `--json` `needsYou`.
+- [ ] `ai-flow todo` also lists open browser checks and open risks (26-01's
+      register), deferred from 26-02; skip if 26-01 has not landed and say so.
 - [ ] `status` header line; `ship` PR body `Before you deploy`; land, autoland
       and closure print.
 - [ ] `verify` warning and `doctor` check `todo.uncaptured`

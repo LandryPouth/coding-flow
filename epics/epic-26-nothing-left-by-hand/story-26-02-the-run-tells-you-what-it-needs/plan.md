@@ -16,6 +16,54 @@
 
 ## Decisions
 
+- **Split (run decision, 2026-11-24): the reader ships first.** `ai-flow todo`
+  needs nothing that is not there; `notify.command` lives in the user global
+  config, which does not exist until 24-02. This pass ships `bin/lib/todo.js`,
+  the `todo` command, `todo.headings` and their tests; the notify criteria are
+  `[~]` and owned by the notify half, run after 24-02 (`notify.js`,
+  `machine-config.js`, `run.js`, the doctor warning).
+- **One reader for 26-07**: `bin/lib/todo.js` exports `collectTodos(root,
+  { headings })`, `todoHeadings(config)`, `TODO_KINDS` and
+  `DEFAULT_TODO_HEADINGS`. Item kinds: `maintainer`, `needs-you`,
+  `human-owner`, `deferred`; each item has `text`, `source`, and `story` when it
+  comes from one.
+- **Parsing**: a heading counts at any level, case-insensitive; a section ends at
+  the next heading of the same or a higher level; headings and list items inside
+  fenced code are examples; a line indented under an item continues it. A
+  `## Needs you` written as prose is one item. `Owner: human` is read anywhere in
+  the story's files; a `done` story is not listed.
+- **Round 1 fixes**: code blocks (fenced and 4-space indented) are blanked
+  before any section is read; a `## Needs you` keeps its prose paragraphs next
+  to its list items; `Owner: human` must be the whole line; deferred criteria
+  come from `spec.md`/`story.md` only, outside `## Needs you`; `[]` is
+  unchecked; `todo` refuses unknown flags. A done story's `[~]` criteria stay
+  listed: the spec lists deferred criteria without excluding done stories, and a
+  deferral is still a debt (28-01 also turns them into ideas). Stories under
+  `specs/` are not read: `status` and `listEpics` read `epics/` only.
+- **Round 2: one scanner.** Round 1 and round 2 both found code examples read
+  as to-dos, through different readers; so `scanMarkdown` is now the only
+  parser and every reader (to-do sections, Needs you, Owner, `[~]`) filters its
+  blocks. Fences open at any indent (safe side: an unclosed one runs to the end);
+  indented code counts only outside an open list; a heading or a blank line then
+  a margin paragraph closes the list. Finished = `FINISHED_STATUSES` (done,
+  verified, stale), now shared by `story.js` with archive's gate. `Owner: human`
+  is also read in a blockquote and in front matter (`owner:` key, any case).
+  Deferred criteria come only from `## Acceptance Criteria` (the section the
+  coverage gate reads). Needs-you sub-bullets are the parent's `options`.
+  `todo` refuses an extra argument.
+- **Round 3 fixes**: a heading matches when it starts with the configured text
+  followed by the end, a space, `(`, `:`, `—`, `–` or `-` (bethl writes
+  `## À faire côté utilisateur (epics 39 et 40)`); `Owner: human` may carry a
+  one-line reason; blockquoted items and lines are read; HTML comments are
+  skipped like code; a finished story's `## Needs you` is not listed (like its
+  owner). Recorded limits, not changed: a plain `- ` bullet under a to-do
+  heading is not listed (the contract is `- [ ]`; coding-flow's own epics 28-30
+  cleanup bullets are converted separately); a line opening with ``` that also
+  closes on the same line opens a fence (safe side: nothing invented).
+- **Round 4 fixes**: comment markers inside a code span or on a fence's
+  opening line are text; a quoted `> ## Needs you` is not a section heading.
+- **Oldest first** = the epic's number (`epic-9` before `epic-10`), then name.
+
 - **stdin JSON, not arguments**: no quoting bugs, no shell injection from a
   story title.
 
@@ -26,11 +74,23 @@ config attempt; fixture epics with to-dos, Needs you, custom heading.
 
 ## Acceptance Traceability
 
-- 1–3 → `test/notify.test.js`
-- 4–5 → `test/todo.test.js`
+- 1–3 → deferred `[~]` (notify half, after 24-02)
+- 4 → `test/todo.test.js::two epics with maintainer to-dos and a Needs you story are all listed, grouped by epic`
+- 5 → `test/todo.test.js::a project's own heading set in todo.headings is listed too`
 
 ## Commands
 
 ```bash
 npm test
 ```
+
+## Review History
+
+STANDARD, fresh reviewer each round, whole diff:
+
+| Round | Verdict | P1 | Main finding |
+|---|---|---|---|
+| 1 | FAIL | 1 | code fences inside a section read as to-dos |
+| 2 | FAIL | 1 | same class: fence under a list item missed — one scanner behind every reader |
+| 3 | FAIL | 1 | suffixed headings (`## À faire côté utilisateur (epics 39 et 40)`) missed |
+| 4 | PASS | 0 | two P2 fixed with tests (comment marker in a code span; quoted heading) |

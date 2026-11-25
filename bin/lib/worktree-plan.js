@@ -251,9 +251,10 @@ function findRootStoryPath(cwd, epicName, worktreeName) {
 // input `ai-flow harness preflight` would see run from here right now), not
 // once per member; only the story-text half differs member to member.
 function reviewGateReason(cwd, story) {
-  const state = computeReviewStatus(cwd, story.path);
+  const state = computeReviewStatus(cwd, story.path, { strict: true });
 
   if (state === "none") return "review-missing";
+  if (state === "confirming") return "review-unconfirmed";
   if (state === "stale") return "review-stale";
   if (state === "fail") return "review-failed";
   return null;

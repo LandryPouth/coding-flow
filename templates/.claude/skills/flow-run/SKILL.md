@@ -257,6 +257,11 @@ nothing else beyond that, never your own reasoning or conclusion. Frame the prom
 adversarially: find what is wrong with this change, assume the author is
 overconfident.
 
+A review that fails is not closed by a green verify: fix every finding, then run a
+new `/flow-review` round with a fresh reviewer on the whole diff (blind first, then
+the previous findings to confirm), captured with `--round` (`/flow-review` →
+Output). STRICT needs two clean rounds in a row.
+
 ## Common Rationalizations
 
 | Rationalization | Reality |
@@ -290,6 +295,9 @@ Stop and report — do not push through — when:
 - scope is ambiguous enough to cause rework, or the criteria are not testable;
 - the validation commands cannot be identified or run;
 - validation fails for a cause outside the story's scope;
+- a step would destroy work or history (a hard reset, a forced push, a cleaned
+  tree, a reset database): put it under `## Needs you` with what it destroys and
+  how to undo it. A guard refusal is the answer, never something to route around;
 - security-sensitive behavior turns up while not running STRICT;
 - the schema needs a breaking change, or the auth/permission model is unclear;
 - the existing architecture conflicts with the requested implementation;
