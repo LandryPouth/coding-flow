@@ -1135,6 +1135,10 @@ test('series 3 round 3: code or SQL that starts with, substitutes or uses a vari
   const reason = run(dir, `python3 -c "import os; os.system('$(echo rm -rf build)')"`).reason;
   assert.match(reason, /an expansion the guard cannot see/);
   assert.match(run(dir, `Q='DROP TABLE x'; psql -c "$Q"`).reason, /an expansion the guard cannot see/);
+  // A `${…}` that is not a plain name, and a positional parameter, inside double-quoted SQL.
+  expectAll(dir, 'unchecked', ['psql -c "SELECT 1; ${Q:-x}"', 'psql -c "SELECT 1; $1"']);
+  assert.match(run(dir, 'psql -c "SELECT 1; ${Q:-x}"').reason, /an expansion the guard cannot see/);
+  assert.match(run(dir, 'psql -c "SELECT 1; $1"').reason, /an expansion the guard cannot see/);
 });
 
 // The documented cost of the same-line rule: a harmless variable set on the line is unchecked too.

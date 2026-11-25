@@ -515,8 +515,8 @@ Series 3 ends at its cap with the code holding; next: series 4 round 1 after thi
 
 ### Series 4 Round 1 — FAIL (do the tests prove the claims? mutation) — tests only
 
-- [ ] P1 bin/lib/destructive.js:980 — mutant `braced && assigned.has(braced[2])` survives (49/49): `psql -c "SELECT 1; ${Q:-x}"` flips unchecked → allow; `os.system('${X:-rm -rf build}')` can't tell them apart — fix: add `psql -c "SELECT 1; ${Q:-x}"` to the unchecked list (test ~line 1124) and assert the reason matches /an expansion the guard cannot see/.
-- [ ] P1 bin/lib/destructive.js:983 — dropping `|| /[1-9@*]/.test(next)` survives: `psql -c "SELECT 1; $1"` flips to allow (the only positional test is single-quoted) — fix: add `psql -c "SELECT 1; $1"` as unchecked with the same reason check.
-- [ ] P2 CHANGELOG.md:13 — the 29-03 entry (still under [Unreleased]) says interpreter strings are "out of its reach" — fix: append "— partly read since 29-04".
+- [x] P1 bin/lib/destructive.js:980 — mutant `braced && assigned.has(braced[2])` survives (49/49): `psql -c "SELECT 1; ${Q:-x}"` flips unchecked → allow; `os.system('${X:-rm -rf build}')` can't tell them apart — fix: add `psql -c "SELECT 1; ${Q:-x}"` to the unchecked list (test ~line 1124) and assert the reason matches /an expansion the guard cannot see/.
+- [x] P1 bin/lib/destructive.js:983 — dropping `|| /[1-9@*]/.test(next)` survives: `psql -c "SELECT 1; $1"` flips to allow (the only positional test is single-quoted) — fix: add `psql -c "SELECT 1; $1"` as unchecked with the same reason check.
+- [x] P2 CHANGELOG.md:13 — the 29-03 entry (still under [Unreleased]) says interpreter strings are "out of its reach" — fix: append "— partly read since 29-04".
 
 Held: 19/21 mutants caught; all 8 criteria have deciding tests; frozen side unchanged; no test weakened.
