@@ -39,6 +39,22 @@
   replaces it with a new file and says so. A file parsing to a non-object
   counts as existing.
 
+- **D7 — harness.json is a user's file in every shape** (review round 2).
+  `harnessFileState` (harness-config.js) reads it with `lstat`: absent, a
+  symbolic link (dangling or not), not a regular file, unparsable, or parsed.
+  `harness init` never replaces a directory or a symbolic link, even with
+  `--force` (it names the file, exit 1; a link to a readable file without
+  `--force` is "already exists", as before); `--force --dry-run` on an
+  unparsable file says it would replace it. `init`/`upgrade` create the file
+  only when nothing is there, and `init` warns, with the fix, when it keeps a
+  file it cannot use. `writeJson` removes its staging file when the rename
+  fails. A file parsing to `null`, `[]` or a number exists for
+  `readHarnessConfig` too (it was "absent" for `null`), holds no setting, and is
+  replaced by `harness init --force` with a new file (the two keys included).
+  Fingerprint: unchanged for all of these except a file holding a non-empty
+  array or a string, whose items were spread into the policy as keys (`"0"`)
+  — a nonsense file, now read as the defaults.
+
 ## Tests changed
 
 Two 26-06 tests pinned that `init` writes no `coverageFloor` when proofs exist
@@ -53,3 +69,18 @@ in only one before) and, across real checkouts, in
 `init` writing `config.json` for the first time moves the fingerprint on its own
 (its `validation` block), before and after this story. A project with recorded
 proofs already has its `config.json`, so this does not touch the criteria.
+
+Tests that passed on the code before their change, kept as pins of behaviour
+the story relies on: `harness init --force on a file that already shows the
+keys keeps the fingerprint`, `a non-default coverageFloor or
+failOnContrarySignals still moves the fingerprint`, `a partial coverageFloor,
+even at default values, moves the fingerprint` (D3).
+
+## Review history
+
+- Round 1 (general lens): PASS, P1 0; 3 P2 fixed (CHANGELOG cost, partial
+  floor test, unparsable file overwritten without `--force`). STRICT
+  (the fingerprint is proof integrity): a second clean round required.
+- Round 2 (user-files lens, mutation-checked): PASS, P1 0; 6 P2 fixed (D7).
+- P1 per round: 0 / 0.
+

@@ -182,3 +182,95 @@ test('harness init does not overwrite a harness.json that parses to a non-object
   assert.match(res.out, /already exists/);
   assert.equal(fs.readFileSync(file, 'utf8'), 'null');
 });
+
+// Review round 2: harness.json is a user's file in every shape it can take.
+function harnessPath(dir) {
+  const file = path.join(dir, '.coding-flow', 'harness.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  return file;
+}
+
+test('harness init --force --dry-run on an unparsable file says it would replace it, and writes nothing', (t) => {
+  const dir = repo(t);
+  const file = harnessPath(dir);
+  fs.writeFileSync(file, '{"mode":');
+  const res = cli(dir, ['harness', 'init', '--force', '--dry-run']);
+  assert.equal(res.code, 0, res.out);
+  assert.match(res.out, /would replace .*harness\.json/i);
+  assert.equal(fs.readFileSync(file, 'utf8'), '{"mode":');
+});
+
+test('a harness.json that is a directory is refused, even with --force, and leaves no temporary file', (t) => {
+  const dir = repo(t);
+  fs.mkdirSync(harnessPath(dir));
+  for (const args of [['harness', 'init'], ['harness', 'init', '--force']]) {
+    const res = cli(dir, args);
+    assert.equal(res.code, 1, args.join(' '));
+    assert.match(res.out, /harness\.json is not a regular file/, args.join(' '));
+    assert.doesNotMatch(res.out, /Coding Flow bug/, args.join(' '));
+  }
+  assert.deepEqual(fs.readdirSync(path.join(dir, '.coding-flow')).filter((name) => name.endsWith('.tmp')), []);
+});
+
+test('writeJson removes its temporary file when the rename fails', (t) => {
+  const { writeJson } = require('../bin/lib/util');
+  const dir = tmp(t);
+  const target = path.join(dir, 'taken');
+  fs.mkdirSync(target);
+  fs.writeFileSync(path.join(target, 'x'), '1');
+  assert.throws(() => writeJson(target, { a: 1 }));
+  assert.deepEqual(fs.readdirSync(dir), ['taken']);
+});
+
+test('a symlinked harness.json is never replaced, dangling or not', (t) => {
+  const dir = repo(t);
+  const file = harnessPath(dir);
+  fs.symlinkSync(path.join(dir, 'missing.json'), file);
+  for (const args of [['harness', 'init'], ['harness', 'init', '--force']]) {
+    const res = cli(dir, args);
+    assert.equal(res.code, 1, args.join(' '));
+    assert.match(res.out, /symbolic link/, args.join(' '));
+    assert.ok(fs.lstatSync(file).isSymbolicLink(), args.join(' '));
+  }
+  const init = cli(dir, ['init', '--minimal']);
+  assert.equal(init.code, 0, init.out);
+  assert.ok(fs.lstatSync(file).isSymbolicLink(), 'init keeps the link');
+  assert.equal(fs.existsSync(path.join(dir, 'missing.json')), false, 'nothing written through the link');
+
+  const target = path.join(dir, 'policy.json');
+  fs.writeFileSync(target, '{"mode":"strict"}');
+  fs.unlinkSync(file);
+  fs.symlinkSync(target, file);
+  const forced = cli(dir, ['harness', 'init', '--force']);
+  assert.equal(forced.code, 1, forced.out);
+  assert.equal(fs.readFileSync(target, 'utf8'), '{"mode":"strict"}', 'the linked file is untouched');
+});
+
+test('null and [] both count as an existing harness.json, and --force writes a new file over them', (t) => {
+  const { readHarnessConfig } = require('../bin/lib/harness-config');
+  for (const text of ['null', '[]', '[1]']) {
+    const dir = repo(t);
+    const file = harnessPath(dir);
+    fs.writeFileSync(file, text);
+    const read = readHarnessConfig(dir);
+    assert.equal(read.exists, true, text);
+    assert.equal(read.config['0'], undefined, text);
+
+    const res = cli(dir, ['harness', 'init', '--force']);
+    assert.equal(res.code, 0, res.out);
+    assert.equal(written(dir).failOnContrarySignals, false, text);
+  }
+});
+
+for (const args of [['init', '--minimal'], ['init']]) {
+  test(`${args.join(' ')} keeps an unparsable harness.json and warns how to fix it`, (t) => {
+    const dir = repo(t);
+    const file = harnessPath(dir);
+    fs.writeFileSync(file, '{"mode":');
+    const res = cli(dir, args);
+    assert.equal(res.code, 0, res.out);
+    assert.equal(fs.readFileSync(file, 'utf8'), '{"mode":');
+    assert.match(res.out, /harness\.json cannot be read/);
+    assert.match(res.out, /harness init --force/);
+  });
+}

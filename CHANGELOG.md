@@ -28,7 +28,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
-- **`harness init` no longer overwrites a `harness.json` it cannot parse** (story 26-08's review). The file was read as missing and replaced with the defaults, without `--force`. It is now refused, naming the file and the parse error, with a non-zero exit (`--dry-run` included); `--force` replaces it and says so. A file that parses to something other than an object (`null`, an array) counts as existing too.
+- **`harness init` no longer overwrites a `harness.json` it cannot parse** (story 26-08's review). The file was read as missing and replaced with the defaults, without `--force`. It is now refused, naming the file and the parse error, with a non-zero exit (`--dry-run` included); `--force` replaces it and says so. A file that parses to something other than an object (`null`, an array) counts as existing too, and `--force` writes a new file over it. `harness init` never replaces a `harness.json` that is a directory or a symbolic link (dangling or not), even with `--force`; `--force --dry-run` says what it would replace; `init` keeps a `harness.json` it cannot use and warns how to fix it; a failed write no longer leaves a `harness.json.<pid>.<random>.tmp` behind.
 
 ## [0.15.0] - 2026-11-22
 
