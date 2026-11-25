@@ -135,6 +135,15 @@ The checkout comparisons themselves (`primaryLock`, `effectiveDestructivePolicy`
 - [x] P2 validation-run.js:371-373 — a live descendant can start a child between the listing and `taskkill` (no `/T`), which survives — fix: list-and-kill twice, or `/T` on pids known alive.
 - [x] P3 LIST_PROCESSES — `CreationDate` local time cast to `[DateTimeOffset]` is ambiguous in the repeated DST hour → no kill — fix: use UTC (`ToUniversalTime()` / `CreationDate` via CIM as DateTime UTC) if cheap, else document.
 
+### Round 4 — PASS (the guard and verify on Windows end to end; round-3 regressions)
+
+- [ ] P2 test/windows-paths.test.js:49 and :158 — the impostor's child sits outside the `until` bound in both tests (+600 vs ENDED+50, killedAt+1100 vs killedAt+50), so removing the impostor check (`before`) in either pass keeps them green — fix: put the child inside the window (e.g. ENDED+20) and add the same case for the second pass; prove each fails without the check.
+- [ ] P3 CHANGELOG.md:70 / validation-run.js:~340 — the pid-reuse window is "between its death and 50 ms after the kill returned", not "within those 50 ms" — reword.
+- [ ] P3 shell-writes.js:1259 — `followScript` calls the nested `shellWrites` without `platform`; pass it through.
+
+Held: Git Bash paths (`/x/…`, `/cygdrive/x/…`, `~`) across cd/pushd, git -C, globs and find; `durationMs` excludes the kill; Linux/macOS unchanged; UTC cast; second pass spares a surviving root; 18/18.
+Series 1 ends at its cap with round 4 clean; STRICT needs a second clean round → series 2 round 1 after this fix.
+
 ## Acceptance Criteria
 
 - [ ] Given a path written as Git Bash writes it (`/c/…`, `/cygdrive/d/…`,
