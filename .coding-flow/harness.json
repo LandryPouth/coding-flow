@@ -96,6 +96,7 @@
     "bin/lib/evidence.js",
     "bin/lib/identity.js",
     "bin/lib/policy-fingerprint.js",
+    "bin/lib/read-memo.js",
     "templates/.opencode/**",
     "bin/lib/opencode.js",
     "bin/lib/codex-settings.js",

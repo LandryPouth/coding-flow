@@ -28,6 +28,7 @@ const {
 } = require("./harness");
 const { collectRecovery } = require("./recover");
 const { epicNumbers } = require("./epic-numbers");
+const { withReadMemo } = require("./read-memo");
 
 // Indexes the worktrees by branch name. The worktree<->story mapping is
 // stateless: `worktree add --story` names the branch after the story directory,
@@ -245,7 +246,13 @@ function looseWorktreeList(entries, mappedBranches) {
 // The read model behind `status` — epics/stories enriched with their linked
 // worktree, loose worktrees, and the branch policy. Extracted so other reporting
 // commands (`next`) can read the exact same state without re-deriving it.
+// Read-only: the checkout's facts (tree token, run files) are read once, not
+// once per story (story 34-02, read-memo.js).
 function buildStatusModel(config) {
+  return withReadMemo(() => readStatusModel(config));
+}
+
+function readStatusModel(config) {
   const storage = getStorage(cwd, config);
   const wt = buildWorktreeIndex();
   const mappedBranches = new Set();

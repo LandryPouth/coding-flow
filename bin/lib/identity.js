@@ -11,6 +11,8 @@ const path = require("path");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 
+const { remember } = require("./read-memo");
+
 // Runs a command and returns trimmed stdout, or null on failure. No exception
 // propagates: provenance must never break an evidence.
 function tryExec(bin, args, cwd, env = undefined) {
@@ -180,8 +182,9 @@ function computeTreeToken(cwd) {
 
 // Recomputes the working-tree token for the current state, for freshness checks
 // (status / audit --check). Same primitive stored in an evidence's provenance.
+// Computed once per checkout while a read-only report is built (read-memo.js).
 function currentTreeToken(cwd) {
-  return computeTreeToken(cwd);
+  return remember("treeToken", path.resolve(cwd), () => computeTreeToken(cwd));
 }
 
 function captureHost() {

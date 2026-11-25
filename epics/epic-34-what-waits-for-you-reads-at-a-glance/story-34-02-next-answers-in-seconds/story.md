@@ -1,5 +1,7 @@
 # Story 34-02 — `next` answers in seconds
 
+## Status: in-progress
+
 ## User Value
 
 On a repository with ~190 stories (bethl), `ai-flow next` answers in a few
@@ -31,13 +33,13 @@ seconds instead of minutes, so the maintainer and the agents actually use it.
 
 ## Acceptance Criteria
 
-- [ ] Given a read-only clone of bethl, when `ai-flow next` runs, then it
+- [x] Given a read-only clone of bethl, when `ai-flow next` runs, then it
       answers in under 5 s on the maintainer's machine (time recorded in the
       Result, before and after, with the profile's top frames).
-- [ ] Given the same clone, when `ai-flow status --json` and `ai-flow next
+- [x] Given the same clone, when `ai-flow status --json` and `ai-flow next
       --all --json` run before and after the change, then their outputs are
       identical (diffed in a test fixture or recorded in the Result).
-- [ ] Given a generated repository with 200 stories in a throwaway directory,
+- [x] Given a generated repository with 200 stories in a throwaway directory,
       when `next` runs, then the number of git processes it spawns does not
       grow with the number of stories (asserted by counting spawns through a
       test hook or a wrapped `git` on PATH).
@@ -51,3 +53,55 @@ npm test
 ```
 
 ## Result
+
+Measured on a read-only `git clone --no-hardlinks` of bethl at `97437575`
+(46 epics, 214 stories, 1 048 run files / 20 MB, no linked worktree), on the
+maintainer's machine, from the HEAD tree (`git archive`) vs this change.
+
+| `ai-flow next` | before | after |
+|---|---|---|
+| wall time (`/usr/bin/time`) | 124.3 s | 2.50 s, 2.67 s, 3.04 s (then 2.72 / 2.47 / 2.89 s once the to-do scan shares the memo) |
+| CPU profile total | 90.5 s | 2.16 s |
+| git spawns, generated repo 20 / 200 stories (test) | 141 / 1 131 | 28 / 28 |
+
+Top frames before (`node --cpu-prof`, inclusive): `buildQueue` 88.4 s →
+`currentTreeToken`/`computeTreeToken` 76.9 s (→ `workingTreeTree` 59.9 s),
+`buildStatusModel` 57.9 s, `proofOf`/`storyProof` 30.0 s,
+`computeReviewStatus` 18.4 s; self time `spawnSync` 75.9 s.
+
+Top frames after: `next` 1.81 s → `buildStatusModel` 1.18 s, of which reading
+the run files once (`collectAll`/`entryFromRunFile`) is most of the rest; the
+to-do scan (`collectNeedsYou`) ~0.5 s; self time `spawnSync` 0.39 s (the git
+calls left are per checkout, not per story). Module loading is ~0.5 s.
+
+What changed: `bin/lib/read-memo.js` (`withReadMemo`, `remember`) holds, for one
+synchronous read, the facts of a checkout keyed by its resolved path: the tree
+token (`identity.currentTreeToken`), the current branch (`policy.currentBranch`),
+the policy fingerprint, and the latest verify/review per story dir
+(`audit.latestVerifyByStoryDir`/`latestReviewByStoryDir`). Outside a memo,
+`remember` computes every time, so verify, land, worktree, archive, claim,
+coverage and `todo done` behave exactly as before. Only `buildStatusModel` and
+`next` (queue + to-do scan) open the memo; it is dropped when they return, so
+`archive` — which builds the model then writes — writes after the memo is gone.
+`storyProof`/`proofOf` now hit the same memo as the status model instead of a
+second pass of git. No file, no daemon.
+
+Identical output: `status --json` (116 820 bytes), `next --all --json`
+(90 577 bytes), `next` text and both stderr streams were byte-identical
+before/after (`cmp`, no masking needed); the clone stayed clean.
+
+Spawn test: `test/next-spawns.test.js` puts a counting `git` wrapper first on
+PATH and runs `next --all --json` on generated repositories of 20 and 200
+stories; it failed on HEAD (`141 for 20, 1131 for 200`) and passes now (28/28).
+`test/layering.test.js` lists `read-memo` as core (identity and audit use it).
+
+
+Verify (one run, `.coding-flow/runs/2026-11-25T21-56-33-108Z-verify.json`):
+red, 2134 pass / 1 fail — `test/security-core-risk.test.js` asks every module a
+high-risk module requires to be high-risk itself, and `read-memo.js` (required
+by `identity.js` and `audit.js`) was not. Fixed by adding it to this
+repository's `highRiskPaths` (it decides which tree token a proof is judged
+against); that test and `weakened-tests.test.js` pass since (70 pass, the
+known 19-08 TODO). Not re-verified: the npm-test criterion stays open until the
+next verify. Adding the path changes this repository's policy fingerprint, so
+its earlier proofs read "policy changed".

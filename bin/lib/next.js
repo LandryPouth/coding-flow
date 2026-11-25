@@ -35,6 +35,7 @@ const { defaultOf } = require("./rules-registry");
 const { defaultBranch, currentBranch } = require("./policy");
 const { resolveDiffBase } = require("./diff-base");
 const { collectNeedsYou } = require("./todo");
+const { withReadMemo } = require("./read-memo");
 
 const TIER_LABELS = {
   1: "blocked",
@@ -156,7 +157,12 @@ function recoveryItems(model) {
   return items;
 }
 
+// Read-only: shares one memo with the status model it builds (story 34-02).
 function buildQueue() {
+  return withReadMemo(readQueue);
+}
+
+function readQueue() {
   const config = readConfig(cwd);
   const model = buildStatusModel(config);
   // Proof is read where the story's work is: a story with a linked worktree
@@ -284,8 +290,8 @@ function printNeedsYouLines(entries) {
 }
 
 function next({ all = false, json = false } = {}) {
-  const items = buildQueue();
-  const needsYou = collectNeedsYou(cwd);
+  // One memo for both reads: the to-do scan lists the same epics again.
+  const { items, needsYou } = withReadMemo(() => ({ items: buildQueue(), needsYou: collectNeedsYou(cwd) }));
 
   if (json) {
     log(JSON.stringify({ items: all ? items : items.slice(0, 1), needsYou }, null, 2));
