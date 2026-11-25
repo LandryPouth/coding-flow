@@ -30,10 +30,10 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { defaultHarnessConfig } = require("./harness-config");
+const { defaultHarnessConfig, harnessMode } = require("./harness-config");
 const { getSecretPatterns, findSecretsInContent, isHeuristicAllowlisted } = require("./security-policy");
 const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./util");
-const { shellWrites: readShellWrites, splitSegments, tokenize, expandHome: expandHomeIn, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE } = require("./shell-writes");
+const { shellWrites: readShellWrites, splitSegments, tokenize, commandOf, expandHome: expandHomeIn, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE } = require("./shell-writes");
 
 // Tools that write to disk through a structured file_path. The others (Read,
 // Grep…) are not our business here: immediate allow.
@@ -143,8 +143,74 @@ function loadPolicy(root) {
     secretScanAllowlist: pick("secretScanAllowlist"),
     // Only an explicit "strict" tightens the guard; anything else (absent, unreadable,
     // a typo) is the standard posture, so a broken file never locks anyone out.
-    mode: config && config.mode === "strict" ? "strict" : "standard",
+    mode: harnessMode(config) === "strict" ? "strict" : "standard",
+    ...destructivePolicy(config),
     unreadable,
+  };
+}
+
+// Story 29-03. Anything but an explicit "warn" or "off" is "deny": a typo or a
+// broken file never disarms the check. The allow list holds exact command
+// prefixes, word by word.
+const DESTRUCTIVE_MODES = ["deny", "warn", "off"];
+
+// An entry that names no command (`*`) or only a verb (`rm *`) would turn the check
+// off for it: ignored, and named in the refusal.
+// A trailing `*` needs an operand before it: `rm -rf *`, `git clean *`, `git clean -fdX *`
+// are verbs and flags only (a git subcommand counts with the verb).
+function TOO_BROAD(entry) {
+  const words = entry.trim().split(/\s+/);
+  if (words[words.length - 1] !== "*") {
+    return false;
+  }
+  const named = words.slice(0, -1).filter((word) => !word.startsWith("-"));
+  return named.length < (named[0] === "git" ? 3 : 2);
+}
+
+function destructivePolicy(config) {
+  const valid = config && typeof config === "object" && !Array.isArray(config);
+  const entries = valid && Array.isArray(config.allowDestructive) ? config.allowDestructive.filter((entry) => typeof entry === "string" && entry.trim()) : [];
+  return {
+    destructiveCommands: valid && DESTRUCTIVE_MODES.includes(config.destructiveCommands) ? config.destructiveCommands : "deny",
+    allowDestructive: entries.filter((entry) => !TOO_BROAD(entry)),
+    ignoredAllow: entries.filter(TOO_BROAD),
+    primaryLocked: Boolean(valid && config.worktrees && typeof config.worktrees === "object" && config.worktrees.primaryLocked === true),
+  };
+}
+
+// Whether the primary checkout is locked for a call made under `policy` (the
+// policy of the checkout the call runs from). Locked by that policy, or by the
+// primary checkout's own (`git -C <primary> switch` from a linked worktree).
+// A policy file that cannot be read keeps the lock: `chmod 000` or a broken
+// edit must not open the primary checkout. `by` names what decided it.
+function primaryLock(policy, primaryRoot) {
+  const own = loadPolicy(primaryRoot);
+  const unreadable = policy.unreadable || own.unreadable;
+  let by = null;
+  if (policy.unreadable) by = "unreadable";
+  else if (own.unreadable) by = "primary-unreadable";
+  else if (policy.primaryLocked) by = "policy";
+  else if (own.primaryLocked) by = "primary";
+  return { locked: Boolean(by), unreadable, by };
+}
+
+// The destructive-command policy as the guard applies it to a call run from
+// `root`: its own policy, and the primary checkout's lock combined as above.
+// `ai-flow rules` prints this (story 26-06) rather than reading the file itself.
+function effectiveDestructivePolicy(root) {
+  const policy = loadPolicy(root);
+  const { out } = gitNow(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  const commonDir = (out || "").trim();
+  const primaryRoot = commonDir ? path.dirname(path.resolve(commonDir)) : root;
+  const lock = primaryLock(policy, primaryRoot);
+  return {
+    destructiveCommands: policy.destructiveCommands,
+    allowDestructive: policy.allowDestructive,
+    ignoredAllow: policy.ignoredAllow,
+    primaryLocked: lock.locked,
+    lockedBy: lock.by,
+    unreadable: policy.unreadable,
+    primaryRoot,
   };
 }
 
@@ -515,6 +581,24 @@ function viaNote(found, given) {
 const CASE_INSENSITIVE = process.platform === "win32" || process.platform === "darwin";
 
 // Pure decision: from the hook input + root, returns allow/deny + reason.
+// A nested root's policy applies only to a target inside it (its allowlist
+// cannot judge a `$HOME`-relative name); the governing one always applies.
+function secretInWrite(named, content) {
+  return named
+    .filter(({ names }, index) => index === 0 || names.some((entry) => entry.inside))
+    .map(({ scope, names }) =>
+      findSecretsInContent(content, getSecretPatterns(scope.policy), {
+        // Every name must be allowlisted: `docs/notes.md -> ../src/app.js` writes
+        // into src/, and the docs allowance does not travel through the link.
+        skipHeuristics: names.length > 0 && names.every((entry) => {
+          return isHeuristicAllowlisted(entry.relative, scope.policy);
+        }),
+        first: true,
+      })[0],
+    )
+    .find(Boolean);
+}
+
 function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   if (!hook || typeof hook !== "object" || Array.isArray(hook)) {
     return { decision: "unchecked", reason: "no parseable hook input" };
@@ -547,6 +631,12 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   const relative = filePath ? normalizePortable(path.relative(ctx.root, path.resolve(ctx.cwd, filePath))) : null;
   const named = ctx.scopes.map((scope) => ({ scope, names: filePath ? resolveTargets(ctx, scope, filePath) : [] }));
 
+  // Check 0 — the agent does not loosen what it may destroy (story 29-03).
+  const loosened = named.map(({ scope, names }) => policyLoosening(scope, names, toolName, toolInput, caseInsensitive)).find(Boolean);
+  if (loosened) {
+    return { decision: "deny", reason: loosened, path: POLICY_FILE };
+  }
+
   // Check 1 — path blocked by the policy of any root the target answers to.
   for (const { scope, names } of named) {
     const found = firstHit(names, scope.policy, caseInsensitive);
@@ -565,21 +655,7 @@ function decide(hook, root, { caseInsensitive = CASE_INSENSITIVE } = {}) {
   // placeholder in an example is not a leak, an AWS key in one still is.
   const content = writtenContent(toolName, toolInput);
 
-  // A nested root's policy applies only to a target inside it (its allowlist
-  // cannot judge a `$HOME`-relative name); the governing one always applies.
-  const secret = !content
-    ? null
-    : named
-        .filter(({ names }, index) => index === 0 || names.some((entry) => entry.inside))
-        .map(({ scope, names }) =>
-          findSecretsInContent(content, getSecretPatterns(scope.policy), {
-            // Every name must be allowlisted: `docs/notes.md -> ../src/app.js` writes
-            // into src/, and the docs allowance does not travel through the link.
-            skipHeuristics: names.length > 0 && names.every((entry) => isHeuristicAllowlisted(entry.relative, scope.policy)),
-            first: true,
-          })[0],
-        )
-        .find(Boolean);
+  const secret = content ? secretInWrite(named, content) : null;
 
   if (secret) {
     return {
@@ -740,6 +816,495 @@ function denialFor(entry, found) {
   }
 }
 
+// --- destructive commands (story 29-03) ------------------------------------------
+//
+// `destructive.js` reads which commands of the line destroy work or history;
+// here the disk settles what it cannot (is the path modified, is this the
+// primary checkout), and the governing policy says deny, warn or off.
+
+const POLICY_FILE = ".coding-flow/harness.json";
+// The same words as `destructive.js`, which is required only on the Bash path
+// (the guard's module graph stays small on a Write).
+const DESTRUCTIVE_EXPANSION = "a destructive-command check depends on shell expansion";
+const DESTRUCTIVE_UNKNOWN_CWD = "a destructive-command check depends on a working directory set by shell expansion";
+const MODE_RANK = { off: 0, warn: 1, deny: 2 };
+
+// The destructive policy a harness.json text would give, as `loadPolicy` reads it.
+function destructivePolicyOf(text) {
+  let config = null;
+  try {
+    config = text === null ? null : JSON.parse(text.replace(/^﻿/, ""));
+  } catch {
+    config = null;
+  }
+  return destructivePolicy(config);
+}
+
+function loosens(before, after) {
+  return (
+    MODE_RANK[after.destructiveCommands] < MODE_RANK[before.destructiveCommands] ||
+    after.allowDestructive.some((entry) => !before.allowDestructive.includes(entry)) ||
+    (before.primaryLocked && !after.primaryLocked)
+  );
+}
+
+function readTextOrNull(file) {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+// The file a write tool leaves, or undefined when it cannot be told (an Edit
+// whose old text is not there fails on its own).
+function afterWrite(toolName, input, before) {
+  if (toolName === "Write") {
+    return typeof input.content === "string" ? input.content : undefined;
+  }
+  const edits = toolName === "MultiEdit" ? (Array.isArray(input.edits) ? input.edits : []) : [input];
+  let text = before;
+  for (const edit of edits) {
+    if (text === null || !edit || typeof edit.old_string !== "string" || typeof edit.new_string !== "string" || !text.includes(edit.old_string)) {
+      return undefined;
+    }
+    text = edit.replace_all ? text.split(edit.old_string).join(edit.new_string) : text.replace(edit.old_string, () => edit.new_string);
+  }
+  return text;
+}
+
+// A write tool may edit the policy file — the user repairs it through their
+// agent, strict or not — but not to loosen what the agent may destroy: that
+// is the human's edit.
+function isPolicyName(entry, caseInsensitive) {
+  return entry.inside && (caseInsensitive ? entry.relative.toLowerCase() === POLICY_FILE : entry.relative === POLICY_FILE);
+}
+
+function policyLoosening(scope, names, toolName, input, caseInsensitive) {
+  if (!names.some((entry) => isPolicyName(entry, caseInsensitive))) {
+    return null;
+  }
+  // A notebook edit can only break the file: nothing a repair needs.
+  if (toolName === "NotebookEdit") {
+    return `a notebook edit of ${POLICY_FILE} is refused: the policy file is edited with Write or Edit, or by the human.`;
+  }
+  const file = path.join(scope.root, POLICY_FILE);
+  const before = readTextOrNull(file);
+  const after = afterWrite(toolName, input || {}, before);
+  if (after === undefined || !loosens(destructivePolicyOf(before), destructivePolicyOf(after))) {
+    return null;
+  }
+  return `this edit loosens the destructive-command policy in ${POLICY_FILE} (destructiveCommands, allowDestructive, worktrees.primaryLocked). What the agent may destroy is the human's decision: ask them to make this edit.`;
+}
+
+// A shell command that removes, moves or overwrites the policy file (or a
+// directory holding it) brings the defaults back, and a project's
+// primaryLocked goes with them. Read through `cd`, `bash -c`, `xargs` as the
+// destructive commands are. A glob is matched against the file and its
+// directories; a path built by an expansion that may name it is unchecked.
+const GLOB = /[*?[{]/;
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+
+const POSIX_CLASSES = { alpha: "a-zA-Z", digit: "0-9", alnum: "a-zA-Z0-9", upper: "A-Z", lower: "a-z", space: "\\s", blank: " \\t", xdigit: "0-9A-Fa-f", word: "\\w" };
+
+// `[…]` at `i`: `{ source, end }`; `{ literal: true }` when it does not close (a
+// plain `[`); null when it cannot be modelled (`[z-a]`, `[[:punct:]]`, `[[=a=]]`).
+function bracketAt(pattern, i) {
+  let j = i + 1;
+  const negate = pattern[j] === "!" || pattern[j] === "^";
+  j += negate ? 1 : 0;
+  let body = "";
+  for (const first = j; j < pattern.length; j += 1) {
+    const ch = pattern[j];
+    if (ch === "]" && j > first) {
+      const source = `[${negate ? "^" : ""}${body}]`;
+      try {
+        new RegExp(source);
+      } catch {
+        return null;
+      }
+      return { source, end: j };
+    }
+    if (ch === "[" && /[:=.]/.test(pattern[j + 1] || "")) {
+      const close = pattern.indexOf(`${pattern[j + 1]}]`, j + 2);
+      const named = close === -1 || pattern[j + 1] !== ":" ? undefined : POSIX_CLASSES[pattern.slice(j + 2, close)];
+      if (named === undefined) {
+        return null;
+      }
+      body += named;
+      j = close + 1;
+    } else if (ch === "\\") {
+      body += `\\${pattern[j + 1] || "\\"}`;
+      j += 1;
+    } else {
+      body += /[\]\\^[]/.test(ch) ? `\\${ch}` : ch;
+    }
+  }
+  return { literal: true };
+}
+
+// `{a,b}` at `i`: its alternatives and end; null when it is not a brace
+// expansion (no comma, no close).
+function braceAt(pattern, i) {
+  let depth = 0;
+  let start = i + 1;
+  const parts = [];
+  for (let j = i; j < pattern.length; j += 1) {
+    const ch = pattern[j];
+    if (ch === "\\") {
+      j += 1;
+    } else if (ch === "{") {
+      depth += 1;
+    } else if (ch === "," && depth === 1) {
+      parts.push(pattern.slice(start, j));
+      start = j + 1;
+    } else if (ch === "}" && (depth -= 1) === 0) {
+      parts.push(pattern.slice(start, j));
+      return parts.length > 1 ? { parts, end: j } : null;
+    }
+  }
+  return null;
+}
+
+// A shell glob as a regex source, or null when it cannot be modelled: the
+// caller reads that as matching. `find -path` lets `*` and `?` cross a `/`.
+function globSource(pattern, crosses) {
+  let out = "";
+  for (let i = 0; i < pattern.length; i += 1) {
+    const ch = pattern[i];
+    if (ch === "*") {
+      out += crosses ? ".*" : "[^/]*";
+    } else if (ch === "?") {
+      out += crosses ? "." : "[^/]";
+    } else if (ch === "\\") {
+      out += escapeRegex(pattern[i + 1] || "\\");
+      i += 1;
+    } else if (ch === "[") {
+      const bracket = bracketAt(pattern, i);
+      if (bracket === null) {
+        return null;
+      }
+      out += bracket.literal ? "\\[" : bracket.source;
+      i = bracket.literal ? i : bracket.end;
+    } else if (ch === "{" && braceAt(pattern, i)) {
+      const brace = braceAt(pattern, i);
+      const alternatives = brace.parts.map((part) => globSource(part, crosses));
+      if (alternatives.includes(null)) {
+        return null;
+      }
+      out += `(?:${alternatives.join("|")})`;
+      i = brace.end;
+    } else if (ch === "{" && /^\{[^{}]*\.\.[^{}]*\}/.test(pattern.slice(i))) {
+      return null; // a sequence, `{a..z}`
+    } else {
+      out += escapeRegex(ch);
+    }
+  }
+  return out;
+}
+
+// The glob as a RegExp, or null (matches anything) when it cannot be modelled.
+function globRegex(pattern, caseInsensitive, crosses = false) {
+  const source = globSource(pattern, crosses);
+  try {
+    return source === null ? null : new RegExp(`^${source}$`, caseInsensitive ? "i" : "");
+  } catch {
+    return null;
+  }
+}
+
+const globMatches = (regex, text) => regex === null || regex.test(text);
+
+// An operand glob made absolute: its directory escaped, so a `[` in the
+// directory's name is not a class; leading `..` resolved.
+function absoluteGlob(cwd, operand) {
+  const parts = path.posix.normalize(slashed(operand)).split("/");
+  let lead = 0;
+  while (parts[lead] === "..") {
+    lead += 1;
+  }
+  const base = path.isAbsolute(operand) ? "" : `${slashed(path.resolve(cwd, ...parts.slice(0, lead))).replace(/[*?[{\\]/g, "\\$&")}/`;
+  return base + parts.slice(lead).join("/");
+}
+
+function slashed(file) {
+  return file.split(path.sep).join("/");
+}
+
+// The policy file of each scope — and of its primary checkout, which a linked
+// worktree's write tools may not loosen either — and the directories that hold it.
+function policyPaths(ctx) {
+  const files = new Set();
+  for (const scope of ctx.scopes) {
+    for (const root of [scope.root, scope.realRoot, scope.primary].filter(Boolean)) {
+      files.add(path.join(root, POLICY_FILE));
+    }
+  }
+  return [...files].map((file) => ({ file, holders: [path.dirname(file), path.dirname(path.dirname(file))] }));
+}
+
+// "write" reaches the file itself; "remove" and "link" (a link to it, through
+// which a later step cannot be followed) also reach a directory holding it.
+function reaches(cwd, operand, mode, policies, caseInsensitive) {
+  const fold = (text) => (caseInsensitive ? text.toLowerCase() : text);
+  const holds = mode === "remove" || mode === "link";
+  if (GLOB.test(operand)) {
+    const pattern = globRegex(absoluteGlob(cwd, expandHome(operand)), caseInsensitive);
+    return policies.some(({ file, holders }) => globMatches(pattern, slashed(file)) || (holds && holders.some((holder) => globMatches(pattern, slashed(holder)))));
+  }
+  const target = path.resolve(cwd, expandHome(operand));
+  const real = realPathOf(target);
+  return policies.some(({ file }) => [target, real].filter(Boolean).some((at) => fold(at) === fold(file) || (holds && fold(file).startsWith(fold(at).replace(/[\\/]?$/, path.sep)))));
+}
+
+// `find START… -delete` reaches the file when a start holds it and its name
+// tests (none, or one that matches) let it through.
+function findReaches(cwd, { starts, tests }, policies, caseInsensitive) {
+  return starts.some((start) => {
+    const from = path.resolve(cwd, expandHome(start));
+    return policies.some(({ file }) => {
+      const inside = path.relative(from, file);
+      if (inside.startsWith("..") || path.isAbsolute(inside)) {
+        return false;
+      }
+      // As find prints it: the start as typed, then the path under it (`./.coding-flow/…`).
+      const shown = inside ? `${start.replace(/\/+$/, "")}/${slashed(inside)}` : start;
+      return (
+        tests.length === 0 ||
+        tests.some(({ test, pattern }) => {
+          const folded = caseInsensitive || test.startsWith("i");
+          if (/regex/.test(test)) {
+            return true; // not modelled: read as matching
+          }
+          return /name$/.test(test) && !/wholename/.test(test) ? globMatches(globRegex(pattern, folded), path.basename(file)) : globMatches(globRegex(pattern, folded, true), shown);
+        })
+      );
+    });
+  });
+}
+
+const MAY_NAME_POLICY = /harness|coding|[*?[{]|^[$`]|\/[$`]/;
+const POLICY_UNSEEN = `a command removes or overwrites paths the guard cannot see (handed by xargs); one may be ${POLICY_FILE}`;
+const POLICY_MAYBE = `a command the guard does not read may remove or overwrite ${POLICY_FILE}`;
+
+// Whether one entry of `touched` reaches the policy file. An operand built by an
+// expansion that may name it joins the issues instead.
+function entryReaches(ctx, entry, policies, caseInsensitive) {
+  const unsure = (reason) => !ctx.issues.includes(reason) && ctx.issues.push(reason);
+  if (entry.find) {
+    if (entry.cwd === null || entry.find.starts.some((start) => EXPANDS.test(start))) {
+      unsure(DESTRUCTIVE_EXPANSION);
+      return false;
+    }
+    return findReaches(entry.cwd, entry.find, policies, caseInsensitive);
+  }
+  return entry.paths.some((operand) => {
+    if (EXPANDS.test(operand) || (entry.cwd === null && !path.isAbsolute(operand))) {
+      if (MAY_NAME_POLICY.test(operand)) {
+        unsure(DESTRUCTIVE_EXPANSION);
+      }
+      return false;
+    }
+    return reaches(entry.cwd, operand, entry.mode, policies, caseInsensitive);
+  });
+}
+
+// The refusal when a command removes, moves, overwrites or links to the policy
+// file; null otherwise. What may reach it unseen (xargs' paths, a command the
+// guard does not read) is unchecked, never allowed.
+function touchesPolicyFile(ctx, touched, caseInsensitive) {
+  const policies = policyPaths(ctx);
+  const unsure = (reason) => !ctx.issues.includes(reason) && ctx.issues.push(reason);
+  for (const entry of touched) {
+    if (entry.unseen) {
+      unsure(POLICY_UNSEEN);
+    } else if (entryReaches(ctx, entry, policies, caseInsensitive)) {
+      if (!entry.maybe) {
+        return `this command removes, moves, overwrites or links to ${POLICY_FILE} (or a directory holding it), which holds the destructive-command policy; without it the defaults apply and a locked primary checkout is unlocked. Ask the human.`;
+      }
+      unsure(POLICY_MAYBE);
+    }
+  }
+  return null;
+}
+
+// What an `onPath("trash")` is worth: the alternative `rm -r` names.
+function onPath(program) {
+  const extensions = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
+  return (process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean)
+    .some((dir) => extensions.some((ext) => fs.existsSync(path.join(dir, program + ext))));
+}
+
+const destructiveHost = {
+  exists: (file) => fs.existsSync(file),
+  home: () => os.homedir(),
+  onPath,
+  // `{ value }`: the alias' expansion, null when `name` is none; `{ issue }` when git did not answer.
+  // Only exit 1 means "no such alias"; any other failure is no answer.
+  gitAlias: (cwd, name) => {
+    const { out, issue, status } = gitNow(cwd, ["config", "--get", `alias.${name}`]);
+    if (issue || (out === null && status !== 1)) {
+      return { issue: issue || "git did not answer for the alias" };
+    }
+    return { value: out === null ? null : out.replace(/\r?\n$/, "") };
+  },
+  // Where git runs a `!` alias: the work tree's top; null when git does not say.
+  gitTop: (cwd) => {
+    const { out } = gitNow(cwd, ["rev-parse", "--show-toplevel"]);
+    return out ? out.trim() : null;
+  },
+};
+
+// git, fresh: the work tree changes between two calls of a long-lived host, so
+// the memo `git()` keeps for roots is not used. `{ out }`, with `issue` when git
+// did not answer (a timeout, a refused repository): the check is then unchecked.
+// One git timeout spends the decision's budget: the lookups after it are skipped
+// (unchecked) rather than each waiting 2 s. Reset by `decideBash`.
+const GIT_MISSING = "git is not on the guard's PATH (the destructive-command check was not run)";
+// The destructive checks' own wording: GIT_TIMEOUT and GIT_REFUSED speak of the project root.
+const DESTRUCTIVE_GIT_TIMEOUT = "git did not answer in time (the destructive-command check was not run)";
+const DESTRUCTIVE_GIT_REFUSED = "git refused the repository (safe.directory: the destructive-command check was not run)";
+const GIT_TOO_LONG = "git's answer was larger than the guard reads (the destructive-command check was not run)";
+const gitBudget = { spent: false };
+
+function gitNow(cwd, args) {
+  if (gitBudget.spent) {
+    return { out: null, issue: DESTRUCTIVE_GIT_TIMEOUT };
+  }
+  try {
+    return { out: execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 2000, maxBuffer: 64 * 1024 * 1024 }) };
+  } catch (err) {
+    if (err && err.code === "ENOBUFS") {
+      return { out: null, issue: GIT_TOO_LONG }; // killed for its output, not for time
+    }
+    if (err && (err.signal || err.code === "ETIMEDOUT")) {
+      gitBudget.spent = true;
+      return { out: null, issue: DESTRUCTIVE_GIT_TIMEOUT };
+    }
+    if (err && typeof err.code === "string") {
+      return { out: null, issue: GIT_MISSING }; // ENOENT, EACCES: git never ran
+    }
+    if (/dubious ownership|safe\.directory/.test(String((err && err.stderr) || ""))) {
+      return { out: null, issue: DESTRUCTIVE_GIT_REFUSED };
+    }
+    return { out: null, status: err && err.status };
+  }
+}
+
+function fileList(lines) {
+  const shown = lines.slice(0, 5).join(", ");
+  return lines.length > 5 ? `${shown} and ${lines.length - 5} more` : shown;
+}
+
+const porcelainFiles = (out) => (out || "").split(/\r?\n/).filter(Boolean).map((line) => line.slice(3));
+const EXPANDS = /[$`]/;
+
+// Whether a finding applies here, and what it would destroy now:
+// `{ applies, detail }`, or `{ unchecked }` when the disk could not say.
+function settle(finding, policy) {
+  const check = finding.check;
+  if (!check) {
+    return { applies: true, detail: "" };
+  }
+  if (finding.cwd === null) {
+    // Discarding all changes or cleaning destroys wherever it runs; a named path needs the directory.
+    return check.kind === "changes" || check.kind === "clean" ? { applies: true, detail: "" } : { unchecked: DESTRUCTIVE_UNKNOWN_CWD };
+  }
+  if (check.kind === "primary") {
+    const { out, issue } = gitNow(finding.cwd, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"]);
+    if (issue) {
+      return { unchecked: issue };
+    }
+    const [gitDir, commonDir] = (out || "").split(/\r?\n/).filter(Boolean);
+    if (!gitDir || !commonDir || path.resolve(gitDir) !== path.resolve(commonDir)) {
+      return { applies: false };
+    }
+    const lock = primaryLock(policy, path.dirname(path.resolve(commonDir)));
+    return { applies: lock.locked, detail: lock.unreadable ? ` (${POLICY_FILE} cannot be read, so the lock is kept)` : "" };
+  }
+  if (check.kind === "dirty") {
+    if (check.paths.some((word) => EXPANDS.test(word))) {
+      return { unchecked: DESTRUCTIVE_EXPANSION };
+    }
+    const { out, issue } = gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no", "--", ...check.paths]);
+    if (issue) {
+      return { unchecked: issue };
+    }
+    const files = porcelainFiles(out);
+    return { applies: files.length > 0, detail: fileList(files) };
+  }
+  if (check.kind === "changes") {
+    return { applies: true, detail: fileList(porcelainFiles(gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no"]).out)) };
+  }
+  // clean: what `git clean -n` with the same flags lists.
+  const flags = check.flags.map((letter) => `-${letter}`);
+  const { out } = gitNow(finding.cwd, ["clean", "-n", ...flags, "--", ...check.paths.filter((word) => !EXPANDS.test(word))]);
+  const files = (out || "").split(/\r?\n/).filter(Boolean).map((line) => line.replace(/^Would remove /, ""));
+  return { applies: true, detail: fileList(files) };
+}
+
+// A command line in a refusal is logged: no credential in a URL, no long word.
+function shown(command) {
+  const text = command.replace(/\/\/[^/\s@]+@/g, "//***@").split(" ").map((word) => (word.length > 60 ? `${word.slice(0, 57)}...` : word)).join(" ");
+  return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+}
+
+function destructiveReason(finding, detail) {
+  const now = detail ? ` (here: ${detail})` : "";
+  return `\`${shown(finding.command)}\` is a destructive command (${finding.rule}): it destroys ${finding.destroys}${now}. Instead: ${finding.alternative}. A destructive step waits for the human: say what it would destroy and how to undo it, then ask. Only they can allow it (destructiveCommands, allowDestructive in ${POLICY_FILE}).`;
+}
+
+// An entry is the exact command, word by word; a last word `*` lets any more words
+// follow, `~` included (`git clean -fdX -- build *`). `rm -rf node_modules` does not allow `rm -rf node_modules ~`.
+function allowedByPolicy(entries, words) {
+  return entries.some((entry) => {
+    const expected = entry.trim().split(/\s+/);
+    const open = expected[expected.length - 1] === "*";
+    const fixed = open ? expected.slice(0, -1) : expected;
+    return (open ? fixed.length <= words.length : fixed.length === words.length) && fixed.every((word, i) => word === words[i]);
+  });
+}
+
+// `{ deny }` with the refusal, or `{ warnings }` (warn mode). An unsettled check
+// joins `ctx.issues`: the call is unchecked unless something else refuses it.
+function judgeDestructive(ctx, { findings, unchecked }) {
+  const policy = ctx.scopes[0].policy;
+  if (policy.destructiveCommands === "off") {
+    return { warnings: [] };
+  }
+  for (const entry of unchecked) {
+    if (!ctx.issues.includes(entry.reason)) {
+      ctx.issues.push(entry.reason);
+    }
+  }
+  const warnings = [];
+  for (const finding of findings) {
+    if (allowedByPolicy(policy.allowDestructive, finding.words)) {
+      continue;
+    }
+    const settled = settle(finding, policy);
+    if (settled.unchecked) {
+      if (!ctx.issues.includes(settled.unchecked)) {
+        ctx.issues.push(settled.unchecked);
+      }
+      continue;
+    }
+    if (!settled.applies) {
+      continue;
+    }
+    const ignored = policy.ignoredAllow.length ? ` (ignored allowDestructive entries, too broad: ${policy.ignoredAllow.map((entry) => JSON.stringify(entry)).join(", ")})` : "";
+    const reason = destructiveReason(finding, settled.detail) + ignored;
+    if (policy.destructiveCommands === "warn") {
+      warnings.push(reason);
+    } else {
+      return { deny: { decision: "deny", reason, path: null } };
+    }
+  }
+  return { warnings };
+}
+
 function decideBash(toolInput, hook, root, caseInsensitive) {
   // A missing or renamed `command` is not an empty one: only `""` has nothing to check.
   if (!toolInput || typeof toolInput !== "object" || typeof toolInput.command !== "string") {
@@ -757,17 +1322,77 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   }
 
   const ctx = context(hook, root);
+  gitBudget.spent = false;
+  // The destructive check is settled first, and nothing after it can lose its
+  // refusal: a later check that throws still returns it (review round 2).
+  const destructiveIssues = [];
+  const reading = readDestructiveSafely(command, ctx, destructiveIssues);
+  const destructive = judgeDestructive({ ...ctx, issues: destructiveIssues }, reading);
+  try {
+    return decideBashWrites(command, ctx, { reading, destructive, destructiveIssues }, caseInsensitive);
+  } catch (error) {
+    if (destructive.deny) {
+      return destructive.deny;
+    }
+    throw error;
+  }
+}
 
-  for (const entry of readShellWrites(command, ctx.cwd, shellHost, { trees: true })) {
-    if (entry.unchecked) {
-      ctx.issues.push(entry.unchecked);
+// What the destructive reader makes of the command; a reader that throws makes the call unchecked.
+function readDestructiveSafely(command, ctx, issues) {
+  try {
+    return require("./destructive").readDestructive(command, { cwd: ctx.cwd, host: destructiveHost });
+  } catch {
+    issues.push("the destructive-command reader could not read this command");
+    return { findings: [], unchecked: [], touched: [], substituted: [] };
+  }
+}
+
+// A shell command writes the policy file blind: the guard cannot read what it
+// changes, so it is refused like a blocked path (story 29-03). The scripts of
+// `"$(…)"` and backticks are read too; after a `cd` their directory is unknown.
+function shellBlockedPaths(policy) {
+  return [...policy.blockedPaths, POLICY_FILE];
+}
+
+function shellWriteDenial(ctx, command, caseInsensitive, substituted) {
+  const shellCtx = { ...ctx, scopes: ctx.scopes.map((scope) => ({ ...scope, policy: { ...scope.policy, blockedPaths: shellBlockedPaths(scope.policy) } })) };
+  for (const { script, cwd } of [{ script: command, cwd: ctx.cwd }, ...substituted]) {
+    const entries = readShellWrites(script, cwd || ctx.cwd, shellHost, { trees: true });
+    if (cwd === null && entries.length) {
+      ctx.issues.push("a write inside a command substitution after a cd: its directory is unknown");
       continue;
     }
-
-    const found = judgeShellEntry(ctx, entry, caseInsensitive);
-    if (found) {
-      return { decision: "deny", reason: denialFor(entry, found), path: found.relative };
+    for (const entry of entries) {
+      if (entry.unchecked) {
+        ctx.issues.push(entry.unchecked);
+        continue;
+      }
+      const found = judgeShellEntry(shellCtx, entry, caseInsensitive);
+      if (found) {
+        const policyFile = found.hit === POLICY_FILE && !ctx.scopes.some((scope) => scope.policy.blockedPaths.includes(POLICY_FILE));
+        const reason = policyFile
+          ? `this command writes ${found.relative}${viaNote(found, entry.target)}, the policy file: from a shell the guard cannot read what it changes in what the agent may destroy. Edit it with a write tool, or ask the human.`
+          : denialFor(entry, found);
+        return { decision: "deny", reason, path: found.relative };
+      }
     }
+  }
+  return null;
+}
+
+function decideBashWrites(command, ctx, { reading, destructive, destructiveIssues }, caseInsensitive) {
+  const written = shellWriteDenial(ctx, command, caseInsensitive, reading.substituted);
+  if (written) {
+    return written;
+  }
+  if (destructive.deny) {
+    return destructive.deny;
+  }
+
+  const removal = touchesPolicyFile(ctx, reading.touched, caseInsensitive);
+  if (removal) {
+    return { decision: "deny", reason: removal, path: POLICY_FILE };
   }
 
   const secret = ctx.scopes
@@ -782,13 +1407,23 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     };
   }
 
+  for (const reason of destructiveIssues) {
+    if (!ctx.issues.includes(reason)) {
+      ctx.issues.push(reason);
+    }
+  }
+  if (destructive.deny) {
+    return destructive.deny;
+  }
+  const warned = destructive.warnings.length ? { warnings: destructive.warnings } : {};
+
   // A real failure (ELOOP, a git timeout) is named before a shell-reading limit:
   // `doctor` skips the limits, and `> "$X"; > loop/x` must not hide the ELOOP.
   if (ctx.issues.length) {
-    return { decision: "unchecked", reason: ctx.issues.find((reason) => !isShellLimit(reason)) || ctx.issues[0] };
+    return { decision: "unchecked", reason: ctx.issues.find((reason) => !isShellLimit(reason)) || ctx.issues[0], ...warned };
   }
 
-  return { decision: "allow", reason: "no blocked write target or secret detected" };
+  return { decision: "allow", reason: "no blocked write target or secret detected", ...warned };
 }
 
 // A denial used to be exit 2 and a line on stderr, and then nothing. That is
@@ -867,6 +1502,14 @@ function recordUnchecked(event) {
   recordEvent("guard-unchecked.jsonl", event);
 }
 
+// `destructiveCommands: "warn"`: the call goes ahead, and each destructive command
+// it runs is said and kept — in its own file, since `denials.jsonl` means refused.
+function recordWarnings({ root, hook, result }) {
+  for (const warning of (result && result.warnings) || []) {
+    recordEvent("guard-warnings.jsonl", { root, hook, result: { reason: warning, path: null } });
+  }
+}
+
 // Appended to what the agent reads (never to the denial log). Observed on
 // OpenCode: refused `.env`, a model wrote the same content to `env` instead. The
 // guard cannot see intent, so it says it plainly to the one that can.
@@ -901,6 +1544,30 @@ function strictOutcome(result, hook, roots) {
   }
 
   return { decision: "deny", reason: `${STRICT_PREFIX} ${result.reason}`, path: null };
+}
+
+// An allowed call: its warnings (warn mode) are said and kept; `--json` prints
+// the decision. A warning carries no permission decision of its own, so the
+// user's permission rules still apply.
+function writeAllowed(result, { root, hook, json }) {
+  const warnings = result.warnings || [];
+  if (warnings.length) {
+    recordWarnings({ root, hook, result });
+    for (const warning of warnings) {
+      process.stderr.write(`coding-flow guard: warning: ${warning}\n`);
+    }
+  }
+  if (json) {
+    process.stdout.write(
+      `${JSON.stringify({
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+        reason: result.reason,
+        ...(warnings.length ? { warnings, systemMessage: warnings.join("\n") } : {}),
+      })}\n`,
+    );
+  } else if (warnings.length) {
+    process.stdout.write(`${JSON.stringify({ systemMessage: warnings.map((warning) => `coding-flow guard: warning: ${warning}`).join("\n") })}\n`);
+  }
 }
 
 function guardCommand({ getFlagValue, flags }) {
@@ -944,15 +1611,7 @@ function guardCommand({ getFlagValue, flags }) {
     process.exit(2);
   }
 
-  if (flags.has("--json")) {
-    process.stdout.write(
-      `${JSON.stringify({
-        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
-        reason: result.reason,
-      })}\n`,
-    );
-  }
-
+  writeAllowed(result, { root, hook, json: flags.has("--json") });
   process.exit(0);
 }
 
@@ -972,6 +1631,7 @@ function evaluate(hook, root) {
     if (result.decision === "unchecked") {
       recordUnchecked({ root: roots[0], hook, result });
     }
+    recordWarnings({ root: roots[0], hook, result });
 
     return result;
   } catch (err) {
@@ -994,4 +1654,4 @@ function evaluate(hook, root) {
   }
 }
 
-module.exports = { guardCommand, decide, evaluate, recordUnchecked, isShellLimit, shellWriteTargets, shellWrites, loadPolicy };
+module.exports = { guardCommand, decide, evaluate, recordUnchecked, isShellLimit, shellWriteTargets, shellWrites, loadPolicy, destructivePolicy, effectiveDestructivePolicy, shellBlockedPaths };

@@ -74,7 +74,7 @@ if (command === "guard") {
 const fs = require("fs");
 const path = require("path");
 const { cwd, invocationDir } = require("./lib/context");
-const { log, fail, isCommandAvailable, binaryPathNote } = require("./lib/util");
+const { log, fail, isCommandAvailable, binaryPathNote, normalizePortable } = require("./lib/util");
 const {
   copyTemplates,
   copyCodexSkills,
@@ -90,9 +90,19 @@ const {
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
+const { todoCommand } = require("./lib/todo");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { recoverScan } = require("./lib/recover");
 const { harnessCommand, ensureHarnessConfig, registerStoryLocator } = require("./lib/harness");
+const { harnessFileWarning, harnessConfigPath } = require("./lib/harness-config");
+
+// A harness.json `init` keeps but cannot use is said, with the fix (26-08).
+function warnHarnessFile() {
+  const warning = harnessFileWarning(normalizePortable(path.relative(cwd, harnessConfigPath())));
+  if (warning) {
+    log(`Warning: ${warning}`);
+  }
+}
 registerStoryLocator(require("./lib/speckit"));
 const { auditCommand } = require("./lib/audit");
 const { reviewCommand } = require("./lib/review");
@@ -123,6 +133,8 @@ const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
 const { reportCommand } = require("./lib/report");
+const { rulesCommand } = require("./lib/rules");
+const { docsCheckCommand } = require("./lib/docs-check");
 const {
   ensureConfig,
   configPath,
@@ -438,6 +450,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     log(dryRun ? "Dry run complete." : "Coding Flow installed (minimal).");
     log(`Config: ${configResult.created ? (dryRun ? "would create" : "created") : "unchanged"}`);
     log(`Harness config: ${harnessCreated ? (dryRun ? "would create" : "created") : "unchanged"}`);
+    warnHarnessFile();
     log(`Friction log: docs/DOGFOODING.md ${frictionLog}`);
 
     if (!flags.has("--no-guard") && minimalTarget === "claude") {
@@ -592,6 +605,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   if (result.harnessCreated) {
     log(flags.has("--dry-run") ? "Harness config: would create" : "Harness config: created");
   }
+  warnHarnessFile();
 
   if (configResult.created) {
     const suffix = `storage=${configResult.config.storage}, branchPerEpic=${configResult.config.branchPerEpic}`;
@@ -859,6 +873,14 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   });
 } else if (command === "next") {
   nextCommand({ flags });
+} else if (command === "todo") {
+  const extra = commandArgs.filter((arg) => !arg.startsWith("-"));
+
+  if (extra.length > 0) {
+    fail(`unexpected argument "${extra[0]}" for "todo". Run "ai-flow todo --help".`);
+  }
+
+  todoCommand({ json: flags.has("--json") });
 } else if (command === "bootstrap") {
   if (!flags.has("--scan")) {
     fail("bootstrap currently requires --scan");
@@ -889,6 +911,10 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
 } else if (command === "report") {
   reportCommand({ getFlagValue, flags });
+} else if (command === "rules") {
+  rulesCommand({ commandArgs, flags });
+} else if (command === "docs") {
+  docsCheckCommand({ commandArgs, flags, getFlagValue });
 } else if (command === "audit") {
   auditCommand({ getFlagValue, flags });
 } else if (command === "review") {
@@ -968,6 +994,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     "review-missing": `has no captured review for its STRICT-tier story "${result.story}"`,
     "review-stale": `has a stale review (the tree moved since capture) for its STRICT-tier story "${result.story}"`,
     "review-failed": `has a failing review for its STRICT-tier story "${result.story}"`,
+    "review-unconfirmed": `needs one more clean review round after a failed one (STRICT: two in a row) for "${result.story}"`,
   };
 
   if (flags.has("--json")) {

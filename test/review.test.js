@@ -163,7 +163,8 @@ test('latestReviewByStoryDir returns only the latest capture by generatedAt when
   // Force distinct filenames/timestamps the same way a human retry would:
   // two captures milliseconds apart still get distinct -review.json names
   // (writeReviewEvidence's own counter), so this does not need a real sleep.
-  assert.equal(run(repo, ['review', 'capture', '--story', storyRel, '--verdict', 'pass']).code, 0);
+  // A pass right after a fail declares the next round (story 19-09).
+  assert.equal(run(repo, ['review', 'capture', '--story', storyRel, '--verdict', 'pass', '--round', '2']).code, 0);
 
   assert.equal(reviewFiles(repo).length, 2, 'both captures must be recorded as separate files');
 

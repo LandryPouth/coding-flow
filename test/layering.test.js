@@ -14,15 +14,15 @@ const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'bin', 'lib');
 
 const CORE = [
-  'archive-members', 'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'detect', 'diff-base',
+  'archive-members', 'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'destructive', 'detect', 'diff-base',
   'diff-scope', 'epic-index', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
-  'identity', 'mutation', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk',
-  'security-policy', 'shell-writes', 'spec-drift', 'story', 'util', 'validation-run',
+  'identity', 'mutation', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk', 'rules-registry',
+  'security-policy', 'shell-writes', 'spec-drift', 'story', 'test-tokens', 'util', 'validation-run',
 ];
 
 // Core modules that read nothing but their arguments: no fs, no config, no other
 // module of the tool. Whatever they need from the host is handed in.
-const PURE = ['shell-writes'];
+const PURE = ['shell-writes', 'test-tokens'];
 
 // `story` is core: a pure fs/path reader of the optional story files, used only
 // when verify is given a story. `doctor` is a layer for now: it mixes the core
@@ -30,11 +30,13 @@ const PURE = ['shell-writes'];
 // splitting out before it can be called core.
 const LAYER = [
   'archive', 'doctor', 'epic-numbers', 'backbone', 'claude-plugin', 'next', 'placement-store', 'plugin', 'recover',
-  'quality-recipes', 'review', 'run', 'security-recipes', 'ship', 'skills', 'speckit', 'status', 'story-links', 'templates', 'worktree',
+  'fix-recipes', 'quality-recipes', 'review', 'run', 'security-recipes', 'ship', 'skills', 'speckit', 'status', 'story-links', 'templates', 'todo', 'worktree',
   'worktree-plan',
   // install, platform wiring and CLI plumbing: not needed to guard or prove
   'bootstrap', 'ci', 'codex-probe', 'codex-settings', 'commands', 'hook',
-  'opencode', 'opencode-config', 'settings', 'trace', 'uninstall', 'unwire', 'usage',
+  'opencode', 'opencode-config', 'rules', 'settings', 'trace', 'uninstall', 'unwire', 'usage',
+  // story 26-03: reads the project's docs for stale references; doctor and rules call it
+  'docs-check', 'docs-markdown',
   'platforms/*', 'storage/*',
 ];
 

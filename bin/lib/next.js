@@ -31,6 +31,7 @@ const { buildStatusModel, computeReviewStatus } = require("./status");
 const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
 const { policyFingerprint } = require("./policy-fingerprint");
+const { defaultOf } = require("./rules-registry");
 const { defaultBranch, currentBranch } = require("./policy");
 const { resolveDiffBase } = require("./diff-base");
 
@@ -125,8 +126,9 @@ function strictReviewGap(location, story) {
     return null;
   }
 
-  const state = computeReviewStatus(location, story.path);
+  const state = computeReviewStatus(location, story.path, { strict: true });
   if (state === "none") return "has no captured review";
+  if (state === "confirming") return `needs one more review round after a failed one (STRICT: ${defaultOf("review.strictCleanRounds")} clean rounds in a row)`;
   if (state === "stale") return "review is stale — the code moved since it was captured";
   if (state === "fail") return "review recorded a failing verdict";
   return null;

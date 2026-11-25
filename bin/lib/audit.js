@@ -265,8 +265,9 @@ function collectAll(root) {
       byId.set(entry.id, entry);
     }
   }
+  const files = new Set([...byId.values()].map((entry) => entry.file).filter(Boolean));
   for (const entry of collectRunEntries(root)) {
-    if (!byId.has(entry.id)) {
+    if (!byId.has(entry.id) && !files.has(entry.file)) {
       byId.set(entry.id, entry);
     }
   }
@@ -277,8 +278,12 @@ function collectAll(root) {
 // Appends to the ledger the runs not yet recorded. Append-only: existing lines
 // are never rewritten.
 function syncLedger(root, { dryRun = false } = {}) {
-  const known = new Set(readLedger(root).map((entry) => entry.id));
-  const added = collectRunEntries(root).filter((entry) => !known.has(entry.id));
+  // Known by id or by run file: a run file a formatter re-indented hashes to a new
+  // id, and is still the same run (story 19-05).
+  const ledger = readLedger(root);
+  const known = new Set(ledger.map((entry) => entry.id));
+  const knownFiles = new Set(ledger.map((entry) => entry.file).filter(Boolean));
+  const added = collectRunEntries(root).filter((entry) => !known.has(entry.id) && !knownFiles.has(entry.file));
 
   if (added.length > 0 && !dryRun) {
     fs.mkdirSync(path.dirname(ledgerPath(root)), { recursive: true });
@@ -394,6 +399,23 @@ function latestVerifyByStoryDir(root) {
 // is needed here the way the verify reader needs it.
 function latestReviewByStoryDir(root) {
   const byDir = new Map();
+
+  for (const [story, history] of reviewHistoryByStoryDir(root)) {
+    // The first file holding the latest timestamp, as before: rounds were
+    // added without changing which capture counts as the story's latest.
+    const latestAt = history.reduce((at, entry) => (entry.generatedAt > at ? entry.generatedAt : at), "");
+    const latest = history.find((entry) => entry.generatedAt === latestAt);
+    byDir.set(story, { ...latest, ...cleanRun(history) });
+  }
+
+  return byDir;
+}
+
+// Story 19-09: every captured review of each story, oldest first. A review
+// captured before rounds existed counts as round 1. `file` is the evidence
+// path from the project root, the form `after` points back with.
+function reviewHistoryByStoryDir(root) {
+  const byDir = new Map();
   const dir = runsDir(root);
 
   if (!fs.existsSync(dir)) {
@@ -410,18 +432,37 @@ function latestReviewByStoryDir(root) {
       continue;
     }
 
-    const prev = byDir.get(data.story);
-    if (!prev || (data.generatedAt || "") > (prev.generatedAt || "")) {
-      byDir.set(data.story, {
-        ok: Boolean(data.ok),
-        generatedAt: data.generatedAt || "",
-        treeToken: (data.provenance && data.provenance.git && data.provenance.git.treeToken) || null,
-        reviewer: data.reviewer || "self",
-      });
-    }
+    if (!byDir.has(data.story)) byDir.set(data.story, []);
+    byDir.get(data.story).push({
+      file: `.coding-flow/runs/${name}`,
+      ok: Boolean(data.ok),
+      generatedAt: data.generatedAt || "",
+      treeToken: (data.provenance && data.provenance.git && data.provenance.git.treeToken) || null,
+      reviewer: data.reviewer || "self",
+      round: Number.isInteger(data.round) && data.round > 0 ? data.round : 1,
+      ...(data.after ? { after: data.after } : {}),
+      ...(data.acceptedRisk ? { acceptedRisk: data.acceptedRisk } : {}),
+      // What the accept covered. A reason recorded before rounds existed only
+      // ever covered open findings.
+      ...(data.acceptedRisk ? { acceptedFor: Array.isArray(data.acceptedFor) ? data.acceptedFor : ["open-findings"] } : {}),
+    });
+  }
+
+  for (const history of byDir.values()) {
+    history.sort((a, b) => (a.generatedAt < b.generatedAt ? -1 : a.generatedAt > b.generatedAt ? 1 : 0));
   }
 
   return byDir;
+}
+
+// How the story's reviews end: the passing rounds in a row since the last
+// fail, and whether a fail came before them at all.
+function cleanRun(history) {
+  let passesInRow = 0;
+  for (let i = history.length - 1; i >= 0 && history[i].ok; i -= 1) {
+    passesInRow += 1;
+  }
+  return { passesInRow, followsFail: passesInRow < history.length };
 }
 
 // Every captured review, summarised: how many per reviewer kind, and the passes
@@ -721,6 +762,7 @@ module.exports = {
   staleReason,
   latestVerifyByStoryDir,
   latestReviewByStoryDir,
+  reviewHistoryByStoryDir,
   summarizeReviews,
   latestVerifyScopeByStoryDir,
   buildAuditMarkdown,

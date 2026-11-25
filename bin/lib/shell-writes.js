@@ -45,8 +45,15 @@ function tokenize(segment) {
 
 // Quote and backslash removal the shell does inside one word: `.e""nv`, `.e\nv`
 // and `'.en'v` all name `.env`. A lone quote that pairs with nothing stays as is.
+// One pass, left to right: a backslash the double quotes kept (`"a \\" b"` →
+// `a \" b`) is text, not an escape to strip a second time.
 function reduceWord(token) {
-  return token.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'/g, (_, double, single) => (double !== undefined ? double.replace(/\\([\s\S])/g, "$1") : single)).replace(/\\([^\n])/g, "$1");
+  return token.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([^\n])/g, (_, double, single, escaped) => {
+    if (double !== undefined) {
+      return double.replace(/\\([\s\S])/g, "$1");
+    }
+    return single !== undefined ? single : escaped;
+  });
 }
 
 const HOME_PREFIX = /^(?:\$HOME|\$\{HOME\})(?=\/|$)/;
@@ -70,18 +77,35 @@ function classify(token) {
   return "path";
 }
 
-function expandHome(target, home) {
+function expandHome(target, home, platform = process.platform) {
   if (target === "~" || target.startsWith("~/")) {
     return path.join(home, target.slice(1));
   }
   const match = HOME_PREFIX.exec(target);
-  return match ? path.join(home, target.slice(match[0].length)) : target;
+  return match ? path.join(home, target.slice(match[0].length)) : nativeShellPath(target, platform);
+}
+
+// The path a shell word names, in the platform's own form. On Windows the agent's
+// shell is Git Bash (MSYS), which hands a native program `/c/Users/x` as
+// `C:/Users/x` (and `/cygdrive/c/…` likewise): read here as `/c/Users/x`, it would
+// resolve to `<current drive>:\c\Users\x` — a directory that does not exist — and
+// a write or a branch switch aimed at the checkout would be judged elsewhere.
+// Anywhere else a word is a path as written.
+const MSYS_DRIVE = /^\/(?:cygdrive\/)?([A-Za-z])(?=\/|$)/;
+
+function nativeShellPath(word, platform = process.platform) {
+  if (platform !== "win32" || typeof word !== "string") {
+    return word;
+  }
+  const match = MSYS_DRIVE.exec(word);
+  // `/c` alone is the drive's root, not `C:` (the current directory on drive C).
+  return match ? `${match[1].toUpperCase()}:${word.slice(match[0].length) || "/"}` : word;
 }
 
 // util's `normalizePortable`, repeated so this module needs no other.
 const portable = (file) => file.split(path.sep).join("/").replace(/^\.\//, "");
 
-const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
+const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh", "fish"]);
 const EXPANSION = "write target depends on shell expansion";
 const UNKNOWN_CWD = "the working directory depends on shell expansion";
 const PATHSPEC_FILE = "git reads its paths from a file";
@@ -114,6 +138,41 @@ const isShellLimit = (reason) => SHELL_LIMITS.has(reason);
 // says which separator came `before` and `after` it, and whether it closes or
 // opens a group: `after: "open"` / `"close"` apply once the segment's own text has
 // run (the text before a `(` is outside the group, the text before a `)` inside it).
+// Heredoc bodies are data: up to the delimiter line, none of it is a command.
+// From the newline at `i`, the index of the last newline of the bodies opened.
+function pastHeredocBodies(command, i, heredocs) {
+  while (heredocs.length) {
+    const { dash, word } = heredocs.shift();
+    let end = command.indexOf("\n", i + 1);
+    while (i + 1 < command.length) {
+      const stop = end === -1 ? command.length : end;
+      const line = command.slice(i + 1, stop);
+      i = stop;
+      end = command.indexOf("\n", i + 1);
+      if ((dash ? line.replace(/^\t+/, "") : line) === word) {
+        break;
+      }
+    }
+  }
+  return i;
+}
+
+// `<<WORD` at the start of `text`: the delimiter is one shell word, its parts
+// joined and unquoted (`E"OF"`, `'E'OF`, `E\\OF` are all `EOF`); the body is
+// `literal` (expands nothing) when any part is quoted or escaped. Null when it is
+// not a heredoc or a part does not close (`<<E"OF`).
+const HEREDOC_WORD = /^<<(-?)[ \t]*((?:"[^"]*"|'[^']*'|\\[^\n]|[^\s;&|<>()`'"\\])+)/;
+
+function heredocWord(text) {
+  const match = HEREDOC_WORD.exec(text);
+  if (!match || /^["'\\]/.test(text.slice(match[0].length))) {
+    return null;
+  }
+  const raw = match[2];
+  const word = raw.replace(/"([^"]*)"|'([^']*)'|\\([^\n])/g, (_, double, single, escaped) => double ?? single ?? escaped);
+  return { dash: match[1] === "-", word, literal: /["'\\]/.test(raw), length: match[0].length };
+}
+
 function splitSegments(command) {
   const out = [];
   const heredocs = [];
@@ -142,32 +201,30 @@ function splitSegments(command) {
 
     if (ch === "\\" && i + 1 < command.length) {
       text += ch + command[(i += 1)];
+    } else if (ch === "$" && command[i + 1] === "'") {
+      // An ANSI-C string, `$'it\'s'`: `\'` is a quote inside it, not its end.
+      let end = i + 2;
+      while (end < command.length && command[end] !== "'") {
+        end += command[end] === "\\" ? 2 : 1;
+      }
+      text += command.slice(i, end + 1);
+      i = end;
     } else if (ch === '"' || ch === "'") {
       quote = ch;
       text += ch;
-    } else if (ch === "<" && command[i + 1] === "<" && command[i + 2] !== "<") {
-      const word = /^<<(-?)\s*(?:"([^"]*)"|'([^']*)'|\\?([^\s;&|<>()]+))/.exec(command.slice(i));
-      if (word) {
-        heredocs.push({ dash: word[1] === "-", word: word[2] ?? word[3] ?? word[4] });
+    } else if (ch === "<" && command.startsWith("<<<", i)) {
+      text += "<<<"; // a here-string, not a heredoc
+      i += 2;
+    } else if (ch === "<" && command[i + 1] === "<") {
+      const heredoc = heredocWord(command.slice(i));
+      if (heredoc) {
+        heredocs.push(heredoc);
       }
       text += "<<";
       i += 1;
     } else if (ch === "\n") {
       flush("seq");
-      // Heredoc bodies are data: up to the delimiter line, none of it is a command.
-      while (heredocs.length) {
-        const { dash, word } = heredocs.shift();
-        let end = command.indexOf("\n", i + 1);
-        while (i + 1 < command.length) {
-          const stop = end === -1 ? command.length : end;
-          const line = command.slice(i + 1, stop);
-          i = stop;
-          end = command.indexOf("\n", i + 1);
-          if ((dash ? line.replace(/^\t+/, "") : line) === word) {
-            break;
-          }
-        }
-      }
+      i = pastHeredocBodies(command, i, heredocs);
     } else if (ch === "(") {
       flush("open");
     } else if (ch === ")") {
@@ -207,7 +264,7 @@ function reader(startCwd, host, options = {}) {
   return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0, acted: options.after || 0, substitutes: Boolean(options.substitutes), platform: options.platform || process.platform };
 }
 
-const homeOf = (r, target) => expandHome(target, r.host.home());
+const homeOf = (r, target) => expandHome(target, r.host.home(), r.platform);
 
 function add(r, word, kind, extra = {}) {
   const token = reduceWord(word);
@@ -264,14 +321,27 @@ function readRedirections(r, text) {
 // --- the verb -----------------------------------------------------------------
 
 // Wrappers and compound-command keywords that sit in front of the real verb.
-const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "timeout", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
+const WRAPPERS = new Set(["sudo", "doas", "env", "time", "builtin", "command", "nohup", "exec", "nice", "timeout", "stdbuf", "ionice", "chroot", "setsid", "unbuffer", "flock", "taskset", "then", "do", "else", "elif", "if", "while", "until", "!", "{"]);
 const WRAPPER_VALUE_OPTIONS = {
-  sudo: new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-r", "-t", "-U", "-D"]),
+  sudo: new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-r", "-t", "-U", "-D", "--user", "--group", "--host", "--prompt", "--close-from", "--chdir", "--role", "--type", "--other-user", "--command-timeout"]),
   doas: new Set(["-u", "-C"]),
-  env: new Set(["-u", "-C", "-S"]),
-  nice: new Set(["-n"]),
-  timeout: new Set(["-s", "-k"]),
+  env: new Set(["-u", "-C", "-S", "--unset", "--chdir"]),
+  nice: new Set(["-n", "--adjustment"]),
+  timeout: new Set(["-s", "-k", "--signal", "--kill-after"]),
+  stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
+  ionice: new Set(["-c", "-n", "-p", "-P", "-u", "--class", "--classdata", "--pid", "--pgid", "--uid"]),
+  chroot: new Set(["--userspec", "--groups"]),
+  flock: new Set(["-w", "--timeout", "--wait", "-E", "--conflict-exit-code"]),
 };
+
+// Wrappers whose first operand is not the verb: `chroot DIR`, `flock FILE`, `taskset MASK`.
+const LEADING_OPERAND = new Set(["chroot", "flock", "taskset"]);
+
+// `sudo -iu root`: a cluster of short options whose last one takes the value.
+function takesValue(wrapper, token) {
+  const options = WRAPPER_VALUE_OPTIONS[wrapper];
+  return Boolean(options && (options.has(token) || (/^-[A-Za-z]{2,}$/.test(token) && options.has(`-${token.slice(-1)}`))));
+}
 
 // `sudo cp …`, `env FOO=1 tee …`, `time cd x`: step over the wrapper to the verb.
 // An option that takes a value (`sudo -u root`, `nice -n 5`) steps over its value too,
@@ -281,14 +351,17 @@ function verbAt(tokens) {
   let wrapper = null;
   while (index < tokens.length) {
     const token = tokens[index];
-    if (WRAPPERS.has(token)) {
+    if (token === "flock" && tokens.slice(index).some((word) => word === "-c" || word === "--command" || word.startsWith("--command="))) {
+      break; // `flock FILE -c 'script'` hands a script on: flock is the verb
+    } else if (WRAPPERS.has(token)) {
       wrapper = token;
       index += 1;
     } else if (token.includes("=")) {
       index += 1;
     } else if (index > 0 && token.startsWith("-")) {
-      index += WRAPPER_VALUE_OPTIONS[wrapper]?.has(token) ? 2 : 1;
-    } else if (wrapper === "timeout" && /^\d/.test(token)) {
+      index += takesValue(wrapper, token) ? 2 : 1;
+    } else if ((wrapper === "timeout" && /^\d/.test(token)) || LEADING_OPERAND.has(wrapper)) {
+      // `timeout 5 …` steps over its duration, `chroot DIR …` over its new root.
       index += 1;
       wrapper = null;
     } else {
@@ -1184,7 +1257,7 @@ function readForwarded(r, command) {
 // A script handed to `bash -c` / `eval` runs from the current directory. With the
 // directory unknown, only its absolute targets can still be judged; a relative one is unchecked.
 function followScript(r, program) {
-  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees, after: r.segments, substitutes: r.substitutes })) {
+  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees, after: r.segments, substitutes: r.substitutes, platform: r.platform })) {
     if (entry.unchecked) {
       r.found.push(entry);
     } else if (r.cwd === null && !path.isAbsolute(homeOf(r, entry.target))) {
@@ -1278,13 +1351,21 @@ function readInline(r, programs) {
 // `curl … | sh`) or from a process substitution (`bash <(curl …)`) is data to
 // the splitter: it cannot be judged. `sh -s ARGS` reads stdin whatever follows
 // its options (`curl … | bash -s -- --yes`).
-function readStdinProgram(r, { segment, name, args }) {
-  const interpreter = INTERPRETERS.some(([pattern]) => pattern.test(name)) || SHELLS.has(name);
+// `source` and `.` run a file in this shell: `/dev/stdin`, `/dev/fd/N` and `<(…)` are its input.
+const SOURCES = new Set(["source", "."]);
+const STDIN_FILE = /^\/dev\/(?:stdin|fd\/\d+)$/;
+
+function readStdinProgram(r, { segment, name, args: given }) {
+  const interpreter = INTERPRETERS.some(([pattern]) => pattern.test(name)) || SHELLS.has(name) || SOURCES.has(name);
+  const args = given.filter((arg) => !STDIN_FILE.test(arg));
   const firstOperand = args.findIndex((arg) => !arg.startsWith("-") || arg === "--");
   const options = firstOperand === -1 ? args : args.slice(0, firstOperand);
   const stdinFlag = SHELLS.has(name) && options.some((arg) => /^-[A-Za-z]*s[A-Za-z]*$/.test(arg));
   if (interpreter && segment.after === "open" && /<\s*$/.test(segment.text)) {
     r.found.push({ target: `(${name} program)`, kind: "write", unchecked: SUBSTITUTED_PROGRAM });
+  } else if (interpreter && /<<</.test(segment.text)) {
+    // `bash <<< 'script'`: the here-string is the program, whatever the operands.
+    r.found.push({ target: `(${name} program)`, kind: "write", unchecked: HEREDOC_PROGRAM });
   } else if (interpreter && (stdinFlag || args.every((arg) => arg.startsWith("-") || arg.startsWith("<")))) {
     if (segment.text.includes("<<")) {
       r.found.push({ target: `(${name} program)`, kind: "write", unchecked: HEREDOC_PROGRAM });
@@ -1463,4 +1544,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { isRemote, shellWrites, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
+module.exports = { heredocWord, isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, nativeShellPath, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };

@@ -13,6 +13,7 @@ const { cwd } = require("./context");
 const { readConfig } = require("./config");
 const { readStoryPart, resolveProjectPath } = require("./story");
 const { readJson, selectFailureLines } = require("./util");
+const { defaultOf } = require("./rules-registry");
 
 function resolveStoryDir(story) {
   if (!story) {
@@ -33,9 +34,10 @@ function resolveStoryDir(story) {
 // Extracts the command lines under "## Commands": the lines of a fenced block, plus
 // labelled bullets (`- Command: `x``) because a model reading "a block" often writes
 // that instead, and verify must not silently find zero commands because of it.
-function parseTestsCommands(testsMarkdown) {
+// `heading` reads another section the same way (`## Fixers`, story 19-05).
+function parseTestsCommands(testsMarkdown, heading = "## commands") {
   const lines = testsMarkdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim().toLowerCase() === "## commands");
+  const start = lines.findIndex((line) => line.trim().toLowerCase() === heading);
 
   if (start === -1) {
     return [];
@@ -74,7 +76,47 @@ function parseTestsCommands(testsMarkdown) {
 
 // Source of the commands, by decreasing priority: explicit config, then the
 // story's plan.md contract, then the usual package.json scripts.
+//
+// Fixers (story 19-05) run before every check and may rewrite files:
+// `validation.fix` from the config whatever source the checks come from, else the
+// `## Fixers` block of the plan when the checks come from it too (and then
+// refused unattended exactly like plan checks). Absent, `fix` is empty and
+// verify runs as it always did.
 function resolveValidationCommands({ storyDir = null, fresh = false } = {}) {
+  const resolution = resolveCheckCommands({ storyDir, fresh });
+  const config = readConfig(cwd);
+  const declaredFix = config.validation && Array.isArray(config.validation.fix) ? config.validation.fix : [];
+
+  if (declaredFix.length > 0) {
+    const globalTimeout = config.validation && Number.isFinite(config.validation.timeoutMs) ? config.validation.timeoutMs : null;
+    // Apart from the checks' map: a fixer and a check may share a text
+    // (`npm run lint` as both) and still carry different limits.
+    const fixTimeouts = {};
+    const fix = declaredFix.map((entry) => {
+      const command = typeof entry === "string" ? entry : entry.command;
+      const timeoutMs = typeof entry === "string" ? globalTimeout : entry.timeoutMs || globalTimeout;
+
+      if (timeoutMs) {
+        fixTimeouts[command] = timeoutMs;
+      }
+
+      return command;
+    });
+
+    return { ...resolution, fix, fixSource: "config", fixTimeouts };
+  }
+
+  const planFix = storyDir ? parseTestsCommands(readStoryPart(storyDir, "plan") || "", "## fixers") : [];
+
+  if (resolution.source === "plan.md" && planFix.length > 0) {
+    return { ...resolution, fix: planFix, fixSource: "plan.md", fixTimeouts: {} };
+  }
+
+  // A `## Fixers` block whose checks come from elsewhere is not run: said, not silent.
+  return { ...resolution, fix: [], fixSource: null, fixTimeouts: {}, ...(planFix.length > 0 ? { planFixersIgnored: planFix.length } : {}) };
+}
+
+function resolveCheckCommands({ storyDir = null, fresh = false } = {}) {
   const config = readConfig(cwd);
 
   if (config.validation) {
@@ -203,7 +245,12 @@ function detectCacheState(output) {
   return { cache: "unknown" };
 }
 
-const DEFAULT_COMMAND_TIMEOUT_MS = 600000;
+// The one per-command time limit when the project sets none (story 26-06: it
+// was defined twice, here and in worktree.js). Read at call time from the
+// rules registry, so land's lock sizing and this runner cannot disagree.
+function commandTimeoutDefault() {
+  return defaultOf("validation.timeoutMs");
+}
 
 // Variables a clean-env run drops, by NAME only: the values are never read or recorded.
 const SECRET_ENV_NAME = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|ACCESS_?KEY)/i;
@@ -262,9 +309,137 @@ function isUnattended() {
   return !(process.stdin.isTTY && process.stdout.isTTY);
 }
 
+// A timed-out command is killed with what it started. `spawnSync` kills the shell
+// only: on Windows `cmd.exe` dies and the program it started keeps running,
+// holding the directory and its files (a temp dir that cannot be removed, a port
+// still bound). The shell is already gone by then, so `taskkill /T` cannot walk
+// from it; its children still name it as their parent, and are found that way.
+// On POSIX the shell's children outlive it too, reparented: reaching them needs
+// the command in its own process group, which would also keep a Ctrl-C from
+// reaching them — that trade is story 19-04's (`--detach`, process groups).
+//
+// Windows never updates a process's parent id and reuses ids, so "names it as
+// parent" alone could kill an unrelated orphan whose dead parent once had that
+// id. A descendant must therefore have been created after the command started
+// and after its own parent. The shell's own children must also have been created
+// before `spawnSync` returned (the shell was dead by then: anything newer naming
+// its id was started by a later holder of that id, even one that has since
+// exited) and before any live process now holding the command's id. Deeper down
+// every parent is alive and listed, so its id is its own. Every id is visited
+// once, so a reused-id cycle ends.
+//
+// The two bounds on the shell's children compare two clocks: `Date.now()` and
+// the creation time Windows stamps, which advances once per timer tick (15.6 ms
+// by default) and is read rounded down. Each reading can lag the true time by up
+// to one tick, so a real child can look up to two ticks (~31 ms) older than
+// `started`, or younger than `ended`. CLOCK_TOLERANCE_MS widens both bounds by
+// 50 ms: two ticks with room for the rounding, and still small next to what
+// letting an impostor in takes (the shell dies, its id is handed out again, and
+// the new holder starts a process, all between the shell's death and 50 ms after
+// `spawnSync` returned — for the second pass, between a killed process's death
+// and 50 ms after the kill returned — and exits before the list is read; a
+// holder still alive is caught by the bound above).
+// The selection is therefore bounded, not exact.
+//
+// The creation time is converted to UTC before it becomes a number. .NET keeps
+// the local time's ambiguous-DST flag through that conversion when the value
+// came from UTC; whether CIM's DateTime carries it is not verified. A misread
+// hour moves a child outside the window, which spares it rather than kills a
+// stranger.
+//
+// A live descendant can start a process between the listing and `taskkill`. So
+// the list is read a second time, and what the killed processes started before
+// they died (created no later than the kill, plus the tolerance) is killed too.
+// A process forking faster than two passes still escapes.
+const CLOCK_TOLERANCE_MS = 50;
+const LIST_PROCESSES =
+  "Get-CimInstance Win32_Process | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate.ToUniversalTime()).ToUnixTimeMilliseconds() } }";
+
+function parseProcessList(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/).map(Number))
+    .filter((fields) => fields.length === 3 && fields.every(Number.isFinite))
+    .map(([pid, parentPid, created]) => ({ pid, parentPid, created }));
+}
+
+// `roots` are dead processes: `{ pid, created, until, self }`. Their children were
+// created between `created` and `until` (both widened by the tolerance) and
+// before any other process now listed under their id. `self` is the root's own
+// creation time when it is known from a listing, so a root that survived its
+// kill is not taken for an impostor of itself.
+function treeBelow(processes, roots, started) {
+  const found = [];
+  const seen = new Set(roots.map((root) => root.pid));
+  const queue = roots.map((root) => {
+    const impostor = processes.find((entry) => entry.pid === root.pid && entry.created !== root.self);
+    return {
+      pid: root.pid,
+      created: root.created - CLOCK_TOLERANCE_MS,
+      until: root.until + CLOCK_TOLERANCE_MS,
+      before: impostor ? impostor.created : Infinity,
+    };
+  });
+  while (queue.length > 0) {
+    const parent = queue.shift();
+    for (const entry of processes) {
+      const ownChild =
+        entry.parentPid === parent.pid &&
+        entry.created >= started - CLOCK_TOLERANCE_MS &&
+        entry.created >= parent.created &&
+        entry.created <= parent.until &&
+        entry.created < parent.before;
+      if (ownChild && !seen.has(entry.pid)) {
+        seen.add(entry.pid);
+        found.push(entry.pid);
+        queue.push({ pid: entry.pid, created: entry.created, until: Infinity, before: Infinity });
+      }
+    }
+  }
+  return found;
+}
+
+function descendantsOf(processes, rootPid, started, ended) {
+  return treeBelow(processes, [{ pid: rootPid, created: started, until: ended }], started);
+}
+
+function killTree(pid, started, ended, platform = process.platform, run = spawnSync) {
+  if (platform !== "win32" || !Number.isInteger(pid) || pid <= 0) {
+    return [];
+  }
+  const list = () =>
+    parseProcessList(
+      run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", LIST_PROCESSES], { encoding: "utf8", windowsHide: true, timeout: 15000, maxBuffer: 16 * 1024 * 1024 }).stdout,
+    );
+  const kill = (pids) => run("taskkill", ["/F", ...pids.flatMap((each) => ["/PID", String(each)])], { stdio: "ignore", windowsHide: true, timeout: 15000 });
+  const killed = [];
+  try {
+    const first = list();
+    const pids = descendantsOf(first, pid, started, ended);
+    if (pids.length === 0) {
+      return killed;
+    }
+    kill(pids);
+    killed.push(...pids);
+    const killedAt = Date.now();
+    const roots = first
+      .filter((entry) => pids.includes(entry.pid))
+      .map((entry) => ({ pid: entry.pid, created: entry.created, until: killedAt, self: entry.created }));
+    const late = treeBelow(list(), roots, started).filter((each) => !killed.includes(each));
+    if (late.length > 0) {
+      kill(late);
+      killed.push(...late);
+    }
+    return killed;
+  } catch {
+    // No PowerShell: the timeout is still reported; the leftovers are not killed.
+    return killed;
+  }
+}
+
 function runValidationCommand(
   command,
-  { timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, env, cwd: runCwd = cwd, keepOutput = false } = {},
+  { timeoutMs = commandTimeoutDefault(), env, cwd: runCwd = cwd, keepOutput = false, kill = killTree } = {},
 ) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
@@ -276,10 +451,16 @@ function runValidationCommand(
     maxBuffer: maxOutputBytes,
     ...(env ? { env } : {}),
   });
+  // Taken before the kill: the duration is the command's, and the shell was dead
+  // by now, which bounds what counts as its child.
+  const ended = Date.now();
 
   const cap = 4000;
   const timedOut = Boolean(result.error && result.error.code === "ETIMEDOUT");
   const overflowed = Boolean(result.error && result.error.code === "ENOBUFS");
+  if (timedOut || overflowed) {
+    kill(result.pid, started, ended);
+  }
   const exitCode = result.status != null ? result.status : timedOut ? 124 : result.error ? 127 : 1;
 
   // `toolError` says "the harness could not observe this command", which is not
@@ -302,7 +483,7 @@ function runValidationCommand(
     timedOut,
     ...(timedOut ? { timeoutMs } : {}),
     toolError,
-    durationMs: Date.now() - started,
+    durationMs: ended - started,
     ...detectCacheState(`${result.stdout || ""}\n${result.stderr || ""}`),
     stdoutTail: (result.stdout || "").slice(-cap),
     stderrTail: (result.stderr || "").slice(-cap),
@@ -483,13 +664,19 @@ function captureEnvironment() {
 
 module.exports = {
   resolveStoryDir,
+  killTree,
+  descendantsOf,
+  CLOCK_TOLERANCE_MS,
+  parseProcessList,
   parseTestsCommands,
   resolveValidationCommands,
+  resolveCheckCommands,
   cleanEnvironment,
   isUnattended,
   isProjectScriptInvocation,
   runValidationCommand,
   commandTimeout,
+  commandTimeoutDefault,
   securityOutcome,
   resultStatus,
   captureEnvironment,

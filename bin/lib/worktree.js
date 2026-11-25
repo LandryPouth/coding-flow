@@ -27,6 +27,7 @@ const { latestVerifyByStoryDir, isStale } = require("./audit");
 const { currentTreeToken } = require("./identity");
 const { policyFingerprint } = require("./policy-fingerprint");
 const { verifyStoryOnce, writeVerifyEvidence, printVerify, resolveValidationCommands } = require("./harness");
+const { commandTimeoutDefault } = require("./validation-run");
 // Leaf modules only (neither requires this file) — safe from here without
 // creating a cycle with worktree-plan.js, which itself requires this file
 // for `worktreeAdd`. See placement-store.js's own header.
@@ -733,22 +734,17 @@ function landCleanup(root, match, branch, found) {
 const LAND_LOCK_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 const LAND_LOCK_STALE_MS = 15 * 60 * 1000;
 
-// Mirrors `harness.js`'s `runValidationCommand` default (`timeoutMs = 600000`)
-// — the actual per-command ceiling the post-merge re-verify below is bound
-// by. The fixed floors above were picked as "generous" without being checked
-// against that default: `verifyStoryOnce` runs every configured validation
-// command SEQUENTIALLY (`harness.js`'s own `.map`), so a project declaring as
-// few as two or three ordinary commands (none individually near its own
-// 10-minute cap) can legitimately run longer than a fixed 15-minute
-// `staleMs` — at which point a concurrent land, arriving even a few minutes
-// after the first (well within "two chains finishing near the same moment"),
-// would see the still-working holder's lock as abandoned, steal it, and race
-// its own merge/rebase/reset against the same shared checkout the first
-// land's validation commands are still reading — the exact interleaving this
-// lock exists to prevent, reproduced by a later `/flow-review` pass tracing
-// the constants above against harness.js's own timeout default rather than
-// accepting them as already generous enough.
-const PER_COMMAND_TIMEOUT_MS = 600000;
+// The per-command ceiling the post-merge re-verify below is bound by is the
+// runner's own default (`commandTimeoutDefault`, from the rules registry —
+// story 26-06: it used to be copied here as a second 600000). The fixed floors
+// above were once picked as "generous" without being checked against it:
+// `verifyStoryOnce` runs every configured validation command SEQUENTIALLY, so
+// a project declaring as few as two or three ordinary commands (none near its
+// own 10-minute cap) can legitimately run longer than a fixed 15-minute
+// `staleMs` — at which point a concurrent land would see the still-working
+// holder's lock as abandoned, steal it, and race its own merge/rebase/reset
+// against the same shared checkout the first land's commands are still
+// reading, the exact interleaving this lock exists to prevent.
 const LAND_LOCK_WAIT_MARGIN_MS = 2 * 60 * 1000;
 const LAND_LOCK_STALE_MARGIN_MS = 5 * 60 * 1000;
 
@@ -762,7 +758,7 @@ const LAND_LOCK_STALE_MARGIN_MS = 5 * 60 * 1000;
 // `worstCaseMs` overrides the default-limit estimate when the project raised a
 // command's limit (`validation.timeoutMs`): a lock sized for 10 min per command
 // would be stolen from a re-verify legitimately running for 20.
-function landLockTimeouts(commandCount, worstCaseMs = commandCount * PER_COMMAND_TIMEOUT_MS) {
+function landLockTimeouts(commandCount, worstCaseMs = commandCount * commandTimeoutDefault()) {
   return {
     waitTimeoutMs: Math.max(LAND_LOCK_WAIT_TIMEOUT_MS, worstCaseMs + LAND_LOCK_WAIT_MARGIN_MS),
     staleMs: Math.max(LAND_LOCK_STALE_MS, worstCaseMs + LAND_LOCK_STALE_MARGIN_MS),
@@ -970,7 +966,7 @@ function worktreeLand(name, { cwd, story, dryRun = false }) {
     const landResolution = resolveValidationCommands({ storyDir: null });
     landCommandCount = landResolution.commands.length;
     landWorstCaseMs = landResolution.commands.reduce(
-      (total, command) => total + ((landResolution.timeouts && landResolution.timeouts[command]) || PER_COMMAND_TIMEOUT_MS),
+      (total, command) => total + ((landResolution.timeouts && landResolution.timeouts[command]) || commandTimeoutDefault()),
       0,
     );
   } catch {
@@ -1077,7 +1073,7 @@ function worktreeLand(name, { cwd, story, dryRun = false }) {
         // test exemption a landed story already earned. Judging the merged result on
         // whether its commands pass, not on a heuristic scoped to the wrong diff, is
         // what this re-verify is for; coverage stays a per-story concern.
-        const evidence = verifyStoryOnce({ story: null, skipCoverage: true, unattended: true });
+        const evidence = verifyStoryOnce({ story: null, skipCoverage: true, unattended: true, runFix: false });
         const evidencePath = writeVerifyEvidence(evidence);
         printVerify(evidence, evidencePath);
 

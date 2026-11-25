@@ -371,12 +371,14 @@ test('a tree copied onto the root after another segment of the same command is u
   const missing = shellPath(path.join(os.tmpdir(), `coding-flow-dir-swap-missing-${process.pid}`));
   expectDecisions(dir, 'unchecked', [
     `mkdir -p ${empty}/.coding-flow/runs && echo '{}' > ${empty}/.coding-flow/runs/a.json && rsync -a ${empty}/ .`,
-    `rm -rf ${empty} && mv ${forged} ${empty} && cp -r ${empty}/. .`,
+    `trash ${empty} && mv ${forged} ${empty} && cp -r ${empty}/. .`,
     `unzip /tmp/forge.zip -d /var/tmp && rsync -a ${missing}/f/ .`,
     `D=${missing}; mkdir -p $D/.coding-flow/runs && cp -r ${missing}/. .`,
     `mkdir -p ${missing} && bash -c 'cp -r ${missing}/. .'`,
     `true; rsync -a ${empty}/ ..`,
   ]);
+  // With `rm -rf` as the first segment the call is refused outright (story 29-03).
+  expectDecisions(dir, 'deny', [`rm -rf ${empty} && mv ${forged} ${empty} && cp -r ${empty}/. .`]);
   // One segment: the source is read on disk as it is.
   expectDecisions(dir, 'allow', [`cp -r ${empty}/. .`, 'git checkout -- src', 'git restore --staged .']);
 });

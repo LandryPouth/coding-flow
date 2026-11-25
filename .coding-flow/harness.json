@@ -92,6 +92,7 @@
     "bin/lib/security-policy.js",
     "bin/lib/policy.js",
     "bin/lib/coverage-gate.js",
+    "bin/lib/test-tokens.js",
     "bin/lib/evidence.js",
     "bin/lib/identity.js",
     "bin/lib/policy-fingerprint.js",
@@ -100,6 +101,7 @@
     "bin/lib/codex-settings.js",
     "bin/lib/codex-probe.js",
     "bin/lib/shell-writes.js",
+    "bin/lib/destructive.js",
     "bin/lib/archive-members.js",
     "bin/lib/risk.js",
     "bin/lib/harness-config.js",
@@ -118,6 +120,7 @@
     "scripts/test-env-guard.js",
     "bin/lib/diff-base.js",
     "bin/lib/config.js",
+    "bin/lib/rules-registry.js",
     "bin/lib/spec-drift.js",
     "bin/lib/settings.js"
   ],

@@ -85,6 +85,33 @@ passing. s4's detached job goes through s3's queue. s6 extends the
 5. [story-19-05-fixers-run-before-the-checks](story-19-05-fixers-run-before-the-checks/spec.md) *(STANDARD)*
 6. [story-19-06-the-risk-picks-the-tiers](story-19-06-the-risk-picks-the-tiers/spec.md) *(STRICT — changes which commands prove a story)*
 7. [story-19-07-tests-are-read-only-when-nobody-watches](story-19-07-tests-are-read-only-when-nobody-watches/spec.md) *(STRICT — guard)*
+8. [story-19-08-a-reformatted-test-is-not-a-stronger-test](story-19-08-a-reformatted-test-is-not-a-stronger-test/spec.md) *(STANDARD — added 2026-11-23 from 19-05's reviews: a neutral test edit no longer earns the coverage gate)*
+9. [story-19-09-a-failed-review-is-cleared-by-a-review](story-19-09-a-failed-review-is-cleared-by-a-review/story.md) *(STANDARD — added 2026-11-24 at the maintainer's request: after a FAIL, a pass needs a new review round; STRICT needs two)*
+10. [story-19-10-the-fixers-test-holds-under-load](story-19-10-the-fixers-test-holds-under-load/story.md) *(QUICK — added 2026-11-25: the 19-05 fixers test failed under load; cause: the throwaway index copy lost git's racy-clean re-read)*
+11. [story-19-11-one-tree-is-proved-once](story-19-11-one-tree-is-proved-once/story.md) *(STANDARD — added 2026-11-25 from the unattended run: land skips its re-verify on a fast-forward to the proved tree; flow-run stops running the suite before verify)*
+
+### Follow-ups
+
+- **Weakening markers counted outside strings and comments** (from 19-08,
+  re-scoped after its review round 4). Markers are still counted on raw diff
+  lines, so a test title losing its `should` reads as an assertion removed (a
+  false weakening, never a false strength). A fix must read whole files, not
+  diff-hunk fragments: 19-08's lexer on fragments left a template or block
+  comment open and hid removed assertions. Owner: a new story in this epic;
+  `test/weakened-tests.test.js` keeps it as a `todo`.
+- **A test file moved without staging is reported removed** (from 19-08, new
+  series round 1). An unstaged `mv` reads as a deletion plus an untracked
+  file, as it always has; 19-08 pairs them only to read the new file's
+  strength. Treating it as a move would loosen the weakening signal, so it
+  needs its own story and a differential test against the old gate.
+- **A project inside a test-glob folder reads its behaviour as tests**
+  (pre-existing, found in 19-08's series 2 round 3, true at efede92 too). In
+  a project below the repository top inside `e2e/` or `cypress/` (any folder
+  a default test glob matches), committed and staged files are named from the
+  top, so every one matches `**/e2e/**`: a high-risk change plus a reformat
+  reads "no behavior file changed" and passes. Fix: classify with
+  project-relative names (or match globs against them); needs its own story
+  and a differential test.
 
 ## Decisions
 

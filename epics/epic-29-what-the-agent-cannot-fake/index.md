@@ -92,6 +92,10 @@ The three stories are independent (disjoint files: `scan.js`,
 1. [story-29-01-the-diff-is-scanned](story-29-01-the-diff-is-scanned/spec.md) — `ai-flow scan`: four defect rules on introduced lines, in verify and evidence *(STANDARD — walking skeleton)*
 2. [story-29-02-a-changed-test-runs-and-a-removed-test-is-declared](story-29-02-a-changed-test-runs-and-a-removed-test-is-declared/spec.md) — collected tests, removed test ids, exit code never trusted alone *(STANDARD)*
 3. [story-29-03-destructive-commands-wait-for-the-human](story-29-03-destructive-commands-wait-for-the-human/spec.md) — guard refuses destructive commands and names the safe one *(STRICT — guard)*
+4. [story-29-04-commands-built-to-evade-the-guard](story-29-04-commands-built-to-evade-the-guard/spec.md) — interpreter strings, git alias values, written-then-run scripts; the unread forms stated with their cover *(STRICT — added 2026-11-24 from 29-03's four reviews)*
+5. [story-29-05-the-guard-holds-on-windows](story-29-05-the-guard-holds-on-windows/story.md) — the Windows CI job green: Git Bash `/c/…` paths read as drive paths, a timed-out command's tree killed, three tests that pasted unquoted backslash paths into bash *(STRICT — guard; added 2026-11-25 from PR #61's red Windows job)*
+8. [story-29-08-auto-merge-waits-for-the-checks](story-29-08-auto-merge-waits-for-the-checks/story.md) *(STRICT — writes the repository's branch protection; maintainer, 2026-11-25)*
+9. [story-29-09-each-story-ships-itself](story-29-09-each-story-ships-itself/story.md) *(STANDARD — after 29-08: a `ship` setting, `story` mode lands each story through its own auto-merged PR; maintainer, 2026-11-25)*
 
 ## Decisions
 
@@ -129,7 +133,7 @@ needed). 29-02 after 19-01, before the first driven run (20-01).
 
 ## Maintainer cleanup on delivery
 
-- Remove the proof gate from the `epic-run` workflow and skill
+- [ ] Remove the proof gate from the `epic-run` workflow and skill
   (`~/.claude/workflows/epic-run.js` "Proof gate", `~/.claude/skills/epic-run/SKILL.md`
   step 2, `~/.claude/docs/skills/epic-run.md` section "Porte de preuve") and
   `~/.claude/workflows/lib/proof-scan.mjs` once 29-01, 29-02 and 18-06 ship;

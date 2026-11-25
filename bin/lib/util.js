@@ -66,6 +66,12 @@ function normalizePortable(filePath) {
   return toPortable(filePath).replace(/^\.\//, "");
 }
 
+// A file name as one printable line: a newline or other control character in it
+// (git allows them) is shown escaped, never acted on by a terminal or a table.
+function printablePath(file) {
+  return /[\u0000-\u001f\u007f]/.test(file) ? JSON.stringify(file).slice(1, -1) : file;
+}
+
 function walkFiles(dir) {
   if (!fs.existsSync(dir)) {
     return [];
@@ -160,7 +166,13 @@ function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.${require("crypto").randomBytes(6).toString("hex")}.tmp`;
   fs.writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`);
-  fs.renameSync(tmpPath, filePath);
+  try {
+    fs.renameSync(tmpPath, filePath);
+  } catch (error) {
+    // A failed rename (the target is a directory) must not leave the staging file.
+    fs.rmSync(tmpPath, { force: true });
+    throw error;
+  }
 }
 
 // Shared by every evidence writer (`writeVerifyEvidence`, `writeReviewEvidence`,
@@ -505,6 +517,7 @@ module.exports = {
   isCommandAvailable,
   binaryPathNote,
   normalizePortable,
+  printablePath,
   walkFiles,
   hashBuffer,
   hashFile,

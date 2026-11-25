@@ -8,7 +8,7 @@ const path = require("path");
 const { cwd } = require("./context");
 const { describeScope } = require("./diff-base");
 const { coverageTier } = require("./coverage");
-const { log, normalizePortable } = require("./util");
+const { log, normalizePortable, printablePath } = require("./util");
 const { resultStatus } = require("./validation-run");
 const { NO_CONTRARY } = require("./coverage-gate");
 const { describeGrowth } = require("./complexity");
@@ -236,7 +236,7 @@ function printPassed(evidence, coverage, contrary) {
   // Printed at every rung, including `verified`. A measured 92% next to three
   // deleted tests is still three deleted tests, and the reader decides what that
   // means — this only refuses to let a good number hide it.
-  printWeakenedTests(coverage);
+  printTestDirection(coverage);
   printRedAtBase(evidence.redAtBase);
   printComplexity(evidence.complexity);
   printMutation(evidence.mutation);
@@ -287,13 +287,13 @@ function printVerify(evidence, outputPath) {
     // project's own strictness reading the story and the diff against the verdict.
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the run contradicts itself.`);
     printContraryFailures(contrary);
-    printWeakenedTests(coverage);
+    printTestDirection(coverage);
     printFailedProofs(evidence);
     printOpenCriteria(evidence);
     printClaimFailures(evidence.claim);
   } else {
     log("Harness verify FAILED.");
-    printWeakenedTests(coverage);
+    printTestDirection(coverage);
     printClaimFailures(evidence.claim);
     printFailedProofs(evidence);
   }
@@ -319,9 +319,56 @@ function printVerify(evidence, outputPath) {
   }
 
   printResults(evidence.results);
+  printFixerWrites(evidence);
 
   if (outputPath) {
     log(`Evidence: ${normalizePortable(path.relative(cwd, outputPath))}`);
+  }
+}
+
+// Story 19-05: what the fixers rewrote, left in the tree for whoever commits.
+function printFixerWrites(evidence) {
+  printFixedFiles(evidence);
+  printHarmlessWrites(evidence);
+}
+
+function printFixedFiles({ fixedFiles, fixerStrengthened = [] }) {
+  if (fixerStrengthened.length > 0) {
+    log(`Warning: ${fixerStrengthened.length} test file(s) counted as strengthened were rewritten by a fixer in this run: ${fixerStrengthened.map(printablePath).join(", ")}`);
+    log("  a formatter's rewrite is not a stronger test; the gate's neutral rule is under review (story 19-08)");
+  }
+
+  if (fixedFiles === undefined) {
+    return;
+  }
+
+  if (fixedFiles === null) {
+    log("Fixed by the fixers: unknown (no git snapshot of the working tree).");
+    return;
+  }
+
+  if (fixedFiles.length === 0) {
+    log("Fixed by the fixers: nothing changed.");
+    return;
+  }
+
+  log("Fixed by the fixers:");
+
+  for (const file of fixedFiles) {
+    log(`  - ${printablePath(file)}`);
+  }
+
+  log("  (left in the working tree, not committed)");
+}
+
+// Changed under `.coding-flow/` during the fixers, and no write: named, not hidden.
+function printHarmlessWrites({ reformatted = [], guardLogs = [] }) {
+  if (reformatted.length > 0) {
+    log(`Reformatted, same value: ${reformatted.map(printablePath).join(", ")}`);
+  }
+
+  if (guardLogs.length > 0) {
+    log(`Written by the guard during the fixers: ${guardLogs.map(printablePath).join(", ")}`);
   }
 }
 
@@ -331,7 +378,7 @@ function printResults(results) {
     const replay = item.cache === "full" || item.cache === "partial"
       ? `, replayed from cache${item.total ? `: ${item.cached}/${item.total} tasks` : ""}`
       : "";
-    const kind = item.kind === "security" ? "security: " : "";
+    const kind = item.kind === "security" ? "security: " : item.kind === "fix" ? "fix: " : "";
     log(`- [${resultStatus(item)}] ${kind}${item.command} (${item.durationMs}ms${replay})`);
 
     if (item.outcome === "not-examined") {
@@ -359,8 +406,8 @@ function printResults(results) {
     if (!item.ok) {
       const named = Array.isArray(item.failureLines) && item.failureLines.length
         ? item.failureLines.slice(-3)
-        : item.stderrTail.trim()
-          ? item.stderrTail.trim().split(/\r?\n/).slice(-3)
+        : String(item.stderrTail || "").trim()
+          ? String(item.stderrTail).trim().split(/\r?\n/).slice(-3)
           : [];
 
       for (const line of named) {
@@ -400,7 +447,7 @@ function printCoverageBlocked(coverage) {
       (coverage.behaviorFiles.length > 5 ? ` (+${coverage.behaviorFiles.length - 5} more)` : ""));
   }
 
-  printWeakenedTests(coverage);
+  printTestDirection(coverage);
 
   if (coverage.floor) {
     log("  Emit a coverage report (lcov.info / coverage-final.json) so the added lines are measured,");
@@ -441,6 +488,31 @@ function printClaimFailures(claim) {
 
   if (claim.failures.length > 5) {
     log(`    - … and ${claim.failures.length - 5} more`);
+  }
+}
+
+function printTestDirection(coverage) {
+  printWeakenedTests(coverage);
+  printNeutralTests(coverage);
+}
+
+// Story 19-08: a test file changed without a new test or assertion is named, so
+// a reformat that earned nothing says so instead of passing for coverage.
+function printNeutralTests(coverage) {
+  const files = (coverage && coverage.neutralTests) || [];
+
+  if (!files.length) {
+    return;
+  }
+
+  log(`  Tests changed without a new test or assertion (neutral) (${files.length}):`);
+
+  for (const file of files.slice(0, 5)) {
+    log(`    - ${printablePath(file)}`);
+  }
+
+  if (files.length > 5) {
+    log(`    - … and ${files.length - 5} more`);
   }
 }
 

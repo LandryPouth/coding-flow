@@ -74,7 +74,7 @@ Known limit, carried over honestly rather than glossed: the sandbox denies by
 scoped to "the agent, not a legitimate internal call," the way the hook's
 `tool_name` field could in principle allow.
 
-`epics/epic-01-multi-platform-support/` (see `docs/design-decisions.md` entry
+`epics/epic-01-multi-platform-support/` ([archived](../../epics/INDEX.md#epic-01--multi-platform-support-codex-gemini-cli-opencode-antigravity)) (see `docs/design-decisions.md` entry
 10) plans porting the sandbox-profile approach for Codex — not the hook this
 plan originally proposed — plus, new here, an automated self-test of that
 sandbox profile that runs inside `doctor`/`init` rather than relying on a
@@ -126,7 +126,7 @@ shape and a far harder test of whether the contract holds.
 confirmed directly, not through `ai-flow report`/`docs/DOGFOODING.md` (neither
 channel had produced a signal yet; the wait itself is still the right call for
 whichever candidate feature asks next). See `docs/design-decisions.md` entry
-10 and `epics/epic-01-multi-platform-support/`. The plan below (payload
+10 and `epics/epic-01-multi-platform-support/` ([archived](../../epics/INDEX.md#epic-01--multi-platform-support-codex-gemini-cli-opencode-antigravity)). The plan below (payload
 normalisation, three wiring emitters, per-host `doctor`) still describes the
 shape of the work; the epic sequences Codex via the sandbox-profile route in
 the addendum above rather than the `PreToolUse` hook, and does not build

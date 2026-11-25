@@ -504,7 +504,9 @@ test('auto-land: a failed re-verify of a stale chain root fails before land ever
 // high-risk path to make `scoreDiffRisk` resolve to "high".
 function touchHighRiskFile(worktreePath, message) {
   fs.writeFileSync(path.join(worktreePath, 'payment.js'), 'module.exports = {};\n');
-  fs.writeFileSync(path.join(worktreePath, 'payment.test.js'), '// covers payment.js\n');
+  // A test that holds code: since story 19-08 a comment-only test file is not
+  // a test added, and would not satisfy the gate.
+  fs.writeFileSync(path.join(worktreePath, 'payment.test.js'), "require('node:assert').ok(require('./payment'));\n");
   commitAll(worktreePath, message);
 }
 
@@ -608,6 +610,37 @@ test('auto-land: a STRICT-tier chain whose review evidence recorded a failing ve
   assert.equal(text.code, 0);
   assert.match(text.output, /has a failing review for its STRICT-tier story/);
   assert.match(text.output, /run \/flow-review before landing/);
+});
+
+// Story 19-09: one clean round after a fail is not enough for a STRICT member.
+test('auto-land: a STRICT-tier chain whose only clean review round follows a fail blocks with reason "review-unconfirmed"', (t) => {
+  const { repo, epicPath } = freshRepo(t, {
+    indexMd: TWO_CHAIN_INDEX,
+    storyDirs: ['story-x-01-a', 'story-x-02-b', 'story-x-03-c'],
+  });
+
+  place(repo, epicPath, `${epicPath}/story-x-01-a`);
+  const worktreeB = place(repo, epicPath, `${epicPath}/story-x-02-b`).location;
+
+  writeVerify(worktreeB, `${epicPath}/story-x-02-b`);
+  markStoryDone(worktreeB, epicPath, 'story-x-02-b');
+  touchHighRiskFile(worktreeB, 'feat: story c work (payment path)');
+  writeVerify(worktreeB, `${epicPath}/story-x-03-c`);
+  markStoryDone(worktreeB, epicPath, 'story-x-03-c');
+
+  writeReviewFile(worktreeB, `${epicPath}/story-x-02-b`, { verdict: 'pass' });
+  writeReviewFile(worktreeB, `${epicPath}/story-x-03-c`, { verdict: 'fail' });
+  writeReviewFile(worktreeB, `${epicPath}/story-x-03-c`, { verdict: 'pass' });
+  commitAll(worktreeB, 'chore: capture review evidence for the chain');
+
+  const { code, result } = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`);
+  assert.equal(code, 0);
+  assert.equal(result.landed, false);
+  assert.equal(result.reason, 'review-unconfirmed');
+  assert.ok(fs.existsSync(worktreeB));
+
+  const text = autoland(worktreeB, epicPath, `${epicPath}/story-x-03-c`, { json: false });
+  assert.match(text.output, /needs one more clean review round after a failed one/);
 });
 
 test('auto-land: a STRICT-tier chain whose review evidence went stale (the tree moved since capture) blocks with reason "review-stale", distinct from "review-missing"/"review-failed"', (t) => {

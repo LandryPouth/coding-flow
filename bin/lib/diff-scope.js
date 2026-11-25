@@ -401,8 +401,10 @@ function renamedFilesInDiff() {
   return pairs.filter((pair) => !isScopedOut(pair.from, config));
 }
 
-function deletedFilesInDiff() {
-  const deleted = new Set();
+// Files the diff under proof deleted (`D`) or added (`A`), from the three
+// diffs the gate reads: unstaged, staged, and against the merge base.
+function filesWithStatusInDiff(status) {
+  const found = new Set();
   const { mergeBase } = currentDiffBase(cwd);
   // `--find-renames` is explicit: a moved test file is not a deleted one, and a
   // user's `diff.renames=false` must not turn every move into a deletion.
@@ -414,18 +416,27 @@ function deletedFilesInDiff() {
 
   for (const argsForGit of sources) {
     for (const line of runGitText(argsForGit).split(/\r?\n/)) {
-      const match = line.match(/^D\s+(.+)$/);
+      const match = line.match(/^([A-Z])\s+(.+)$/);
 
-      if (match) {
-        deleted.add(normalizePortable(match[1].trim()));
+      if (match && match[1] === status) {
+        found.add(normalizePortable(match[2].trim()));
       }
     }
   }
 
   const config = readHarnessConfig(cwd).config;
 
-  return filterScopedFiles([...deleted], config);
+  return filterScopedFiles([...found], config);
 }
+
+const deletedFilesInDiff = () => filesWithStatusInDiff("D");
+// Added in the diff, or untracked: a brand-new file is new whether or not it
+// has been staged yet. Both named from the repository top, as `git diff` names them.
+const addedFilesInDiff = () => {
+  const config = readHarnessConfig(cwd).config;
+  const untracked = filterScopedFiles(runGitList(["ls-files", "--others", "--exclude-standard", "--full-name"]), config);
+  return [...new Set([...filesWithStatusInDiff("A"), ...untracked])];
+};
 
 module.exports = {
   setDiffBaseRequest,
@@ -443,5 +454,6 @@ module.exports = {
   renamedFilesInDiff,
   parseChangedText,
   deletedFilesInDiff,
+  addedFilesInDiff,
   addedLinesByFile,
 };

@@ -84,6 +84,7 @@ s3
 s5
 
 s6
+└── s8
 ```
 
 s4's closure runs s3's docs check on the files the epic changed. s7 extends
@@ -102,8 +103,15 @@ notify, run watch, rules registry).
 6. [story-26-06-the-rules-are-printed-with-their-source](story-26-06-the-rules-are-printed-with-their-source/spec.md) *(STANDARD)*
 7. [story-26-07-we-need-you](story-26-07-we-need-you/spec.md) *(STANDARD — capture, `next`'s We need you
    block, ship/land repeat `before: deploy`)*
+8. [story-26-08-init-shows-the-rules-it-applies](story-26-08-init-shows-the-rules-it-applies/story.md) *(STANDARD — split
+   from 26-06 at its review cap; `init` writes `coverageFloor` and
+   `failOnContrarySignals` without moving any proof's fingerprint)*
+9. [story-26-09-a-moved-folder-is-checked-too](story-26-09-a-moved-folder-is-checked-too/story.md) *(STANDARD — split
+   from 26-03 at its review cap: folder mentions under `--changed`, paths
+   under a moved folder, branch names)*
 
-Seven stories: the cap. Anything more around the maintainer's attention is a
+Seven stories were the cap; 26-08 is a split of 26-06 (its criterion 5) and 26-09 of 26-03,
+not new scope. Anything more around the maintainer's attention is a
 follow-up epic.
 
 ## Decisions

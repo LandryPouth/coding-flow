@@ -43,9 +43,10 @@ with minimal ambiguity. Dense artifacts, no ceremony, no document no agent will 
 - Split by shippable behavior, never by frontend/backend/database.
 - Plan heavier for auth, permissions, billing, migrations, external integrations and
   data modeling; lighter for static UI, copy and isolated fixes.
-- 2–5 stories for a normal epic; **cap it around 5–7**. Past that it is no longer one
-  shippable capability — split the rest into a follow-up epic. A small epic also
-  reaches "every story proven", and merges, sooner.
+- 2–5 stories for a normal epic; **cap it around 5–7** — an epic is warned above 7
+  by `doctor`. Past that it is no longer one shippable capability — split the rest
+  into a follow-up epic. A small epic also reaches "every story proven", and merges,
+  sooner.
 - **Corpus first for a parser- or policy-shaped epic** (a shell reader, a path
   policy, a config parser, a route scanner): the case corpus is story 01 — "the
   corpus runs, red where unhandled" — and later stories turn rows green. Written

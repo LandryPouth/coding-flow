@@ -27,8 +27,8 @@ function registerStoryLocator(locator) {
 const {
   fail,
   log,
-  normalizePortable,
   readJson,
+  normalizePortable,
   writeJson,
   addIssue,
   walkProjectFiles,
@@ -38,8 +38,11 @@ const {
   harnessRunsDir,
   defaultSecretPatterns,
   defaultHarnessConfig,
+  initialHarnessConfig,
+  HARNESS_MODES,
   readHarnessConfig,
   ensureHarnessConfig,
+  harnessFileState,
 } = require("./harness-config");
 const {
   compileSecretPatterns,
@@ -72,6 +75,7 @@ const {
   buildHarnessPreflight,
   checkStoryEvidence,
   findReusableVerify,
+  provedCommands,
   writeVerifyEvidence,
   verifyStoryOnce,
 } = require("./evidence");
@@ -162,11 +166,54 @@ function buildHarnessEvidence({ story = null } = {}) {
   };
 }
 
+// The file `harness init` would complete: the parsed object, or the object a
+// symbolic link points to. Anything else holds no setting to keep.
+function keptHarness(state, file) {
+  if (state.kind === "parsed") {
+    return state.config;
+  }
+
+  if (state.kind === "symlink" && !state.dangling) {
+    const value = readJson(file, null);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  }
+
+  return null;
+}
+
+// Refuses what harness init never replaces, even with --force: something that
+// is not a regular file, and a symbolic link (only when asked to replace it, or
+// when it points nowhere).
+function refuseUnreplaceable(state, shown, force) {
+  if (state.kind === "not-a-file") {
+    fail(`${shown} is not a regular file; harness init does not replace it. Move it aside, then run \`harness init\`.`);
+  }
+
+  if (state.kind === "symlink" && (force || state.dangling)) {
+    const target = state.dangling ? " to a missing file" : "";
+    fail(`${shown} is a symbolic link${target}; harness init does not replace a link you made. Edit or fix the file it points to.`);
+  }
+
+  if (state.kind === "unparsable" && !force) {
+    fail(`${shown} cannot be read (${state.error}). Fix it, or run \`harness init --force\` to replace it with the defaults.`);
+  }
+}
+
 function harnessInit({ json = false, dryRun = false, force = false, mode = null } = {}) {
-  const existing = readJson(harnessConfigPath(), null);
-  const allowedModes = new Set(["fast", "standard", "strict"]);
+  const file = harnessConfigPath();
+  const shown = normalizePortable(path.relative(cwd, file));
+  const state = harnessFileState(file);
+  refuseUnreplaceable(state, shown, force);
+
+  const existing = keptHarness(state, file);
+  // A file holding no setting (unparsable, `null`, `[]`) replaced with --force
+  // is written as a new one.
+  const replacing = state.kind === "unparsable" || (state.kind === "parsed" && !existing);
+  const allowedModes = new Set(HARNESS_MODES);
+  // A new file shows the keys the readers resolve without it (26-08); an
+  // existing one is completed with the defaults only, as before.
   const config = {
-    ...defaultHarnessConfig(),
+    ...(existing ? defaultHarnessConfig() : initialHarnessConfig()),
     ...(existing || {}),
   };
 
@@ -183,22 +230,28 @@ function harnessInit({ json = false, dryRun = false, force = false, mode = null 
   }
 
   if (dryRun) {
+    if (force && replacing && !json) {
+      log(`Would replace ${shown}, which holds no readable setting, with the defaults above.`);
+    }
     return;
   }
 
-  if (existing && !force) {
+  if (state.kind !== "absent" && !force) {
     if (!json) {
       log("Harness config already exists. Use --force to overwrite it.");
     }
     return;
   }
 
-  writeJson(harnessConfigPath(), config);
+  writeJson(file, config);
   fs.mkdirSync(harnessRunsDir(), { recursive: true });
 
   if (!json) {
+    if (replacing) {
+      log(`Replaced ${shown}, which held no readable setting, with the defaults.`);
+    }
     log("Security evidence harness initialized.");
-    log(`Config: ${normalizePortable(path.relative(cwd, harnessConfigPath()))}`);
+    log(`Config: ${shown}`);
     log(`Runs: ${normalizePortable(path.relative(cwd, harnessRunsDir()))}`);
   }
 }
@@ -331,6 +384,47 @@ function claimKindOf(story, claim) {
   return resolved ? resolved.kind : null;
 }
 
+// `verify --dry-run`: the commands verify would run, fixers first; none executed.
+function printVerifyDryRun({ story, resolvedStory, json }) {
+  const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
+  const plan = {
+    root: cwd,
+    story: resolvedStory ? resolvedStory.relativePath : null,
+    commandSource: resolution.source,
+    commands: resolution.commands,
+    ...(resolution.fix.length > 0 ? { fix: resolution.fix, fixSource: resolution.fixSource } : {}),
+  };
+
+  if (json) {
+    log(JSON.stringify(plan, null, 2));
+    return;
+  }
+
+  log("Harness verify — dry run (no command executed).");
+  log(`Source: ${resolution.source || "none"}`);
+
+  if (resolution.fix.length > 0) {
+    log(`Fixers (run first): from ${resolution.fixSource}`);
+
+    for (const command of resolution.fix) {
+      log(`- ${command}`);
+    }
+  }
+
+  if (resolution.commands.length === 0) {
+    log(resolution.fix.length > 0 ? "No validation commands found: fixers alone prove nothing." : "No validation commands found.");
+    return;
+  }
+
+  if (resolution.fix.length > 0) {
+    log("Checks:");
+  }
+
+  for (const command of resolution.commands) {
+    log(`- ${command}`);
+  }
+}
+
 function harnessVerify({
   json = false,
   dryRun = false,
@@ -369,30 +463,7 @@ function harnessVerify({
   }
 
   if (dryRun) {
-    const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
-    const plan = {
-      root: cwd,
-      story: resolvedStory ? resolvedStory.relativePath : null,
-      commandSource: resolution.source,
-      commands: resolution.commands,
-    };
-
-    if (json) {
-      log(JSON.stringify(plan, null, 2));
-      return;
-    }
-
-    log("Harness verify — dry run (no command executed).");
-    log(`Source: ${resolution.source || "none"}`);
-
-    if (resolution.commands.length === 0) {
-      log("No validation commands found.");
-    }
-
-    for (const command of resolution.commands) {
-      log(`- ${command}`);
-    }
-
+    printVerifyDryRun({ story, resolvedStory, json });
     return;
   }
 
@@ -404,12 +475,15 @@ function harnessVerify({
   // current tree token, so `status` and `audit` already read it as verified.
   // A clean-env run is asked for a proof made without the secrets; replaying one
   // made with them would answer a different question.
-  if (!noCache && !cleanEnv) {
-    const resolution = resolveValidationCommands({ storyDir: resolveStoryDir(story) });
+  const reuse = !noCache && !cleanEnv ? resolveValidationCommands({ storyDir: resolveStoryDir(story) }) : null;
+
+  // No check, no proof to reuse: the fixer lines alone must not find one.
+  if (reuse && reuse.commands.length > 0) {
+    const resolution = reuse;
     const reusable = findReusableVerify({
       storyRelativePath: resolvedStory ? resolvedStory.relativePath : null,
       storyDir: resolveStoryDir(story),
-      commands: resolution.commands,
+      commands: provedCommands(resolution),
       timeouts: resolution.timeouts,
       claimKind: claimKindOf(story, claim), redAtBase,
     });

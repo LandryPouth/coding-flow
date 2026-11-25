@@ -470,12 +470,16 @@ function testIntegrityFailures(config, mergeBase, prefix, changedFiles) {
 // a test as surely as editing it, and in standard mode a policy change is only a
 // warning. Under the claim it fails, and no `## Policy Change` clears it: the
 // policy change goes in its own change, as a test change does.
+// The globs `--claim refactor` checks: the defaults always apply, as do the
+// test-runner configs — `policyGlobs: []` written in the same diff would
+// otherwise switch this check off from inside the change it checks.
+function claimPolicyGlobs(config) {
+  return [...new Set([...defaultPolicyGlobs(), ...TEST_RUNNER_GLOBS, ...(config.policyGlobs || [])])];
+}
+
 function scopeFailures(config, { behaviorFiles, excluded }) {
   const failures = [];
-  // The defaults always apply: `policyGlobs: []` written in the same diff would
-  // otherwise switch this check off from inside the change it checks.
-  const policyGlobs = [...new Set([...defaultPolicyGlobs(), ...TEST_RUNNER_GLOBS, ...(config.policyGlobs || [])])];
-  const policy = readPolicyChanged({ globs: policyGlobs });
+  const policy = readPolicyChanged({ globs: claimPolicyGlobs(config) });
 
   if (policy.length > 0) {
     failures.push({
@@ -652,6 +656,7 @@ function evaluateClaim({
 }
 
 module.exports = {
+  claimPolicyGlobs,
   readClaim,
   resolveClaim,
   evaluateClaim,

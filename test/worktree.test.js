@@ -404,6 +404,32 @@ test('worktree land fast-forwards a clean, verified story and cleans up', (t) =>
   assert.equal(runs[0].story, null, 'the re-verify evidence is repo-scoped, not story-scoped');
 });
 
+test('worktree land re-verifies the merged commit as it is: the fixers do not run on the target', (t) => {
+  const { base, repo } = repoWithStory(t);
+  fs.writeFileSync(
+    path.join(repo, '.coding-flow', 'config.json'),
+    JSON.stringify({
+      validation: {
+        fix: [`node -e "require('fs').writeFileSync('fixer-ran.txt','x')"`],
+        commands: ['node -e "process.exit(0)"'],
+      },
+    }, null, 2),
+  );
+  commitAll(repo, 'declare a fixer');
+  const storyWt = addStoryWorktree(base, repo);
+  fs.writeFileSync(path.join(storyWt, 'feature.txt'), 'story work\n');
+  commitAll(storyWt, 'story: add feature');
+  writeVerify(storyWt, 'epics/epic-01/story-01');
+
+  const { code, output } = run(repo, ['land', 'story-01']);
+  assert.equal(code, 0, output);
+  assert.equal(fs.existsSync(path.join(repo, 'fixer-ran.txt')), false, 'a fixer must not rewrite the target after a merge');
+  const runs = verifyRunFiles(repo);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].ok, true);
+  assert.equal('fixedFiles' in runs[0], false);
+});
+
 test('worktree land rebases a diverged story onto the target and fast-forwards', (t) => {
   const { base, repo } = repoWithStory(t);
   const storyWt = addStoryWorktree(base, repo);

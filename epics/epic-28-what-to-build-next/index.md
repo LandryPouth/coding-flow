@@ -101,6 +101,6 @@ right after 26-07). 28-02 with step 4 (learning), after 23.
 
 ## Maintainer cleanup on delivery
 
-- Remove the "Idées pour la suite" step from the `epic-run` workflow and
+- [ ] Remove the "Idées pour la suite" step from the `epic-run` workflow and
   skill (`~/.claude/workflows/epic-run.js`, `~/.claude/skills/epic-run/SKILL.md`)
   once `next` shows the Ideas block; the ledgers it wrote stay.

@@ -90,6 +90,18 @@ const STORY_DIRS = ["epics", "specs", ".specify"];
 const OUTSIDE_TOKEN = new Set([EVIDENCE_DIR, ...STORY_DIRS]);
 const EXCLUDE_PATHSPECS = [...OUTSIDE_TOKEN].map((dir) => `:(exclude)${dir}`);
 
+// A throwaway copy of the index that keeps the real one's mtime. Git re-reads
+// an entry whose file is as new as the index ("racily clean"); a copy stamped
+// later would trust a same-size rewrite made within that second (story 19-10).
+// The copy gets the whole second, never later than the real index: passing the
+// stat Date would round .9995 s and above up into the next second. Earlier is
+// safe — it only makes more entries re-read.
+function copyIndex(realIndex, tempIndex) {
+  fs.copyFileSync(realIndex, tempIndex);
+  const { atimeMs, mtimeMs } = fs.statSync(realIndex);
+  fs.utimesSync(tempIndex, Math.floor(atimeMs / 1000), Math.floor(mtimeMs / 1000));
+}
+
 // The tree of the working tree's tracked content, or null. `stash create` comes
 // first so existing tokens keep their value. It refuses a tree holding an
 // intent-to-add entry (`git add -N`), and falling back to HEAD there would hide
@@ -117,7 +129,7 @@ function workingTreeTree(cwd, head) {
   try {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "coding-flow-index-"));
     const tempIndex = path.join(dir, "index");
-    fs.copyFileSync(path.resolve(cwd, index), tempIndex);
+    copyIndex(path.resolve(cwd, index), tempIndex);
     const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
 
     const stage = untracked ? ["add", "-A", "--", ".", ...EXCLUDE_PATHSPECS] : ["add", "-u"];
@@ -222,4 +234,120 @@ function captureIdentity(cwd) {
   };
 }
 
-module.exports = { captureIdentity, currentTreeToken };
+// The whole work tree as a git tree object, from the repository top (a write
+// outside a project below the top is seen too), or null outside git. Ignored
+// files are left out — except `.coding-flow/`, read whatever the project
+// ignores: its run files, manifest and active story are what a fixer must never
+// rewrite unseen. Verify writes its own evidence only after the second
+// snapshot. A throwaway copy
+// of the index takes it; the real index is never touched. Two snapshots
+// compared with `changedPaths` say which files a command rewrote (story 19-05).
+function workingTreeSnapshot(cwd) {
+  const index = gitField(cwd, ["rev-parse", "--git-path", "index"]);
+
+  if (!index) {
+    return null;
+  }
+
+  let dir = null;
+
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "coding-flow-snapshot-"));
+    const tempIndex = path.join(dir, "index");
+    const realIndex = path.resolve(cwd, index);
+
+    if (fs.existsSync(realIndex)) {
+      copyIndex(realIndex, tempIndex);
+    }
+
+    const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
+
+    if (tryExec("git", ["add", "-A", "--", ":/"], cwd, env) === null) {
+      return null;
+    }
+
+    if (fs.existsSync(path.join(cwd, EVIDENCE_DIR)) && tryExec("git", ["add", "-A", "-f", "--", EVIDENCE_DIR], cwd, env) === null) {
+      return null;
+    }
+
+    const tree = tryExec("git", ["write-tree"], cwd, env);
+    return tree && tree.length > 0 ? tree : null;
+  } catch {
+    return null;
+  } finally {
+    if (dir) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+}
+
+// Paths whose content differs between two snapshots, sorted, `/`-separated and
+// relative to `cwd` (the project root, which may sit below the repository top:
+// a path outside it reads `../…`); null when either snapshot or the diff is
+// unavailable. Read untrimmed: a path may start or end with a space.
+function changedPaths(cwd, before, after) {
+  if (!before || !after) {
+    return null;
+  }
+
+  if (before === after) {
+    return [];
+  }
+
+  try {
+    const listing = execFileSync("git", ["-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", before, after], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const toProject = projectPathsFromTop(cwd);
+    return listing.split("\0").filter(Boolean).map(toProject).sort();
+  } catch {
+    return null;
+  }
+}
+
+// The bytes `file` (project-relative) holds in a snapshot tree; null when absent.
+function snapshotBlob(cwd, tree, file) {
+  try {
+    return execFileSync("git", ["cat-file", "blob", `${tree}:./${file}`], { cwd, stdio: ["ignore", "pipe", "ignore"], maxBuffer: 256 * 1024 * 1024 });
+  } catch {
+    return null;
+  }
+}
+
+// One digest of what `roots` (project-relative directories) hold in a snapshot
+// tree, minus the paths `skip` names: the blob ids git already computed, so it
+// costs no file read. Null when the tree cannot be listed.
+function snapshotRootsDigest(cwd, tree, roots, skip = () => false) {
+  const listing = tree ? tryExecRaw("git", ["ls-tree", "-r", "-z", tree, "--", ...roots], cwd) : null;
+
+  if (listing === null) {
+    return null;
+  }
+
+  const entries = listing.split("\0").filter((entry) => entry && !skip(entry.slice(entry.indexOf("\t") + 1)));
+  return crypto.createHash("sha256").update(entries.join("\n")).digest("hex").slice(0, 40);
+}
+
+function tryExecRaw(bin, args, cwd) {
+  try {
+    return execFileSync(bin, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 256 * 1024 * 1024 });
+  } catch {
+    return null;
+  }
+}
+
+// Maps a path git names from the repository top to the project root's form
+// (`../x` outside it): the one form every path verify prints is in.
+function projectPathsFromTop(cwd) {
+  const top = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).replace(/\r?\n$/, "");
+  // Both sides resolved natively: /private/var on macOS, long names on Windows.
+  return fromTop(fs.realpathSync.native(top), fs.realpathSync.native(cwd));
+}
+
+const fromTop = (top, root) => (file) => path.relative(root, path.join(top, file)).split(path.sep).join("/");
+
+module.exports = {
+  captureIdentity, currentTreeToken, workingTreeSnapshot, changedPaths, projectPathsFromTop, fromTop, snapshotBlob, snapshotRootsDigest,
+};
