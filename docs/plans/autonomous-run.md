@@ -281,3 +281,10 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 - 2026-11-25 — `worktree land` needs the story's directory on the base branch: a story
   created inside its own branch (19-10, 29-05) cannot land until its story file is
   copied to develop first. Tool gap — follow-up for epic 20 (the epic runs itself).
+- 2026-11-25 — fewer redundant full suites (15 verifies in 3 h kept both heavy slots full):
+  agents run `verify` only (no `npm test` before it; targeted tests while fixing) and stop
+  merging develop on every land; the land step merges develop, verifies the story only if
+  that merge changed it (`worktree land` refuses a stale or red verify), and skips the
+  post-land verify when develop's tree equals the proved story tree. A code conflict at land
+  sends the story back for review. Review cap stays 4 rounds per series: a STRICT story that
+  fails round 4 is parked with its findings, not given a third series.
