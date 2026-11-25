@@ -530,8 +530,12 @@ function psqlPrograms(args) {
 
 function readPsql(out, command, cwd, ctx, segments, index) {
   const { args } = command;
-  const { programs, files } = psqlPrograms(bashArgs(command, args));
+  const { programs, files } = psqlPrograms(bashArgs(command, args, ctx));
   const shown = ["psql", ...args].join(" ");
+  // SQL given as an expansion (`-c "$Q"`): the guard does not see what psql runs.
+  if (wordsAfter(command, ctx, "psql").some((words) => psqlPrograms(words.map((entry) => entry.raw)).programs.some(expandsRaw))) {
+    out.unchecked.push({ reason: PSQL_STDIN, command: shown });
+  }
   for (const program of programs) {
     const rule = destructiveSql(program);
     if (rule) {
@@ -844,23 +848,62 @@ function interpreterPrograms(name, args) {
   return programs;
 }
 
-// A segment's words with the backslashes bash keeps: inside double quotes a backslash
-// escapes only `$`, a backtick, `"`, `\` and a newline (`"\! cmd"` is `\! cmd`;
-// shell-writes' tokenizer drops it, as 29-03 shipped). The arguments after the verb.
-const BASH_WORD = /(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\S)+/g;
+// A segment's words as bash reads them: a backslash outside quotes escapes the next
+// character (`rm\ -rf\ build` is one word); inside double quotes it escapes only `$`,
+// a backtick, `"`, `\` and a newline (`"\! cmd"` is `\! cmd`; shell-writes' tokenizer
+// drops it, as 29-03 shipped). `{ raw, word }`: the word as written, and as bash hands it.
+const BASH_WORD = /(?:\\[\s\S]|"(?:\\[\s\S]|[^"\\])*"|'[^']*'|[^\s\\])+/g;
 
-function bashArgs(command, args) {
-  const text = command.segment && command.segment.text;
-  if (!text || !text.includes("\\")) {
-    return args;
-  }
-  const words = (text.match(BASH_WORD) || []).map((word) =>
-    word.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([^\n])/g, (_, double, single, escaped) =>
+function shellWords(text) {
+  return (text.match(BASH_WORD) || []).map((raw) => ({
+    raw,
+    word: raw.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([\s\S])/g, (_, double, single, escaped) =>
       double !== undefined ? double.replace(/\\([$`"\\\n])/g, "$1") : single !== undefined ? single : escaped,
     ),
-  );
-  const at = words.findIndex((word) => word === "psql" || word.endsWith("/psql"));
-  return at === -1 || words.length - at - 1 !== args.length ? args : words.slice(at + 1);
+  }));
+}
+
+// The words after each occurrence of the verb `name` in the segment, read by bash's
+// rules (every occurrence: a wrapper or an argument may repeat the name); [] when the
+// segment is not seen.
+function wordsAfter(command, ctx, name) {
+  const segment = command.segment || ctx.segment;
+  if (!segment || !segment.text) {
+    return [];
+  }
+  const words = shellWords(segment.text);
+  return words.flatMap((entry, at) => (path.basename(entry.word) === name ? [words.slice(at + 1)] : []));
+}
+
+// A word that bash expands: `$VAR`, `${…}`, `$(…)`, `$((…))` or a backtick outside
+// single quotes. `'$x'` and `\$x` are literal.
+function expandsRaw(raw) {
+  let double = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (ch === "\\") {
+      i += 1;
+    } else if (ch === "'" && !double) {
+      const end = raw.indexOf("'", i + 1);
+      i = end === -1 ? raw.length : end;
+    } else if (ch === '"') {
+      double = !double;
+    } else if (ch === "`" || (ch === "$" && /[A-Za-z_{(0-9@*#?!$-]/.test(raw[i + 1] || ""))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// psql's arguments with the backslashes bash keeps, when the segment has any and the
+// words line up with the tokenizer's (else the tokenizer's, as 29-03 read them).
+function bashArgs(command, args, ctx = {}) {
+  const segment = command.segment || ctx.segment;
+  if (!segment || !segment.text || !segment.text.includes("\\")) {
+    return args;
+  }
+  const words = (wordsAfter(command, ctx, "psql")[0] || []).map((entry) => entry.word);
+  return words.length !== args.length ? args : words;
 }
 
 const MAX_LITERAL = 4096;
@@ -924,7 +967,28 @@ function literalLists(tokens) {
   return lists;
 }
 
+// The code an interpreter is handed, as the tokenizer reads it and as bash does
+// (`-c import\ os\;…` is one word); `null` (unchecked) when the code is an expansion
+// (`-c "$C"`, `-c "$(cat f)"`): the guard does not see what it runs.
+function interpreterView(command, ctx) {
+  const { name, args } = command;
+  const views = wordsAfter(command, ctx, name);
+  if (views.some((words) => interpreterPrograms(name, words.map((entry) => entry.raw)).some(expandsRaw))) {
+    return null;
+  }
+  const programs = interpreterPrograms(name, args);
+  const segment = command.segment || ctx.segment;
+  if (segment && segment.text && segment.text.includes("\\")) {
+    views.forEach((words) => programs.push(...interpreterPrograms(name, words.map((entry) => entry.word))));
+  }
+  return [...new Set(programs)];
+}
+
 function readInterpreterCode(out, programs, cwd, ctx, command) {
+  if (programs === null) {
+    out.unchecked.push({ reason: INTERPRETER_CODE, command });
+    return;
+  }
   for (const code of programs) {
     if (code.length > MAX_CODE) {
       out.unchecked.push({ reason: INTERPRETER_CODE, command });
@@ -957,14 +1021,34 @@ function readInterpreterCode(out, programs, cwd, ctx, command) {
 // arguments. Destructive: unchecked when it is set.
 const CONFIG_VALUE_OPTIONS = new Set(["-f", "--file", "--blob", "--type", "--default", "--comment", "--value"]);
 
-function readConfigAlias(out, rest, dir, ctx) {
+const EXPANDED = "\0(an expansion)";
+
+function configValue(rest) {
   const operands = operandsOf(rest, CONFIG_VALUE_OPTIONS).filter((word, i) => !(i === 0 && ["set", "add"].includes(word)));
   const at = operands.findIndex((word) => /^alias\./i.test(word));
-  const value = at === -1 ? undefined : operands[at + 1];
-  if (value === undefined) {
-    return;
-  }
+  return at === -1 ? undefined : operands[at + 1];
+}
+
+function readConfigAlias(out, rest, dir, ctx) {
   const command = ["git", "config", ...rest].join(" ");
+  // The words as bash reads them: `!rm\ -rf\ build` is one value; `"$A"` is an expansion.
+  const views = ctx.segment ? wordsAfter({}, ctx, "config") : [];
+  const values = [configValue(rest)];
+  for (const words of views) {
+    if (configValue(words.map((entry) => (expandsRaw(entry.raw) ? EXPANDED : entry.word))) === EXPANDED) {
+      out.unchecked.push({ reason: CONFIG_ALIAS, command });
+      return;
+    }
+    values.push(configValue(words.map((entry) => entry.word)));
+  }
+  for (const value of new Set(values)) {
+    if (value !== undefined) {
+      readAliasValue(out, value, dir, ctx, command);
+    }
+  }
+}
+
+function readAliasValue(out, value, dir, ctx, command) {
   const text = value.trim().startsWith("!") ? value.trim().slice(1) : `git ${value}`;
   readUnproven(out, text, dir, { ...ctx, aliases: MAX_ALIASES }, CONFIG_ALIAS, command, false);
 }
@@ -1101,6 +1185,11 @@ function runsFile(command, raw) {
 
 function readWrittenRun(out, command, raw, cwd, ctx) {
   const run = runsFile(command, raw);
+  if (run && ctx.written.size && /[$`*?[{]/.test(run.word)) {
+    // `bash x.s?`, `bash "$F"`: a glob or an expansion may name a file the line wrote.
+    out.unchecked.push({ reason: WRITTEN_UNREAD, command: [raw || command.name, ...command.args].join(" ") });
+    return;
+  }
   const key = run && fileKey(cwd, run.word, ctx.home);
   if (!run || !ctx.written.has(key)) {
     return;
@@ -1411,7 +1500,7 @@ function readVerb(out, command, cwd, ctx, segments, index) {
   } else if (DOWNLOADERS.has(name)) {
     readDownload(out, command, cwd, segments, index);
   } else if (INTERPRETER_NAME.test(name)) {
-    readInterpreterCode(out, interpreterPrograms(name, args), cwd, ctx, [name, ...args].join(" "));
+    readInterpreterCode(out, interpreterView(command, ctx), cwd, ctx, [name, ...args].join(" "));
     readHiddenVerb(out, args, cwd, ctx);
   } else if (!isInert(command)) {
     readHiddenVerb(out, args, cwd, ctx);
@@ -1441,7 +1530,10 @@ function readLine(line, start, ctx) {
   const joined = line.replace(/\\\n/g, "");
   const segments = splitSegments(joined);
   const stack = [];
-  const written = new Map(); // the files this line wrote: path → their text, `{ from }` or null
+  // The files this line wrote: path → their text, `{ from }` or null. One map for the
+  // line and every reading nested in it (`bash -c`, `.`, interpreter code), so a file
+  // written outside is known inside.
+  const written = ctx.written || new Map();
   ctx = { ...ctx, written };
   let cwd = start;
   segments.forEach((segment, index) => {
@@ -1469,7 +1561,7 @@ function readLine(line, start, ctx) {
       // `PAGER='rm -rf x' git log`, `env GIT_EDITOR=… git commit`: a variable set
       // for the command may be run by it, so its value is read as handed text.
       const assignments = tokens.slice(0, verbAt(tokens)).filter((token) => /^[A-Za-z_]\w*=/.test(token));
-      const segmentCtx = assignments.length ? { ...ctx, env: assignments } : ctx;
+      const segmentCtx = assignments.length ? { ...ctx, env: assignments, segment } : { ...ctx, segment };
       readCommand(out, pastRedirects({ ...command, raw, args: wholeLastWord(command.args, segment, segments[index + 1]) }), cwd, segmentCtx, segments, index);
       readHandedText(out, command, cwd, ctx);
       readWrittenRun(out, command, raw, cwd, ctx);

@@ -1029,3 +1029,81 @@ test("rules-and-limits: the D9 list above is 29-03's own (while its plan is in t
     assert.ok(D9_FORMS.some((listed) => listed.includes(form) || form.includes(listed)), `29-03's D9 form ${form} is in the list`);
   }
 });
+
+// --- series 3 round 2: rules, not spellings ------------------------------------------------
+
+test('series 3 round 2: a file written on the line and run by a nested shell or interpreter is read', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'unchecked', [
+    `echo 'rm -rf build' > x.sh && bash -c ./x.sh`,
+    `echo 'rm -rf build' > x.sh && sh -c 'bash x.sh'`,
+    `echo 'rm -rf build' > x.sh && bash -c '. ./x.sh'`,
+    `cat > x.sh <<'EOF'\nrm -rf build\nEOF\nbash -c 'bash x.sh'`,
+    `echo 'rm -rf build' > x.sh && node -e 'require("child_process").execSync("sh x.sh")'`,
+    // A glob or an expansion that can name a file the line wrote.
+    `echo 'rm -rf build' > x.sh && bash x.s?`,
+    `echo 'rm -rf build' > x.sh && bash ./*.sh`,
+    `echo 'rm -rf build' > x.sh && F=x.sh; bash "$F"`,
+  ]);
+  expectAll(dir, 'allow', [
+    `echo 'echo hello' > x.sh && bash -c ./x.sh`,
+    `echo 'echo hello' > x.sh && sh -c 'bash x.sh'`,
+    // Nothing written: a glob or a variable naming the script is not this rule's business.
+    'bash scripts/*.sh',
+    'bash "$SCRIPT"',
+  ]);
+});
+
+test('series 3 round 2: an unquoted word with backslash escapes is read as its quoted form', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'unchecked', [
+    String.raw`git config alias.x !rm\ -rf\ build`,
+    String.raw`git config alias.x \!git\ reset\ --hard`,
+    String.raw`git config alias.x reset\ --hard`,
+    String.raw`python3 -c import\ os\;os.system\(\"rm\ -rf\ build\"\)`,
+    String.raw`node -e require\(\"child_process\"\).execSync\(\"rm\ -rf\ build\"\)`,
+  ]);
+  expectAll(dir, 'allow', [
+    String.raw`git config alias.lg log\ --oneline`,
+    String.raw`python3 -c print\(1\)`,
+  ]);
+});
+
+test('series 3 round 2: code, an alias value or SQL given as an expansion is unchecked', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'unchecked', [
+    `C='import os; os.system("rm -rf build")'; python3 -c "$C"`,
+    `python3 -c "$(echo 'import os; os.system("rm -rf build")')"`,
+    'python3 -c "`cat code.py`"',
+    `C='x'; node -e "$C"`,
+    `C='x'; perl -e"$C"`,
+    `python3 -c "\${CODE}"`,
+    `A='!rm -rf build'; git config alias.x "$A"`,
+    'git config alias.x "$A"',
+    `Q='DROP TABLE x'; psql -c "$Q"`,
+    'psql -c "$(cat q.sql)"',
+  ]);
+  // Single quotes keep the dollar literal: code that uses `$` is read as written.
+  expectAll(dir, 'allow', [
+    `perl -e 'my $x = 1; print $x'`,
+    `ruby -e 'puts $0'`,
+    `python3 -c "print('\\$HOME')"`,
+    `psql -c 'select $1'`,
+  ]);
+});
+
+test('series 3 round 2: everyday commands with an expansion outside the code position stay allowed', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'allow', [
+    'npm test -- "$ARGS"',
+    'git commit -m "$MSG"',
+    'python3 script.py "$IN"',
+    'node build.js --out "$OUT_DIR"',
+    'git log --since="$SINCE" --oneline',
+    'psql -d "$DATABASE_URL" -c "select 1"',
+    'python3 -c "print(1)" "$IN"',
+    'git config user.email "$EMAIL"',
+    'echo "$HOME" && ls "$PWD"',
+    'perl -ne "print if /x/" "$FILE"',
+  ]);
+});
