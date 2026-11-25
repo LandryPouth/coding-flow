@@ -35,6 +35,8 @@ const LAYER = [
   // install, platform wiring and CLI plumbing: not needed to guard or prove
   'bootstrap', 'ci', 'codex-probe', 'codex-settings', 'commands', 'hook',
   'opencode', 'opencode-config', 'rules', 'settings', 'trace', 'uninstall', 'unwire', 'usage',
+  // story 26-03: reads the project's docs for stale references; doctor and rules call it
+  'docs-check', 'docs-markdown',
   'platforms/*', 'storage/*',
 ];
 

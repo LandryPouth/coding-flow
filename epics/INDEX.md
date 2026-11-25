@@ -30,11 +30,13 @@ the proof-derived state comes from `ai-flow status`.
 - 19-02 · Noise is told apart · —
 - 19-03 · One heavy verify per machine · —
 - 19-04 · A long verify detaches · —
-- 19-05 · Fixers run before the checks · —
+- 19-05 · Fixers run before the checks · done
 - 19-06 · The risk picks the tiers · —
 - 19-07 · Tests are read-only when nobody watches · —
-- 19-08 · A reformatted test is not a stronger test · planned
-- 19-09 · A failed review is cleared by a review · planned
+- 19-08 · A reformatted test is not a stronger test · done
+- 19-09 · A failed review is cleared by a review · done
+- 19-10 · The fixers test holds under load · done
+- 19-11 · One tree is proved once · planned
 
 ### Epic 20 — The epic runs itself (`epics/epic-20-the-epic-runs-itself/`)
 
@@ -93,12 +95,13 @@ the proof-derived state comes from `ai-flow status`.
 ### Epic 26 — Nothing left by hand (`epics/epic-26-nothing-left-by-hand/`)
 
 - 26-01 · Findings travel to the next story · —
-- 26-02 · The run tells you what it needs · —
+- 26-02 · The run tells you what it needs · done
 - 26-03 · The docs are checked against the code · —
 - 26-04 · The epic closes itself · —
 - 26-05 · A run is watched live · —
-- 26-06 · The rules are printed with their source · —
+- 26-06 · The rules are printed with their source · done
 - 26-07 · We need you · —
+- 26-08 · Init shows the rules it applies · done
 
 ### Epic 27 — The run knows why it stopped (`epics/epic-27-the-run-knows-why-it-stopped/`)
 
@@ -119,7 +122,7 @@ the proof-derived state comes from `ai-flow status`.
 
 - 29-01 · The diff is scanned · planned
 - 29-02 · A changed test runs, and a removed test is declared · planned
-- 29-03 · Destructive commands wait for the human · planned
+- 29-03 · Destructive commands wait for the human · done
 - 29-04 · Commands built to evade the guard · planned
 
 ### Epic 30 — One workspace, several repositories (`epics/epic-30-one-workspace-several-repos/`)
@@ -130,6 +133,24 @@ the proof-derived state comes from `ai-flow status`.
 - 30-04 · The workspace guard holds in each repository · planned
 - 30-05 · One PR per repository, and a status that sees them · planned
 - 30-06 · A workspace is installed in one command · planned
+
+### Epic 31 — The run spends its tokens on work (`epics/epic-31-the-run-spends-its-tokens-on-work/`)
+
+- 31-01 · A fix round starts from a brief · —
+- 31-02 · The reviewer reads one pack · —
+- 31-03 · An open promise is split before code · —
+
+### Epic 32 — The maintainer's bench (`epics/epic-32-the-maintainers-bench/`)
+
+- 32-01 · A ledger of every run · —
+- 32-02 · The tool has a weight · —
+- 32-03 · A waste becomes a proposal · —
+- 32-04 · A change is tried in two arms · —
+
+### Epic 33 — The shapes are checked (`epics/epic-33-the-shapes-are-checked/`)
+
+- 33-01 · The evidence has a type · planned
+- 33-02 · The guard and verify are typed · planned
 
 <!-- coding-flow:index:end -->
 

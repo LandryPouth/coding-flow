@@ -41,6 +41,7 @@ const redAtBase = lazy("./red-at-base");
 const policyDrift = lazy("./policy-drift");
 const claim = lazy("./claim");
 const validationRun = lazy("./validation-run");
+const docsCheck = lazy("./docs-check");
 
 const RESOLVERS = {
   mode: (read) => harnessMode(read.harness),
@@ -55,6 +56,9 @@ const RESOLVERS = {
   destructiveCommands: (read) => read.guard.destructiveCommands,
   allowDestructive: (read) => read.guard.allowDestructive,
   "worktrees.primaryLocked": (read) => read.guard.primaryLocked,
+  "docs.check.include": (read) => docsCheck().docsCheckSettings(read.config).include,
+  "docs.check.exclude": (read) => docsCheck().docsCheckSettings(read.config).exclude,
+  "docs.check.ignorePaths": (read) => docsCheck().docsCheckSettings(read.config).ignorePaths,
 };
 
 // Where the guard took the primary lock from when it is not this checkout's
