@@ -43,7 +43,6 @@ measured from their `usage` fields.
 - `ai-flow review pack`: one bounded read for a reviewer.
 - `flow-plan` and `doctor` flag open-world promises in STRICT stories before
   any code is written.
-- A token report per story from the agent transcripts, with a budget warning.
 - The `flow-run` and `flow-review` skills, and the epic-run guidance, use these
   tools.
 
@@ -52,28 +51,28 @@ measured from their `usage` fields.
 - Model choice per role. That is the harness's setting, not Coding Flow's.
 - Prompt caching knobs.
 - A daemon or a resident index of the code (design-decisions entry 2).
-- Reading transcripts from platforms other than Claude Code. They are
-  added once each platform's format is seen on disk (entry 10).
+- Measuring runs: tokens per story, budgets and transcripts. That moved to
+  epic 32, the maintainer's bench, which sits outside the tool. The maintainer
+  decided this on 2026-11-25: "le bench reste pour moi et pas pour l'outil".
+  Story 31-04 became 32-01.
 
-Backbone: a story fails review → the fix starts from a brief → the reviewer reads one pack → the plan is split before code → the run reports what it cost
+Backbone: a story fails review → the fix starts from a brief → the reviewer reads one pack → the plan is split before code
 
 ```text
 s1
 ├── s2
-├── s3
-└── s4
+└── s3
 ```
 
 s2 reuses s1's reader of the review findings recorded in `plan.md`. s3 changes
-`flow-plan` and `doctor` only, and s4 the transcripts reader and `status`. Their
-likely files are disjoint, so s3 and s4 can run in parallel after s1.
+`flow-plan` and `doctor` only. Their likely files are disjoint, so s2 and s3 can
+run in parallel after s1. Epic 32 measures this epic's gains.
 
 ## Stories
 
 1. [story-31-01-a-fix-round-starts-from-a-brief](story-31-01-a-fix-round-starts-from-a-brief/spec.md) *(STANDARD — walking skeleton: the brief command, the findings section it reads, and the skills that start a fresh implementer from it)*
 2. [story-31-02-the-reviewer-reads-one-pack](story-31-02-the-reviewer-reads-one-pack/spec.md) *(STANDARD)*
 3. [story-31-03-an-open-promise-is-split-before-code](story-31-03-an-open-promise-is-split-before-code/spec.md) *(STANDARD)*
-4. [story-31-04-the-run-says-what-it-cost](story-31-04-the-run-says-what-it-cost/spec.md) *(STANDARD — reads local transcripts; aggregates only, nothing leaves the machine)*
 
 ## Readiness
 

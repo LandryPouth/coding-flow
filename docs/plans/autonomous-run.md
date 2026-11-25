@@ -119,12 +119,27 @@ because the same agent was resumed for every fix round; 3–4 reviews per story;
 all promised over an open input space. Until 31-01 lands, each fix round gets a FRESH implementer
 briefed from the story files (findings as checkbox lines under `## Review findings` in plan.md).
 
-Order: 31-01 (walking skeleton) → 31-02 ‖ 31-03 ‖ 31-04 (disjoint files)
+Order: 31-01 (walking skeleton) → 31-02 ‖ 31-03 (disjoint files); 31-04 moved to epic 32 (32-01)
 
 - [ ] 31-01 a fix round starts from a brief
 - [ ] 31-02 the reviewer reads one pack
 - [ ] 31-03 an open promise is split before code
-- [ ] 31-04 the run says what it cost
+
+### Wave 2a′ — the maintainer's bench (epic 32) · right after epic 31, before 2b (maintainer, 2026-11-25) · no npm release (evals/ only)
+
+Maintainer-only tooling in `evals/bench/` (not in the npm package, no `ai-flow` command).
+Baseline taken 2026-11-25 from every project on the machine: vault
+`workflows/epic-run/bench/2026-11-25-baseline.{md,json}` (script `evals/bench/seed-extract.js`).
+Claude Code transcripts expire after 30 days: until 32-01 lands, re-run the seed and save a
+snapshot at each wave end. Starts collecting with 32-01; 32-04's first experiment measures
+epic 31's fresh-implementer rule against the resumed one.
+
+Order: 32-01 (walking skeleton) → 32-02 ‖ 32-03 ‖ 32-04 (disjoint files)
+
+- [ ] 32-01 a ledger of every run (was 31-04)
+- [ ] 32-02 the tool has a weight
+- [ ] 32-03 a waste becomes a proposal
+- [ ] 32-04 a change is tried in two arms
 
 ### Wave 2b — one workspace, several repositories (epic 30) · *release 0.18.0*
 

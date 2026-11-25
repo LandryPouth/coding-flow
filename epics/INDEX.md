@@ -139,7 +139,13 @@ the proof-derived state comes from `ai-flow status`.
 - 31-01 · A fix round starts from a brief · —
 - 31-02 · The reviewer reads one pack · —
 - 31-03 · An open promise is split before code · —
-- 31-04 · The run says what it cost · —
+
+### Epic 32 — The maintainer's bench (`epics/epic-32-the-maintainers-bench/`)
+
+- 32-01 · A ledger of every run · —
+- 32-02 · The tool has a weight · —
+- 32-03 · A waste becomes a proposal · —
+- 32-04 · A change is tried in two arms · —
 
 <!-- coding-flow:index:end -->
 
