@@ -97,8 +97,10 @@ Lane A: 26-06 `ai-flow rules` → 26-03 `docs check` → 26-07 we need you
 Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) → 28-01 ideas
 
 - [x] 26-06 `ai-flow rules` — split at the cap (series 1: 4 rounds, P1 2/1/1/2; init change → new 26-08); series 2: P1 1/0; landed, re-proved, review captured
-- [ ] 26-03  - [ ] 26-07  - [ ] 26-08 init shows the rules it applies (split from 26-06)
+- [ ] 26-03  - [ ] 26-07
+- [x] 26-08 init shows the rules it applies (split from 26-06) — STRICT, 2 rounds (P1 0/0), landed, re-proved, review captured
 - [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
+- [x] 19-10 the fixers test holds under load (from the flaky harness-fixers runs: index copy newer than the index) — 2 rounds (P1 1/0), landed, re-proved, review captured
 - [x] 26-02 `ai-flow todo` (reader half; notify half after 24-02) — 4 rounds (P1 1/1/1/0), landed, re-proved, review captured
    - [ ] 28-01  - [ ] 19-08 (after 19-05)
 - [x] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24) — 1 review round (0 P1, 8 P2 fixed), landed, re-proved, review captured

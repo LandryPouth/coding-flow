@@ -47,10 +47,10 @@ Story references point at the story's `spec.md` unless another file is named.
 | `requireTestChange` (coverage gate on/off) | `true` | — | key | `harness-config.js:242`; `bin/lib/coverage-gate.js:350-352` |
 | `minPatchCoverage` | `80` % of the added lines that coverage measured | number; anything else falls back to 80 | key | `harness-config.js:248`; `coverage-gate.js:182` |
 | `coverageReports` | 6 paths (`coverage/lcov.info`, …) | — | key | `harness-config.js:16-23` |
-| `coverageFloor.high` (rung a high-risk story must reach) | `auto`: `evidence`, or `verified` under `mode: strict`. Not written to the file (story 26-08); an absent, `auto` or unknown value reads the same | rungs: `verified` > `evidence` > `exempted` > `not-required` | key | `bin/lib/coverage.js` (`resolveCoverageFloor`) |
-| `coverageFloor.medium` | `evidence` (not written) | same rungs | key | `coverage.js` (`resolveCoverageFloor`) |
-| `coverageFloor.low` | `not-required` (not written) | same rungs | key | `coverage.js` (`resolveCoverageFloor`) |
-| `failOnContrarySignals` | `false` (not written) | When `true`, a high-risk story fails on contrary signals. Read at the diff base too (HEAD in working-tree scope): `true` in either wins | key | `coverage-gate.js:640`, `:662-677` |
+| `coverageFloor.high` (rung a high-risk story must reach) | `auto`: `evidence`, or `verified` under `mode: strict`. Written as `auto` to a new `harness.json` (story 26-08); an absent, `auto` or unknown value reads the same | rungs: `verified` > `evidence` > `exempted` > `not-required` | key | `bin/lib/coverage.js` (`resolveCoverageFloor`) |
+| `coverageFloor.medium` | `evidence` (written to a new file) | same rungs | key | `coverage.js` (`resolveCoverageFloor`) |
+| `coverageFloor.low` | `not-required` (written to a new file) | same rungs | key | `coverage.js` (`resolveCoverageFloor`) |
+| `failOnContrarySignals` | `false` (written to a new file) | When `true`, a high-risk story fails on contrary signals. Read at the diff base too (HEAD in working-tree scope): `true` in either wins | key | `coverage-gate.js:640`, `:662-677` |
 | `freshTestsFor` (risk levels where a fully cached run is not proof) | `[]` | — | key | `harness-config.js:251`; `evidence.js:397-405` |
 | `functionSize.max` | `80` lines. Also a CRAP threshold of 30, fixed | — | key | `harness-config.js` (`DEFAULT_FUNCTION_SIZE`); `bin/lib/complexity.js` |
 | `functionSize.enforce` | `false` | `true` turns the warning into a failure | key | `harness-config.js` (`DEFAULT_FUNCTION_SIZE`) |
@@ -348,7 +348,7 @@ Design: [`docs/plans/orchestration.md`](plans/orchestration.md).
 ## Inconsistencies found
 
 Found while writing this page. Items 3–8 were resolved in the plans the same
-day (2026-11-13); items 1, 2 and 9 were resolved in code by story 26-06; item 10 is story 26-08.
+day (2026-11-13); items 1, 2 and 9 were resolved in code by story 26-06; item 10 by story 26-08.
 
 1. *Resolved (26-06): `templates/RULES.md` states no budget and points to `/flow-run`; a test fails if it ever states one the skill does not.* **Context budgets: old installed `RULES.md` vs the current skill.**
    `RULES.md` installed by earlier versions (for example bethl's) states QUICK
@@ -378,7 +378,7 @@ day (2026-11-13); items 1, 2 and 9 were resolved in code by story 26-06; item 10
    `bin/lib/worktree.js:744` (`PER_COMMAND_TIMEOUT_MS`). The comment at
    `worktree.js:729` still says the default is in `harness.js`. Changing one
    without the other mis-sizes the land lock.
-10. *Open — story 26-08 (moved out of 26-06: writing the keys moves the policy fingerprint, see its story). `ai-flow rules` shows both today.* **Policy that is read but never written.** `coverageFloor` and
+10. *Resolved by story 26-08: `init` and `harness init` write both keys, at their defaults, to a new `harness.json`; an existing file is not rewritten, and the policy fingerprint leaves a key out while it holds its default, so no recorded proof goes stale.* **Policy that is read but never written.** `coverageFloor` and
     `failOnContrarySignals` are honoured (`coverage.js:572`,
     `coverage-gate.js:640`) but are not in `defaultHarnessConfig()`. A project
     reading its own `harness.json` cannot see that they exist or what their
