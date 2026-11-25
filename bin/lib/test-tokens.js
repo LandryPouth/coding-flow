@@ -169,7 +169,6 @@ function closingQuote(line, start) {
 }
 
 const tokensOf = (lines) => lex(lines).tokens;
-const codeLinesOf = (lines) => lex(lines).codeLines;
 
 // A multiset of token texts, consumed as added code is matched against removed code.
 function bagOf(tokens) {
@@ -191,4 +190,4 @@ function consume(bag, tokens) {
   return left;
 }
 
-module.exports = { tokensOf, codeLinesOf, bagOf, consume };
+module.exports = { tokensOf, bagOf, consume };

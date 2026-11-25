@@ -104,7 +104,8 @@
   - *Anything else that adds test code strengthens*, in any framework — as
     before this story. An added line of junk in a test file strengthens too:
     the reviewer and the measured-coverage path are the backstop.
-  - *Weakening is unchanged:* markers stay only there (skips, `.only`,
+  - *(Superseded by the re-scope below: weakening is efede92's, raw lines.)*
+    *Weakening is unchanged:* markers stay only there (skips, `.only`,
     assertions removed, files deleted), counted per occurrence outside
     comments; comment stripping is now quote-aware, so `//` inside a string
     is code.
@@ -140,6 +141,7 @@
     is its expected string (`toBe('hi')` → `toBe('hello')`) reads neutral.
   - Weakening markers are counted on the same lexer's code lines, strings and
     comments removed: a `should` in a title is no assertion either way.
+    *(Reverted by the re-scope below: it made the weakening signal looser.)*
   - `closestDeleted` compares token bags, so an unstaged move that also
     reformats is a move, not a deletion.
   - Paths: the scan names every file from the repository top (`ls-files
@@ -153,6 +155,40 @@
     (a new identifier); swapping two arguments is neutral (order is not
     compared). The string-literal stripping does not know JS regex literals:
     a quote inside `/…/` can still open a string on that line.
+
+- **Re-scope after review round 4 (the cap).** History of the P1s: round 1
+  (an unstaged mv earned the rung, missing framework markers), round 2
+  (invert the rule: strengthen unless provably neutral), round 3 (real
+  formatter output, comments leaking, a renamed title strengthening), round 4
+  (one P1: weakening markers counted through the stateful lexer on diff-hunk
+  fragments — a removed line opening a template or `/*` whose closer is
+  unchanged context hid the removed assertions after it, so a weakening read
+  as a strengthening; the gate got looser). Round 4 was the cap, so the story
+  is re-scoped to its promise: *a reformatted test is not a stronger test* —
+  only the STRENGTHEN side may narrow.
+  - The weakening signal is restored exactly to efede92: the same
+    `ASSERTION_MARKERS`, counted on raw lines. Round 1's extra markers (bare
+    `assert`, `pytest.raises`, Go `t.Fatalf`, `Assert.`, `expect {`) are
+    dropped: a marker added on both sides can net a removal to zero, so it is
+    not provably stricter. They no longer matter for strengthening.
+  - Kept from round 1: the scan reads one diff against the base, not the sum
+    of three (a line moved between a commit and the working tree was counted
+    twice).
+  - The token-bag neutral rule stays, for strengthening only. Fed fragments,
+    the lexer can only hide code from the strengthen side's matching, and
+    before this story every test change strengthened: never wider than before.
+  - Regression tests s1 (a template literal's first line edited) and s2 (a
+    two-line block comment's first line edited), each with two assertions
+    removed, assert exit 1 and "removed"; both fail on round 4's gate.
+  - Moved out: counting markers outside strings and comments (round 3's P2
+    about `should` in titles) is a follow-up in epic 19's index; its test is
+    kept as a `todo`.
+  - Docs claim only what is held: prettier and gofmt real output. Known
+    limits listed (they strengthen, as before): black's string-prefix
+    changes, a `*args` line read as a comment, `eslint --fix` dot-notation and
+    `eqeqeq` rewrites, JSX apostrophes.
+  - Note only: `closestDeleted` is O(N×M) in untracked × deleted test files,
+    each tokenised; fine for the sizes seen, not optimised.
 
 ## Test Plan
 

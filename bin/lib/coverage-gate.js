@@ -40,7 +40,7 @@ const {
   deletedFilesInDiff,
   addedFilesInDiff,
 } = require("./diff-scope");
-const { tokensOf, codeLinesOf, bagOf, consume } = require("./test-tokens");
+const { tokensOf, bagOf, consume } = require("./test-tokens");
 const {
   RISK_RANK,
   scoreStoryRisk,
@@ -228,36 +228,22 @@ const SKIP_MARKERS = [
   /@(?:Ignore|Disabled)\b/,
 ];
 
-// Markers only feed the WEAKENING signal (assertions removed). Since story 19-08
-// round 3 they no longer decide what strengthens: that is read from the text
-// itself (see `strengtheningOf`), so an assertion form no regex knows never
-// turns a real test into a false red.
+// Markers only feed the WEAKENING signal (assertions removed), and are counted
+// exactly as before story 19-08: whole raw lines. That story only narrows what
+// STRENGTHENS (see `strengtheningOf`); reading markers through the token lexer
+// made the weakening signal looser on diff-hunk fragments (plan.md, round 4).
 const ASSERTION_MARKERS = [
   /\bexpect\s*\(/,
-  /\bexpect\s*\{/,
   /\bassert(?:_\w+|[A-Z]\w*)?\s*[(.]/,
-  /\bassert(?:_\w+)?!\s*\(/,
-  /^\s*assert\s/,
-  /\bAssert\.\w+\s*\(/,
   /\bshould\b/,
-  /\bpytest\.raises\s*\(/,
   /\bXCTAssert\w*\s*\(/,
   /\b(?:EXPECT|ASSERT)_\w+\s*\(/,
   /\brequire\.\w+\s*\(/,
   /\bt\.(?:is|deepEqual|throws|truthy|falsy)\s*\(/,
-  /\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\s*\(/,
 ];
 
-// Occurrences, not lines: a formatter that splits two assertions written on one
-// line onto two lines changes the line count, not the number of assertions.
-// Comments and string literals are removed first, so a "should" in a test title
-// or an `expect(` in a comment is no marker.
-const globalOf = (pattern) => new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
 const countMatching = (lines, patterns) =>
-  codeLinesOf(lines).reduce(
-    (total, line) => total + patterns.reduce((sum, pattern) => sum + (line.match(globalOf(pattern)) || []).length, 0),
-    0,
-  );
+  lines.filter((line) => patterns.some((pattern) => pattern.test(line))).length;
 const countSkipMarkers = (lines) => countMatching(lines, SKIP_MARKERS);
 
 // Story 19-08: a test edit strengthens unless it is provably neutral. Across

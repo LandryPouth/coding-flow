@@ -88,6 +88,16 @@ passing. s4's detached job goes through s3's queue. s6 extends the
 8. [story-19-08-a-reformatted-test-is-not-a-stronger-test](story-19-08-a-reformatted-test-is-not-a-stronger-test/spec.md) *(STANDARD — added 2026-11-23 from 19-05's reviews: a neutral test edit no longer earns the coverage gate)*
 9. [story-19-09-a-failed-review-is-cleared-by-a-review](story-19-09-a-failed-review-is-cleared-by-a-review/story.md) *(STANDARD — added 2026-11-24 at the maintainer's request: after a FAIL, a pass needs a new review round; STRICT needs two)*
 
+### Follow-ups
+
+- **Weakening markers counted outside strings and comments** (from 19-08,
+  re-scoped after its review round 4). Markers are still counted on raw diff
+  lines, so a test title losing its `should` reads as an assertion removed (a
+  false weakening, never a false strength). A fix must read whole files, not
+  diff-hunk fragments: 19-08's lexer on fragments left a template or block
+  comment open and hid removed assertions. Owner: a new story in this epic;
+  `test/weakened-tests.test.js` keeps it as a `todo`.
+
 ## Decisions
 
 - **A retry is a second observation, never an override.** A command that fails

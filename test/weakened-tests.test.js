@@ -642,7 +642,10 @@ test('19-08: a fixer writing real prettier output is neutral like the hand refor
   assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/math.test.js']);
 });
 
-test('19-08: a "should" inside a title does not count as an assertion removed', (t) => {
+// Follow-up, not this story (re-scoped after review round 4): weakening markers
+// are counted on raw lines, as before 19-08, so a title losing its "should"
+// still reads as an assertion removed. Kept as a todo for the epic-19 follow-up.
+test('19-08: a "should" inside a title does not count as an assertion removed', { todo: 'follow-up: count markers outside strings and comments (epic 19 index)' }, (t) => {
   const dir = repo(t, 'neutral-should-weak', { 'src/math.test.js': BASELINE_TEST.replace("'adds'", "'should add'") });
   const rel = story(dir);
   commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST }, 'auth change, title');
@@ -698,3 +701,31 @@ test('19-08: in a project below the repository top, the test files are named in 
   assert.equal(res.code, 1, res.output);
   assert.deepEqual([...evidenceOf(dir).coverage.neutralTests].sort(), ['pkg/src/arith.test.js', 'pkg/src/other.test.js']);
 });
+
+// --- 19-08 re-scope: the weakening signal is exactly what it was ------------
+//
+// Review round 4 found the lexer, fed diff-hunk fragments, left a template or a
+// block comment open when its closer was unchanged context, so later removed
+// assertions read as text and a weakening read as a strengthening.
+
+const S1_BEFORE = "test('adds', () => {\n  const label = `sum\n  of two`;\n  expect(add(1, 2)).toBe(3);\n  expect(add(2, 2)).toBe(4);\n  expect(add(3, 2)).toBe(5);\n});\n";
+const S1_AFTER = "test('adds', () => {\n  const label = `total\n  of two`;\n  expect(add(1, 2)).toBe(3);\n  const extra = 1;\n});\n";
+const S2_BEFORE = "test('adds', () => {\n  /* sums\n     two numbers */\n  expect(add(1, 2)).toBe(3);\n  expect(add(2, 2)).toBe(4);\n  expect(add(3, 2)).toBe(5);\n});\n";
+const S2_AFTER = "test('adds', () => {\n  /* adds\n     two numbers */\n  expect(add(1, 2)).toBe(3);\n  const extra = 1;\n});\n";
+
+for (const [name, before, after] of [
+  ['a template literal whose first line is edited', S1_BEFORE, S1_AFTER],
+  ['a two-line block comment whose first line is edited', S2_BEFORE, S2_AFTER],
+]) {
+  test(`19-08: assertions removed after ${name} are still caught`, (t) => {
+    const dir = repo(t, 'weak-fragment', { 'src/math.test.js': before });
+    const rel = story(dir);
+    commit(dir, { ...BEHAVIOR, 'src/math.test.js': after }, 'auth change, assertions removed');
+
+    const res = run(dir, ['verify', '--story', rel]);
+
+    assert.equal(res.code, 1, res.output);
+    assert.match(res.output, /2 more assertion\(s\) removed/);
+    assert.doesNotMatch(res.output, /strengthened/);
+  });
+}
