@@ -97,6 +97,14 @@ Held: coding-flow dry run clean (exit 0, nothing sent); bethl exit 2, nothing wr
 
 Held: round-1 push-only fixture not weakened; init consent and dry run hold (0 `-X`); messages match docs; criteria 1, 3, 4, 6, 7 may be ticked (real dry run: main nothing to change, exit 0).
 
+### Round 4 — FAIL (readiness to land, whole journey) — one message; series 1 ends at its cap, series 2 starts
+
+- [ ] P1 bin/lib/protect.js:302-305 with :409 — a branch already protected (requires `build`, not all checks) with a recent no-checks PR prints "main: not protected — … would block such pull requests forever": false, it is protected; effect correct (nothing sent, nothing weakened, ship arms, doctor quiet), message lies; docs "nothing is protected on that branch" hide it — fix: when `info.protection` exists say "main: left as is (requires build) — a recent pull request ran no checks; requiring more would block such pull requests"; docs say "left as is"; test asserts text and nothing sent.
+- [ ] P2 `ship --dry-run --auto-merge` (~ship.js:740) never says the real run may write a branch protection first — say it.
+- [ ] P2 `protect`/doctor target only the default branch plus `baseBranch`; `ship --base develop` without `baseBranch` leaves develop unchecked by doctor — state as a limit (or include the `--base` used).
+
+Held: merge with develop clean, 142/142 + windows-paths 19/19 + layering 4/4, plugin check in sync; fake-gh journey truthful and idempotent; fixture edits kept assertions, moved cases have their own tests; real dry runs correct (coding-flow nothing to change; bethl plan limit, exit 2).
+
 ## Acceptance Criteria
 
 - [x] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
