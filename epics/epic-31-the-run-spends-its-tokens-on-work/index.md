@@ -54,25 +54,29 @@ measured from their `usage` fields.
 - Measuring runs: tokens per story, budgets and transcripts. That moved to
   epic 32, the maintainer's bench, which sits outside the tool. The maintainer
   decided this on 2026-11-25: "le bench reste pour moi et pas pour l'outil".
-  Story 31-04 became 32-01.
+  The original story 31-04 (a cost report) became 32-01; the number now holds
+  story archiving.
 
 Backbone: a story fails review → the fix starts from a brief → the reviewer reads one pack → the plan is split before code
 
 ```text
 s1
 ├── s2
-└── s3
+├── s3
+└── s4
 ```
 
 s2 reuses s1's reader of the review findings recorded in `plan.md`. s3 changes
 `flow-plan` and `doctor` only. Their likely files are disjoint, so s2 and s3 can
-run in parallel after s1. Epic 32 measures this epic's gains.
+run in parallel after s1. s4 changes `archive` and the epic index only, disjoint from
+the others. Epic 32 measures this epic's gains.
 
 ## Stories
 
 1. [story-31-01-a-fix-round-starts-from-a-brief](story-31-01-a-fix-round-starts-from-a-brief/spec.md) *(STANDARD — walking skeleton: the brief command, the findings section it reads, and the skills that start a fresh implementer from it)*
 2. [story-31-02-the-reviewer-reads-one-pack](story-31-02-the-reviewer-reads-one-pack/spec.md) *(STANDARD)*
 3. [story-31-03-an-open-promise-is-split-before-code](story-31-03-an-open-promise-is-split-before-code/spec.md) *(STANDARD)*
+4. [story-31-04-a-finished-story-leaves-the-checkout](story-31-04-a-finished-story-leaves-the-checkout/story.md) *(STANDARD — finished stories leave the checkout before their epic does; maintainer, 2026-11-25)*
 
 ## Readiness
 

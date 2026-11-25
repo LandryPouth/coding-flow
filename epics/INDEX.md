@@ -96,12 +96,13 @@ the proof-derived state comes from `ai-flow status`.
 
 - 26-01 · Findings travel to the next story · —
 - 26-02 · The run tells you what it needs · done
-- 26-03 · The docs are checked against the code · —
+- 26-03 · The docs are checked against the code · done
 - 26-04 · The epic closes itself · —
 - 26-05 · A run is watched live · —
 - 26-06 · The rules are printed with their source · done
 - 26-07 · We need you · —
 - 26-08 · Init shows the rules it applies · done
+- 26-09 · A moved folder is checked too · planned
 
 ### Epic 27 — The run knows why it stopped (`epics/epic-27-the-run-knows-why-it-stopped/`)
 
@@ -139,6 +140,7 @@ the proof-derived state comes from `ai-flow status`.
 - 31-01 · A fix round starts from a brief · —
 - 31-02 · The reviewer reads one pack · —
 - 31-03 · An open promise is split before code · —
+- 31-04 · A finished story leaves the checkout · planned
 
 ### Epic 32 — The maintainer's bench (`epics/epic-32-the-maintainers-bench/`)
 

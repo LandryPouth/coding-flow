@@ -121,10 +121,11 @@ because the same agent was resumed for every fix round; 3–4 reviews per story;
 all promised over an open input space. Until 31-01 lands, each fix round gets a FRESH implementer
 briefed from the story files (findings as checkbox lines under `## Review findings` in plan.md).
 
-Order: 31-01 (walking skeleton) → 31-02 ‖ 31-03 (disjoint files); 31-04 moved to epic 32 (32-01)
+Order: 31-01 (walking skeleton) → 31-02 ‖ 31-03 ‖ 31-04 (disjoint files); the old 31-04 (cost report) moved to epic 32 (32-01), the number is reused for story archiving (maintainer, 2026-11-25)
 
 - [ ] 31-01 a fix round starts from a brief
 - [ ] 31-02 the reviewer reads one pack
+- [ ] 31-04 a finished story leaves the checkout
 - [ ] 31-03 an open promise is split before code
 
 ### Wave 2a′ — the maintainer's bench (epic 32) · right after epic 31, before 2b (maintainer, 2026-11-25) · no npm release (evals/ only)
