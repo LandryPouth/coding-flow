@@ -1585,17 +1585,40 @@ const NEW_READER_BUDGET_MS = 3000;
 function strictestReading(command, ctx, issues) {
   const started = Date.now();
   const frozen = readDestructiveSafely("frozen", command, ctx, issues, {});
-  const judged = frozenJudge().judgeDestructive({ ...ctx, issues }, frozen);
+  // 29-03's bare unresolved alias waits for the new reader: an unchecked, never a refusal.
+  const aliases = frozen.unchecked.filter((entry) => entry.reason === FROZEN_ALIAS_UNREAD);
+  const judged = frozenJudge().judgeDestructive({ ...ctx, issues }, { ...frozen, unchecked: frozen.unchecked.filter((entry) => !aliases.includes(entry)) });
   if (judged.deny) {
     return { reading: frozen, destructive: judged }; // refused as 29-03 refused it: the new reader adds nothing
   }
-  const added = readDestructiveSafely("added", command, ctx, issues, { deadline: started + NEW_READER_BUDGET_MS });
+  const resolvedAliases = [];
+  const added = readDestructiveSafely("added", command, ctx, issues, { deadline: started + NEW_READER_BUDGET_MS, resolvedAliases });
+  if (ctx.scopes[0].policy.destructiveCommands !== "off") {
+    keepUnresolved(issues, aliases, resolvedAliases);
+  }
   const extra = judgeDestructive({ ...ctx, issues }, added, started + NEW_READER_BUDGET_MS);
   keepCauses(issues);
   return {
     reading: { touched: [...frozen.touched, ...added.touched], substituted: [...frozen.substituted, ...added.substituted] },
     destructive: { deny: extra.deny, warnings: [...new Set([...(judged.warnings || []), ...(extra.warnings || [])])] },
   };
+}
+
+// 29-03's reader does not map a Git Bash drive path (`git -C /c/…/repo st`): it finds
+// no repository and calls the alias unresolved. That reason is kept unless the new
+// reader resolved the same command (`git st …`), one resolution per occurrence.
+const FROZEN_ALIAS_UNREAD = "a git alias the guard could not resolve";
+
+function keepUnresolved(issues, aliases, resolved) {
+  const left = [...resolved];
+  for (const entry of aliases) {
+    const at = left.indexOf(entry.command);
+    if (at !== -1) {
+      left.splice(at, 1);
+    } else if (!issues.includes(entry.reason)) {
+      issues.push(entry.reason);
+    }
+  }
 }
 
 // The frozen reader words some unchecked reasons bare ("a git alias the guard could
@@ -1948,4 +1971,4 @@ function evaluate(hook, root) {
   }
 }
 
-module.exports = { guardCommand, decide, evaluate, recordUnchecked, isShellLimit, shellWriteTargets, shellWrites, loadPolicy, destructivePolicy, effectiveDestructivePolicy, shellBlockedPaths };
+module.exports = { guardCommand, decide, evaluate, recordUnchecked, uncheckedLine, isShellLimit, shellWriteTargets, shellWrites, loadPolicy, destructivePolicy, effectiveDestructivePolicy, shellBlockedPaths };

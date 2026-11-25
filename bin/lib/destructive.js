@@ -255,6 +255,11 @@ function readGitAlias(out, sub, rest, dir, ctx) {
     out.unchecked.push({ reason, command: ["git", sub, ...rest].join(" ") });
     return true;
   }
+  // Resolved (an expansion or no alias at all): the guard drops 29-03's bare "could
+  // not resolve" for this same command (a Git Bash `/c/…` it did not map).
+  if (ctx.resolvedAliases) {
+    ctx.resolvedAliases.push(["git", sub, ...rest].join(" "));
+  }
   if (found.value === null || found.value === undefined) {
     return false;
   }
@@ -2104,12 +2109,13 @@ function readSubstitutions(out, line, segments, start, ctx) {
 // `host`: `exists(absolutePath)`, `home()`, `onPath(program)` — each falls back
 // rather than throwing. A finding whose `check` needs a directory and has none
 // (`cd "$D" && git checkout -- .`) carries `cwd: null`; the guard makes it unchecked.
-function readDestructive(command, { cwd, host, deadline = Infinity }) {
+// `resolvedAliases`, when given, collects each git alias command the host resolved.
+function readDestructive(command, { cwd, host, deadline = Infinity, resolvedAliases = null }) {
   if (typeof command !== "string" || !command.trim()) {
     return { findings: [], unchecked: [], touched: [], substituted: [] };
   }
   const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), gitTop: () => null, readSmall: () => null, ...host };
-  return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), platform: safeHost.platform || process.platform, depth: 0, deadline });
+  return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), platform: safeHost.platform || process.platform, depth: 0, deadline, resolvedAliases });
 }
 
 module.exports = { readDestructive, substitutionsOf, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS, HIDDEN_VERB, UNREAD_SUBSTITUTION, UNMODELLED, HANDED_TEXT };

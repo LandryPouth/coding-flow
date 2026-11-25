@@ -1195,3 +1195,31 @@ test("series 3 round 3: psql's $'…' SQL is shown and read decoded", (t) => {
   assert.match(result.reason, /`psql -c 'DROP TABLE x'`/);
   expectAll(dir, 'deny', ["psql -c $'DROP\\x20TABLE x'"]);
 });
+
+// Series 4 round 3 (P1): a Git Bash drive path names the repository on Windows.
+// The frozen 29-03 reader does not map `/c/…`, finds no repository there and calls
+// the alias unresolved; the new reader maps it and resolves the alias, so the
+// call stays allowed. On Linux `C:/Users/x/repo` resolves under the cwd, so the
+// throwaway repository lives at `<root>/C:/Users/x/repo` (as windows-paths.test.js).
+function asOnWindows(run) {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  try {
+    return run();
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+  }
+}
+
+test('series 4 round 3: on Windows, a git alias in a repository named by a Git Bash path is resolved, not unchecked', { skip: process.platform === 'win32' && 'the /c/ mapping onto a throwaway directory is a POSIX test' }, (t) => {
+  const root = repo(t);
+  const inner = path.join(root, 'C:', 'Users', 'x', 'repo');
+  fs.mkdirSync(inner, { recursive: true });
+  git(inner, 'init', '-q', '-b', 'main');
+  git(inner, 'config', 'alias.st', 'status');
+  asOnWindows(() => {
+    expectAll(root, 'allow', ['git -C /c/Users/x/repo st', 'cd /c/Users/x/repo && git st']);
+    // An alias no reader can resolve is still unchecked.
+    expectAll(root, 'unchecked', ['git -C /c/Users/x/nowhere st', 'cd /c/Users/x/nowhere && git st']);
+  });
+});

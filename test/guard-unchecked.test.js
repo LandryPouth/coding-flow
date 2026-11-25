@@ -343,6 +343,21 @@ test('the plugin reports a shell call with no command as unchecked', async (t) =
   assert.ok(plugin.lines.some((line) => /NOT checked/.test(line)));
 });
 
+// Series 4 round 3 (P2): the in-process plugin writes the guard's own line, so an
+// unproven call tells the agent what to do, as the Claude hook's stderr does.
+test('the in-process plugin says to ask the human before running an unproven call', async (t) => {
+  const dir = tmp(t);
+  assert.equal(cli(dir, ['init', '--opencode']).code, 0);
+  fs.mkdirSync(path.join(dir, 'build'));
+  fs.writeFileSync(path.join(dir, 'build', 'out.js'), 'x\n');
+  const plugin = await loadPlugin(t, dir, (src) => src);
+  await plugin.before({ tool: 'bash' }, { args: { command: `python3 -c 'import os; os.system("rm -rf build")'` } });
+  plugin.restore();
+  const line = plugin.lines.find((entry) => /NOT checked/.test(entry));
+  assert.ok(line, plugin.lines.join(''));
+  assert.match(line, /read inside code.*; this write was NOT checked — ask the human before running it\n$/);
+});
+
 test('the plugin forwards the spawned guard\'s NOT checked line when it falls back to the spawn', async (t) => {
   const dir = tmp(t);
   assert.equal(cli(dir, ['init', '--opencode']).code, 0);
