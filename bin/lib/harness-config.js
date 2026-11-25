@@ -311,6 +311,30 @@ function defaultHarnessConfig() {
   };
 }
 
+// Story 26-08: the rules a fresh harness.json shows although every reader
+// resolves them without the file (`coverage.js` resolveCoverageFloor,
+// `coverage-gate.js` failsOnContrarySignals). Written only when the file is
+// created; the policy fingerprint leaves a key out while it holds exactly this
+// value, so writing them never makes a recorded proof stale, in any checkout.
+const SHOWN_HARNESS_DEFAULTS = Object.freeze({
+  coverageFloor: Object.freeze({ high: "auto", medium: "evidence", low: "not-required" }),
+  failOnContrarySignals: false,
+});
+
+// What a new harness.json holds: the defaults, with the shown keys placed
+// after `minPatchCoverage`, which they qualify.
+function initialHarnessConfig() {
+  const config = {};
+  for (const [key, value] of Object.entries(defaultHarnessConfig())) {
+    config[key] = value;
+    if (key === "minPatchCoverage") {
+      config.coverageFloor = { ...SHOWN_HARNESS_DEFAULTS.coverageFloor };
+      config.failOnContrarySignals = SHOWN_HARNESS_DEFAULTS.failOnContrarySignals;
+    }
+  }
+  return config;
+}
+
 // The modes `harness init --mode` accepts. Only "strict" tightens anything.
 const HARNESS_MODES = ["fast", "standard", "strict"];
 
@@ -388,7 +412,7 @@ function ensureHarnessConfig({ dryRun = false } = {}) {
   }
 
   if (!dryRun) {
-    writeJson(harnessConfigPath(), defaultHarnessConfig());
+    writeJson(harnessConfigPath(), initialHarnessConfig());
     fs.mkdirSync(harnessRunsDir(), { recursive: true });
   }
 
@@ -408,6 +432,8 @@ module.exports = {
   defaultNonBehaviorGlobs,
   defaultPolicyGlobs,
   defaultHarnessConfig,
+  initialHarnessConfig,
+  SHOWN_HARNESS_DEFAULTS,
   EVIDENCE_BLOCKED_PATHS,
   readHarnessConfig,
   ensureHarnessConfig,

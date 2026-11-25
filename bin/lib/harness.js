@@ -38,6 +38,7 @@ const {
   harnessRunsDir,
   defaultSecretPatterns,
   defaultHarnessConfig,
+  initialHarnessConfig,
   HARNESS_MODES,
   readHarnessConfig,
   ensureHarnessConfig,
@@ -167,8 +168,10 @@ function buildHarnessEvidence({ story = null } = {}) {
 function harnessInit({ json = false, dryRun = false, force = false, mode = null } = {}) {
   const existing = readJson(harnessConfigPath(), null);
   const allowedModes = new Set(HARNESS_MODES);
+  // A new file shows the keys the readers resolve without it (26-08); an
+  // existing one is completed with the defaults only, as before.
   const config = {
-    ...defaultHarnessConfig(),
+    ...(existing ? defaultHarnessConfig() : initialHarnessConfig()),
     ...(existing || {}),
   };
 
