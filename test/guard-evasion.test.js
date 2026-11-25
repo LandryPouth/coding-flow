@@ -88,6 +88,22 @@ test('interpreter code: strict mode refuses what standard leaves unchecked', (t)
   assert.equal(guardCli(strict, `python3 -c 'print(1)'`).status, 0);
   const standard = repo(t);
   assert.equal(guardCli(standard, `python3 -c 'import os; os.system("rm -rf build")'`).status, 0);
+
+  // Series 4 round 2: the refusal names the command read inside the code and who can
+  // lift it, as a plain destructive refusal does, and ends each sentence before the advice.
+  const refused = guardCli(strict, `python3 -c 'import os; os.system("rm -rf build")'`);
+  assert.match(refused.stderr, /read inside code \(an interpreter string: `rm -rf build`/);
+  assert.match(refused.stderr, /Only they can allow it \(destructiveCommands, allowDestructive in \.coding-flow\/harness\.json\)\. Do not retry/);
+  const script = repo(t, { mode: 'strict' });
+  assert.match(guardCli(script, `printf 'rm -rf build\\n' > run.sh; sh run.sh`).stderr, /\(a script file the line wrote: `rm -rf build`.*allowDestructive/);
+  const alias = repo(t, { mode: 'strict' });
+  assert.match(guardCli(alias, `git config alias.nuke '!rm -rf build'`).stderr, /\(a git alias set by git config: `rm -rf build`.*allowDestructive/);
+  // allowDestructive lifts it, as it lifts the plain command.
+  const allowed = repo(t, { mode: 'strict', allowDestructive: ['rm -rf build'] });
+  assert.equal(guardCli(allowed, `python3 -c 'import os; os.system("rm -rf build")'`).status, 0);
+  // Standard: said honestly, with the next step.
+  const warned = guardCli(standard, `python3 -c 'import os; os.system("rm -rf build")'`).stderr;
+  assert.match(warned, /runs a destructive command the guard read inside code \(an interpreter string: `rm -rf build`, [^)]*\); this write was NOT checked — ask the human before running it/);
 });
 
 // --- criterion 2: a path built from pieces ---------------------------------------------

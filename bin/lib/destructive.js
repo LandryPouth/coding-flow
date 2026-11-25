@@ -42,6 +42,13 @@ const PSQL_STDIN = "psql reads SQL from input the guard cannot read, or that des
 const PSQL_SHELL = "psql runs a shell command the guard reads as destructive";
 const CONFIG_ENV = "a git alias read under a prefix that changes which config git reads";
 const HIDDEN = "the code, SQL or script run is given by an expansion the guard cannot see";
+// Where an unproven finding was read, as its refusal or warning names it.
+const UNPROVEN_FORMS = new Map([
+  [INTERPRETER_CODE, "an interpreter string"],
+  [CONFIG_ALIAS, "a git alias set by git config"],
+  [WRITTEN_SCRIPT, "a script file the line wrote"],
+  [PSQL_SHELL, "a psql \\! shell escape"],
+]);
 
 // Short options glued in one word (`-fdx`) and long options (`--force=…`), up to `--`.
 // `has(letter, name)` reads a long option as git and GNU tools do: any prefix
@@ -819,7 +826,8 @@ function readUnproven(out, text, cwd, ctx, reason, command, propagate = true) {
   }
   const inner = { findings: [], unchecked: [], touched: [], substituted: [] };
   readScript(inner, text, cwd, { ...ctx, handed: true });
-  out.findings.push(...inner.findings.map((finding) => ({ ...finding, unproven: reason, command })));
+  // `inner`: the destructive command itself, which the refusal names; `command`: the line around it.
+  out.findings.push(...inner.findings.map((finding) => ({ ...finding, unproven: reason, form: UNPROVEN_FORMS.get(reason), inner: finding.inner || finding.command, command })));
   if (propagate) {
     out.unchecked.push(...inner.unchecked);
   }

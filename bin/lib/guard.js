@@ -1443,6 +1443,17 @@ function shown(command) {
   return text.length > 160 ? `${text.slice(0, 157)}...` : text;
 }
 
+// A destructive command read inside code, an alias value or a file the line wrote
+// (story 29-04): named whole, with where it was read. Unchecked, not refused —
+// `standard` lets it run and says so, `strict` refuses it (UNPROVEN_NEXT, STRICT_NEXT).
+const UNPROVEN_LEAD = "the line runs a destructive command the guard read inside code";
+const UNPROVEN_NEXT = "ask the human before running it";
+const isUnproven = (reason) => typeof reason === "string" && reason.startsWith(UNPROVEN_LEAD);
+
+function unprovenReason(finding) {
+  return `${UNPROVEN_LEAD} (${finding.form || finding.unproven}: \`${shown(finding.inner || finding.command)}\`, ${finding.rule})`;
+}
+
 function destructiveReason(finding, detail) {
   const now = detail ? ` (here: ${detail})` : "";
   return `\`${shown(finding.command)}\` is a destructive command (${finding.rule}): it destroys ${finding.destroys}${now}. Instead: ${finding.alternative}. A destructive step waits for the human: say what it would destroy and how to undo it, then ask. Only they can allow it (destructiveCommands, allowDestructive in ${POLICY_FILE}).`;
@@ -1502,8 +1513,9 @@ function judgeDestructive(ctx, { findings, unchecked }, deadline = Infinity) {
     }
     if (finding.unproven) {
       // Read in code or in a file run later (story 29-04): unchecked, not refused.
-      if (!ctx.issues.includes(finding.unproven)) {
-        ctx.issues.push(finding.unproven);
+      const issue = unprovenReason(finding);
+      if (!ctx.issues.includes(issue)) {
+        ctx.issues.push(issue);
       }
       continue;
     }
@@ -1579,10 +1591,26 @@ function strictestReading(command, ctx, issues) {
   }
   const added = readDestructiveSafely("added", command, ctx, issues, { deadline: started + NEW_READER_BUDGET_MS });
   const extra = judgeDestructive({ ...ctx, issues }, added, started + NEW_READER_BUDGET_MS);
+  keepCauses(issues);
   return {
     reading: { touched: [...frozen.touched, ...added.touched], substituted: [...frozen.substituted, ...added.substituted] },
     destructive: { deny: extra.deny, warnings: [...new Set([...(judged.warnings || []), ...(extra.warnings || [])])] },
   };
+}
+
+// The frozen reader words some unchecked reasons bare ("a git alias the guard could
+// not resolve") where the new one adds the host's cause ("…: git did not answer in
+// time"). The reason given is the first issue: a bare one gives way to its caused
+// form, which says what to fix.
+function keepCauses(issues) {
+  const kept = [];
+  for (const issue of issues) {
+    const reason = issues.find((other) => other.startsWith(`${issue}: `)) || issue;
+    if (!kept.includes(reason)) {
+      kept.push(reason);
+    }
+  }
+  issues.splice(0, issues.length, ...kept);
 }
 
 // 29-03's judging, frozen with its reader (series 2 round 2): its findings are settled
@@ -1773,7 +1801,16 @@ const AGENT_ADVICE =
   "Do not retry this under another name, path or tool to get around the guard: tell the user what was refused and why.";
 
 function forAgent(reason) {
-  return `${reason} ${AGENT_ADVICE}`;
+  return `${reason}${/[.!?]$/.test(reason) ? "" : "."} ${AGENT_ADVICE}`;
+}
+
+// What a refusal adds when the command was read inside code: as a destructive
+// refusal does, what to do and who can lift it.
+const STRICT_NEXT = `A destructive step waits for the human: say what it would destroy and how to undo it, then ask. Only they can allow it (destructiveCommands, allowDestructive in ${POLICY_FILE}).`;
+
+// The line an unchecked call writes on stderr; the hosts that spawn the guard forward it.
+function uncheckedLine(reason) {
+  return `coding-flow guard: ${reason}; this write was NOT checked${isUnproven(reason) ? ` — ${UNPROVEN_NEXT}` : ""}\n`;
 }
 
 // In `strict`, "the guard could not check this" is a refusal: a hard boundary has
@@ -1799,7 +1836,8 @@ function strictOutcome(result, hook, roots) {
     return result;
   }
 
-  return { decision: "deny", reason: `${STRICT_PREFIX} ${result.reason}`, path: null };
+  const next = isUnproven(result.reason) ? `. ${STRICT_NEXT}` : "";
+  return { decision: "deny", reason: `${STRICT_PREFIX} ${result.reason}${next}`, path: null };
 }
 
 // An allowed call: its warnings (warn mode) are said and kept; `--json` prints
@@ -1846,7 +1884,7 @@ function guardCommand({ getFlagValue, flags }) {
   if (result.decision === "unchecked") {
     recordUnchecked({ root, hook, result });
     // Hosts that spawn the guard (OpenCode fallback) forward this line.
-    process.stderr.write(`coding-flow guard: ${result.reason}; this write was NOT checked\n`);
+    process.stderr.write(uncheckedLine(result.reason));
   }
 
   if (result.decision === "deny") {
