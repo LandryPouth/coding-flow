@@ -520,3 +520,11 @@ Series 3 ends at its cap with the code holding; next: series 4 round 1 after thi
 - [x] P2 CHANGELOG.md:13 — the 29-03 entry (still under [Unreleased]) says interpreter strings are "out of its reach" — fix: append "— partly read since 29-04".
 
 Held: 19/21 mutants caught; all 8 criteria have deciding tests; frozen side unchanged; no test weakened.
+
+### Series 4 Round 2 — FAIL (the user meeting a refusal; readiness to land) — integration with 29-05
+
+- [ ] P1 bin/lib/destructive.js (merged tree) — merging develop (29-05) conflicts in destructive.js, shell-writes.js, epic-29/index.md; 29-05 changed `resolveIn(cwd, word, home)` → `resolveIn(cwd, word, { home, platform })`, this branch's new calls pass a string (merged lines ~710, 1280, 1380, 1385). Union-merged tree: 100/102 — `series 2 round 2: a git error is no answer…` (`rm ~/nothing-here.txt` unchecked instead of allow) and `S3-2: after one git timeout…` (reason "a git alias the guard could not resolve" instead of "did not answer in time"; still fails with resolveIn accepting a string — a second cause) — fix: merge develop into the story branch, pass `{ home, platform: ctx.platform }` everywhere, find the S3-2 interaction, verify on the merged tree.
+- [ ] P2 strict refusals don't name the destructive command found inside the interpreter string/script/alias, nor point to `allowDestructive` (which does lift them); missing period before "Do not retry".
+- [ ] P2 standard-mode stderr "code the guard reads as a destructive command; this write was NOT checked" is self-contradictory and gives no next step.
+
+Held: 17 commands agree across hook and OpenCode plugin; denials name command, reason, damage, safe alternative, how to ask; no message calls a dangerous command safe; `plugin check` clean; Policy Change matches harness.json exactly.
