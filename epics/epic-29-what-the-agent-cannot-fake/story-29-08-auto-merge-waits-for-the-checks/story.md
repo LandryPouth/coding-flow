@@ -85,6 +85,15 @@ Held: additive POST when checks exist; full PUT only with no checks, every retur
 
 Held: coding-flow dry run clean (exit 0, nothing sent); bethl exit 2, nothing written; `ship` never arms on a failed read/PUT; push-only checks excluded; no-PR and no-checks cases blocked clearly; mutation of the round-1 fix fails 3/23.
 
+### Round 3 — FAIL (criteria held and proved, by mutation)
+
+- [ ] P1 bin/lib/ship.js:649 — nothing proves `ship` honours `protectBranches: false` (hardcoding true survives 30/30) — fix: fake-gh test, `ship --auto-merge` with `protectBranches:false` on an unprotected base: 0 `-X` writes, auto-merge not armed, reason printed.
+- [ ] P1 test/protect.test.js:174 (criterion 2, never weakens) — mutants of `keepAndAddChecks` survive (code-owner reviews → false; approving count always 1); `require_last_push_approval`, `dismiss_stale_reviews`, bypass allowances, `block_creations`, `required_conversation_resolution`, `lock_branch` unchecked — fix: fixture with every field non-default, assert each carries through.
+- [ ] P1 README.md:352, docs/rules-and-limits.md:35, CHANGELOG.md:11 — claim a `paths:`-filtered check "is never required", but protect.js:196 skips PRs with no checks at all, so a repo whose only CI has `paths:` gets [build,test] required and docs-only PRs pend forever (fake-gh: PRs [build,test] and [] → requires build, test) — fix (orchestrator's choice: the safe side): when any of the recent PRs ran no checks, protect nothing for that branch, exit 2, say "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever"; docs say exactly that.
+- [ ] P2 doctor "says nothing when GitHub cannot be read" half proved (dropping `!info.error` in `ungatedBases` survives) — add the test.
+
+Held: round-1 push-only fixture not weakened; init consent and dry run hold (0 `-X`); messages match docs; criteria 1, 3, 4, 6, 7 may be ticked (real dry run: main nothing to change, exit 0).
+
 ## Acceptance Criteria
 
 - [ ] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
