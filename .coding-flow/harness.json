@@ -92,6 +92,7 @@
     "bin/lib/security-policy.js",
     "bin/lib/policy.js",
     "bin/lib/coverage-gate.js",
+    "bin/lib/test-tokens.js",
     "bin/lib/evidence.js",
     "bin/lib/identity.js",
     "bin/lib/policy-fingerprint.js",
