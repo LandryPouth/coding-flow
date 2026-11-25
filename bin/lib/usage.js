@@ -27,6 +27,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow archive <epic-dir | NN> [--dry-run] [--json]   (a finished, merged epic leaves the checkout)
   ai-flow archive --refresh [--dry-run] [--json]   (rewrite epics/INDEX.md's live section: every epic, every story's written status)
   ai-flow report [--raw] [--json] [--out file]
+  ai-flow rules [<key>] [--json]   (every rule's value in this project and where it comes from)
   ai-flow ci init [--force] [--dry-run]
   ai-flow plugin sync|check [--json] [--dry-run]
   ai-flow worktree add <name>|--story <path> [--from ref] [--deps install|link|skip] [--dry-run]

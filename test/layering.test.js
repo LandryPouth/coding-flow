@@ -16,7 +16,7 @@ const LIB = path.join(__dirname, '..', 'bin', 'lib');
 const CORE = [
   'archive-members', 'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'destructive', 'detect', 'diff-base',
   'diff-scope', 'epic-index', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
-  'identity', 'mutation', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk',
+  'identity', 'mutation', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk', 'rules-registry',
   'security-policy', 'shell-writes', 'spec-drift', 'story', 'util', 'validation-run',
 ];
 
@@ -34,7 +34,7 @@ const LAYER = [
   'worktree-plan',
   // install, platform wiring and CLI plumbing: not needed to guard or prove
   'bootstrap', 'ci', 'codex-probe', 'codex-settings', 'commands', 'hook',
-  'opencode', 'opencode-config', 'settings', 'trace', 'uninstall', 'unwire', 'usage',
+  'opencode', 'opencode-config', 'rules', 'settings', 'trace', 'uninstall', 'unwire', 'usage',
   'platforms/*', 'storage/*',
 ];
 

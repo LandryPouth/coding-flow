@@ -141,6 +141,8 @@ Daily (you run these):
   report       Collect what went wrong into one sendable file: guard denials, verify failures,
                risk and coverage distribution, install health. Redacted by default (--raw to keep
                absolute paths, --json for machines, --out FILE to write it).
+  rules        Every rule's value in force here and where it comes from (default, project file,
+               auto with its reason, fixed). "rules <key>" for one; --json for machines.
 
 Machinery (usually run FOR you by the skills, CI, or the git hook):
   harness      Run security checks (check), execute declared validation commands (verify), write evidence.

@@ -1047,6 +1047,17 @@ function commandRefusal(command) {
   return null;
 }
 
+// `redAtBase` as the run reads it: a trimmed command or null (not set), a
+// finite timeout or null (the runner's own limit).
+function redAtBaseSettings(config) {
+  const settings = (config && config.redAtBase) || {};
+  const command = typeof settings.command === "string" ? settings.command.trim() : "";
+  return {
+    command: command || null,
+    timeoutMs: Number.isFinite(settings.timeoutMs) ? settings.timeoutMs : null,
+  };
+}
+
 function runRedAtBase({
   root = cwd,
   config = readHarnessConfig(root).config,
@@ -1054,9 +1065,9 @@ function runRedAtBase({
   env,
 } = {}) {
   const started = Date.now();
-  const settings = config.redAtBase || {};
-  const command = typeof settings.command === "string" ? settings.command.trim() : "";
-  const timeoutMs = Number.isFinite(settings.timeoutMs) ? settings.timeoutMs : null;
+  const settings = redAtBaseSettings(config);
+  const command = settings.command || "";
+  const { timeoutMs } = settings;
 
   const refusal = commandRefusal(command);
 
@@ -1124,6 +1135,7 @@ function runRedAtBase({
 }
 
 module.exports = {
+  redAtBaseSettings,
   COMMAND_EXAMPLES,
   missingCommandReason,
   expandCommand,

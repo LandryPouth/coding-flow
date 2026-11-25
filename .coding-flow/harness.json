@@ -119,6 +119,7 @@
     "scripts/test-env-guard.js",
     "bin/lib/diff-base.js",
     "bin/lib/config.js",
+    "bin/lib/rules-registry.js",
     "bin/lib/spec-drift.js",
     "bin/lib/settings.js"
   ],

@@ -124,6 +124,7 @@ const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
 const { reportCommand } = require("./lib/report");
+const { rulesCommand } = require("./lib/rules");
 const {
   ensureConfig,
   configPath,
@@ -898,6 +899,8 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
 } else if (command === "report") {
   reportCommand({ getFlagValue, flags });
+} else if (command === "rules") {
+  rulesCommand({ commandArgs, flags });
 } else if (command === "audit") {
   auditCommand({ getFlagValue, flags });
 } else if (command === "review") {

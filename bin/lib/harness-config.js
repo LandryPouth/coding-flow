@@ -311,6 +311,17 @@ function defaultHarnessConfig() {
   };
 }
 
+// The modes `harness init --mode` accepts. Only "strict" tightens anything.
+const HARNESS_MODES = ["fast", "standard", "strict"];
+
+// The mode every consumer applies (the gates, the guard): a declared mode, or
+// "standard" for anything else — absent, a typo such as "Strict", a file that
+// is not an object.
+function harnessMode(config) {
+  const mode = config && typeof config === "object" ? config.mode : undefined;
+  return HARNESS_MODES.includes(mode) ? mode : "standard";
+}
+
 function readHarnessConfig(root = cwd) {
   const defaults = defaultHarnessConfig();
   const config = readJson(harnessConfigPath(root), null);
@@ -368,6 +379,9 @@ function readHarnessConfig(root = cwd) {
   };
 }
 
+// The harness.json defaults are defined here, not in rules-registry.js: the
+// guard loads this file before every tool call and its module graph is a
+// budget (test/guard.test.js). The registry reads them from here (story 26-06).
 function ensureHarnessConfig({ dryRun = false } = {}) {
   if (fs.existsSync(harnessConfigPath())) {
     return false;
@@ -382,6 +396,8 @@ function ensureHarnessConfig({ dryRun = false } = {}) {
 }
 
 module.exports = {
+  HARNESS_MODES,
+  harnessMode,
   DEFAULT_REPORT_PATHS,
   harnessConfigPath,
   harnessRunsDir,

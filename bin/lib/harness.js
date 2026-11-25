@@ -38,6 +38,7 @@ const {
   harnessRunsDir,
   defaultSecretPatterns,
   defaultHarnessConfig,
+  HARNESS_MODES,
   readHarnessConfig,
   ensureHarnessConfig,
 } = require("./harness-config");
@@ -165,7 +166,7 @@ function buildHarnessEvidence({ story = null } = {}) {
 
 function harnessInit({ json = false, dryRun = false, force = false, mode = null } = {}) {
   const existing = readJson(harnessConfigPath(), null);
-  const allowedModes = new Set(["fast", "standard", "strict"]);
+  const allowedModes = new Set(HARNESS_MODES);
   const config = {
     ...defaultHarnessConfig(),
     ...(existing || {}),
