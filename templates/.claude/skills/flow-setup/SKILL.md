@@ -27,6 +27,8 @@ install.
    `init --target opencode` (or `claude`, `codex`, `gemini`, `antigravity`). It never
    overwrites an existing file, so re-running is safe, and it creates a minimal
    private `package.json` when there is none, for the `flow:*` scripts.
+   On GitHub it also protects the default branch with the CI checks; relay its
+   `Branch protection` line (`--no-protect` skips it).
 3. Relay `init`'s brownfield verdict. On an existing codebase, say plainly that the
    project docs are still empty — the scan is mechanical — and that `/flow-plan`'s
    Brownfield Bootstrap fills them.

@@ -204,6 +204,22 @@ function checkRecoveryExposure(warnings, notes) {
   }
 }
 
+// Story 29-08: auto-merge on a base with no required status checks merges at
+// once, CI or not. Read from GitHub only when `gh` is there and auto-merge is on;
+// a network failure says nothing.
+function checkAutoMergeGate(warnings) {
+  if (!readConfig(cwd).autoMergeEpic || !isCommandAvailable("gh")) return;
+
+  for (const branch of require("./protect").ungatedBases(cwd)) {
+    warnings.push({
+      code: "auto_merge_ungated",
+      message:
+        `autoMergeEpic is on but "${branch}" has no required status checks, so GitHub would merge at once — ` +
+        `run \`ai-flow protect --branch ${branch}\``,
+    });
+  }
+}
+
 function checkEvidenceAndRecovery(warnings, notes) {
   checkEvidenceBlocked(warnings);
   checkRecoveryExposure(warnings, notes);
@@ -800,6 +816,7 @@ function collectMinimalReport({ strict = false } = {}) {
   }
 
   checkEvidenceAndRecovery(warnings, notes);
+  checkAutoMergeGate(warnings);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
@@ -1035,6 +1052,7 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
   checkEvidenceAndRecovery(warnings, notes);
+  checkAutoMergeGate(warnings);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);

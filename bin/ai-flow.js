@@ -130,6 +130,7 @@ function refuseVerifyAwayFromStoryWork(story) {
 }
 const { decidePlacement, autoLandIfChainFinished } = require("./lib/worktree-plan");
 const { shipCommand } = require("./lib/ship");
+const { protectCommand, protectOnInit } = require("./lib/protect");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
 const { reportCommand } = require("./lib/report");
@@ -385,6 +386,17 @@ function globalCommand(name) {
   log("Start in any project with `/flow-setup`; it scaffolds Coding Flow there. Update later with `ai-flow upgrade --global`.");
 }
 
+// Story 29-08: GitHub's auto-merge waits only on REQUIRED checks, so the base is
+// protected at install when it can be. Never fails init: a blocker is one line.
+function protectBranchesAtInit(dryRun) {
+  const skip = flags.has("--no-protect")
+    ? "--no-protect"
+    : readConfig(cwd).protectBranches === false
+      ? "protectBranches: false"
+      : null;
+  protectOnInit(cwd, { dryRun, skip }).forEach((line) => log(line));
+}
+
 const rejected = require("./lib/usage").unknownFlags(command, args.slice(1));
 
 if (rejected.length > 0) {
@@ -468,6 +480,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     }
 
     wireOpenCode({ dryRun, targets: [minimalTarget] });
+    protectBranchesAtInit(dryRun);
 
     log("");
     log("Installed: the guard hook, the proof layer, and the friction log. No RULES.md, no epics/, no skills.");
@@ -716,6 +729,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   if (convenience) {
     printConvenienceSummary(convenience, { dryRun: flags.has("--dry-run") });
   }
+  protectBranchesAtInit(flags.has("--dry-run"));
 
   // Name them. On a brownfield repo the collision is typically the project's own
   // docs/architecture.md, and "use --force to overwrite them" then reads as advice
@@ -1020,6 +1034,8 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   });
 } else if (command === "ship") {
   shipCommand({ getFlagValue, flags, cwd });
+} else if (command === "protect") {
+  protectCommand({ args: args.slice(1), flags, cwd });
 } else if (command === "run") {
   runCommand({ getFlagValue, flags });
 } else if (command === "hook") {

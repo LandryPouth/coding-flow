@@ -58,6 +58,8 @@ Flags:
   base (a human's call), or while an earlier story of the same epic (by directory
   order) still has an open PR: a later story must not land before the foundation it
   builds on.
+  Nor on a base with no required status checks (GitHub would merge at once): `ship`
+  protects it first when it can, otherwise it says why — relay that line.
 
 ## Verification
 

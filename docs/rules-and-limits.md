@@ -32,6 +32,7 @@ Story references point at the story's `spec.md` unless another file is named.
 | `storage` | `local` | `local` or `github` (`github` is reserved, not implemented) | `init --storage` | `config.js:16`, `:46` |
 | `branchPerEpic` (one epic = one branch, never main) | `true` | Advisory: `status` warns when you are on `main`, `master` or origin's default branch. Nothing is refused | `init --no-branch-per-epic`, or the key | `config.js:47`, `:154-155`; `bin/lib/policy.js:43-56`; `bin/lib/status.js:461` |
 | `autoMergeEpic` | `false` | — | key; per run `ship --auto-merge` / `--no-auto-merge` | `config.js:53`; `bin/lib/ship.js:651` |
+| `protectBranches` (story 29-08) | `true` | GitHub only, classic branch protection: `init` and `ship` require the check runs of the branch's latest commit on the default branch and `baseBranch`; only adds checks, never removes a rule; no CI, no `gh` or no admin rights → nothing sent, the reason printed. A ruleset-governed branch is left alone | key; `init --no-protect`; `ai-flow protect` by hand | `bin/lib/protect.js` |
 | `skills` (plugin or project copy) | `project` (also the fallback for configs written before the key existed) | `plugin` or `project` | `upgrade --with-skills` / `--no-skills` | `config.js:23`, `:57` |
 | `install` | `full` | `full` or `minimal`. You can only move from minimal to full | `init --minimal`, then `--full` | `config.js:31`, `:60`, `:221-229` |
 | `target` / `alsoTargets` | `claude` / `[]` | `claude`, `codex`, `gemini`, `opencode`, `antigravity`. An invalid value is read as `unrecognized` | `init --target` | `config.js:36`, `:64-67`, `:101-110` |
@@ -146,7 +147,7 @@ Story references point at the story's `spec.md` unless another file is named.
 | Ship refusals | refuses when you are on the base branch, when there is no `origin`, or when there are no commits above the base | — | — | `ship.js:644-669` |
 | Ship base | origin's default branch, else `main` | — | `--base` | `ship.js:98-110` |
 | Ship commit scope | only the story's files | — | `--all`, `--no-commit` | `ship.js:370-396`; `bin/lib/commands.js:186-187` |
-| Auto-merge eligibility | every story of the epic has a captured green verify (a written `done` does not count); the PR has no conflict; no earlier sibling story's PR is still open. Merges through GitHub `--auto`, so required checks still apply | — | `autoMergeEpic`, `--auto-merge` | `ship.js:513-596` |
+| Auto-merge eligibility | every story of the epic has a captured green verify (a written `done` does not count); the PR has no conflict; no earlier sibling story's PR is still open; the base has required status checks (ship protects it first when it can, otherwise opens the PR without auto-merge and says why — GitHub would merge at once). Merges through GitHub `--auto`, so required checks still apply | — | `autoMergeEpic`, `--auto-merge` | `ship.js:513-596` |
 | Merge method | `merge` | `merge`, `squash` or `rebase` | `--merge-method` | `ship.js:798-803` |
 
 ### Planning limits and doctor checks

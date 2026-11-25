@@ -53,6 +53,10 @@ function defaultConfig() {
     // an outward side effect, and existing projects should not get it for free
     // on an upgrade. `ship --auto-merge` / `--no-auto-merge` override this per run.
     autoMergeEpic: defaultOf("autoMergeEpic"),
+    // Story 29-08: GitHub's auto-merge waits only on REQUIRED checks, so `init`
+    // and `ship` protect the base with the CI check runs when they can (only
+    // adding, never weakening). `false` leaves the repository's settings alone.
+    protectBranches: defaultOf("protectBranches"),
     // "project" is the fallback on purpose: a config written before this field
     // existed described an install that DID copy the skills, and doctor must
     // keep requiring them for those projects.
@@ -179,6 +183,8 @@ function readConfig(cwd) {
       typeof existing.branchPerEpic === "boolean" ? existing.branchPerEpic : defaults.branchPerEpic,
     autoMergeEpic:
       typeof existing.autoMergeEpic === "boolean" ? existing.autoMergeEpic : defaults.autoMergeEpic,
+    protectBranches:
+      typeof existing.protectBranches === "boolean" ? existing.protectBranches : defaults.protectBranches,
     validation,
   };
 }

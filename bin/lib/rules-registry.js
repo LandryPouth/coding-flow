@@ -32,6 +32,7 @@ const RULES = [
   { key: "storage", file: "config", scope: "project", default: "local", cap: "`local` or `github` (reserved)", doc: "Where epics and stories live." },
   { key: "branchPerEpic", file: "config", scope: "project", default: true, cap: "advisory: status warns on the default branch", doc: "One epic, one branch, never main." },
   { key: "autoMergeEpic", file: "config", scope: "project", default: false, doc: "ship merges the epic's PR once every story is proven." },
+  { key: "protectBranches", file: "config", scope: "project", default: true, story: "29-08", doc: "init and ship protect the GitHub base with the CI checks as required checks." },
   { key: "skills", file: "config", scope: "project", default: "project", cap: "`plugin` or `project`", doc: "Where the skills come from." },
   { key: "install", file: "config", scope: "project", default: "full", cap: "`full` or `minimal`", doc: "How much of the tool this project installed." },
   { key: "target", file: "config", scope: "project", default: "claude", doc: "The agent platform the project was installed for." },

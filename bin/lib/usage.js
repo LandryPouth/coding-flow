@@ -4,7 +4,7 @@
 // No requires on purpose — `--help` is answered before anything else loads, so
 // asking for help cannot touch a file, git or the network.
 
-const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity] [--opencode] [--minimal|--full] [--global] [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--force] [--dry-run]
+const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity] [--opencode] [--minimal|--full] [--global] [--storage local] [--no-branch-per-epic] [--no-guard] [--with-skills|--no-skills] [--no-protect] [--force] [--dry-run]
   ai-flow upgrade [--global] [--with-skills|--no-skills] [--no-guard] [--force] [--dry-run] [--json]
   ai-flow doctor [--fix] [--strict] [--json]
   ai-flow status [--json]
@@ -41,6 +41,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow worktree autoland --epic <path> --story <path> [--json]
   ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit] [--all]
                [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
+  ai-flow protect [--branch name]... [--dry-run] [--json]   (GitHub: require the CI checks on the default branch and the base)
   ai-flow hook install|uninstall|status [--dry-run] [--json]
   ai-flow commands [--json]
   ai-flow uninstall [--global] [--dry-run] [--force] [--json]
@@ -74,8 +75,9 @@ function usageFor(command) {
 const FLAGS = {
   init: [
     "--target", "--opencode", "--minimal", "--full", "--global", "--storage", "--no-branch-per-epic",
-    "--no-guard", "--guard", "--with-skills", "--no-skills", "--force", "--dry-run", "--help", "-h",
+    "--no-guard", "--guard", "--with-skills", "--no-skills", "--no-protect", "--force", "--dry-run", "--help", "-h",
   ],
+  protect: ["--branch", "--dry-run", "--json", "--help", "-h"],
   upgrade: ["--global", "--with-skills", "--no-skills", "--no-guard", "--force", "--dry-run", "--json", "--opencode", "--help", "-h"],
   uninstall: ["--global", "--dry-run", "--force", "--json", "--target", "--help", "-h"],
   // Read-only, but its one flag is easy to mistype into an empty-looking answer.

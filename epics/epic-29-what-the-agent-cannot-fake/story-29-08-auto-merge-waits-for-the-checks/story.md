@@ -70,6 +70,36 @@ protection auto du projet dans lequel il est installé".
 - Repository rulesets. Classic branch protection only; a branch already
   governed by a ruleset is reported and left alone.
 
+## Acceptance Traceability
+
+All tests drive the CLI against a fake `gh` (`test/fixtures/fake-gh`) first on
+PATH; nothing reaches GitHub.
+
+1. Unprotected `main`, 3 check runs → one PUT with exactly those checks, strict
+   false, no reviews, enforce_admins false; `--dry-run` sends nothing →
+   `test/protect.test.js::protect requires exactly the 3 check runs of main's latest commit, strict false, no reviews`,
+   `test/protect.test.js::protect --dry-run sends nothing and prints the plan`
+2. Existing reviews + 1 check kept, missing added, second run sends nothing →
+   `test/protect.test.js::an existing protection keeps its reviews and check, gains the missing ones, and a second run sends nothing`,
+   `test/protect.test.js::a protection with no required checks is rebuilt keeping its reviews and restrictions`
+3. No admin / no gh / no check runs → exit 2 with reason and next command; init
+   succeeds with the same reason →
+   `test/protect.test.js::no admin rights: protect exits 2 …`, `::no gh: …`, `::no check runs: …`
+4. init protects default branch and base; `--no-protect` / `protectBranches: false`
+   send nothing → `test/protect.test.js::init in a GitHub repository with checks and admin rights protects the default branch and the base`,
+   `::init --dry-run prints the protection plan and sends nothing`, `::init --no-protect sends nothing`,
+   `::init with protectBranches false sends nothing`
+5. ship on a base it cannot protect → no auto-merge, says why; on one it can →
+   protects first, then arms → `test/protect.test.js::ship --auto-merge on a base it cannot protect opens the PR without auto-merge and says why`,
+   `::ship --auto-merge on a base it can protect protects it first, then arms auto-merge`,
+   `::ship --auto-merge on an already protected base arms auto-merge without writing`
+6. doctor warns with the command → `test/protect.test.js::doctor warns with the command to run when autoMergeEpic is on and the base has no required checks`,
+   `::doctor says nothing when GitHub cannot be read, or auto-merge is off`
+7. Real check on this repository → the `protect --dry-run` output under Result.
+- Out of scope held: `::a ruleset-governed branch is reported and left alone`,
+  `::a non-GitHub remote: protect says GitHub only, init stays quiet`.
+- `protectBranches` default documented: `test/rules-registry.test.js::every registry key is in docs/rules-and-limits.md with the same default`.
+
 ## Commands
 
 ```bash
@@ -79,3 +109,27 @@ npm test
 ## Status: in-progress
 
 ## Result
+
+Implemented in `bin/lib/protect.js` (new `ai-flow protect`), wired into `init`
+(both installs), `ship` (before `gh pr merge --auto`) and `doctor`
+(`auto_merge_ungated`); setting `protectBranches` (default `true`) in the rules
+registry, `config.js` and `docs/rules-and-limits.md`; README, help, usage,
+flow-ship and flow-setup skills, CHANGELOG.
+
+Writes on an existing protection: when it already has required checks, only the
+additive endpoint (`POST …/protection/required_status_checks/contexts`) is used,
+so nothing else can change; when it has none, a PUT rebuilt from the existing
+rule (reviews, restrictions, every flag kept) adds them.
+
+Real check, read-only, on this repository (2026-11-25):
+
+```text
+$ ai-flow protect --dry-run --branch main --branch develop
+Branch protection (LandryPouth/coding-flow):
+  main: nothing to change — already requires test (ubuntu-latest, 18.x), test (ubuntu-latest, 20.x), test (ubuntu-latest, 22.x), test (macos-latest, 22.x), test (windows-latest, 22.x)
+  develop: nothing to change — already requires test (ubuntu-latest, 18.x), test (ubuntu-latest, 20.x), test (ubuntu-latest, 22.x), test (macos-latest, 22.x), test (windows-latest, 22.x)
+Dry run — nothing to change.
+```
+
+Plain `ai-flow protect --dry-run` reports `main` only: this repository sets no
+`baseBranch`, so `develop` is protected by `init`/`protect` only when named.

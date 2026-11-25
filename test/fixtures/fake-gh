@@ -1,0 +1,117 @@
+#!/usr/bin/env node
+"use strict";
+
+// A stand-in for the GitHub CLI, copied first on PATH as `gh` by the 29-08
+// tests (no .js extension: node --test would run it as a test file). It
+// answers from a JSON state file (FAKE_GH_STATE), applies the protection
+// writes to that state so a second run sees them, and logs every call with its
+// body to FAKE_GH_LOG (one JSON line each). It never reaches the network.
+
+const fs = require("fs");
+
+const args = process.argv.slice(2);
+const stateFile = process.env.FAKE_GH_STATE;
+const input = args.includes("--input") ? fs.readFileSync(0, "utf8") : "";
+const body = input ? JSON.parse(input) : null;
+
+fs.appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify({ args, body })}\n`);
+
+const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+const save = () => fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+const out = (value) => {
+  process.stdout.write(typeof value === "string" ? `${value}\n` : `${JSON.stringify(value)}\n`);
+  process.exit(0);
+};
+const fail = (message) => {
+  process.stderr.write(`${message}\n`);
+  process.exit(1);
+};
+
+// The GET shape GitHub returns for a PUT body.
+function asResponse(put) {
+  const checks = put.required_status_checks ? put.required_status_checks.checks.map((check) => check.context) : null;
+  const flag = (value) => ({ enabled: Boolean(value) });
+  return {
+    required_status_checks: checks
+      ? { strict: put.required_status_checks.strict, contexts: checks, checks: checks.map((context) => ({ context, app_id: null })) }
+      : undefined,
+    enforce_admins: flag(put.enforce_admins),
+    required_pull_request_reviews: put.required_pull_request_reviews || undefined,
+    restrictions: put.restrictions || undefined,
+    allow_force_pushes: flag(put.allow_force_pushes),
+    allow_deletions: flag(put.allow_deletions),
+  };
+}
+
+if (args[0] === "--version") out("gh version 2.99.0 (fake)");
+
+if (args[0] === "repo" && args[1] === "view") {
+  if (state.repoError) fail(state.repoError);
+  out(state.repo);
+}
+
+if (args[0] === "api") {
+  const xIndex = args.indexOf("-X");
+  const method = xIndex >= 0 ? args[xIndex + 1] : "GET";
+  const target = args.slice(1).find((arg, index) => !arg.startsWith("-") && args[index] !== "-X" && args[index] !== "--input");
+  const rest = target.split("?")[0].replace(/^repos\/[^/]+\/[^/]+\//, "");
+  let match;
+
+  if ((match = rest.match(/^rules\/branches\/([^/]+)$/))) {
+    const branch = state.branches[decodeURIComponent(match[1])];
+    out(branch && branch.rules ? branch.rules : []);
+  }
+
+  if ((match = rest.match(/^branches\/([^/]+)$/))) {
+    const branch = state.branches[decodeURIComponent(match[1])];
+    if (!branch) fail("gh: Branch not found (HTTP 404)");
+    out({ name: decodeURIComponent(match[1]), commit: { sha: branch.sha }, protected: Boolean(branch.protection) });
+  }
+
+  if ((match = rest.match(/^branches\/([^/]+)\/protection$/))) {
+    const branch = state.branches[decodeURIComponent(match[1])];
+    if (method === "GET") {
+      if (!branch.protection) fail("gh: Branch not protected (HTTP 404)");
+      out(branch.protection);
+    }
+    if (method === "PUT") {
+      if (state.refuseWrites) fail("gh: Resource not accessible (HTTP 403)");
+      branch.protection = asResponse(body);
+      save();
+      out(branch.protection);
+    }
+  }
+
+  if ((match = rest.match(/^branches\/([^/]+)\/protection\/required_status_checks\/contexts$/)) && method === "POST") {
+    const rsc = state.branches[decodeURIComponent(match[1])].protection.required_status_checks;
+    for (const context of body.contexts) {
+      if (!rsc.contexts.includes(context)) {
+        rsc.contexts.push(context);
+        rsc.checks.push({ context, app_id: null });
+      }
+    }
+    save();
+    out(rsc.contexts);
+  }
+
+  if ((match = rest.match(/^commits\/([^/]+)\/check-runs$/))) {
+    const branch = Object.values(state.branches).find((entry) => entry.sha === match[1]);
+    const names = branch ? branch.checkRuns : [];
+    out({ total_count: names.length, check_runs: names.map((name) => ({ name, status: "completed" })) });
+  }
+}
+
+if (args[0] === "pr") {
+  const fields = args.includes("--json") ? args[args.indexOf("--json") + 1] : "";
+  if (args[1] === "view" && fields === "url,state") {
+    if (!state.pr) fail("no pull requests found");
+    out({ url: "https://github.com/acme/app/pull/7", state: "OPEN" });
+  }
+  if (args[1] === "view" && fields === "mergeable") out({ mergeable: "MERGEABLE" });
+  if (args[1] === "view" && fields === "body") out({ body: "" });
+  if (args[1] === "view") fail("no pull requests found");
+  if (args[1] === "edit" || args[1] === "merge") out("");
+  if (args[1] === "create") out("https://github.com/acme/app/pull/7");
+}
+
+fail(`fake gh: unhandled call ${args.join(" ")}`);

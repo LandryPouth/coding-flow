@@ -52,7 +52,7 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | --- | --- |
 | `lib/context.js` | Shared constants (root, templates, cwd, npm scripts) |
 | `lib/util.js` | Generic helpers (I/O, hash, JSON, paths, glob, file walking) |
-| `lib/config.js` | Project config `.coding-flow/config.json` (storage, branchPerEpic, autoMergeEpic, validation) |
+| `lib/config.js` | Project config `.coding-flow/config.json` (storage, branchPerEpic, autoMergeEpic, protectBranches, validation) |
 | `lib/templates.js` | Installation, manifest, scripts, cheat-sheet, `upgrade` |
 | `lib/harness.js` | `harness` and `verify` entry points, story scope, the re-exported surface |
 | `lib/harness-config.js` | The policy file `.coding-flow/harness.json`: paths, defaults, read, create |
@@ -81,6 +81,7 @@ modules in `bin/lib/`. **No runtime dependencies.**
 | `lib/uninstall.js` | Uninstall preserving `epics/` |
 | `lib/worktree.js` | Optional Git worktrees (parallel work) |
 | `lib/ship.js` | `ship`: push of the current branch + one PR, with the `verify` proof attached |
+| `lib/protect.js` | `protect`: GitHub branch protection with the CI checks as required checks (also run by `init`, `ship`, `doctor`) |
 | `lib/commands.js` | `help` and `commands` |
 
 The dependency graph is acyclic:

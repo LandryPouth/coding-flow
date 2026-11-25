@@ -134,6 +134,8 @@ Daily (you run these):
                Owner: human stories, deferred [~] criteria. Read-only.
   run          Verify a batch of stories (all, one --epic, or one --story) and emit one proof report.
   ship         Commit a dirty tree, push, and open/update one PR to the base (uses gh if available).
+  protect      GitHub: require the CI check runs on the default branch and the base, so auto-merge
+               waits for them. Only adds, never weakens; init runs it (--no-protect to skip).
   verify       Re-prove one story: run its declared validation commands and capture the result.
                --story also accepts a Spec Kit feature (specs/<name>); with no --story in a
                .specify/ project, the active feature is used and the output says where from.
@@ -208,6 +210,8 @@ Flags:
   --storage  Storage backend recorded at init: local (default; github is reserved).
   --no-branch-per-epic  Disable the "one epic = one branch, never main" policy.
   --no-guard  Skip wiring the PreToolUse guard hook into .claude/settings.json at init.
+  --no-protect  Skip protecting the GitHub default branch and base at init (or set protectBranches: false).
+  --branch   With protect: the branch to protect (repeatable; default: the default branch and baseBranch).
   --with-skills  Install the skills into .claude/skills even when the plugin serves them.
   --no-skills    Leave the skills to the plugin; remove any copy this project holds.
   --input    Read the guard hook payload from a file instead of stdin (for testing).

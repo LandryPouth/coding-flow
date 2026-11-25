@@ -333,6 +333,25 @@ ai-flow ship --auto-merge                          # force-enable for this run
 ai-flow ship --auto-merge --merge-method squash
 ```
 
+GitHub's auto-merge waits only on **required** status checks: on an unprotected
+base it merges at once, CI or not. So `ship` never arms it on a base with no
+required check — it protects the base first when it can, otherwise it opens the
+PR without auto-merge and says why. `init` protects the default branch and
+`baseBranch` the same way (`--no-protect`, or `protectBranches: false`, skips it),
+and `ai-flow protect` does it by hand:
+
+```bash
+ai-flow protect --dry-run          # what would change, nothing sent
+ai-flow protect --branch develop   # require the CI checks seen on develop's latest commit
+```
+
+`protect` requires the check runs GitHub reports on the branch's latest commit
+(`strict: false`, no reviews, no force push, no deletion). It only adds: an
+existing protection keeps its reviews, restrictions and checks, and a second run
+sends nothing. No CI yet, no `gh`, or no admin rights: nothing is sent, the reason
+and the next command are printed (exit 2), and `init` still succeeds. GitHub only,
+classic branch protection; a branch governed by a ruleset is reported and left alone.
+
 ## Context & Story Files
 
 | File | Holds |

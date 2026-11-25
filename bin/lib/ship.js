@@ -25,6 +25,7 @@ const { coverageTier } = require("./coverage");
 const { describeMutation } = require("./mutation");
 const { describeScope, resolveDiffBase } = require("./diff-base");
 const { latestVerifyByStoryDir } = require("./audit");
+const { ensureBaseGated } = require("./protect");
 
 // Idempotent markers: the evidence section is replaced between them, never the
 // human text around it. Ship can thus refresh the proof without overwriting the
@@ -603,7 +604,8 @@ function prIsOpen(root, branchName) {
 }
 
 // Merges the PR on its own once its epic is fully done — via GitHub's native
-// auto-merge (`--auto`), so required checks still gate the actual merge. Never
+// auto-merge (`--auto`), armed only on a base with required checks, so they
+// really gate the actual merge. Never
 // attempted on a conflicting PR: conflicts are a human's call, not something
 // ship resolves for you. Nor ahead of an earlier sibling story still open —
 // see `openSiblingsAhead`.
@@ -639,6 +641,21 @@ function maybeAutoMerge(root, config, branch, targetBase, { autoMerge, mergeMeth
       log(`Auto-merge: PR conflicts with "${targetBase}" — resolve them, then ship again.`);
       return;
     }
+  }
+
+  // Story 29-08: `--auto` waits only on REQUIRED checks. On a base with none,
+  // GitHub merges at once, CI or not — so the base is protected first when it
+  // can be, and auto-merge stays off when it cannot.
+  const gate = ensureBaseGated(root, targetBase, { protectBranches: config.protectBranches !== false });
+  if (gate.protected) {
+    log(`Branch protection: ${gate.protected}`);
+  }
+  if (!gate.gated) {
+    log(
+      `Auto-merge: not armed — "${targetBase}" has no required status checks, so GitHub would merge at once ` +
+        `(${gate.reason}).${gate.next ? ` Next: ${gate.next}.` : ""} Merge the PR once its checks pass.`,
+    );
+    return;
   }
 
   const merge = gh(["pr", "merge", branch, `--${mergeMethod}`, "--auto", "--delete-branch"], root);
