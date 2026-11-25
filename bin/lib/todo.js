@@ -117,14 +117,19 @@ function scanMarkdown(content) {
   const state = { blocks: [], headings: [], fence: null, comment: false, afterBlank: true, inIndentedCode: false, listStack: [], last: null };
 
   for (const raw of all.slice(front.length)) {
-    // A blockquote's content is read like any other (`> - [ ] task`).
-    const line = state.fence ? raw : withoutComments(state, raw.replace(/^(?: {0,3}>\s?)+/, ""));
+    // A blockquote's content is read like any other (`> - [ ] task`), except
+    // that a quoted heading is quoted text, not a section.
+    const quoted = /^ {0,3}>/.test(raw);
+    const unquoted = raw.replace(/^(?: {0,3}>\s?)+/, "");
+    // Comments are not looked for inside a fence, nor on the line opening one.
+    const opensFence = !state.comment && FENCE.test(unquoted);
+    const line = state.fence || opensFence ? raw : withoutComments(state, unquoted);
 
     if (line === null || consumedAsCodeOrBlank(state, line)) {
       continue;
     }
 
-    const heading = line.match(HEADING);
+    const heading = quoted ? null : line.match(HEADING);
     const item = line.match(LIST_ITEM);
 
     if (heading) {
@@ -146,11 +151,14 @@ function scanMarkdown(content) {
 
 // HTML comments (`<!-- … -->`, over several lines too) are not content, like
 // code. Returns the line without them, or null when nothing is left of it.
+// Markers inside a code span (`` `<!--` ``) are text: they are looked for in
+// a copy where code spans are blanked, so positions still line up.
 function withoutComments(state, line) {
   let rest = line;
+  const masked = () => rest.replace(/(`+)[^`][\s\S]*?\1/g, (span) => " ".repeat(span.length));
 
   if (state.comment) {
-    const end = rest.indexOf("-->");
+    const end = masked().indexOf("-->");
 
     if (end === -1) {
       return null;
@@ -160,12 +168,16 @@ function withoutComments(state, line) {
     rest = rest.slice(end + 3);
   }
 
-  rest = rest.replace(/<!--[\s\S]*?-->/g, "");
-  const open = rest.indexOf("<!--");
+  for (let open = masked().indexOf("<!--"); open !== -1; open = masked().indexOf("<!--")) {
+    const end = masked().indexOf("-->", open + 4);
 
-  if (open !== -1) {
-    state.comment = true;
-    rest = rest.slice(0, open);
+    if (end === -1) {
+      state.comment = true;
+      rest = rest.slice(0, open);
+      break;
+    }
+
+    rest = rest.slice(0, open) + rest.slice(end + 3);
   }
 
   return rest !== line && !rest.trim() ? null : rest;

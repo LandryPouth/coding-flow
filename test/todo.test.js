@@ -357,3 +357,19 @@ test('Owner: human with a reason, a quoted task, HTML comments, and a finished s
     'epic-40-y|human-owner|Reasoned',
   ]);
 });
+
+test('a comment marker in a code span or on a fence line is text, and a quoted heading is not a section', (t) => {
+  const repo = project(t);
+  write(
+    repo,
+    'epics/epic-41-z/index.md',
+    '## Maintainer to-do\n\n- [ ] Escape `<!--` in titles\n- [ ] still listed\n\n```html <!--\n- [ ] example\n```\n\n- [ ] after the fence\n',
+  );
+  write(repo, 'epics/epic-41-z/story-41-01-a/story.md', '# S\n\n> ## Needs you\n>\n> - a quoted example question\n\n## Status: planned\n');
+
+  assert.deepStrictEqual(texts(todoJson(repo)), [
+    'epic-41-z|maintainer|Escape `<!--` in titles',
+    'epic-41-z|maintainer|still listed',
+    'epic-41-z|maintainer|after the fence',
+  ]);
+});

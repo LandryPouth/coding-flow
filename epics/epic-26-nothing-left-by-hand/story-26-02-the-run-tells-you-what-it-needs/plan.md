@@ -60,6 +60,8 @@
   heading is not listed (the contract is `- [ ]`; coding-flow's own epics 28-30
   cleanup bullets are converted separately); a line opening with ``` that also
   closes on the same line opens a fence (safe side: nothing invented).
+- **Round 4 fixes**: comment markers inside a code span or on a fence's
+  opening line are text; a quoted `> ## Needs you` is not a section heading.
 - **Oldest first** = the epic's number (`epic-9` before `epic-10`), then name.
 
 - **stdin JSON, not arguments**: no quoting bugs, no shell injection from a
@@ -81,3 +83,14 @@ config attempt; fixture epics with to-dos, Needs you, custom heading.
 ```bash
 npm test
 ```
+
+## Review History
+
+STANDARD, fresh reviewer each round, whole diff:
+
+| Round | Verdict | P1 | Main finding |
+|---|---|---|---|
+| 1 | FAIL | 1 | code fences inside a section read as to-dos |
+| 2 | FAIL | 1 | same class: fence under a list item missed — one scanner behind every reader |
+| 3 | FAIL | 1 | suffixed headings (`## À faire côté utilisateur (epics 39 et 40)`) missed |
+| 4 | PASS | 0 | two P2 fixed with tests (comment marker in a code span; quoted heading) |
