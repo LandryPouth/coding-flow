@@ -321,8 +321,12 @@ function isUnattended() {
 // Windows never updates a process's parent id and reuses ids, so "names it as
 // parent" alone could kill an unrelated orphan whose dead parent once had that
 // id. A descendant must therefore have been created after the command started
-// and after its own parent, and before any live process now holding the
-// command's id; every id is visited once, so a reused-id cycle ends.
+// and after its own parent. The shell's own children must also have been created
+// before `spawnSync` returned (the shell was dead by then: anything newer naming
+// its id was started by a later holder of that id, even one that has since
+// exited) and before any live process now holding the command's id. Deeper down
+// every parent is alive and listed, so its id is its own. Every id is visited
+// once, so a reused-id cycle ends.
 const LIST_PROCESSES =
   "Get-CimInstance Win32_Process | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } }";
 
@@ -334,32 +338,37 @@ function parseProcessList(text) {
     .map(([pid, parentPid, created]) => ({ pid, parentPid, created }));
 }
 
-function descendantsOf(processes, rootPid, started) {
+function descendantsOf(processes, rootPid, started, ended) {
   const impostor = processes.find((entry) => entry.pid === rootPid);
   const found = [];
   const seen = new Set([rootPid]);
-  const queue = [{ pid: rootPid, created: started, before: impostor ? impostor.created : Infinity }];
+  const queue = [{ pid: rootPid, created: started, until: ended, before: impostor ? impostor.created : Infinity }];
   while (queue.length > 0) {
     const parent = queue.shift();
     for (const entry of processes) {
-      const ownChild = entry.parentPid === parent.pid && entry.created >= started && entry.created >= parent.created && entry.created < parent.before;
+      const ownChild =
+        entry.parentPid === parent.pid &&
+        entry.created >= started &&
+        entry.created >= parent.created &&
+        entry.created <= parent.until &&
+        entry.created < parent.before;
       if (ownChild && !seen.has(entry.pid)) {
         seen.add(entry.pid);
         found.push(entry.pid);
-        queue.push({ pid: entry.pid, created: entry.created, before: Infinity });
+        queue.push({ pid: entry.pid, created: entry.created, until: Infinity, before: Infinity });
       }
     }
   }
   return found;
 }
 
-function killTree(pid, started, platform = process.platform, run = spawnSync) {
+function killTree(pid, started, ended, platform = process.platform, run = spawnSync) {
   if (platform !== "win32" || !Number.isInteger(pid) || pid <= 0) {
     return [];
   }
   try {
     const listed = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", LIST_PROCESSES], { encoding: "utf8", windowsHide: true, timeout: 15000, maxBuffer: 16 * 1024 * 1024 });
-    const pids = descendantsOf(parseProcessList(listed && listed.stdout), pid, started);
+    const pids = descendantsOf(parseProcessList(listed && listed.stdout), pid, started, ended);
     if (pids.length > 0) {
       run("taskkill", ["/F", ...pids.flatMap((each) => ["/PID", String(each)])], { stdio: "ignore", windowsHide: true, timeout: 15000 });
     }
@@ -372,7 +381,7 @@ function killTree(pid, started, platform = process.platform, run = spawnSync) {
 
 function runValidationCommand(
   command,
-  { timeoutMs = commandTimeoutDefault(), env, cwd: runCwd = cwd, keepOutput = false } = {},
+  { timeoutMs = commandTimeoutDefault(), env, cwd: runCwd = cwd, keepOutput = false, kill = killTree } = {},
 ) {
   const maxOutputBytes = outputBufferBytes();
   const started = Date.now();
@@ -384,12 +393,15 @@ function runValidationCommand(
     maxBuffer: maxOutputBytes,
     ...(env ? { env } : {}),
   });
+  // Taken before the kill: the duration is the command's, and the shell was dead
+  // by now, which bounds what counts as its child.
+  const ended = Date.now();
 
   const cap = 4000;
   const timedOut = Boolean(result.error && result.error.code === "ETIMEDOUT");
   const overflowed = Boolean(result.error && result.error.code === "ENOBUFS");
   if (timedOut || overflowed) {
-    killTree(result.pid, started);
+    kill(result.pid, started, ended);
   }
   const exitCode = result.status != null ? result.status : timedOut ? 124 : result.error ? 127 : 1;
 
@@ -413,7 +425,7 @@ function runValidationCommand(
     timedOut,
     ...(timedOut ? { timeoutMs } : {}),
     toolError,
-    durationMs: Date.now() - started,
+    durationMs: ended - started,
     ...detectCacheState(`${result.stdout || ""}\n${result.stderr || ""}`),
     stdoutTail: (result.stdout || "").slice(-cap),
     stderrTail: (result.stderr || "").slice(-cap),

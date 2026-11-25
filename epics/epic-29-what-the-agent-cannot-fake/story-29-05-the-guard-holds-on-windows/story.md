@@ -17,7 +17,7 @@ the test was wrong, without weakening any assertion.
 | same file, "R2 P2 … the primary policy file from a worktree" (`rm <dir>/.coding-flow/harness.json` allowed) | Same unquoted backslash path. | Quoted, plus a Git Bash form assertion. |
 | `rules-registry.test.js:439` "from a linked worktree, primaryLocked follows the primary checkout" | Same unquoted `git -C ${primary}`. | Quoted (both the deny and the allow line). |
 | `guard-destructive.test.js` "S3-2: after one git timeout…" (expected `unchecked`, got allow) | The test puts a `#!/bin/sh` script named `git` first on PATH. On Windows, `execFileSync("git")` only finds `.com`/`.exe` (libuv), so the real git ran, nothing timed out, and the decision was allow. The guard code is not at fault, and no script can stand in for git there. | The fake git is now one Node file. On POSIX it is `git` through a `#!/usr/bin/env node` shebang. On win32, `git.exe` on the PATH is a copy of `node.exe` that loads the fake with `NODE_OPTIONS=--require`. (A `git.cmd` shim, the first idea, is never found: Node spawns a `.cmd` only through a shell.) Node reads `git -C <dir> <sub> …` as `--conditions <dir>` plus the script `<sub>`, and the fake rebuilds the git command line from `execArgv` and `argv`. It hangs on `config --get` and hands every other call to the real git. The assertion is unchanged. The guard tests' temp-dir removal retries (`maxRetries: 10`), because Windows frees the killed `git.exe` a moment late. S3-2 also asserts the reason names the timeout. To make that true, an unresolved alias now keeps the host's cause (`a git alias the guard could not resolve: git did not answer in time …`). The preload is removed as soon as the guard call returns. |
-| `harness-fixers.test.js:203` "a fixer with its own time limit is killed at it" (EBUSY removing the temp dir) | `spawnSync(…, { shell: true, timeout })` kills `cmd.exe` only. The `node` it started keeps running in the temp dir, and `rmSync` gets EBUSY. On Linux the grandchild also survives (checked: a timed-out `sh -c "node …"` still wrote its file 1.5 s later), but Linux lets a directory in use be removed. | On win32, `runValidationCommand` kills the timed-out (or output-overflowed) shell's descendants. `taskkill /T` cannot walk from a parent that is already dead, so PowerShell lists `Win32_Process`, and `descendantsOf` picks the descendants by parent id. Because ids are reused, a process only counts if it was created after the command started and after its parent, and before any live process that now holds the shell's id. Then `taskkill /F /PID …`. The test proves the kill on Windows: the fixer writes a marker 2 s in and lives 20 s; the marker must never appear, and the temp dir is removed without retries. The POSIX limit is stated in the code: a process group would cut Ctrl-C, which is story 19-04's trade. |
+| `harness-fixers.test.js:203` "a fixer with its own time limit is killed at it" (EBUSY removing the temp dir) | `spawnSync(…, { shell: true, timeout })` kills `cmd.exe` only. The `node` it started keeps running in the temp dir, and `rmSync` gets EBUSY. On Linux the grandchild also survives (checked: a timed-out `sh -c "node …"` still wrote its file 1.5 s later), but Linux lets a directory in use be removed. | On win32, `runValidationCommand` kills the timed-out (or output-overflowed) shell's descendants. `taskkill /T` cannot walk from a parent that is already dead, so PowerShell lists `Win32_Process`, and `descendantsOf` picks the descendants by parent id. Because ids are reused, a process only counts if it was created after the command started and after its parent; the shell's own children must also predate `spawnSync` returning and any live process that now holds the shell's id. Then `taskkill /F /PID …`. The test proves the kill on Windows: the fixer writes a marker 2 s in and lives 20 s; the marker must never appear, and the temp dir is removed without retries. The POSIX limit is stated in the code: a process group would cut Ctrl-C, which is story 19-04's trade. |
 | `harness-fixers.test.js:922` "a guard log cut otherwise than the guard trims it is a forbidden write" (exit 0, "no change to evaluate") | The test's fixer split the log on `'\\n'` inside `node -e "…"`. Through sh's double quotes that reaches node as `\n` (a newline). Through cmd.exe's it reaches node as a backslash and an `n`, so the split found one line, `slice(-199)` kept the whole file, and the "cut" was a pure append. The guard-log rule was right to call it the guard's own work. | The fixer builds the newline (`String.fromCharCode(10)`), so it cuts on every shell. The assertion is unchanged. |
 
 The first Windows CI run of this story (run 45543675335) fixed all six and
@@ -72,6 +72,38 @@ The checkout comparisons themselves (`primaryLock`, `effectiveDestructivePolicy`
   direction. Claude Code and OpenCode run Bash commands through Git Bash on
   Windows, so Git Bash's reading is the one kept.
 
+## Review round 2 (fresh implementer)
+
+- P1: the shell is dead when `spawnSync` returns, so its own children must have
+  been created by then (`ended`, taken right after `spawnSync`). A process
+  naming the shell's id but created later was started by a later holder of
+  that id, listed or not, and it and its children are left alone. Deeper
+  levels need no such bound: every parent there is alive and listed, so its
+  id is its own, and a live descendant's later children stay in the tree.
+  Pinned with the reviewer's repro and its converse in
+  `test/windows-paths.test.js`.
+- P2 overflow: `runValidationCommand` takes the kill as an option (`kill`,
+  `killTree` by default), so the timeout and overflow paths are observed on
+  every platform; dropping the overflow kill fails a test.
+- P2 marker: the fixer writes `started.txt` with its own start time and the
+  Windows wait runs from that; the test asserts the fixer started at all. Its
+  limit went from 300 ms to 1 s so a slow Windows node can start; the marker
+  is still 2 s after the start.
+- P2 duration: `durationMs` is `ended - started`, measured before the kill;
+  a test with a 1.5 s injected kill pins it.
+- Note: the Windows run cited in Result predates rounds 1 and 2; the run at
+  the new HEAD is pending.
+
+## Review findings
+
+### Round 2 — FAIL (test honesty; what the round-1 fixes introduced)
+
+- [x] P1 bin/lib/validation-run.js:~343 (`descendantsOf`) — can still kill outside the tree: the shell dies at timeout, an unrelated A reuses its pid, spawns B and exits before PowerShell lists processes; A absent ⇒ `before` stays Infinity ⇒ B and its children killed. Repro: `descendantsOf([{200,100,S+5},{900,100,S+900},{901,900,S+950}],100,S)` → `[200,900,901]`. Contradicts the CHANGELOG claim — fix: also require the shell's direct children to be created before `spawnSync` returned; pin it in a test.
+- [x] P2 bin/lib/validation-run.js:~391 — the overflow (ENOBUFS) kill is untested; removing it keeps every test green — fix: a `killTree` test with an injected runner, or a test of the overflow path.
+- [x] P2 test/harness-fixers.test.js:~279 — the marker wait starts at test start, not fixer start; a slow verify start makes it pass with no kill — fix: the fixer writes a start file, wait from that.
+- [x] P2 bin/lib/validation-run.js:416 — `durationMs` includes up to 30 s of PowerShell/taskkill — fix: take the duration before the kill.
+- [x] Note: story Result cites Windows run 45547651944, which predates round-1 fixes; cite a run at the final HEAD.
+
 ## Acceptance Criteria
 
 - [ ] Given a path written as Git Bash writes it (`/c/…`, `/cygdrive/d/…`,
@@ -97,7 +129,7 @@ The checkout comparisons themselves (`primaryLock`, `effectiveDestructivePolicy`
 
 1. test/windows-paths.test.js::a Git Bash path is read as the Windows path it names, on Windows only
 2. test/guard-destructive.test.js::git switch in the primary checkout is refused when primaryLocked (the shell form is exercised for real on the Windows CI job)
-3. test/harness-fixers.test.js::a fixer with its own time limit is killed at it (the marker check runs on the Windows CI job) — test/windows-paths.test.js::a timed-out command on Windows kills only what it started, found by parent id and creation time
+3. test/harness-fixers.test.js::a fixer with its own time limit is killed at it (the marker check runs on the Windows CI job) — test/windows-paths.test.js::a timed-out command on Windows kills only what it started, found by parent id and creation time — test/windows-paths.test.js::a process naming the dead shell as parent but created after the shell died is not its child, nor are its children — test/windows-paths.test.js::a command whose output overflows has its tree killed, with the window it ran in
 4. test/harness-fixers.test.js::a guard log cut otherwise than the guard trims it is a forbidden write
 5. test/guard-destructive.test.js::S3-2: after one git timeout, the other git lookups of the same decision are skipped (Windows CI)
 6. test/guard-destructive.test.js::find START -delete reaches the policy file through ~, as rm does
@@ -119,5 +151,7 @@ npm test
     failure appeared ("readDestructive is pure", `/x` is a drive) and was
     fixed in ec6efd3.
   - Run 45547651944: every job passed — ubuntu 18/20/22, macOS 22 and
-    **windows-latest 22.x** (30 min 32 s).
+    **windows-latest 22.x** (30 min 32 s), at a HEAD before the review
+    round-1 and round-2 fixes; it does not prove them.
     https://github.com/LandryPouth/coding-flow/actions/runs/45547651944
+  - Windows run at the round-2 HEAD: pending (to be recorded after CI).

@@ -276,18 +276,22 @@ test('outside git the fixer still runs first, and the changed files are unknown,
 });
 
 test('a fixer with its own time limit is killed at it, like any declared command', (t) => {
-  // The fixer writes a marker 2 s in and lives 20 s. Where the whole tree is
-  // killed (Windows, story 29-05), the marker never appears and the project
-  // directory is free at once: the cleanup above has no retries.
-  const late = node("setTimeout(()=>require('fs').writeFileSync('late.txt','x'),2000);setTimeout(()=>{},20000)");
-  const dir = project(t, { fix: [{ command: late, timeoutMs: 300 }], commands: [node('0')] });
-  const started = Date.now();
+  // The fixer records when it started, writes a marker 2 s after that and lives
+  // 20 s. Where the whole tree is killed (Windows, story 29-05), the marker never
+  // appears, however late the fixer started, and the project directory is free
+  // at once: the cleanup above has no retries. The limit (1 s) leaves a slow
+  // Windows node time to start, and is still well before the marker.
+  const late = node("const fs=require('fs');fs.writeFileSync('started.txt',String(Date.now()));setTimeout(()=>fs.writeFileSync('late.txt','x'),2000);setTimeout(()=>{},20000)");
+  const dir = project(t, { fix: [{ command: late, timeoutMs: 1000 }], commands: [node('0')] });
   const evidence = JSON.parse(verify(dir).output);
   const fixer = evidence.results.find((r) => r.kind === 'fix');
   assert.equal(fixer.timedOut, true);
   assert.equal(evidence.ok, false);
+  const startFile = path.join(dir, 'started.txt');
+  assert.equal(fs.existsSync(startFile), true, 'the fixer never started: the kill proves nothing');
   if (process.platform === 'win32') {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, started + 3500 - Date.now()));
+    const fixerStarted = Number(fs.readFileSync(startFile, 'utf8'));
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, fixerStarted + 3500 - Date.now()));
     assert.equal(fs.existsSync(path.join(dir, 'late.txt')), false, 'the fixer outlived its time limit');
   }
 });

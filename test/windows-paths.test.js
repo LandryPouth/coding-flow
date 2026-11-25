@@ -7,7 +7,7 @@ const assert = require('node:assert');
 const path = require('node:path');
 
 const { nativeShellPath } = require('../bin/lib/shell-writes');
-const { killTree, descendantsOf, parseProcessList } = require('../bin/lib/validation-run');
+const { killTree, descendantsOf, parseProcessList, runValidationCommand } = require('../bin/lib/validation-run');
 
 test('a Git Bash path is read as the Windows path it names, on Windows only', () => {
   for (const [word, windows] of [
@@ -31,6 +31,8 @@ test('anything that is not a drive in Git Bash form is left as written', () => {
 });
 
 const STARTED = 1_000_000;
+// When spawnSync returned: the shell was dead by then.
+const ENDED = STARTED + 300;
 
 test('a timed-out command on Windows kills only what it started, found by parent id and creation time', () => {
   const processes = [
@@ -41,7 +43,7 @@ test('a timed-out command on Windows kills only what it started, found by parent
     { pid: 301, parentPid: 300, created: STARTED - 50_000 }, // and its child
     { pid: 400, parentPid: 201, created: STARTED + 1 }, // id 201's parent id, but created before 201: not its child
   ];
-  assert.deepEqual(descendantsOf(processes, 100, STARTED), [200, 201]);
+  assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200, 201]);
 });
 
 test('a live process now holding the dead shell id is not the shell: its children are not killed', () => {
@@ -50,7 +52,27 @@ test('a live process now holding the dead shell id is not the shell: its childre
     { pid: 100, parentPid: 7, created: STARTED + 500 }, // a new process reusing id 100
     { pid: 210, parentPid: 100, created: STARTED + 600 }, // its child
   ];
-  assert.deepEqual(descendantsOf(processes, 100, STARTED), [200]);
+  assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200]);
+});
+
+test('a process naming the dead shell as parent but created after the shell died is not its child, nor are its children', () => {
+  // The shell dies at the timeout; an unrelated A reuses its id, starts B and
+  // exits before the process list is read. A is not listed, so no impostor
+  // bound applies: only "created before spawnSync returned" keeps B out.
+  const processes = [
+    { pid: 200, parentPid: 100, created: STARTED + 5 }, // the shell's own child
+    { pid: 900, parentPid: 100, created: STARTED + 900 }, // B, child of the vanished A
+    { pid: 901, parentPid: 900, created: STARTED + 950 }, // B's child
+  ];
+  assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200]);
+});
+
+test('a live descendant may still start processes after the shell died: they are in the tree', () => {
+  const processes = [
+    { pid: 200, parentPid: 100, created: STARTED + 5 },
+    { pid: 201, parentPid: 200, created: ENDED + 50 }, // started by node while the list was being read
+  ];
+  assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200, 201]);
 });
 
 test('a reused-id cycle in the parent ids ends', () => {
@@ -60,7 +82,7 @@ test('a reused-id cycle in the parent ids ends', () => {
     { pid: 200, parentPid: 201, created: STARTED + 5 }, // 201 names 200, which names 201
     { pid: 202, parentPid: 201, created: STARTED + 5 },
   ];
-  assert.deepEqual(descendantsOf(processes, 100, STARTED), [200, 201, 202]);
+  assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200, 201, 202]);
 });
 
 test('the process list is read from PowerShell lines; anything else is skipped', () => {
@@ -77,20 +99,20 @@ test('on Windows the selected processes are killed by pid; elsewhere nothing run
     calls.push([command, ...args]);
     return { stdout: `200 100 ${STARTED + 5}\n300 100 ${STARTED - 60000}\n` };
   };
-  assert.deepEqual(killTree(100, STARTED, 'win32', record), [200]);
+  assert.deepEqual(killTree(100, STARTED, ENDED, 'win32', record), [200]);
   assert.equal(calls[0][0], 'powershell.exe');
   assert.match(calls[0].at(-1), /Win32_Process/);
   assert.deepEqual(calls[1], ['taskkill', '/F', '/PID', '200']);
 
   calls.length = 0;
-  assert.deepEqual(killTree(100, STARTED, 'linux', record), []);
-  assert.deepEqual(killTree(undefined, STARTED, 'win32', record), []);
-  assert.deepEqual(killTree(0, STARTED, 'win32', record), []);
+  assert.deepEqual(killTree(100, STARTED, ENDED, 'linux', record), []);
+  assert.deepEqual(killTree(undefined, STARTED, ENDED, 'win32', record), []);
+  assert.deepEqual(killTree(0, STARTED, ENDED, 'win32', record), []);
   assert.deepEqual(calls, []);
 });
 
 test('a failing kill never throws: the timeout is still reported', () => {
-  assert.deepEqual(killTree(100, STARTED, 'win32', () => { throw new Error('ENOENT'); }), []);
+  assert.deepEqual(killTree(100, STARTED, ENDED, 'win32', () => { throw new Error('ENOENT'); }), []);
 });
 
 test('the destructive reader takes its platform from the host: a Git Bash cd is read on Windows only', () => {
@@ -101,4 +123,45 @@ test('the destructive reader takes its platform from the host: a Git Bash cd is 
   assert.equal(onWindows, path.resolve('/w', 'C:/work'));
   assert.equal(onLinux, path.resolve('/w', '/c/work'));
   assert.notEqual(onWindows, onLinux);
+});
+
+// The overflow path, observed through an injected kill: it runs on every
+// platform (killTree itself does nothing outside Windows).
+// The commands get no NODE_V8_COVERAGE: off Windows a timed-out node outlives
+// its shell, and must not write coverage files into the suite's run after it.
+const QUIET = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'NODE_V8_COVERAGE'));
+test('a command whose output overflows has its tree killed, with the window it ran in', () => {
+  const calls = [];
+  const kill = (pid, started, ended) => { calls.push({ pid, started, ended }); return []; };
+  const saved = process.env.CODING_FLOW_MAX_OUTPUT_BYTES;
+  process.env.CODING_FLOW_MAX_OUTPUT_BYTES = '1024';
+  try {
+    const before = Date.now();
+    const result = runValidationCommand(`node -e "process.stdout.write('x'.repeat(65536))"`, { kill, env: QUIET });
+    const after = Date.now();
+    assert.match(result.toolError, /output exceeded/);
+    assert.equal(calls.length, 1, 'the overflowed command was not killed');
+    assert.ok(Number.isInteger(calls[0].pid) && calls[0].pid > 0);
+    assert.ok(before <= calls[0].started && calls[0].started <= calls[0].ended && calls[0].ended <= after);
+  } finally {
+    if (saved === undefined) delete process.env.CODING_FLOW_MAX_OUTPUT_BYTES;
+    else process.env.CODING_FLOW_MAX_OUTPUT_BYTES = saved;
+  }
+});
+
+test('a timed-out command has its tree killed; a command that ends is not', () => {
+  const calls = [];
+  const kill = (pid, started, ended) => { calls.push({ pid, started, ended }); return []; };
+  const result = runValidationCommand(`node -e "setTimeout(()=>{},5000)"`, { timeoutMs: 300, kill, env: QUIET });
+  assert.equal(result.timedOut, true);
+  assert.equal(calls.length, 1);
+  runValidationCommand(`node -e "0"`, { kill, env: QUIET });
+  assert.equal(calls.length, 1, 'a command that ended on its own was killed');
+});
+
+test('the duration is the command\'s own: a slow kill is not counted in it', () => {
+  const slowKill = () => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500); return []; };
+  const result = runValidationCommand(`node -e "setTimeout(()=>{},5000)"`, { timeoutMs: 300, kill: slowKill, env: QUIET });
+  assert.equal(result.timedOut, true);
+  assert.ok(result.durationMs < 1500, `durationMs ${result.durationMs} counts the kill`);
 });
