@@ -62,5 +62,5 @@ file holds the defaults.
 2. test/init-rules-fingerprint.test.js::a harness.json written in a linked worktree keeps the primary's fingerprint (project in a subdirectory)
 3. test/init-rules-fingerprint.test.js::after init, no rule says its project value is ignored
 
-## Status: in-progress
+## Status: done
 
