@@ -521,3 +521,196 @@ test('todo --dry-run without done is refused: the flag only applies to todo done
   assert.notStrictEqual(res.code, 0, res.output);
   assert.match(res.output, /--dry-run only applies to "todo done"/);
 });
+
+// ---------------------------------------------------------------------------
+// Story 34-01 — the to-do list reads at a glance: counts first, the
+// before-deploy items in full, the rest summarised; `--all`; `--json` groups
+// and totals; `todo drop <id> --reason`; next's block past 5 items.
+// ---------------------------------------------------------------------------
+
+const lines = (prefix, count, from = 1) => Array.from({ length: count }, (_, i) => `${prefix} ${from + i}`).join('\n');
+
+// 7 before deploy, 13 later, 31 deferred criteria, over two epics (epic 2
+// written first, so the order comes from the epic number, not the disk).
+function fiftyOne(dir) {
+  story(dir, 'epics/epic-02-later/story-02-01-b', {
+    todo: `${lines('- [ ] (before: deploy) Deploy step', 3, 5)}\n${lines('- [ ] (before: later) Later chore', 6, 8)}`,
+    extra: `${lines('- [~] Check by hand', 16, 16)}\n`,
+  });
+  story(dir, 'epics/epic-01-first/story-01-01-a', {
+    todo: `${lines('- [ ] (before: deploy) Deploy step', 4)}\n${lines('- [ ] (before: later) Later chore', 7)}`,
+    extra: `${lines('- [~] Check by hand', 15)}\n`,
+  });
+}
+
+function todoPayload(dir) {
+  const res = run(dir, ['todo', '--json']);
+  assert.strictEqual(res.code, 0, res.output);
+  return JSON.parse(res.output);
+}
+
+const localDate = () => {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+};
+
+test('34-01 criterion 1: todo counts each group first, prints the before-deploy items, summarises the rest', (t) => {
+  const dir = repo(t);
+  fiftyOne(dir);
+
+  const res = run(dir, ['todo']);
+  assert.strictEqual(res.code, 0, res.output);
+  const out = res.output.split('\n');
+  assert.strictEqual(out[0], 'Waiting on you: 7 before deploy, 13 to do later, 31 to check by hand');
+  const deploy = out.filter((line) => /^- \[before: deploy\] Deploy step \d+ \(story-0\d-0\d-[ab]\) \[[0-9a-f]{7}\]$/.test(line));
+  assert.strictEqual(deploy.length, 7, res.output);
+  assert.ok(out.includes('13 to do later — ai-flow todo --all'), res.output);
+  assert.ok(out.includes('31 to check by hand — ai-flow todo --all'), res.output);
+  assert.doesNotMatch(res.output, /Later chore|Check by hand \d/);
+  assert.ok(out.length < 20, `fits on a screen:\n${res.output}`);
+});
+
+test('34-01 criterion 2: todo --all prints To do (deploy first) and To check by hand, oldest epic first, with ids', (t) => {
+  const dir = repo(t);
+  fiftyOne(dir);
+
+  const res = run(dir, ['todo', '--all']);
+  assert.strictEqual(res.code, 0, res.output);
+  const out = res.output.split('\n');
+  const toDo = out.indexOf('To do (20)');
+  const check = out.indexOf('To check by hand (31)');
+  assert.ok(toDo > 0 && check > toDo, res.output);
+  const section = (from, to) => out.slice(from + 1, to).filter((line) => line.startsWith('- '));
+  const todoLines = section(toDo, check);
+  const checkLines = section(check, out.length);
+  assert.strictEqual(todoLines.length, 20);
+  assert.strictEqual(checkLines.length, 31);
+  assert.ok([...todoLines, ...checkLines].every((line) => / \[[0-9a-f]{7}\]$/.test(line)), res.output);
+  const numbers = (list) => list.map((line) => Number(line.match(/(?:step|chore|hand) (\d+)/)[1]));
+  // Deploy first, then later; inside each, epic 01 before epic 02.
+  assert.deepStrictEqual(numbers(todoLines), [1, 2, 3, 4, 5, 6, 7, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.ok(todoLines.slice(0, 7).every((line) => line.startsWith('- [before: deploy]')));
+  assert.deepStrictEqual(numbers(checkLines), Array.from({ length: 31 }, (_, i) => i + 1));
+  assert.match(checkLines[0], /\(story-01-01-a\)/);
+  assert.match(checkLines[30], /\(story-02-01-b\)/);
+});
+
+test('34-01 criterion 3: todo --json gives each item its group and the totals; the other fields are unchanged', (t) => {
+  const dir = repo(t);
+  fiftyOne(dir);
+
+  const payload = todoPayload(dir);
+  assert.deepStrictEqual(payload.totals, { deploy: 7, 'next-story': 0, later: 13, check: 31 });
+  assert.strictEqual(payload.count, 51);
+  const items = payload.epics.flatMap((epic) => epic.items);
+  assert.deepStrictEqual(
+    [...new Set(items.map((item) => `${item.kind}/${item.when || '-'}/${item.group}`))].sort(),
+    ['deferred/-/check', 'human-todo/deploy/deploy', 'human-todo/later/later'],
+  );
+  const deploy = items.find((item) => item.text === 'Deploy step 1');
+  assert.deepStrictEqual(Object.keys(deploy).sort(), ['group', 'id', 'kind', 'line', 'source', 'story', 'text', 'when']);
+  assert.strictEqual(deploy.source, 'epics/epic-01-first/story-01-01-a/story.md');
+  const deferred = items.find((item) => item.text === 'Check by hand 1');
+  assert.strictEqual(deferred.source, 'epics/epic-01-first/story-01-01-a', 'a deferred criterion keeps its story directory as source');
+  assert.strictEqual(deferred.kind, 'deferred');
+});
+
+test('34-01 criterion 4: todo drop sets the line aside with the date and the reason; todo and next stop listing it; --dry-run writes nothing', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, {
+    todo: '- [ ] (before: later) Rotate the old key\n- [ ] (before: deploy) Run the backfill',
+    extra: '- [~] Given a slow network, then the page still loads\n',
+  });
+  story(dir, 'epics/epic-01-shop/story-01-02-next', { status: 'planned' });
+  const file = path.join(dir, STORY, 'story.md');
+  const original = fs.readFileSync(file, 'utf8');
+  const items = todoPayload(dir).epics.flatMap((epic) => epic.items);
+  const rotate = items.find((item) => item.text === 'Rotate the old key').id;
+  const criterion = items.find((item) => item.kind === 'deferred').id;
+
+  const dry = run(dir, ['todo', 'drop', rotate, '--reason', 'obsolete since epic 30', '--dry-run']);
+  assert.strictEqual(dry.code, 0, dry.output);
+  assert.match(dry.output, /Would set aside epics\/epic-01-shop\/story-01-01-backfill\/story\.md:\d+ \(dry run: nothing written\)/);
+  assert.ok(dry.output.includes(`- [x] (set aside ${localDate()}: obsolete since epic 30) (before: later) Rotate the old key`), dry.output);
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), original);
+
+  const res = run(dir, ['todo', 'drop', rotate, '--reason', 'obsolete since epic 30']);
+  assert.strictEqual(res.code, 0, res.output);
+  assert.match(res.output, /^Set aside epics\/epic-01-shop\/story-01-01-backfill\/story\.md:\d+$/m);
+  const marker = `(set aside ${localDate()}: obsolete since epic 30)`;
+  assert.strictEqual(
+    fs.readFileSync(file, 'utf8'),
+    original.replace('- [ ] (before: later) Rotate the old key', `- [x] ${marker} (before: later) Rotate the old key`),
+  );
+  assert.doesNotMatch(run(dir, ['todo']).output, /Rotate the old key/);
+  assert.doesNotMatch(run(dir, ['todo', '--all']).output, /Rotate the old key/);
+  assert.doesNotMatch(run(dir, ['next']).output, /Rotate the old key|later/);
+
+  // A deferred criterion is set aside the same way, and verify's criteria
+  // reader counts it as deferred, never as proved; its text is unchanged.
+  const dropped = run(dir, ['todo', 'drop', criterion, '--reason=covered by the e2e suite']);
+  assert.strictEqual(dropped.code, 0, dropped.output);
+  assert.match(fs.readFileSync(file, 'utf8'), /^- \[x\] \(set aside \d{4}-\d{2}-\d{2}: covered by the e2e suite\) Given a slow network, then the page still loads$/m);
+  assert.doesNotMatch(run(dir, ['todo', '--all']).output, /slow network/);
+  const { criterionItems } = require('../bin/lib/spec-drift');
+  assert.deepStrictEqual(criterionItems(fs.readFileSync(file, 'utf8')).map((item) => [item.state, item.text]), [
+    ['done', 'it works'],
+    ['deferred', 'Given a slow network, then the page still loads'],
+  ]);
+
+  // todo done still ticks the other item of the same file.
+  const backfill = needsYou(dir).find((entry) => entry.text === 'Run the backfill').id;
+  assert.strictEqual(run(dir, ['todo', 'done', backfill]).code, 0);
+  assert.match(fs.readFileSync(file, 'utf8'), /^- \[x\] \(before: deploy\) Run the backfill$/m);
+  assert.deepStrictEqual(needsYou(dir), []);
+  assert.match(run(dir, ['todo']).output, /Nothing is waiting on you/);
+});
+
+test('34-01 criterion 5: todo drop without a reason, or with an unknown id, exits non-zero with one line and writes nothing', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, { todo: '- [ ] (before: later) Rotate the old key', extra: '\n## Needs you\n\nWhich provider?\n' });
+  const file = path.join(dir, STORY, 'story.md');
+  const before = fs.readFileSync(file, 'utf8');
+  const entries = needsYou(dir);
+  const id = entries.find((entry) => entry.text === 'Rotate the old key').id;
+  const question = entries.find((entry) => entry.kind === 'needs-you').id;
+  const oneLine = (res) => res.output.trim().split('\n');
+
+  const cases = [
+    [['todo', 'drop', id], /needs a reason/],
+    [['todo', 'drop', id, '--reason'], /needs a reason/],
+    [['todo', 'drop', id, '--reason', '  '], /needs a reason/],
+    [['todo', 'drop', id, '--reason', 'see (31-02)'], /without \( or \)/],
+    [['todo', 'drop', 'deadbee', '--reason', 'obsolete'], /no open to-do has the id "deadbee"/],
+    [['todo', 'drop', question, '--reason', 'obsolete'], /is not a checkbox/],
+    [['todo', 'drop', '--reason', 'obsolete'], /"todo drop" takes one id/],
+    [['todo', 'done', id, '--reason', 'obsolete'], /--reason only applies to "todo drop"/],
+    [['todo', '--reason', 'obsolete'], /--reason only applies to "todo drop"/],
+  ];
+  for (const [args, message] of cases) {
+    const res = run(dir, args);
+    assert.notStrictEqual(res.code, 0, `${args.join(' ')}:\n${res.output}`);
+    assert.strictEqual(oneLine(res).length, 1, `${args.join(' ')}:\n${res.output}`);
+    assert.match(res.output, message, args.join(' '));
+  }
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), before);
+});
+
+test('34-01 criterion 6: past 5 items, next lists the before-deploy items and one summary line for the rest', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, {
+    todo: `${lines('- [ ] (before: deploy) Deploy step', 2)}\n${lines('- [ ] (before: next-story) Chain step', 4)}\n- [ ] (before: later) Someday`,
+  });
+  story(dir, 'epics/epic-01-shop/story-01-02-next', { status: 'planned' });
+
+  const res = run(dir, ['next']);
+  assert.strictEqual(res.code, 0, res.output);
+  const block = res.output.split('\n\n')[0].split('\n');
+  assert.deepStrictEqual(block.map((line) => line.replace(/ — story-[\w-]+ \[[0-9a-f]{7}\]$/, '')), [
+    'We need you (7)',
+    '  - (before: deploy) Deploy step 1',
+    '  - (before: deploy) Deploy step 2',
+    '  + 4 more, 1 later — ai-flow todo',
+  ]);
+});

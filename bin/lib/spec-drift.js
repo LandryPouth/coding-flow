@@ -15,6 +15,11 @@ const { storyPartPath, extractSection } = require("./story");
 const { normalizePortable } = require("./util");
 
 const CRITERION = /^(\s*)[-*]\s*\[([ xX~])\]\s*(.+?)\s*$/;
+// `ai-flow todo drop` (story 34-01) ticks a criterion with this marker right
+// after the box: it is set aside with a written reason, so it reads as deferred
+// (a reason lowers the claim, it never proves it), and the marker is not part
+// of the criterion's text (setting aside is silent, like ticking).
+const SET_ASIDE = /^\(set aside \d{4}-\d{2}-\d{2}: [^()]*\)\s*/;
 const HEADING = /^ {0,3}#{1,6}\s/;
 const FENCE = /^\s*(`{3,}|~{3,})/;
 
@@ -57,8 +62,10 @@ function criterionItems(specText) {
     const match = line.match(CRITERION);
 
     if (match) {
-      const state = match[2] === "~" ? "deferred" : match[2] === " " ? "open" : "done";
-      current = { state, text: match[3], whole: match[3], indent: indentOf(match[1]) };
+      const setAside = /x/i.test(match[2]) && SET_ASIDE.test(match[3]);
+      const state = match[2] === "~" || setAside ? "deferred" : match[2] === " " ? "open" : "done";
+      const text = setAside ? match[3].replace(SET_ASIDE, "") : match[3];
+      current = { state, text, whole: text, indent: indentOf(match[1]) };
       items.push(current);
     } else if (!line.trim()) {
       continue;

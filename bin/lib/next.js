@@ -269,13 +269,15 @@ function needsYouLine(entry) {
 }
 
 // At most 5 lines (deploy first, then next-story and the questions), then one
-// count line for the rest; the full list is `ai-flow todo`.
+// count line for the rest; the full list is `ai-flow todo`. Past 5 (story
+// 34-01), only the `before: deploy` items are listed: the rest is the count.
 function printNeedsYouLines(entries) {
   const urgent = entries.filter((entry) => entry.when !== "later");
   const later = entries.length - urgent.length;
-  const more = Math.max(0, urgent.length - NEEDS_YOU_LINES);
+  const listed = (urgent.length > NEEDS_YOU_LINES ? urgent.filter((entry) => entry.when === "deploy") : urgent).slice(0, NEEDS_YOU_LINES);
+  const more = urgent.length - listed.length;
 
-  urgent.slice(0, NEEDS_YOU_LINES).forEach((entry) => log(needsYouLine(entry)));
+  listed.forEach((entry) => log(needsYouLine(entry)));
 
   if (more > 0 || later > 0) {
     const parts = [more > 0 ? `${more} more` : "", later > 0 ? `${later} later` : ""].filter(Boolean);

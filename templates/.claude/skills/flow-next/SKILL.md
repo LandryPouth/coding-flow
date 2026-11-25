@@ -35,7 +35,8 @@ ai-flow next
   items, `## Needs you` questions, `Owner: human` stories), `next` prints that
   block above the recommendation — `before: deploy` first, at most 5 lines plus a
   count. Report it verbatim, before the recommendation. Never run
-  `ai-flow todo done` for the maintainer: only they tick what only they can do.
+  `ai-flow todo done` or `ai-flow todo drop` for the maintainer: only they tick,
+  or set aside, what only they can do.
 - Read-only: it never verifies, commits, ships or creates a worktree — it names the
   command that would.
 - Scoped to the checkout it runs from, like `git status`: with several worktrees
