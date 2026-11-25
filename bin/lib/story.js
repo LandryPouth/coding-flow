@@ -27,6 +27,11 @@ const SINGLE_FILE = "story.md";
 
 const STORY_FILES = [...Object.values(PART_FILES), SINGLE_FILE];
 
+// The only story states that mean "finished" (archive's gate, todo's filter).
+// `## Status:` accepts any written word, so anything else — planned,
+// in-progress, blocked, but also todo, draft, wip — is unfinished.
+const FINISHED_STATUSES = new Set(["done", "verified", "stale"]);
+
 // The file that answers for `part`. When neither the dedicated file nor story.md
 // exists, this returns the dedicated path on purpose: callers use it to say what
 // is missing, and "spec.md is required" is a more useful message than a path that
@@ -130,6 +135,7 @@ function extractSection(content, heading) {
 }
 
 module.exports = {
+  FINISHED_STATUSES,
   PART_FILES,
   SINGLE_FILE,
   STORY_FILES,

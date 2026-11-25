@@ -944,4 +944,5 @@ module.exports = {
   estimateUnloaded,
   evaluateComplexity,
   describeGrowth,
+  functionSizeSettings: settings,
 };

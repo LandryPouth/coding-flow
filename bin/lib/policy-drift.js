@@ -37,6 +37,12 @@ function readBaseHarness(base = currentDiffBase(cwd).mergeBase || "HEAD") {
   }
 }
 
+// The policy globs a diff is judged by: the base's, or the defaults when the
+// base declares none.
+function policyGlobsAtBase(atBase) {
+  return atBase && Array.isArray(atBase.policyGlobs) ? atBase.policyGlobs : defaultPolicyGlobs();
+}
+
 // The policy files this branch changed: committed since the base, uncommitted,
 // or new. `.coding-flow/` is outside `changedFilesForCoverage`, so git is asked
 // directly. A rename is its old path leaving, so renames are not paired. A
@@ -45,7 +51,7 @@ function readBaseHarness(base = currentDiffBase(cwd).mergeBase || "HEAD") {
 function readPolicyChanged({ globs: own = null } = {}) {
   const { mergeBase } = currentDiffBase(cwd);
   const atBase = readBaseHarness(mergeBase || "HEAD");
-  const listed = own || (atBase && Array.isArray(atBase.policyGlobs) ? atBase.policyGlobs : defaultPolicyGlobs());
+  const listed = own || policyGlobsAtBase(atBase);
   const globs = [...listed, ...OWN_POLICY_FILES];
   const files = new Set([
     ...runGitList(["diff", "--name-only", "--no-renames", mergeBase || "HEAD", "--relative"], cwd),
@@ -58,4 +64,4 @@ function readPolicyChanged({ globs: own = null } = {}) {
     .sort();
 }
 
-module.exports = { readPolicyChanged, readBaseHarness };
+module.exports = { readPolicyChanged, readBaseHarness, policyGlobsAtBase, OWN_POLICY_FILES };

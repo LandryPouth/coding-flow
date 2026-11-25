@@ -266,6 +266,8 @@ test('next holds a STRICT story whose only clean review round follows a fail, th
   assert.equal(held.code, 0);
   assert.match(held.output, /\[needs-review\]/);
   assert.match(held.output, /needs one more review round after a failed one/);
+  const rounds = require('../bin/lib/rules-registry').defaultOf('review.strictCleanRounds');
+  assert.ok(held.output.includes(`STRICT: ${rounds} clean rounds in a row`), 'the round count is the registry\'s');
   assert.doesNotMatch(held.output, /ai-flow ship/);
 
   assert.equal(run(repo, ['review', 'capture', '--story', storyPath, '--verdict', 'pass', '--round', '3']).code, 0);

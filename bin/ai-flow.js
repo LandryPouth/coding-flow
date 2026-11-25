@@ -90,6 +90,7 @@ const {
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
+const { todoCommand } = require("./lib/todo");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { recoverScan } = require("./lib/recover");
 const { harnessCommand, ensureHarnessConfig, registerStoryLocator } = require("./lib/harness");
@@ -123,6 +124,7 @@ const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
 const { reportCommand } = require("./lib/report");
+const { rulesCommand } = require("./lib/rules");
 const {
   ensureConfig,
   configPath,
@@ -859,6 +861,14 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   });
 } else if (command === "next") {
   nextCommand({ flags });
+} else if (command === "todo") {
+  const extra = commandArgs.filter((arg) => !arg.startsWith("-"));
+
+  if (extra.length > 0) {
+    fail(`unexpected argument "${extra[0]}" for "todo". Run "ai-flow todo --help".`);
+  }
+
+  todoCommand({ json: flags.has("--json") });
 } else if (command === "bootstrap") {
   if (!flags.has("--scan")) {
     fail("bootstrap currently requires --scan");
@@ -889,6 +899,8 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
 } else if (command === "report") {
   reportCommand({ getFlagValue, flags });
+} else if (command === "rules") {
+  rulesCommand({ commandArgs, flags });
 } else if (command === "audit") {
   auditCommand({ getFlagValue, flags });
 } else if (command === "review") {

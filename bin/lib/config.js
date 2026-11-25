@@ -9,6 +9,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { readJson, writeJson } = require("./util");
+const { defaultOf } = require("./rules-registry");
 
 // Known storage backends. "local" = epics/stories as versioned files (default).
 // "github" = GitHub issues/sub-issues (seam in place, see storage/github.js —
@@ -40,31 +41,32 @@ function configPath(cwd) {
   return path.join(cwd, ".coding-flow", "config.json");
 }
 
+// Values come from the rules registry (story 26-06); the comments say why.
 function defaultConfig() {
   return {
     version: 1,
-    storage: "local",
-    branchPerEpic: true,
+    storage: defaultOf("storage"),
+    branchPerEpic: defaultOf("branchPerEpic"),
     // Whether `ship` merges its PR on its own once every story of the epic is
     // done and the PR is conflict-free (via GitHub's own auto-merge, so it still
     // waits on required checks). Off by default: merging to the base branch is
     // an outward side effect, and existing projects should not get it for free
     // on an upgrade. `ship --auto-merge` / `--no-auto-merge` override this per run.
-    autoMergeEpic: false,
+    autoMergeEpic: defaultOf("autoMergeEpic"),
     // "project" is the fallback on purpose: a config written before this field
     // existed described an install that DID copy the skills, and doctor must
     // keep requiring them for those projects.
-    skills: "project",
+    skills: defaultOf("skills"),
     // Same reasoning: a config written before this field existed came from a
     // full install, so that is what an absent value has to mean.
-    install: "full",
+    install: defaultOf("install"),
     // A config written before this field existed came from the only platform
     // there was, so an absent value has to mean "claude" — an unrecognized
     // target would make every existing project look unwired.
-    target: "claude",
+    target: defaultOf("target"),
     // Platforms added alongside `target` by a later explicit `--target`. `target`
     // stays the first decision; these are checked and refreshed too.
-    alsoTargets: [],
+    alsoTargets: defaultOf("alsoTargets"),
     // Validation commands run by `ai-flow verify`. Empty by default: the
     // command then falls back to the "## Commands" block of plan.md, then to the
     // package.json scripts. Declaring them here makes validation explicit and
@@ -79,15 +81,33 @@ function defaultConfig() {
     // the project declared and captures the proof. `security` (scanners such as
     // `npm audit` or `gitleaks`) is the one bucket with a third outcome: a
     // scanner that could not run is "not examined", never folded into a pass.
-    validation: { commands: [], quality: [] },
+    validation: { commands: defaultOf("validation.commands"), quality: defaultOf("validation.quality") },
   };
 }
 
 // Reads the config, merging with the defaults and validating the known values.
 // A missing or corrupt config falls back cleanly to the defaults.
+// The config file as read: `unreadable` when it exists and cannot be read or
+// parsed — readConfig then applies the defaults, as for an absent file.
+function readConfigFile(cwd) {
+  const file = configPath(cwd);
+  if (!fs.existsSync(file)) return { existing: null, unreadable: false };
+  try {
+    return { existing: JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")), unreadable: false };
+  } catch {
+    return { existing: null, unreadable: true };
+  }
+}
+
+// readConfig, and whether the file it read was unreadable.
+function readConfigReport(cwd) {
+  const { unreadable } = readConfigFile(cwd);
+  return { config: readConfig(cwd), unreadable };
+}
+
 function readConfig(cwd) {
   const defaults = defaultConfig();
-  const existing = readJson(configPath(cwd), null);
+  const { existing } = readConfigFile(cwd);
 
   if (!existing || typeof existing !== "object" || Array.isArray(existing)) {
     return { ...defaults };
@@ -169,11 +189,11 @@ function ensureConfig(
   cwd,
   {
     dryRun = false,
-    storage = "local",
-    branchPerEpic = true,
-    skills = "project",
-    install = "full",
-    target = "claude",
+    storage = defaultOf("storage"),
+    branchPerEpic = defaultOf("branchPerEpic"),
+    skills = defaultOf("skills"),
+    install = defaultOf("install"),
+    target = defaultOf("target"),
   } = {},
 ) {
   const file = configPath(cwd);
@@ -283,5 +303,6 @@ module.exports = {
   configPath,
   defaultConfig,
   readConfig,
+  readConfigReport,
   ensureConfig,
 };
