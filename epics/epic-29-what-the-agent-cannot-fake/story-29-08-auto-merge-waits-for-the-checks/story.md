@@ -142,6 +142,20 @@ Held: refactor changed no behaviour (only the two intended lines differ vs c2c0c
 
 Held: changed tests keep/strengthen every assertion, nothing dropped; 11/17 mutants killed (the rest above); merge with develop clean, 169/169, plugin check in sync.
 
+### Series 2 Round 3 — FAIL (the docs a user reads, against the code)
+
+- [ ] P1 bin/lib/protect.js:506 (ship.js:654) — `gh repo view` fails (HTTP 502) → ship prints "\"main\" has no required status checks, so GitHub would merge at once (…)" and "Next: run `gh auth login`", contradicting CHANGELOG.md:11 and README — fix: when `repoInfo.blocked`, `why: "<repo> could not be read (…)"`, no auth next step for a 5xx; fake-gh test asserting doesNotMatch /no required status checks/.
+- [ ] P1 (orchestrator, raised from P2: a write to a branch the user did not name) — `protect --branch` with no value and `protect develop` (bare name) silently target the default branch, and without `--dry-run` write to main — fix: refuse both with exit 1 and one line (`--branch needs a name`; `unexpected argument "develop" — did you mean --branch develop?`); tests.
+- [ ] P2 merge with develop conflicts (CHANGELOG.md, ship.js `todo` require from 26-07) — merge develop into the story branch keeping both sides.
+- [ ] P2 CHANGELOG says a non-GitHub remote prints "the next command"; no `Next:` is printed — align.
+- [ ] P2 docs "a recent PR ran no checks → exit 2": a branch already requiring every check exits 0 without reading PRs — say "when checks would be added".
+- [ ] P2 rules-and-limits `protectBranches` row says init and ship protect default + baseBranch; ship protects only the base it ships to; the limits row contradicts itself — fix the row.
+- [ ] P2 doctor silent when `baseBranch` is missing on GitHub — state as a limit (or warn).
+- [ ] P2 `ship --help` doesn't say `--auto-merge` may write a branch protection — add it.
+
+Held: protect/init/ship help; `--branch=x`; protectBranches:false message; `ship --base develop` protects before arming; init on a non-GitHub remote silent; merged tree (both sides kept) 156/156, plugin check in sync.
+Series 2 round 4 is the last of the series.
+
 ## Acceptance Criteria
 
 - [x] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
