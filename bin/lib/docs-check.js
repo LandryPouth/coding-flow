@@ -260,6 +260,22 @@ function recordedEvent(place, context) {
   return newest.to.endsWith(`/${rest}`) ? { to: newest.to.slice(0, -rest.length - 1) } : null;
 }
 
+// A missing place under a folder git recorded as moved (renamed, not
+// deleted) that is gone: the place at the folder's new home, else null.
+function movedUnder(places, context) {
+  for (const place of places) {
+    if (!context.historyRoots().has(place.split("/")[0])) continue;
+    for (let dir = path.posix.dirname(place); dir !== "." && !fs.existsSync(path.join(context.root, dir)); dir = path.posix.dirname(dir)) {
+      const event = recordedEvent(dir, context);
+      if (event) {
+        if (event.to) return `${event.to}${place.slice(dir.length)}`;
+        break;
+      }
+    }
+  }
+  return null;
+}
+
 // Every tracked file and folder by base name and by parent folder: the
 // candidates a suggestion is measured against, not the whole repository.
 function entryIndex(files) {
@@ -479,7 +495,7 @@ function scanDoc(doc, context) {
     const { spans, prose } = inlineParts(line, state);
     for (const span of spans) {
       add(index + 1, scriptFindings(span.text, docDir, context.packages, {}, exists));
-      add(index + 1, pathFindings(span.text, doc, context, mentions));
+      add(index + 1, pathFindings(span.text, doc, context, mentions, line.slice(0, span.column)));
     }
     for (const target of linkTargets(prose)) add(index + 1, linkFindings(target, doc, context, mentions));
   });
@@ -487,7 +503,8 @@ function scanDoc(doc, context) {
   return { findings, mentions };
 }
 
-function pathFindings(span, doc, context, mentions) {
+// `before` is the line's text before the span: `Branch: \`x/y\`` names a branch.
+function pathFindings(span, doc, context, mentions, before = "") {
   const value = pathCandidate(span);
   if (!value) return [];
   const { judged, places } = pathPlaces(value, path.posix.dirname(doc), context.root);
@@ -498,10 +515,15 @@ function pathFindings(span, doc, context, mentions) {
   // What git recorded (a rename, a deletion) beats a comment that still names
   // it, and a first segment that is gone: a moved or deleted top-level folder.
   const recorded = (judged || !relative) && inside.find((place) => context.historyRoots().has(place.split("/")[0]) && recordedEvent(place, context));
-  if (!judged && !recorded) return [];
+  const moved = !recorded && (judged || !relative) ? movedUnder(inside, context) : null;
+  if (!judged && !recorded && !moved) return [];
   if (isPattern(value) || context.suffixes().has(path.posix.normalize(value).replace(/^\.\//, "").replace(/\/+$/, ""))) return [];
   if (inside.some((place) => context.ignoredByConfig(place))) return [];
-  if (!recorded && context.namedByCode(value)) return [];
+  if (!recorded && !moved && context.namedByCode(value)) return [];
+  if (context.namesBranch(value, before)) return [];
+  // Under a folder git recorded as moved, a path is judged even when git
+  // ignores it (no `places`: generated output the move left behind).
+  if (moved && context.suggest) return [{ kind: "path", target: value, suggestion: moved }];
   return [{ kind: "path", target: value, places: inside, ...suggestPath(recorded || inside[0], context) }];
 }
 
@@ -541,6 +563,7 @@ function scanContext(root, settings, suggest) {
   let suffixes = null;
   let corpus = null;
   let index = null;
+  let branches = null;
   return {
     // A path the project's own tracked code or config names is one it writes,
     // reads or installs: not a stale reference. Run records, notes and
@@ -576,10 +599,31 @@ function scanContext(root, settings, suggest) {
       if (!anchorCache.has(file)) anchorCache.set(file, anchorsOf(fs.readFileSync(path.join(root, file), "utf8")));
       return anchorCache.get(file);
     },
+    // A branch, not a path: named right after "Branch" / "Branche" in the
+    // line, or the name of a local or remote branch (`origin/x` and `x`).
+    namesBranch(value, before) {
+      if (BRANCH_WORD.test(before)) return true;
+      if (!branches) branches = inGit ? branchNames(root) : new Set();
+      return branches.has(value.replace(/\/+$/, ""));
+    },
     ignoredByConfig(place) {
       return settings.ignorePaths.some((glob) => matchesGlob(place, glob));
     },
   };
+}
+
+const BRANCH_WORD = /\bbranch(?:e|es)?\b[^`.!?]{0,24}$/i;
+
+function branchNames(root) {
+  const out = new Set();
+  for (const ref of (git(["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"], root) || "").split("\n")) {
+    if (ref.startsWith("refs/heads/")) out.add(ref.slice("refs/heads/".length));
+    if (!ref.startsWith("refs/remotes/")) continue;
+    const short = ref.slice("refs/remotes/".length);
+    out.add(short);
+    if (short.includes("/")) out.add(short.slice(short.indexOf("/") + 1));
+  }
+  return out;
 }
 
 // The places git ignores (generated output), asked in one call: a missing
@@ -653,12 +697,22 @@ function changedSince(base, root) {
   return new Set(`${diff}\0${untracked || ""}`.split("\0").filter(Boolean));
 }
 
+// What a mention matches under --changed: a changed path, or a folder one is under.
+function changedPlaces(changed) {
+  const places = new Set(changed);
+  for (const file of changed) {
+    for (let dir = path.posix.dirname(file); dir !== "." && !places.has(dir); dir = path.posix.dirname(dir)) places.add(dir);
+  }
+  return places;
+}
+
 function scanDocs({ root = cwd, explicit = [], changed = null, suggest = true } = {}) {
   const settings = docsCheckSettings(readConfig(root));
   const context = scanContext(root, settings, suggest);
   const docs = selectDocs(context.files, settings, explicit);
   const scanned = docs.map((doc) => ({ doc, ...scanDoc(doc, context) }));
-  const kept = changed ? scanned.filter(({ mentions }) => [...mentions].some((m) => changed.has(m))) : scanned;
+  const touched = changed ? changedPlaces(changed) : null;
+  const kept = touched ? scanned.filter(({ mentions }) => [...mentions].some((m) => touched.has(m))) : scanned;
   const findings = kept.flatMap((entry) => entry.findings);
   const ignored = ignoredPlaces(root, findings.flatMap((f) => f.places || []));
   const generated = (f) => (f.places || []).some((p) => ignored.has(p.replace(/\/+$/, "")));

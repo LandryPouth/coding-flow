@@ -634,3 +634,74 @@ test('outside git the walk reads docs/ before a big folder and says when it hit 
   assert.deepEqual(brief(JSON.parse(res.stdout).findings), ['docs/guide/a.md:1 path src/other.js']);
   assert.match(res.out, /20000 files/);
 });
+
+// Story 26-09, criterion 1: a doc naming only a folder is read under --changed
+// when that folder moved (a changed path starts with the mention plus `/`).
+test('--changed reads a doc that names only a folder moved or deleted since the base', (t) => {
+  const dir = repo(t, {
+    'packages/geo/src/index.ts': 'i\n',
+    'packages/old/a.ts': 'a\n',
+    'packages/kept/k.ts': 'k\n',
+    'docs/geo.md': '# Geo\n\nThe data lives in `packages/geo`.\n',
+    'docs/old.md': '# Old\n\nSee `packages/old/`.\n',
+    'docs/kept.md': '# Kept\n\nSee `packages/kept` and `packages/gone`.\n',
+    'docs/prefix.md': '# Prefix\n\nSee `packages/ge` and `packages/missing`.\n',
+  });
+  git(dir, ['branch', 'develop']);
+  git(dir, ['checkout', '-q', '-b', 'story']);
+  git(dir, ['mv', 'packages/geo', 'packages/geodata']);
+  git(dir, ['rm', '-q', '-r', 'packages/old']);
+  git(dir, ['commit', '-q', '-m', 'reshape']);
+
+  const full = check(dir);
+  const changed = check(dir, ['--changed', 'develop']);
+  assert.deepEqual(brief(changed.findings), [
+    'docs/geo.md:3 path packages/geo -> packages/geodata',
+    'docs/old.md:3 path packages/old/',
+  ]);
+  assert.equal(changed.docs, 2);
+  // Every finding --changed reports is one the full check reports.
+  for (const line of brief(changed.findings)) assert.ok(brief(full.findings).includes(line), line);
+});
+
+// Story 26-09, criterion 2: a git-ignored path under a folder git recorded as
+// moved is judged, and the suggestion names the folder's new home.
+test('a git-ignored path under a moved folder is judged and points at the new folder', (t) => {
+  const dir = repo(t, {
+    '.gitignore': 'dist/\n',
+    'packages/geo/src/index.ts': 'i\n',
+    'packages/geo/package.json': '{"name":"geo"}\n',
+    'docs/a.md': 'Build output: `packages/geo/dist`, `packages/geo/dist/index.js`; still here: `packages/web/dist`.\n',
+    'packages/web/src/w.ts': 'w\n',
+  });
+  git(dir, ['mv', 'packages/geo', 'packages/geodata']);
+  git(dir, ['commit', '-q', '-m', 'move']);
+  const result = check(dir);
+  assert.deepEqual(brief(result.findings), [
+    'docs/a.md:1 path packages/geo/dist -> packages/geodata/dist',
+    'docs/a.md:1 path packages/geo/dist/index.js -> packages/geodata/dist/index.js',
+  ]);
+});
+
+// Story 26-09, criterion 3: a branch name in backticks is not a missing path.
+test('a backticked branch name is not reported as a missing path', (t) => {
+  const dir = repo(t, {
+    'docs/x.md': 'x\n',
+    'docs/a.md': [
+      '# Report',
+      '',
+      '> **Branche** : `docs/complete-documentation`',
+      '',
+      'Branch: `docs/old-work`. Branche de travail : `docs/landing`.',
+      '',
+      'Merged from `docs/topic-branch` and `docs/remote-only`.',
+      '',
+      'But `docs/missing.md` is a path.',
+      '',
+    ].join('\n'),
+  });
+  git(dir, ['branch', 'docs/topic-branch']);
+  git(dir, ['update-ref', 'refs/remotes/origin/docs/remote-only', 'HEAD']);
+  const result = check(dir);
+  assert.deepEqual(brief(result.findings), ['docs/a.md:9 path docs/missing.md']);
+});
