@@ -1,5 +1,7 @@
 # Story 26-07 — Tasks
 
+## Status: in-progress
+
 - [x] Discovery: read 26-02's `todo.js` as shipped, `next.js` (`buildQueue`,
       empty message), `ship.js` PR body, guard secret patterns.
 - [x] `## Human to-do` parsing: `when`, derived ids, dedupe story/index,
