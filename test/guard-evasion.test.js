@@ -1107,3 +1107,60 @@ test('series 3 round 2: everyday commands with an expansion outside the code pos
     'perl -ne "print if /x/" "$FILE"',
   ]);
 });
+
+// --- series 3 round 3: an expansion is unchecked only when it can hide the code ---------------
+
+test('series 3 round 3: a plain environment variable inside interpreter code or SQL is read as written', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'allow', [
+    `python3 -c "print('$HOME')"`,
+    `python3 -c "print(\\"$HOME\\")"`,
+    'psql -c "SELECT * FROM users WHERE id = $ID"',
+  ]);
+  // Still read: a destructive literal next to the variable is refused, as on develop.
+  expectAll(dir, 'deny', ['psql -c "DROP TABLE $T"']);
+});
+
+test('series 3 round 3: code or SQL that starts with, substitutes or uses a variable set on the line is unchecked', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'unchecked', [
+    `C='rm -rf build'; python3 -c "import os; os.system('$C')"`,
+    `export C='rm -rf build' && python3 -c "import os; os.system('$C')"`,
+    `python3 -c "import os; os.system('$(echo rm -rf build)')"`,
+    'python3 -c "import os; os.system(\'`echo rm -rf build`\')"',
+    `python3 -c "import os; os.system('\${X:-rm -rf build}')"`,
+    `Q='x'; psql -c "SELECT 1; $Q"`,
+    `psql -c "SELECT 1; $(cat q.sql)"`,
+  ]);
+  const reason = run(dir, `python3 -c "import os; os.system('$(echo rm -rf build)')"`).reason;
+  assert.match(reason, /an expansion the guard cannot see/);
+  assert.match(run(dir, `Q='DROP TABLE x'; psql -c "$Q"`).reason, /an expansion the guard cannot see/);
+});
+
+test('series 3 round 3: a glob in the run word is matched against the files the line wrote', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'allow', [
+    'echo hi > out.txt && bash scripts/*.sh',
+    'mkdir -p out && echo ok > out/a && bash ./scripts/ci-*.sh',
+    'npm run build > build.log && bash "$DEPLOY_SCRIPT"',
+    'echo hi > notes.md && python3 "$SCRIPT"',
+  ]);
+  expectAll(dir, 'unchecked', [
+    `echo 'rm -rf build' > x.sh && bash [x]*.sh`,
+    `echo 'rm -rf build' > ci-1.sh && bash ./ci-*.sh`,
+    // An expansion: a script-like file written, a substitution, or a variable set on the line.
+    `echo 'rm -rf build' > x.sh && bash "$S"`,
+    `echo 'rm -rf build' > run && bash "$S"`,
+    `echo 'rm -rf build' > out.txt && F=out.txt; bash "$F"`,
+    `echo 'rm -rf build' > out.txt && bash "$(echo out.txt)"`,
+  ]);
+  assert.match(run(dir, `echo 'rm -rf build' > x.sh && bash x.s?`).reason, /an expansion the guard cannot see/);
+});
+
+test("series 3 round 3: psql's $'…' SQL is shown and read decoded", (t) => {
+  const dir = repo(t);
+  const result = run(dir, "psql -c $'DROP TABLE x'");
+  assert.equal(result.decision, 'deny');
+  assert.match(result.reason, /`psql -c 'DROP TABLE x'`/);
+  expectAll(dir, 'deny', ["psql -c $'DROP\\x20TABLE x'"]);
+});

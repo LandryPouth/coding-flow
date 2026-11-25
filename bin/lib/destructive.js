@@ -41,6 +41,7 @@ const WRITTEN_UNREAD = "the line runs a file it wrote, which the guard cannot re
 const PSQL_STDIN = "psql reads SQL from input the guard cannot read, or that destroys data";
 const PSQL_SHELL = "psql runs a shell command the guard reads as destructive";
 const CONFIG_ENV = "a git alias read under a prefix that changes which config git reads";
+const HIDDEN = "the code, SQL or script run is given by an expansion the guard cannot see";
 
 // Short options glued in one word (`-fdx`) and long options (`--force=…`), up to `--`.
 // `has(letter, name)` reads a long option as git and GNU tools do: any prefix
@@ -528,13 +529,26 @@ function psqlPrograms(args) {
   return { programs, files };
 }
 
+// `$'DROP TABLE x'` is bash's ANSI-C quoting: the word psql gets, escapes decoded
+// (the tokenizer keeps the `$`), when the words line up.
+function ansiC(command, args, ctx) {
+  const raws = (wordsAfter(command, ctx, "psql")[0] || []).map((entry) => entry.raw);
+  if (raws.length !== args.length) {
+    return args;
+  }
+  return args.map((arg, i) => {
+    const match = /^\$'((?:\\[\s\S]|[^'\\])*)'$/.exec(raws[i]);
+    return match ? unescape(match[1]) : arg;
+  });
+}
+
 function readPsql(out, command, cwd, ctx, segments, index) {
-  const { args } = command;
-  const { programs, files } = psqlPrograms(bashArgs(command, args, ctx));
+  const args = ansiC(command, command.args, ctx);
+  const { programs, files } = psqlPrograms(ansiC(command, bashArgs(command, command.args, ctx), ctx));
   const shown = ["psql", ...args].join(" ");
   // SQL given as an expansion (`-c "$Q"`): the guard does not see what psql runs.
-  if (wordsAfter(command, ctx, "psql").some((words) => psqlPrograms(words.map((entry) => entry.raw)).programs.some(expandsRaw))) {
-    out.unchecked.push({ reason: PSQL_STDIN, command: shown });
+  if (wordsAfter(command, ctx, "psql").some((words) => psqlPrograms(words.map((entry) => entry.raw)).programs.some((raw) => hidesBehind(raw, ctx.assigned)))) {
+    out.unchecked.push({ reason: HIDDEN, command: shown });
   }
   for (const program of programs) {
     const rule = destructiveSql(program);
@@ -906,6 +920,78 @@ function bashArgs(command, args, ctx = {}) {
   return words.length !== args.length ? args : words;
 }
 
+// The names a line assigns (`C=…`, `export C=…`, `read C`, `for C in`, `printf -v C`):
+// a variable set on the line may hold what the guard cannot see. Over-reading only
+// makes more calls unchecked.
+function assignedNames(line) {
+  const names = new Set();
+  for (const match of line.matchAll(/(?:^|[^\w$.-])([A-Za-z_]\w*)\+?=/g)) {
+    names.add(match[1]);
+  }
+  for (const match of line.matchAll(/\b(?:read|mapfile|readarray)\b([^;&|\n]*)/g)) {
+    for (const word of match[1].trim().split(/\s+/)) {
+      if (/^[A-Za-z_]\w*$/.test(word)) {
+        names.add(word);
+      }
+    }
+  }
+  for (const match of line.matchAll(/\b(?:for|select|getopts\s+\S+)\s+([A-Za-z_]\w*)|\bprintf\s+-v\s*([A-Za-z_]\w*)/g)) {
+    names.add(match[1] || match[2]);
+  }
+  return names;
+}
+
+// Story 29-04 (series 3 round 3): an expansion hides the code, SQL or script from the
+// guard when the word is (or starts with) one (`"$C"`), holds a command substitution
+// (`$(…)`, backticks), a `${…}` that is not a plain name, a positional parameter, or a
+// variable assigned on the same line. A plain environment variable inside a literal
+// (`print('$HOME')`, `WHERE id = $ID`) is read as written. `leading: false` drops the
+// first rule (a script named `"$S"`).
+function hidesBehind(raw, assigned = new Set(), leading = true) {
+  let double = false;
+  let first = true;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (ch === '"') {
+      double = !double;
+      continue;
+    }
+    if (ch === "'" && !double) {
+      const end = raw.indexOf("'", i + 1);
+      first = first && end === i + 1;
+      i = end === -1 ? raw.length : end;
+      continue;
+    }
+    if (ch === "\\") {
+      i += 1;
+      first = false;
+      continue;
+    }
+    if (ch === "`") {
+      return true;
+    }
+    if (ch === "$") {
+      const next = raw[i + 1] || "";
+      const name = /^[A-Za-z_]\w*/.exec(raw.slice(i + 1));
+      const braced = next === "{" ? /^\{(#?)([A-Za-z_]\w*)?(\}?)/.exec(raw.slice(i + 1)) : null;
+      if (next === "(" && raw[i + 2] !== "(") {
+        return true;
+      }
+      if (braced && (!braced[2] || !braced[3] || assigned.has(braced[2]))) {
+        return true;
+      }
+      if ((name && assigned.has(name[0])) || /[1-9@*]/.test(next)) {
+        return true;
+      }
+      if (leading && first && (name || braced || /[0#?!$-]/.test(next) || next === "(")) {
+        return true;
+      }
+    }
+    first = false;
+  }
+  return false;
+}
+
 const MAX_LITERAL = 4096;
 const RAW_VERB = /\b(?:rm\s+-\w*[rRf]|git\s+(?:reset\s+--hard|clean\s+-\w*f|push\s+(?:-f|--force)|checkout\s+--|branch\s+-D)|drop\s+(?:database|schema|table)|truncate\s+\w|dropdb\b)/i;
 const MAX_CODE = 65536; // longer code is not read: unchecked
@@ -973,7 +1059,7 @@ function literalLists(tokens) {
 function interpreterView(command, ctx) {
   const { name, args } = command;
   const views = wordsAfter(command, ctx, name);
-  if (views.some((words) => interpreterPrograms(name, words.map((entry) => entry.raw)).some(expandsRaw))) {
+  if (views.some((words) => interpreterPrograms(name, words.map((entry) => entry.raw)).some((raw) => hidesBehind(raw, ctx.assigned)))) {
     return null;
   }
   const programs = interpreterPrograms(name, args);
@@ -986,7 +1072,7 @@ function interpreterView(command, ctx) {
 
 function readInterpreterCode(out, programs, cwd, ctx, command) {
   if (programs === null) {
-    out.unchecked.push({ reason: INTERPRETER_CODE, command });
+    out.unchecked.push({ reason: HIDDEN, command });
     return;
   }
   for (const code of programs) {
@@ -1183,11 +1269,73 @@ function runsFile(command, raw) {
   return raw && raw.includes("/") ? { word: raw, code: false } : null;
 }
 
+// A file name that reads as a script: a script extension, or none (`run`, `out/a`).
+const SCRIPT_LIKE = /(?:^|\/)[^/.]+$|\.(?:sh|bash|zsh|ksh|dash|fish|py|js|mjs|cjs|ts|pl|rb|php|lua|command)$/i;
+
+// A glob (`*`, `?`, `[…]`, `{a,b}`) resolved in `cwd`, as a whole-path pattern; null
+// when it does not resolve or does not translate.
+function globPattern(cwd, word, home) {
+  const at = resolveIn(cwd, word, home);
+  if (at === null) {
+    return null;
+  }
+  let source = "";
+  let braces = 0;
+  for (let i = 0; i < at.length; i += 1) {
+    const ch = at[i];
+    if (ch === "*") {
+      source += "[^/]*";
+    } else if (ch === "?") {
+      source += "[^/]";
+    } else if (ch === "[") {
+      const end = at.indexOf("]", i + 2);
+      if (end === -1) {
+        return null;
+      }
+      const body = at.slice(i + 1, end).replace(/^!/, "^").replace(/[\\\]]/g, "\\$&");
+      source += `[${body}]`;
+      i = end;
+    } else if (ch === "{") {
+      braces += 1;
+      source += "(?:";
+    } else if (ch === "}" && braces) {
+      braces -= 1;
+      source += ")";
+    } else if (ch === "," && braces) {
+      source += "|";
+    } else {
+      source += ch.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    }
+  }
+  if (braces) {
+    return null;
+  }
+  try {
+    return new RegExp(`^${source}$`);
+  } catch {
+    return null;
+  }
+}
+
+// Story 29-04 (series 3 round 3): `bash x.s?`, `bash "$F"` may name a file the line
+// wrote. A glob is matched against the written files; an expansion is unchecked when it
+// hides behind a substitution or a variable set on the line, or when the line wrote a
+// script-like file. `bash scripts/*.sh` after `> build.log` stays allowed.
+function namesWritten(run, cwd, ctx) {
+  const keys = [...ctx.written.keys()];
+  if (EXPANDS.test(run.word)) {
+    return hidesBehind(run.word, ctx.assigned, false) || keys.some((key) => SCRIPT_LIKE.test(key.replace(/^\?/, "")));
+  }
+  const pattern = globPattern(cwd, run.word, ctx.home);
+  return pattern === null || keys.some((key) => key.startsWith("?") || pattern.test(key));
+}
+
 function readWrittenRun(out, command, raw, cwd, ctx) {
   const run = runsFile(command, raw);
   if (run && ctx.written.size && /[$`*?[{]/.test(run.word)) {
-    // `bash x.s?`, `bash "$F"`: a glob or an expansion may name a file the line wrote.
-    out.unchecked.push({ reason: WRITTEN_UNREAD, command: [raw || command.name, ...command.args].join(" ") });
+    if (namesWritten(run, cwd, ctx)) {
+      out.unchecked.push({ reason: HIDDEN, command: [raw || command.name, ...command.args].join(" ") });
+    }
     return;
   }
   const key = run && fileKey(cwd, run.word, ctx.home);
@@ -1534,7 +1682,7 @@ function readLine(line, start, ctx) {
   // line and every reading nested in it (`bash -c`, `.`, interpreter code), so a file
   // written outside is known inside.
   const written = ctx.written || new Map();
-  ctx = { ...ctx, written };
+  ctx = { ...ctx, written, assigned: new Set([...(ctx.assigned || []), ...assignedNames(joined)]) };
   let cwd = start;
   segments.forEach((segment, index) => {
     if (Date.now() > ctx.deadline) {
