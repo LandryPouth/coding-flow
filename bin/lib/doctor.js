@@ -458,13 +458,34 @@ function checkEpicIndex(warnings) {
   });
 }
 
-// What `doctor` reads from the epics on disk: size, numbering, story links, the index.
+// What `doctor` reads from the epics and docs on disk: size, numbering, story
+// links, the index, and the docs' stale references (story 26-03).
 function checkEpicFiles(warnings) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
   checkEpicNumberCollisions(warnings);
   checkStoryLinks(warnings);
   checkEpicIndex(warnings);
+  checkStaleDocs(warnings);
+}
+
+// Story 26-03: stale paths, scripts and links in the docs — counted and
+// pointed at, a warning that never fails doctor. Best-effort: a scan that
+// throws says nothing.
+function checkStaleDocs(warnings) {
+  let result;
+  try {
+    result = require("./docs-check").scanDocs({ root: cwd, suggest: false });
+  } catch {
+    return;
+  }
+  const count = result.findings.length;
+  if (count === 0) return;
+  warnings.push({
+    code: "docs_stale",
+    file: "docs",
+    message: `docs check: ${count} finding${count === 1 ? "" : "s"} (paths, scripts or links that no longer resolve) — run \`ai-flow docs check\``,
+  });
 }
 
 // `--fix` half of checkStoryLinks: rewrites each fixable entry to the canonical
@@ -786,6 +807,7 @@ function collectMinimalReport({ strict = false } = {}) {
   checkReleaseTag(warnings);
   checkStoryLinks(warnings);
   checkEpicIndex(warnings);
+  checkStaleDocs(warnings);
 
   return {
     ok: errors.length === 0,

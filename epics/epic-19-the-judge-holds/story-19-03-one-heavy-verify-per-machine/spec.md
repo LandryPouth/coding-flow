@@ -22,7 +22,14 @@ on a 14 GB WSL machine while `next dev` held 5.5 GB.
   also uses), not in the project. Default `auto`: 1 under WSL (detected from
   `/proc/version`) or below 16 GB total memory, else 2 (the maintainer's
   machines, documented as reference profiles); any value the user sets is
-  honoured, the memory gate still applies. The lock becomes
+  honoured, the memory gate still applies.
+  `auto` also reads the load average (`os.loadavg()[0]` against the CPU
+  count): one more slot while the machine is idle, one fewer while it is
+  saturated. Measured on 2026-11-25: with a fixed limit of 2 and a load of
+  about 18 on 16 threads, the slots stayed full for hours. Agents queued
+  behind them while the CPU still had room between two suites.
+- Every heavy run takes a slot, not only `verify`: a land's re-verify, and the
+  test command when `ai-flow` runs it. The lock becomes
   that many slot files; the memory gate applies to each start.
 - Memory gate: before starting, `os.freemem()` (and on Linux
   `MemAvailable` from `/proc/meminfo`) must be ≥ `verify.minFreeMemoryMb`
@@ -48,6 +55,8 @@ on a 14 GB WSL machine while `next dev` held 5.5 GB.
 - [ ] Given `verify.maxConcurrent: 2` and enough free memory, then two heavy
       verifies run at once and a third waits; given `auto` under WSL, then
       the limit is 1.
+- [ ] Given `auto` and a load average below the CPU count, then one more slot
+      is allowed; above twice the CPU count, one fewer, never below 1.
 - [ ] Given a completed queued verify, then its evidence records the wait.
 
 ## Edge Cases

@@ -134,6 +134,7 @@ const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
 const { reportCommand } = require("./lib/report");
 const { rulesCommand } = require("./lib/rules");
+const { docsCheckCommand } = require("./lib/docs-check");
 const {
   ensureConfig,
   configPath,
@@ -912,6 +913,8 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
   reportCommand({ getFlagValue, flags });
 } else if (command === "rules") {
   rulesCommand({ commandArgs, flags });
+} else if (command === "docs") {
+  docsCheckCommand({ commandArgs, flags, getFlagValue });
 } else if (command === "audit") {
   auditCommand({ getFlagValue, flags });
 } else if (command === "review") {
