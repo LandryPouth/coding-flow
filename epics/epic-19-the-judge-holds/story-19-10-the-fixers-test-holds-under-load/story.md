@@ -1,8 +1,8 @@
 # Story 19-10 — The fixers test holds under load
 
-## Status: in-progress
+## Status: done
 
-Risk: QUICK (one helper in `bin/lib/identity.js`, two tests). Owner: agent.
+Risk: QUICK (one helper in `bin/lib/identity.js`, three tests). Owner: agent.
 
 ## Why
 
@@ -64,6 +64,18 @@ make the copy earlier, which only makes more entries re-read.
 
 ## Result
 
-Both new tests fail without the fix and pass with it (deterministic, fixed
-timestamps). The intermittent tests share the cause; see the repro numbers in
-the commit and the report.
+The three new tests fail without the fix and pass with it (deterministic,
+fixed timestamps): the first two on 5edd924, the sub-second one on 99bf4da
+(the stat `Date` rounding up). The intermittent tests share the cause. Full
+suite 1909/1909; verify green, 100% of the added lines covered.
+
+Rollback: revert c6a8ed7 and 99bf4da; nothing is stored or migrated — the
+copy goes back to being stamped at copy time.
+
+## Review
+
+- Round 1 (fresh reviewer): FAIL, 1 P1 — the copy's mtime came from a stat
+  `Date`, which rounds .9995 s and above up into the next second; fixed by
+  flooring to whole seconds, with a sub-second test.
+- Round 2 (fresh reviewer): PASS, 0 P0/P1, 1 P2 (test count in this file),
+  fixed. P1 per round: 1 / 0.
