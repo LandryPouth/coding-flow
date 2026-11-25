@@ -704,6 +704,18 @@ test('series 2 round 1: a glob or brace naming a modified tracked file is refuse
   assert.match(run(dir, 'rm *.txt').reason, /a\.txt/);
   // An expansion too big to list is unchecked, never allowed.
   expectAll(dir, 'unchecked', ['rm {a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}.txt', 'rm {a,b}{c,d}{e,f}{g,h}{i,j}{k,l}{m,n}.txt']);
+  // What bash leaves as written stays a literal word: an unclosed brace, a mixed range.
+  const { readDestructive } = require('../bin/lib/destructive');
+  const host = { exists: () => true, home: () => '/home/x' };
+  const pathsOf = (command) => readDestructive(command, { cwd: dir, host }).findings.map((finding) => finding.check.paths);
+  assert.deepEqual(pathsOf('rm {a,b'), [['{a,b']]);
+  assert.deepEqual(pathsOf('rm {a}.txt {}'), [['{a}.txt', '{}']]);
+  assert.deepEqual(pathsOf('rm x{1..b}'), [['x{1..b}']]);
+  assert.deepEqual(pathsOf('rm x{c..a}'), [['xc', 'xb', 'xa']]);
+  // A stepped range, or a word too long to expand, is unchecked.
+  for (const command of ['rm x{1..9..2}', `rm {a,b}${'x'.repeat(5000)}`]) {
+    assert.ok(readDestructive(command, { cwd: dir, host }).unchecked.some((entry) => /brace/.test(entry.reason)), command);
+  }
   // A range: 29-03 already refuses a word with `..` near its policy file; never allowed.
   for (const command of ['rm f{1..500}.txt', 'rm a{1..3}.txt']) {
     assert.notEqual(run(dir, command).decision, 'allow', command);
@@ -733,6 +745,12 @@ function readerHost(dir) {
     onPath: () => false,
     gitAlias: (cwd, name) => ({ value: REVIEWER_ALIASES[name] || null }),
     gitTop: () => dir,
+    // The shell reader's (shell-writes), with the same rule: nothing but this directory.
+    realpath: (at) => at,
+    realPathOf: (at) => at,
+    isDirectory: (at) => fs.existsSync(at) && fs.statSync(at).isDirectory(),
+    gitRoot: () => dir,
+    readText: () => null,
   };
 }
 
@@ -750,6 +768,30 @@ test("series 2 round 1: the frozen reader's output on the reviewers' corpus is 2
   assert.equal(outputs.length, cases.length);
   const host = readerHost(dir);
   const moved = cases.filter(([command], i) => readerDigest(readDestructive(command, { cwd: dir, host }), dir) !== outputs[i]);
+  assert.deepEqual(moved.map(([command]) => command), []);
+  // And the frozen shell reader's own reading of what each command writes.
+  const { shellWrites } = require('../bin/lib/shell-writes-29-03');
+  const { writes } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-reader-outputs.json'), 'utf8'));
+  const rewritten = cases.filter(([command], i) => readerDigest(shellWrites(command, dir, host, { trees: true }), dir) !== writes[i]);
+  assert.deepEqual(rewritten.map(([command]) => command), []);
+});
+
+test("series 2 round 1: the frozen readers read the guard's own 29-03 test commands as 3c90919 did", (t) => {
+  const dir = reviewerRepo(t);
+  const host = readerHost(dir);
+  const { readDestructive } = require('../bin/lib/destructive-29-03');
+  const { shellWrites } = require('../bin/lib/shell-writes-29-03');
+  const { cases } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-shell-corpus.json'), 'utf8'));
+  assert.ok(cases.length > 1000, `${cases.length} commands`);
+  const digest = (read) => {
+    try {
+      return readerDigest(read(), dir);
+    } catch (error) {
+      return `throws ${error && error.name}`;
+    }
+  };
+  const moved = cases.filter(([command, reader, writes]) => digest(() => readDestructive(command, { cwd: dir, host })) !== reader
+    || digest(() => shellWrites(command, dir, host, { trees: true })) !== writes);
   assert.deepEqual(moved.map(([command]) => command), []);
 });
 

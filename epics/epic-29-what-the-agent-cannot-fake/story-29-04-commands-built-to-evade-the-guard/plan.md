@@ -294,6 +294,11 @@ decisions match at base (0 weaker, 179 stronger at HEAD).
   `test/fixtures/guard-29-03-reader-outputs.json`). The output test passed
   before the copy too (the live module still reads those 568 the same): it
   is a pin, not a red-first test; the hash test failed before the copy.
+  The frozen shell reader's own `shellWrites` is pinned the same way on the
+  568 commands, and both frozen readers on the 1,090 string literals that
+  read as commands in the guard's test files at 3c90919
+  (`test/fixtures/guard-29-03-shell-corpus.json`): that also executes the
+  copied code (coverage gate), with an assertion behind every line run.
 - **S2R1-P2-2 — a hard cap on the line.** A command over 256 KB is refused
   unread, before any reader. Refused, not unchecked as suggested: `standard`
   lets an unchecked call run, so a padded `rm -rf .git; # <256 KB>` would pass
