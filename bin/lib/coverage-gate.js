@@ -364,27 +364,31 @@ function testChangesForStrength(isTest) {
 }
 
 // Per test file: did this diff make it stronger, weaker, or neither? Weaker is
-// read as before. Stronger is narrower than before: a file strengthens only
-// when the gate would have passed before this story (a file not weakened, or no
-// weakening at all) AND it adds code that is not provably neutral.
+// read exactly as before (efede92). Stronger can only be narrower, by
+// construction: efede92's verdict is computed first, from the same classifier
+// and names (`classifyChangedFiles`); when it would have failed nothing
+// strengthens, and when it would have passed, the strengthened files are those
+// of ITS test-file list, unweakened, that add code which is not provably
+// neutral. The token scan only removes files from that list, never adds one.
 function scanTestWeakening(config) {
   const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern)) && !isScopedOut(file, config);
   const { findings, unweakened } = weakeningAsBefore(isTest);
   const weakenedFiles = [...new Set(findings.map((f) => f.file))];
-  const passedBefore = unweakened.length > 0 || findings.length === 0;
+  const { testFiles } = classifyChangedFiles(config);
+  const passedBefore = unweakened.length > 0 || (testFiles.length > 0 && findings.length === 0);
   const { changes, removedElsewhere } = testChangesForStrength(isTest);
   const adding = strengtheningOf(changes, removedElsewhere);
-  const strengthened = [];
-  const neutral = [];
-  const heldBack = [];
-
-  for (const [file] of changes) {
-    if (weakenedFiles.includes(file)) continue;
-    if (!adding.has(file)) neutral.push(file);
-    else (passedBefore ? strengthened : heldBack).push(file);
-  }
-
   const prefix = runGitText(["rev-parse", "--show-prefix"]).trim();
+  // The scan names files from the repository top; an untracked file in
+  // `testFiles` is named from the project.
+  const scanned = (file) => (adding.has(file) || !prefix ? file : `${prefix}${file}`);
+  const weakened = new Set(weakenedFiles);
+  const strengthened = passedBefore
+    ? [...new Set(testFiles.map(scanned).filter((file) => adding.has(file) && !weakened.has(file)))]
+    : [];
+  const neutral = changes.map(([file]) => file).filter((file) => !adding.has(file) && !weakened.has(file));
+  const heldBack = [...adding].filter((file) => !strengthened.includes(file) && !weakened.has(file));
+
   return { findings, strengthened, neutral, heldBack, prefix, weakenedFiles, unweakened };
 }
 

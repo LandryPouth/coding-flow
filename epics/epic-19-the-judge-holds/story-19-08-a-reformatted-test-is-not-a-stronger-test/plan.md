@@ -215,6 +215,27 @@
     unstaged move as a move is a follow-up line in epic 19's index.
   - Regression tests for both scenarios fail on a9455b1.
 
+- **Series 2, round 2 (the invariant made structural).** P1: in a project
+  below the repository top inside a test-glob folder (`repo/e2e/`), an
+  untracked behaviour file was named from the top by the strength scan
+  (`e2e/src/auth/login.js`, matching `**/e2e/**`) and strengthened, while
+  the gate named it from the project as a behaviour file; and
+  `passedBefore` had dropped efede92's `testFiles.length > 0`. Was red at
+  efede92, green at f52a745. Decided:
+  - `scanTestWeakening` computes efede92's verdict first, from the same
+    classifier (`classifyChangedFiles`) and names: `unweakened.length > 0 ||
+    (testFiles.length > 0 && findings.length === 0)`. When it fails, nothing
+    strengthens.
+  - When it passes, the strengthened files are taken FROM efede92's
+    `testFiles` (a project-relative untracked name mapped to the scan's name
+    with the project prefix), unweakened, keeping only those the token scan
+    finds adding non-neutral code. The scan can only remove files from that
+    list, never add one, so "a pass implies a pass at efede92" holds by
+    construction rather than by argument. The pass message counts each file
+    once.
+  - Regression test: a project in `e2e/`, an untracked high-risk behaviour
+    file, no test: exit 1. Fails on f52a745.
+
 ## Test Plan
 
 Throwaway repos with a high-risk path, a neutral, an added-assertion and a

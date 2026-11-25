@@ -746,3 +746,33 @@ test('19-08: an assertion added in a commit and turned into plain code in the wo
   assert.match(res.output, /1 more assertion\(s\) removed/);
   assert.doesNotMatch(res.output, /test file\(s\) strengthened/);
 });
+
+test('19-08: in a project inside an e2e/ folder, a new untracked behaviour file is not a test that strengthens', (t) => {
+  // Series 2 round 2: the strength scan named untracked files from the top
+  // (`e2e/src/auth/login.js`), which matched `**/e2e/**`; the gate names it
+  // from the project, a behaviour file. Before 19-08 this was red.
+  const top = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-e2e-sub-')));
+  t.after(() => fs.rmSync(top, { recursive: true, force: true }));
+  const dir = path.join(top, 'e2e');
+  fs.mkdirSync(dir);
+  assert.equal(run(dir, ['init']).code, 0);
+  const configPath = path.join(dir, '.coding-flow', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config.validation = { commands: ['node -e "process.exit(0)"'], quality: [] };
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  git(top, ['init', '-b', 'main']);
+  git(top, ['config', 'user.email', 'test@example.com']);
+  git(top, ['config', 'user.name', 'Test']);
+  write(dir, { 'src/x.js': 'module.exports = 1;\n' });
+  git(top, ['add', '-A']);
+  git(top, ['commit', '-m', 'init']);
+  git(top, ['checkout', '-b', 'feat/story']);
+  const rel = story(dir);
+  write(dir, { 'src/auth/login.js': 'module.exports = function allow(u) { return u.admin === true; };\n' });
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.doesNotMatch(res.output, /strengthened/);
+  assert.match(res.output, /no test file did|no test file adds/);
+});
