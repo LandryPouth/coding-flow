@@ -113,3 +113,12 @@ next-story item): 5 deploy lines and `+ 3 more, 14 later — ai-flow todo`.
 
 Tests: `test/human-todo.test.js` gains six 34-01 tests (one per criterion);
 all six fail on the base tree (`git archive HEAD`) and pass here.
+
+## Review findings
+
+### Round 1 — PASS (the maintainer's real pile, and the write) — two P2s to fix before landing
+
+- [ ] P2 bin/lib/next.js:277 — past 5 urgent items `next` lists only `before: deploy` items; `next-story` items and `## Needs you` questions fall into a bare "+ N more" (26-07 listed them) — fix: name the groups in the count line, e.g. "+ 6 before the next story, 14 later — ai-flow todo".
+- [ ] P2 bin/lib/next.js:277 — on bethl "+ 2 more, 14 later" does not say the 2 are deploy items — fix: "+ 2 more before deploy".
+
+Held: bethl `todo` counts line + all 7 deploy items + 2 summary lines; `--all` two sections; ≤10 still opens with counts; `--json` 52 items, 0 existing fields changed; `drop` one line in the documented shape, dry-run writes nothing, CRLF/final newline kept, wrapped criterion first line only, fences ignored, `$&`/`$1`/backslashes literal, duplicate id refused with both locations, bad reason/unknown id exit 1; `criterionItems` counts set-aside as deferred; `todo done` works; mutations caught; no existing test changed.
