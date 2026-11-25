@@ -109,6 +109,17 @@ Held: round-1 push-only fixture not weakened; init consent and dry run hold (0 `
 
 Held: merge with develop clean, 142/142 + windows-paths 19/19 + layering 4/4, plugin check in sync; fake-gh journey truthful and idempotent; fixture edits kept assertions, moved cases have their own tests; real dry runs correct (coding-flow nothing to change; bethl plan limit, exit 2).
 
+### Series 2 Round 1 — FAIL (every message a newcomer reads)
+
+- [ ] P1 bin/lib/protect.js:385 + :418 — existing protection (reviews only) + GitHub refuses the PUT → "main: not protected — GitHub refused the protection": false — fix: when `info.protection` exists, "left as is — GitHub refused adding required check(s) …".
+- [ ] P1 bin/lib/protect.js:477 → ship.js:654 — protection read fails (HTTP 500) → ship says "\"main\" has no required status checks, so GitHub would merge at once (could not read …)": it cannot know — fix: for error/missing, `why` = "could not read \"main\"'s protection (…), so auto-merge is not armed".
+- [ ] P1 doctor.js:223 + protect.js:287 — ruleset branch without a required-checks rule: doctor says run `ai-flow protect --branch main`; protect says "left alone", exit 0, dry run "nothing to change" while auto-merge would merge at once — dead end (ship: no Next) — fix: doctor, protect and ship say "add a required status checks rule to the ruleset protecting <branch>"; protect reports it as pending (exit 2), never "nothing to change".
+- [ ] P2 "left as is (requires no check) … requiring more" / "kept no check and every other rule" read oddly when nothing is required — word for the empty case.
+- [ ] P2 `ship --dry-run` "may first write a branch protection" also prints on an already gated, ruleset, or plan-limited base — print it only when the real run would write.
+- [ ] P2 doctor silent on HTTP 500; on `allow_auto_merge: false` it says only "run protect" — name the real blocker (enable auto-merge in the repository settings).
+
+Held: refactor changed no behaviour (only the two intended lines differ vs c2c0c82); plan limit, no PRs, push-only, no-checks PR, partial/full protection, auto-merge disabled, no admin, no CI: true, named, actionable; `--dry-run` 0 writes everywhere.
+
 ## Acceptance Criteria
 
 - [x] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
