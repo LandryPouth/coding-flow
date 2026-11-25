@@ -36,11 +36,10 @@ const {
   inert,
 } = require("./epic-index");
 const { epicNumbers } = require("./epic-numbers");
+const { FINISHED_STATUSES } = require("./story");
 
-// The only states that mean "finished". `## Status:` accepts any written word,
-// so anything else — planned, in-progress, blocked, but also todo, draft, wip —
-// refuses.
-const FINISHED = new Set(["done", "verified", "stale"]);
+// The only states that mean "finished" (story.js); anything else refuses.
+const FINISHED = FINISHED_STATUSES;
 const NAMED_UNFINISHED = new Set(["planned", "in-progress", "blocked"]);
 
 function git(args, { allowFail = false } = {}) {

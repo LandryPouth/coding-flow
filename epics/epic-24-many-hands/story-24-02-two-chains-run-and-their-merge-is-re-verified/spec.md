@@ -82,6 +82,10 @@ nobody waits), two under WSL.
       then 4; given `maxAgents` set in the project's `config.json`, then
       doctor warns that it is a machine setting and the project value is
       ignored.
+- [ ] Given WSL, then `ai-flow rules` lists `run.maxAgents` with
+      `auto: WSL detected → 2`: the key is registered in
+      `bin/lib/rules-registry.js` (scope `user`, an `auto` rule) and in
+      docs/rules-and-limits.md (handed over by story 26-06, criterion 2).
 - [ ] Given no `maxParallel` in config and two startable chains, then both
       run; given `maxParallel: 1`, then they run one after the other.
 - [ ] Given two independent roots, then both chains start and run in separate

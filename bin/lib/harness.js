@@ -27,8 +27,8 @@ function registerStoryLocator(locator) {
 const {
   fail,
   log,
-  normalizePortable,
   readJson,
+  normalizePortable,
   writeJson,
   addIssue,
   walkProjectFiles,
@@ -38,8 +38,11 @@ const {
   harnessRunsDir,
   defaultSecretPatterns,
   defaultHarnessConfig,
+  initialHarnessConfig,
+  HARNESS_MODES,
   readHarnessConfig,
   ensureHarnessConfig,
+  harnessFileState,
 } = require("./harness-config");
 const {
   compileSecretPatterns,
@@ -163,11 +166,54 @@ function buildHarnessEvidence({ story = null } = {}) {
   };
 }
 
+// The file `harness init` would complete: the parsed object, or the object a
+// symbolic link points to. Anything else holds no setting to keep.
+function keptHarness(state, file) {
+  if (state.kind === "parsed") {
+    return state.config;
+  }
+
+  if (state.kind === "symlink" && !state.dangling) {
+    const value = readJson(file, null);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  }
+
+  return null;
+}
+
+// Refuses what harness init never replaces, even with --force: something that
+// is not a regular file, and a symbolic link (only when asked to replace it, or
+// when it points nowhere).
+function refuseUnreplaceable(state, shown, force) {
+  if (state.kind === "not-a-file") {
+    fail(`${shown} is not a regular file; harness init does not replace it. Move it aside, then run \`harness init\`.`);
+  }
+
+  if (state.kind === "symlink" && (force || state.dangling)) {
+    const target = state.dangling ? " to a missing file" : "";
+    fail(`${shown} is a symbolic link${target}; harness init does not replace a link you made. Edit or fix the file it points to.`);
+  }
+
+  if (state.kind === "unparsable" && !force) {
+    fail(`${shown} cannot be read (${state.error}). Fix it, or run \`harness init --force\` to replace it with the defaults.`);
+  }
+}
+
 function harnessInit({ json = false, dryRun = false, force = false, mode = null } = {}) {
-  const existing = readJson(harnessConfigPath(), null);
-  const allowedModes = new Set(["fast", "standard", "strict"]);
+  const file = harnessConfigPath();
+  const shown = normalizePortable(path.relative(cwd, file));
+  const state = harnessFileState(file);
+  refuseUnreplaceable(state, shown, force);
+
+  const existing = keptHarness(state, file);
+  // A file holding no setting (unparsable, `null`, `[]`) replaced with --force
+  // is written as a new one.
+  const replacing = state.kind === "unparsable" || (state.kind === "parsed" && !existing);
+  const allowedModes = new Set(HARNESS_MODES);
+  // A new file shows the keys the readers resolve without it (26-08); an
+  // existing one is completed with the defaults only, as before.
   const config = {
-    ...defaultHarnessConfig(),
+    ...(existing ? defaultHarnessConfig() : initialHarnessConfig()),
     ...(existing || {}),
   };
 
@@ -184,22 +230,28 @@ function harnessInit({ json = false, dryRun = false, force = false, mode = null 
   }
 
   if (dryRun) {
+    if (force && replacing && !json) {
+      log(`Would replace ${shown}, which holds no readable setting, with the defaults above.`);
+    }
     return;
   }
 
-  if (existing && !force) {
+  if (state.kind !== "absent" && !force) {
     if (!json) {
       log("Harness config already exists. Use --force to overwrite it.");
     }
     return;
   }
 
-  writeJson(harnessConfigPath(), config);
+  writeJson(file, config);
   fs.mkdirSync(harnessRunsDir(), { recursive: true });
 
   if (!json) {
+    if (replacing) {
+      log(`Replaced ${shown}, which held no readable setting, with the defaults.`);
+    }
     log("Security evidence harness initialized.");
-    log(`Config: ${normalizePortable(path.relative(cwd, harnessConfigPath()))}`);
+    log(`Config: ${shown}`);
     log(`Runs: ${normalizePortable(path.relative(cwd, harnessRunsDir()))}`);
   }
 }

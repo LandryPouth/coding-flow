@@ -33,6 +33,7 @@ const {
   harnessConfigPath,
   harnessRunsDir,
   readHarnessConfig,
+  harnessMode,
 } = require("./harness-config");
 const {
   currentDiffBase,
@@ -165,7 +166,7 @@ function checkStoryEvidence(report, { story = null, strict = false } = {}) {
   // high-assurance requirement, so we look at the Result section specifically.
   const notes = extractSection(bundle["tasks.md"], "Result");
   const notesPath = partPath("tasks");
-  const highAssurance = strict || report.config.mode === "strict" || risk.level === "high";
+  const highAssurance = strict || harnessMode(report.config) === "strict" || risk.level === "high";
 
   if (highAssurance && !notes.trim()) {
     addIssue(report.errors, "missing_result", "High-assurance story checks require a filled ## Result in tasks.md", notesPath);
@@ -698,7 +699,7 @@ function verifyStoryOnce({
   // Captured before the commands run: a coverage report older than this was not
   // produced by this run, and must not be read as if it were.
   const startedAt = Date.now();
-  const checks = executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: config.mode === "strict" });
+  const checks = executeValidationCommands({ resolution, freshRequired, cleaned, refused, strict: harnessMode(config) === "strict" });
   const results = fixing ? [...fixing.results, ...checks] : checks;
   // A fixer proves nothing: with no check there is no green, whatever the fixers did.
   const commandsOk = checks.length > 0 && results.every((item) => item.ok);

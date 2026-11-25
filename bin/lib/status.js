@@ -16,6 +16,7 @@ const { currentTreeToken } = require("./identity");
 const { policyFingerprint } = require("./policy-fingerprint");
 const { getStorage } = require("./storage");
 const { readConfig } = require("./config");
+const { defaultOf } = require("./rules-registry");
 const { evaluateBranchPolicy } = require("./policy");
 const {
   readHarnessConfig,
@@ -132,7 +133,7 @@ function computeReviewStatus(root, storyPath, { strict = false } = {}) {
   }
 
   const roundAccepted = Array.isArray(entry.acceptedFor) && entry.acceptedFor.includes("round");
-  return strict && entry.followsFail && entry.passesInRow < 2 && !roundAccepted ? "confirming" : "pass";
+  return strict && entry.followsFail && entry.passesInRow < defaultOf("review.strictCleanRounds") && !roundAccepted ? "confirming" : "pass";
 }
 
 // The diff-risk half of a story's score only depends on `root` (every story

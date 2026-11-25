@@ -30,7 +30,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const { defaultHarnessConfig } = require("./harness-config");
+const { defaultHarnessConfig, harnessMode } = require("./harness-config");
 const { getSecretPatterns, findSecretsInContent, isHeuristicAllowlisted } = require("./security-policy");
 const { matchesPattern, isAllowedEnvExample, normalizePortable } = require("./util");
 const { shellWrites: readShellWrites, splitSegments, tokenize, commandOf, expandHome: expandHomeIn, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE } = require("./shell-writes");
@@ -143,7 +143,7 @@ function loadPolicy(root) {
     secretScanAllowlist: pick("secretScanAllowlist"),
     // Only an explicit "strict" tightens the guard; anything else (absent, unreadable,
     // a typo) is the standard posture, so a broken file never locks anyone out.
-    mode: config && config.mode === "strict" ? "strict" : "standard",
+    mode: harnessMode(config) === "strict" ? "strict" : "standard",
     ...destructivePolicy(config),
     unreadable,
   };
@@ -175,6 +175,42 @@ function destructivePolicy(config) {
     allowDestructive: entries.filter((entry) => !TOO_BROAD(entry)),
     ignoredAllow: entries.filter(TOO_BROAD),
     primaryLocked: Boolean(valid && config.worktrees && typeof config.worktrees === "object" && config.worktrees.primaryLocked === true),
+  };
+}
+
+// Whether the primary checkout is locked for a call made under `policy` (the
+// policy of the checkout the call runs from). Locked by that policy, or by the
+// primary checkout's own (`git -C <primary> switch` from a linked worktree).
+// A policy file that cannot be read keeps the lock: `chmod 000` or a broken
+// edit must not open the primary checkout. `by` names what decided it.
+function primaryLock(policy, primaryRoot) {
+  const own = loadPolicy(primaryRoot);
+  const unreadable = policy.unreadable || own.unreadable;
+  let by = null;
+  if (policy.unreadable) by = "unreadable";
+  else if (own.unreadable) by = "primary-unreadable";
+  else if (policy.primaryLocked) by = "policy";
+  else if (own.primaryLocked) by = "primary";
+  return { locked: Boolean(by), unreadable, by };
+}
+
+// The destructive-command policy as the guard applies it to a call run from
+// `root`: its own policy, and the primary checkout's lock combined as above.
+// `ai-flow rules` prints this (story 26-06) rather than reading the file itself.
+function effectiveDestructivePolicy(root) {
+  const policy = loadPolicy(root);
+  const { out } = gitNow(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  const commonDir = (out || "").trim();
+  const primaryRoot = commonDir ? path.dirname(path.resolve(commonDir)) : root;
+  const lock = primaryLock(policy, primaryRoot);
+  return {
+    destructiveCommands: policy.destructiveCommands,
+    allowDestructive: policy.allowDestructive,
+    ignoredAllow: policy.ignoredAllow,
+    primaryLocked: lock.locked,
+    lockedBy: lock.by,
+    unreadable: policy.unreadable,
+    primaryRoot,
   };
 }
 
@@ -1276,13 +1312,8 @@ function settle(finding, policy) {
     if (!gitDir || !commonDir || path.resolve(gitDir) !== path.resolve(commonDir)) {
       return { applies: false };
     }
-    // Locked by the policy the call runs under, or by the primary checkout's own
-    // (`git -C <primary> switch` from a linked worktree).
-    // A policy file that cannot be read keeps the lock: `chmod 000` or a broken
-    // edit must not open the primary checkout.
-    const own = loadPolicy(path.dirname(path.resolve(commonDir)));
-    const unreadable = policy.unreadable || own.unreadable;
-    return { applies: policy.primaryLocked || own.primaryLocked || unreadable, detail: unreadable ? ` (${POLICY_FILE} cannot be read, so the lock is kept)` : "" };
+    const lock = primaryLock(policy, path.dirname(path.resolve(commonDir)));
+    return { applies: lock.locked, detail: lock.unreadable ? ` (${POLICY_FILE} cannot be read, so the lock is kept)` : "" };
   }
   if (check.kind === "dirty") {
     if (check.paths.some((word) => EXPANDS.test(word))) {
@@ -1466,8 +1497,12 @@ function readDestructiveSafely(which, command, ctx, issues, options) {
 // A shell command writes the policy file blind: the guard cannot read what it
 // changes, so it is refused like a blocked path (story 29-03). The scripts of
 // `"$(…)"` and backticks are read too; after a `cd` their directory is unknown.
+function shellBlockedPaths(policy) {
+  return [...policy.blockedPaths, POLICY_FILE];
+}
+
 function shellWriteDenial(ctx, command, caseInsensitive, substituted) {
-  const shellCtx = { ...ctx, scopes: ctx.scopes.map((scope) => ({ ...scope, policy: { ...scope.policy, blockedPaths: [...scope.policy.blockedPaths, POLICY_FILE] } })) };
+  const shellCtx = { ...ctx, scopes: ctx.scopes.map((scope) => ({ ...scope, policy: { ...scope.policy, blockedPaths: shellBlockedPaths(scope.policy) } })) };
   for (const { script, cwd } of [{ script: command, cwd: ctx.cwd }, ...substituted]) {
     const entries = readShellWrites(script, cwd || ctx.cwd, shellHost, { trees: true });
     if (cwd === null && entries.length) {
@@ -1765,4 +1800,4 @@ function evaluate(hook, root) {
   }
 }
 
-module.exports = { guardCommand, decide, evaluate, recordUnchecked, isShellLimit, shellWriteTargets, shellWrites, loadPolicy };
+module.exports = { guardCommand, decide, evaluate, recordUnchecked, isShellLimit, shellWriteTargets, shellWrites, loadPolicy, destructivePolicy, effectiveDestructivePolicy, shellBlockedPaths };

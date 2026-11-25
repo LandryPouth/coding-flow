@@ -96,9 +96,13 @@ Lane B (CLI): epic 17, a chain.
 Lane A: 26-06 `ai-flow rules` → 26-03 `docs check` → 26-07 we need you
 Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) → 28-01 ideas
 
-- [ ] 26-06  - [ ] 26-03  - [ ] 26-07
+- [x] 26-06 `ai-flow rules` — split at the cap (series 1: 4 rounds, P1 2/1/1/2; init change → new 26-08); series 2: P1 1/0; landed, re-proved, review captured
+- [ ] 26-03  - [ ] 26-07
+- [x] 26-08 init shows the rules it applies (split from 26-06) — STRICT, 2 rounds (P1 0/0), landed, re-proved, review captured
 - [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
-- [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
+- [x] 19-10 the fixers test holds under load (from the flaky harness-fixers runs: index copy newer than the index) — 2 rounds (P1 1/0), landed, re-proved, review captured
+- [x] 26-02 `ai-flow todo` (reader half; notify half after 24-02) — 4 rounds (P1 1/1/1/0), landed, re-proved, review captured
+   - [ ] 28-01  - [ ] 19-08 (after 19-05)
 - [x] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24) — 1 review round (0 P1, 8 P2 fixed), landed, re-proved, review captured
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
@@ -131,6 +135,7 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 18-07 worktrees are a setting → 18-03 notes-only edit keeps the proof →
 18-06 a ticked criterion names its proof.
 
+- [ ] 19-03 one heavy verify per machine — pulled forward 2026-11-24 (maintainer): slots for heavy runs, agents unlimited otherwise
 - [ ] 18-01  - [ ] 19-01  - [ ] 29-02  - [ ] 19-07  - [ ] 20-01
 - [ ] 18-02  - [ ] 18-07  - [ ] 18-03  - [ ] 18-06
 
@@ -143,8 +148,8 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 ### Wave 5 — the run knows why it stopped (step 3) · *release 0.19.0*
 
 - [ ] 27-01, then 27-02…27-07 two at a time
-- [ ] 26-01, 26-02 (notify), 26-05
-- [ ] 24-01, 24-02, 24-07 → 26-04 → epic 25
+- [ ] 26-01, 26-05
+- [ ] 24-01, 24-02 → 26-02 (notify half, needs 24-02's global config), 24-07 → 26-04 → epic 25
 
 ### Wave 6 — learning (step 4) · *release 0.20.0*
 
@@ -263,3 +268,15 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
   (1906/1906), and a third verify on develop was green. verify does not name
   the failing test yet — that is 19-01, which this makes urgent. Until then:
   at most two suites at once during a land.
+- 2026-11-24 — maintainer: limit the heavy runs, not the agents. 8 cores, 13 GB,
+  load 20+ with four suites (node --test runs ~7 workers each). Interim until
+  19-03 ships: every `npm test` / `verify` of the run goes through a
+  machine-wide slot wrapper (2 slots; the run's scratchpad `heavy.sh`, also used
+  by `land.sh`); agents themselves are not capped by load, only by the run's
+  max. 19-03 pulled to the head of wave 3.
+- 2026-11-25 — the flaky `harness-fixers` test was a real bug (index copy newer than
+  the index, so git skipped its racy re-read): story 19-10, in review. land.sh: the
+  slot wrapper's wait lines must not count toward the output it keeps.
+- 2026-11-25 — `worktree land` needs the story's directory on the base branch: a story
+  created inside its own branch (19-10, 29-05) cannot land until its story file is
+  copied to develop first. Tool gap — follow-up for epic 20 (the epic runs itself).
