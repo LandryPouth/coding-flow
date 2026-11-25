@@ -148,4 +148,5 @@ ship early too, and bethl uses them at once. s1, s2 and s5 follow epic 20; s4 fo
 
 ## Follow-ups
 
+- (from 26-07 review round 3) The French action verbs in the uncaptured-to-do patterns have no left word boundary (`vider` in "provider", `lancer` in "relancer"), and a "nothing to do" line ("Rien à lancer en prod.") matches. No real Result hits either today; fix with a Unicode-aware boundary and a negation skip, each with a test.
 - (from 26-07 review round 1) The default `secretPatterns` (`bin/lib/harness-config.js`, shared with the guard) miss a credentialed URL (`postgres://user:pass@host`) and a JWT. Extending them changes what the guard refuses on every write, for every project (docs examples, test fixtures), so it was not done inside a to-do story: decide it as a guard change, with its own false-positive measurement.

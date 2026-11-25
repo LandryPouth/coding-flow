@@ -135,3 +135,11 @@ npm test
 - [~] P3 autoland covered only by unit tests of `chainStoryPaths` and `sayDeployTodos` (no criterion rests on it) — an end-to-end test if cheap. Not done: a real autoland needs a worktree chain, a green verify per story and a merge — not cheap; the two halves stay unit-tested (`chainStoryPaths`, `sayDeployTodos`) and no criterion rests on it.
 
 Held: todo/next/next --json, We need you (12) on bethl with deploy items first, `todo done` (dry-run and real), ship's "Before you deploy", verify exit code and warning after the verdict, doctor 63 → 8 warnings on bethl (6 true positives), round-1 fixes present.
+
+### Round 3 — PASS (criteria one by one against code and tests; round-2 fixes on bethl)
+
+- [~] P2 todo.js:628/641 — French action verbs lack a left word boundary (`vider` in "provider", `lancer` in "relancer"); no real Result hits it → epic 26 Follow-ups.
+- [~] P3 "nothing to do" lines ("Rien à lancer en prod.") match → epic 26 Follow-ups.
+- [~] P3 `todo --dry-run` exits 1 while read-only commands ignore unknown flags — accepted, stated in CHANGELOG.
+
+Held: each of the 9 criteria has a test that fails if the behaviour breaks; no weakened test; bethl 7 warnings all true; 0 elsewhere; claims match the code.
