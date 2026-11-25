@@ -26,3 +26,13 @@ npm test
 - Criterion 4, measured with the 26-03 code (`git archive HEAD`) vs this one: this repository 32 → 32 findings, identical; bethl (read-only `git clone --no-hardlinks` copy) 33 → 32, the only change being `docs/GENERATED_REPORT.md:5 docs/complete-documentation` (a branch) gone. In a second copy with `git mv packages/geo packages/geodata` committed: `--changed develop` now also reads `docs/geo/research.md:143` (missed before), and the full check adds `docs/DOGFOODING.md:85 packages/geo/dist -> packages/geodata/dist` (true positive: prose about the moved package's build output). No false positive seen.
 - Tests fail before (3/3 new ones red on the 26-03 tree) and pass after.
 
+
+## Review findings
+
+### Round 1 — FAIL (false positives and false negatives on real repositories)
+
+- [ ] P1 bin/lib/docs-check.js:615 (`BRANCH_WORD` `/\bbranch(?:e|es)?\b[^`.!?]{0,24}$/i`) silences real broken paths: "Branch protection is in `.github/rules.yml`", "The branch's spec: `docs/spec.md`", "Le module est branché dans `docs/module.md`" (`\b` before `é`), "85 % branches on `docs/gone/`"; it also runs after `recorded`, hiding paths git recorded as deleted/renamed; live shapes here: docs/DOGFOODING.md:76, docs/plans/uncle-bob-gauntlet.md:92 — fix: drop the word rule, keep the `for-each-ref` lookup (a name that IS a local or remote branch); if a word rule stays, only a label right before the span (`Branch(e)?\s*\**\s*:\s*$`), never for a path with a file extension nor one git recorded; tests for each of the four sentences above (reported) and for a real branch name (not reported).
+- [ ] P2 doctor.js:514 calls `scanDocs` with `suggest: false`, so a moved folder's ignored path falls back to the generated filter: `docs check` reports `packages/geo/dist`, doctor's `docs_stale` count omits it — make the moved check independent of `suggest`; test.
+- [ ] P2 an ignored path under a deleted (not moved) folder is still skipped — say it plainly in docs/rules-and-limits.md.
+
+Held: bethl clone `git mv packages/ui packages/design` → 32/32 under `--changed`, same as full, all pointing at the new folder; `git rm -r` → 32 `deleted in`; the 3 new tests fail on 26-03 code and on targeted mutations; develop merge no-op, 34/34.
