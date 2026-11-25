@@ -37,6 +37,8 @@ const LAYER = [
   'opencode', 'opencode-config', 'rules', 'settings', 'trace', 'uninstall', 'unwire', 'usage',
   // story 26-03: reads the project's docs for stale references; doctor and rules call it
   'docs-check', 'docs-markdown',
+  // story 29-08: GitHub branch protection; init, ship and doctor call it
+  'protect',
   'platforms/*', 'storage/*',
 ];
 

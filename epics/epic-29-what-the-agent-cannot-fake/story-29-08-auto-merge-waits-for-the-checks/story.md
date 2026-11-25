@@ -133,3 +133,11 @@ Dry run — nothing to change.
 
 Plain `ai-flow protect --dry-run` reports `main` only: this repository sets no
 `baseBranch`, so `develop` is protected by `init`/`protect` only when named.
+
+Verify (one run, on `4ef7b22`): FAILED on one test,
+`test/layering.test.js::every module under bin/lib is classified as core or layer`
+(the new `protect` module was unclassified; evidence
+`.coding-flow/runs/2026-11-25T17-35-51-541Z-verify.json`). Fixed in the next
+commit (`protect` listed as a layer module; the layering test passes alone). The
+other ✖ in that run is the existing `todo` test in `weakened-tests.test.js`, not a
+failure. The fixed tree still needs its verify.
