@@ -453,14 +453,14 @@ test('the command fingerprint changes with a fixer and with a fixer limit, and n
 // A high-risk change with no test, and a fixer that reformats an unrelated,
 // unformatted test file. `mode`: 'fixer' (the fixer does it), 'hand' (the same
 // rewrite made by hand, uncommitted), or 'none'.
-function untestedAuthChange(t, mode) {
+function untestedAuthChange(t, mode, rewrite = "const assert = require('assert');\\nassert.ok(true);\\n") {
   const dir = project(t, { ...(mode === 'fixer' ? { fix: ['node fix.js'] } : {}), commands: [node('0')] }, { gitRepo: false });
   fs.mkdirSync(path.join(dir, 'test'));
   fs.writeFileSync(path.join(dir, 'test', 'a.test.js'), "const assert=require('assert')\nassert.ok(true)\n");
   fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = 1;\n');
   fs.writeFileSync(
     path.join(dir, 'fix.js'),
-    "require('fs').writeFileSync('test/a.test.js', \"const assert = require('assert');\\nassert.ok(true);\\n\");\n",
+    `require('fs').writeFileSync('test/a.test.js', "${rewrite}");\n`,
   );
   const commit = (message) => {
     git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
@@ -489,14 +489,26 @@ test("a fixer's rewrite counts as the story's diff, like the same edit by hand, 
   assert.equal(none.ok, false, 'the premise: an untested auth change is not proven');
   const hand = untestedAuthChange(t, 'hand');
   const fixer = untestedAuthChange(t, 'fixer');
-  // One verdict for one tree: the fixer changes no rule of the gate (19-08 owns it).
+  // One verdict for one tree: the fixer changes no rule of the gate.
   assert.equal(fixer.evidence.ok, hand.evidence.ok);
   assert.equal(fixer.evidence.coverage.mode, hand.evidence.coverage.mode);
   assert.deepEqual(fixer.evidence.fixedFiles, ['test/a.test.js']);
-  assert.deepEqual(fixer.evidence.fixerStrengthened, ['test/a.test.js']);
-  assert.match(fixer.output, /Warning: 1 test file\(s\) counted as strengthened were rewritten by a fixer in this run: test\/a\.test\.js/);
+  // Story 19-08: a reformat is neutral, by a fixer or by hand — the gate is not
+  // passed and the file is named neutral, never counted as strengthened.
+  assert.equal(fixer.evidence.ok, false, 'a reformatted test does not prove an untested auth change');
+  assert.equal(hand.evidence.ok, false);
+  assert.deepEqual(fixer.evidence.coverage.neutralTests, ['test/a.test.js']);
+  assert.deepEqual(hand.evidence.coverage.neutralTests, ['test/a.test.js']);
+  assert.equal('fixerStrengthened' in fixer.evidence, false);
   assert.equal('fixerStrengthened' in hand.evidence, false);
+  assert.match(fixer.output, /Tests changed without a new test or assertion \(neutral\)/);
   assert.doesNotMatch(hand.output, /rewritten by a fixer/);
+});
+
+test('a fixer that adds an assertion to a test file is still named as a fixer\'s strengthening', (t) => {
+  const { evidence, output } = untestedAuthChange(t, 'fixer', "const assert = require('assert');\\nassert.ok(true);\\nassert.ok(1);\\n");
+  assert.deepEqual(evidence.fixerStrengthened, ['test/a.test.js']);
+  assert.match(output, /Warning: 1 test file\(s\) counted as strengthened were rewritten by a fixer in this run: test\/a\.test\.js/);
 });
 
 test('a verdict made with a fixer holds once its change is committed: reuse and a fresh run agree', (t) => {
@@ -922,7 +934,8 @@ test('a test outside the project root strengthened by a fixer is named in one fo
   fs.mkdirSync(path.join(top, 'test'));
   fs.writeFileSync(path.join(top, 'test', 'a.test.js'), "const assert=require('assert')\nassert.ok(true)\n");
   fs.writeFileSync(path.join(dir, 'src', 'auth.js'), 'module.exports = 1;\n');
-  fs.writeFileSync(path.join(dir, 'fix.js'), "require('fs').writeFileSync('../test/a.test.js', \"const assert = require('assert');\\nassert.ok(true);\\n\");\n");
+  // The fixer adds an assertion: since 19-08 only that counts as strengthened.
+  fs.writeFileSync(path.join(dir, 'fix.js'), "require('fs').writeFileSync('../test/a.test.js', \"const assert = require('assert');\\nassert.ok(true);\\nassert.ok(1);\\n\");\n");
   const commit = (message) => {
     git(top, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
     git(top, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', message]);
