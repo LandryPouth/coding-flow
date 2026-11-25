@@ -209,6 +209,60 @@
 - **R3-P2 listed.** Octal escapes, `printf`/`%` formats, Perl
   `qx{}`/`q{}`/`qw()`; psql `\gexec`, `\set`/`:var`.
 
+### Review round 4 (LAST of the first series, fresh reviewer: FAIL, 2 P1 regressions) — the cap
+
+- **Series history (D-cap).** Four rounds, P1 per round: 2 / 3 / 1 / 2. Rounds
+  3 and 4 found **regressions** against 29-03 (round 3: the SQL scanner;
+  round 4: `GIT_WORK_TREE=. git checkout -- a.txt` and `HOME=/x git nuke`
+  went from deny to unchecked — the prefix checks ran before 29-03's own).
+  Each round closed a form; the class — a new reader overriding an old
+  decision — stayed open. The run re-scoped structurally and starts a new
+  review series from round 1.
+- **R4 re-scope — strictest of two readers.** `bin/lib/destructive-29-03.js`
+  is 3c90919's `destructive.js`, byte for byte (a header comment added),
+  frozen. `guard.js` (`strictestReading`) runs it and judges its findings
+  exactly as 29-03 did; then runs `destructive.js`, this story's reader, and
+  judges its findings too. A refusal from either is the refusal (29-03's
+  first); an unchecked from either is unchecked; the touched paths and
+  substitutions of both are checked. No reader added later can weaken a 29-03
+  decision: it can only add a refusal or an unchecked. Judging is unchanged
+  for 29-03's findings (`unproven` and `worktree` exist only on new ones; the
+  same check on the same paths is answered once per call, which changes no
+  answer). The frozen module is loaded lazily, like `destructive.js`: the
+  guard's load-time graph is unchanged (6), a Bash call loads one more module.
+- **`shell-writes.js` returned to 29-03's behaviour.** `tokenize`'s backslash
+  rule is 29-03's again, and `php -r` / glued interpreter flags left
+  `inlineCode`: glued flags could weaken the shell-write guard (`echo x |
+  python3 -c'print(1)'` was unchecked as a piped program, then allowed).
+  Only additive data remain (heredoc bodies on segments, two exports). The
+  destructive reader keeps bash's backslashes for psql on its own
+  (`bashArgs`), and reads `php -r` and glued flags itself
+  (`interpreterPrograms`). The 11 `"\…"` forms (`> "\.env"`) are refused
+  again: accepted noise, in the table.
+- **R4-P2.** `alter table t drop "Email"` refused. Under a prefix that only
+  swaps the global or system config file (`HOME`, `XDG_CONFIG_HOME`,
+  `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`), an alias the repository defines
+  (`git config --local`) wins, so it is read as usual: `HOME=/x git st` is
+  allowed, `HOME=/x git nuke` refused; command-line config
+  (`GIT_CONFIG_COUNT`/`KEY`/`VALUE`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG`,
+  `GIT_DIR`) stays unchecked. **Budget:** the new reader stops after 3 s from
+  the call's start (`deadline`), and the judging of its findings too: the rest
+  is unchecked, never allowed (`rm build; ` × 2000 now asks git once — 30 s
+  before; 9 000 `\!` lines end unchecked). 29-03's reader has no budget: its
+  decisions are kept as they were.
+- **Tests.** The reviewers' corpus (568 commands from c1–c7: env-prefixed git
+  on a dirty file, aliases in `.git/config` under each config prefix,
+  `sudo`/`cd` prefixes, backslash forms, SQL, interpreters, everyday) with the
+  decision 3c90919 gave on their fixture, recorded by running 3c90919, in
+  `test/fixtures/guard-29-03-decisions.json`; HEAD ≥ base on every one (0
+  weaker, 179 stricter). The hostile-input bound now times this story's
+  reader alone. All round-4 tests fail on the round-3 code.
+- **D9 restated (2026-11-25, load 23–30).** In-process `decide()`, 36
+  commands, base vs HEAD back to back: cold 7.3 / 9.3 ms vs 14.5 / 14.4 ms
+  per command (a second reader module loads); warm median 2.1 / 3.0 ms vs
+  1.4 / 3.3 ms. The hook as a process (35 calls): median 301 / 310 ms vs 334 /
+  351 ms (+10 %, two readers and the frozen module's parse, under load 30).
+
 ## Test Plan
 
 `decide()` on throwaway repos for each criterion; the 29-03 Lens B list
