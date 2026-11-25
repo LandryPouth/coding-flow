@@ -236,7 +236,7 @@ function printPassed(evidence, coverage, contrary) {
   // Printed at every rung, including `verified`. A measured 92% next to three
   // deleted tests is still three deleted tests, and the reader decides what that
   // means — this only refuses to let a good number hide it.
-  printWeakenedTests(coverage);
+  printTestDirection(coverage);
   printRedAtBase(evidence.redAtBase);
   printComplexity(evidence.complexity);
   printMutation(evidence.mutation);
@@ -287,13 +287,13 @@ function printVerify(evidence, outputPath) {
     // project's own strictness reading the story and the diff against the verdict.
     log(`Harness verify NOT PROVEN — ${evidence.results.length} command(s) passed, but the run contradicts itself.`);
     printContraryFailures(contrary);
-    printWeakenedTests(coverage);
+    printTestDirection(coverage);
     printFailedProofs(evidence);
     printOpenCriteria(evidence);
     printClaimFailures(evidence.claim);
   } else {
     log("Harness verify FAILED.");
-    printWeakenedTests(coverage);
+    printTestDirection(coverage);
     printClaimFailures(evidence.claim);
     printFailedProofs(evidence);
   }
@@ -447,7 +447,7 @@ function printCoverageBlocked(coverage) {
       (coverage.behaviorFiles.length > 5 ? ` (+${coverage.behaviorFiles.length - 5} more)` : ""));
   }
 
-  printWeakenedTests(coverage);
+  printTestDirection(coverage);
 
   if (coverage.floor) {
     log("  Emit a coverage report (lcov.info / coverage-final.json) so the added lines are measured,");
@@ -488,6 +488,31 @@ function printClaimFailures(claim) {
 
   if (claim.failures.length > 5) {
     log(`    - … and ${claim.failures.length - 5} more`);
+  }
+}
+
+function printTestDirection(coverage) {
+  printWeakenedTests(coverage);
+  printNeutralTests(coverage);
+}
+
+// Story 19-08: a test file changed without a new test or assertion is named, so
+// a reformat that earned nothing says so instead of passing for coverage.
+function printNeutralTests(coverage) {
+  const files = (coverage && coverage.neutralTests) || [];
+
+  if (!files.length) {
+    return;
+  }
+
+  log(`  Tests changed without a new test or assertion (neutral) (${files.length}):`);
+
+  for (const file of files.slice(0, 5)) {
+    log(`    - ${printablePath(file)}`);
+  }
+
+  if (files.length > 5) {
+    log(`    - … and ${files.length - 5} more`);
   }
 }
 
