@@ -4,6 +4,7 @@
 // tests weakened in the diff, open acceptance criteria and contrary signals —
 // on top of coverage.js, which parses and measures the reports.
 
+const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
@@ -37,7 +38,9 @@ const {
   changedLinesForCoverage,
   parseChangedText,
   deletedFilesInDiff,
+  addedFilesInDiff,
 } = require("./diff-scope");
+const { tokensOf, bagOf, consume } = require("./test-tokens");
 const {
   RISK_RANK,
   scoreStoryRisk,
@@ -225,6 +228,10 @@ const SKIP_MARKERS = [
   /@(?:Ignore|Disabled)\b/,
 ];
 
+// Markers only feed the WEAKENING signal (assertions removed), and are counted
+// exactly as before story 19-08: whole raw lines. That story only narrows what
+// STRENGTHENS (see `strengtheningOf`); reading markers through the token lexer
+// made the weakening signal looser on diff-hunk fragments (plan.md, round 4).
 const ASSERTION_MARKERS = [
   /\bexpect\s*\(/,
   /\bassert(?:_\w+|[A-Z]\w*)?\s*[(.]/,
@@ -239,9 +246,39 @@ const countMatching = (lines, patterns) =>
   lines.filter((line) => patterns.some((pattern) => pattern.test(line))).length;
 const countSkipMarkers = (lines) => countMatching(lines, SKIP_MARKERS);
 
-// Per test file: did this diff make it stronger, weaker, or neither?
-function scanTestWeakening(config) {
-  const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern));
+// Story 19-08: a test edit strengthens unless it is provably neutral. Across
+// every test file of the diff together, the code added is matched against the
+// code removed (deleted and moved files included): a file whose added code is
+// all found there only moved, renamed, re-split or reformatted test code. Each
+// file is matched against its own removed code first, then against what is left
+// of the others'. A leftover identifier, number or operator is new test code,
+// whatever its framework; leftover strings alone (a renamed title, a changed
+// message) are not.
+function strengtheningOf(changes, removedElsewhere) {
+  const pool = bagOf(removedElsewhere);
+  const leftovers = new Map();
+
+  for (const [file, change] of changes) {
+    const own = bagOf(tokensOf(change.removed));
+    leftovers.set(file, consume(own, tokensOf(change.added)));
+
+    // What a file removed and did not take back itself is free for the others.
+    for (const [token, count] of own) pool.set(token, (pool.get(token) || 0) + count);
+  }
+
+  const strengthened = new Set();
+  for (const [file, left] of leftovers) {
+    if (consume(pool, left).some((token) => !token.string)) strengthened.add(file);
+  }
+
+  return strengthened;
+}
+
+// The WEAKENING signal, exactly as before story 19-08 (efede92): the unstaged,
+// staged and merge-base diffs summed, markers on raw lines, every deleted test
+// file reported. Story 19-08 only narrows what STRENGTHENS; nothing here may
+// change, or the gate gets looser somewhere (plan.md, re-scope).
+function weakeningAsBefore(isTest) {
   const byFile = {};
   const { mergeBase } = currentDiffBase(cwd);
   const diffs = [["diff", "--find-renames"], ["diff", "--find-renames", "--cached"]];
@@ -252,59 +289,181 @@ function scanTestWeakening(config) {
 
   for (const argsForGit of diffs) {
     for (const [file, change] of Object.entries(parseChangedText(runGitText(argsForGit)))) {
-      if (!isTest(file) || isScopedOut(file, config)) {
-        continue;
+      if (isTest(file)) {
+        byFile[file] = byFile[file] || { added: [], removed: [] };
+        byFile[file].added.push(...change.added);
+        byFile[file].removed.push(...change.removed);
       }
-
-      if (!byFile[file]) {
-        byFile[file] = { added: [], removed: [] };
-      }
-
-      byFile[file].added.push(...change.added);
-      byFile[file].removed.push(...change.removed);
     }
   }
 
   const findings = [];
 
-  for (const file of deletedFilesInDiff()) {
-    if (isTest(file)) {
-      findings.push({ file, signal: "deleted", detail: "the test file was removed" });
-      delete byFile[file];
-    }
+  for (const file of deletedFilesInDiff().filter(isTest)) {
+    findings.push({ file, signal: "deleted", detail: "the test file was removed" });
+    delete byFile[file];
   }
 
-  const strengthened = [];
+  const unweakened = [];
 
   for (const [file, change] of Object.entries(byFile)) {
     const skipsAdded = countMatching(change.added, SKIP_MARKERS) - countMatching(change.removed, SKIP_MARKERS);
-    const assertionDelta =
-      countMatching(change.added, ASSERTION_MARKERS) - countMatching(change.removed, ASSERTION_MARKERS);
+    const assertionDelta = countMatching(change.added, ASSERTION_MARKERS) - countMatching(change.removed, ASSERTION_MARKERS);
 
     if (skipsAdded > 0) {
-      findings.push({
-        file,
-        signal: "skipped",
-        detail: `${skipsAdded} skip/only marker(s) added`,
-      });
+      findings.push({ file, signal: "skipped", detail: `${skipsAdded} skip/only marker(s) added` });
     }
 
     if (assertionDelta < 0) {
-      findings.push({
-        file,
-        signal: "assertions-removed",
-        detail: `${Math.abs(assertionDelta)} more assertion(s) removed than added`,
-      });
+      findings.push({ file, signal: "assertions-removed", detail: `${Math.abs(assertionDelta)} more assertion(s) removed than added` });
     }
 
-    // Neutral counts as strengthened: renaming a test or fixing a typo is not a
-    // weakening, and the gate is about direction, not about effort.
     if (skipsAdded <= 0 && assertionDelta >= 0) {
-      strengthened.push(file);
+      unweakened.push(file);
     }
   }
 
-  return { findings, strengthened, weakenedFiles: [...new Set(findings.map((f) => f.file))] };
+  return { findings, unweakened };
+}
+
+// What each test file adds, for the STRENGTHEN side only: one diff against the
+// base (working tree included), untracked test files read whole — one that
+// replaces a deleted test file (an `mv` not yet staged) is compared to it —
+// and the deleted files' code free for any file to take back.
+function testChangesForStrength(isTest) {
+  const byFile = {};
+  const base = scanBase();
+
+  for (const argsForGit of base ? [["diff", "--find-renames", base]] : [["diff", "--find-renames"], ["diff", "--find-renames", "--cached"]]) {
+    for (const [file, change] of Object.entries(parseChangedText(runGitText(argsForGit)))) {
+      if (isTest(file)) {
+        byFile[file] = byFile[file] || { added: [], removed: [] };
+        byFile[file].added.push(...change.added);
+        byFile[file].removed.push(...change.removed);
+      }
+    }
+  }
+
+  // Every name here is from the repository top, as `git diff` gives them.
+  const top = runGitText(["rev-parse", "--show-toplevel"]).trim() || cwd;
+  const oldLines = (file) => runGitText(["show", `${base || "HEAD"}:${file}`]).split(/\r?\n/);
+  const deleted = new Map(deletedFilesInDiff().filter(isTest).map((file) => {
+    const lines = oldLines(file);
+    return [file, { lines, tokens: tokensOf(lines) }];
+  }));
+
+  for (const file of addedFilesInDiff().filter(isTest)) {
+    if (!byFile[file]) {
+      const lines = readTestText(path.join(top, file));
+      // Binary or oversized: never read as test code, so it never strengthens.
+      if (!lines) continue;
+      const moved = closestDeleted(lines, deleted);
+      byFile[file] = { added: lines, removed: moved ? moved.lines : [] };
+      if (moved) deleted.delete(moved.file);
+    }
+  }
+
+  for (const file of deletedFilesInDiff()) delete byFile[file];
+
+  return { changes: Object.entries(byFile), removedElsewhere: [...deleted.values()].flatMap((old) => old.tokens) };
+}
+
+// Per test file: did this diff make it stronger, weaker, or neither? Weaker is
+// read exactly as before (efede92). Stronger can only be narrower, by
+// construction: efede92's verdict is computed first, from the same classifier
+// and names (`classifyChangedFiles`); when it would have failed nothing
+// strengthens, and when it would have passed, the strengthened files are those
+// of ITS test-file list, unweakened, that add code which is not provably
+// neutral. The token scan only removes files from that list, never adds one.
+function scanTestWeakening(config) {
+  const isTest = (file) => config.testGlobs.some((pattern) => matchesPattern(file, pattern)) && !isScopedOut(file, config);
+  const { findings, unweakened } = weakeningAsBefore(isTest);
+  const weakenedFiles = [...new Set(findings.map((f) => f.file))];
+  const { testFiles } = classifyChangedFiles(config);
+  const passedBefore = unweakened.length > 0 || (testFiles.length > 0 && findings.length === 0);
+  const { changes, removedElsewhere } = testChangesForStrength(isTest);
+  const adding = strengtheningOf(changes, removedElsewhere);
+  const prefix = runGitText(["rev-parse", "--show-prefix"]).trim();
+  // The scan names files from the repository top; an untracked file in
+  // `testFiles` is named from the project.
+  const scanned = (file) => (adding.has(file) || !prefix ? file : `${prefix}${file}`);
+  const weakened = new Set(weakenedFiles);
+  const strengthened = passedBefore
+    ? [...new Set(testFiles.map(scanned).filter((file) => adding.has(file) && !weakened.has(file)))]
+    : [];
+  const neutral = changes.map(([file]) => file).filter((file) => !adding.has(file) && !weakened.has(file));
+  const heldBack = [...adding].filter((file) => !strengthened.includes(file) && !weakened.has(file));
+
+  return { findings, strengthened, neutral, heldBack, prefix, weakenedFiles, unweakened };
+}
+
+// The merge base, else HEAD when there is one: the single tree the scan diffs
+// the working tree against.
+function scanBase() {
+  const { mergeBase } = currentDiffBase(cwd);
+  return mergeBase || (runGitText(["rev-parse", "--verify", "-q", "HEAD"]).trim() ? "HEAD" : null);
+}
+
+// An untracked test file's lines, or null when it is not text worth reading:
+// unreadable, over 1 MB, or holding a NUL byte (a binary snapshot).
+const MAX_TEST_TEXT_BYTES = 1024 * 1024;
+
+function readTestText(file) {
+  try {
+    if (fs.statSync(file).size > MAX_TEST_TEXT_BYTES) return null;
+    const text = fs.readFileSync(file, "utf8");
+    return text.includes("\0") ? null : text.split(/\r?\n/);
+  } catch {
+    return null;
+  }
+}
+
+// The deleted test file an untracked one most resembles, when at least half
+// of their tokens are shared: a move, possibly edited or reformatted. Used to
+// name the file once and to read its weakening against what it was; what
+// strengthens is decided by `strengtheningOf`.
+function closestDeleted(lines, deleted) {
+  const mine = tokensOf(lines);
+  let best = null;
+
+  for (const [file, old] of deleted) {
+    const shared = mine.length - consume(bagOf(old.tokens), mine).length;
+    const score = shared / Math.max(mine.length, old.tokens.length, 1);
+
+    if (score >= 0.5 && (!best || score > best.score)) {
+      best = { file, lines: old.lines, score };
+    }
+  }
+
+  return best;
+}
+
+// Test files in the diff that neither strengthen nor weaken: the scan's neutral
+// ones, plus a changed test file it saw no text change in (a pure rename, a
+// binary snapshot).
+function neutralTestFiles(testFiles, weakening) {
+  const decided = new Set([...weakening.strengthened, ...weakening.weakenedFiles, ...(weakening.heldBack || [])]);
+  const scanned = new Set([...decided, ...weakening.neutral]);
+  // An untracked file arrives named from the project, not the top: one name each.
+  const fromTop = (file) => (weakening.prefix && scanned.has(`${weakening.prefix}${file}`) ? `${weakening.prefix}${file}` : file);
+  return [...new Set([...weakening.neutral, ...testFiles.map(fromTop).filter((file) => !decided.has(file))])];
+}
+
+function untestedReason(behaviorFiles, weakened, neutral) {
+  const changed = `${behaviorFiles.length} behavior file(s) changed (${listFiles(behaviorFiles)})`;
+
+  if (neutral.length > 0) {
+    return (
+      `${changed} and no test file adds new test code: ${neutral.length} only moved, renamed or reformatted ` +
+      `(${listFiles(neutral)})${weakened ? ", the others were weakened" : ""}. ` +
+      "To prove the change, add a test or an assertion that exercises the change, or produce a coverage report " +
+      "(lcov.info or coverage-final.json) so its lines are measured."
+    );
+  }
+
+  return weakened
+    ? `${changed} and every test file in the diff was weakened. Touching a test is not the same as covering a change.`
+    : `${changed} and no test file did. A green suite that was already green proves nothing about this change.`;
 }
 
 function listFiles(files, max = 3) {
@@ -403,7 +562,14 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   // heuristic otherwise. The stronger measure always supersedes the weaker one:
   // "a test file moved" is a proxy for "the change is covered", and a proxy is
   // only worth using while the real thing is unavailable.
-  const patch = evaluatePatchCoverage({ config, behaviorFiles, testFiles: weakening.strengthened, startedAt });
+  // The measured path reads the test files that are not weakened, neutral ones
+  // included, exactly as before story 19-08: only the test-file rung changed.
+  const patch = evaluatePatchCoverage({
+    config,
+    behaviorFiles,
+    testFiles: weakening.unweakened,
+    startedAt,
+  });
 
   if (patch) {
     const unmeasuredNote = patch.unmeasured.length
@@ -480,26 +646,21 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   // The direction of the test change decides. A diff whose test files were only
   // weakened — assertions dropped, `.skip` added, the file deleted — has not shown
   // that anything covers this change, so it lands exactly where a diff with no test
-  // change lands, and reaches the same exemption path. Neutral edits (a rename, a
-  // typo) count as strengthening: this reads direction, not effort.
+  // change lands, and reaches the same exemption path. Since story 19-08 a neutral
+  // edit (a rename, a reformat, an assertion moved) lands there too: it is named,
+  // never counted as a strengthening, so a formatter cannot earn the rung.
+  const neutral = neutralTestFiles(testFiles, weakening);
+  const withTestDirection = (result) => {
+    const withFindings = withWeakening(result);
+    return neutral.length ? { ...withFindings, neutralTests: neutral } : withFindings;
+  };
+
   if (weakening.strengthened.length > 0) {
-    return withWeakening({
+    return withTestDirection({
       required: true,
       ok: true,
       mode: "test-file",
       reason: `${weakening.strengthened.length} test file(s) strengthened alongside ${behaviorFiles.length} behavior file(s)`,
-      riskSource: risk.source,
-      changedFiles,
-      testFiles,
-    });
-  }
-
-  if (testFiles.length > 0 && weakening.findings.length === 0) {
-    return withWeakening({
-      required: true,
-      ok: true,
-      mode: "test-file",
-      reason: `${testFiles.length} test file(s) changed alongside ${behaviorFiles.length} behavior file(s)`,
       riskSource: risk.source,
       changedFiles,
       testFiles,
@@ -512,7 +673,7 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
   const declared = readTestExemption(storyDir) || (exemption && exemption.trim() ? exemption.trim() : null);
 
   if (declared) {
-    return withWeakening({
+    return withTestDirection({
       required: true,
       ok: true,
       mode: "test-file",
@@ -525,15 +686,11 @@ function evaluateCoverageResult({ storyDir, config, exemption = null, startedAt 
     });
   }
 
-  return withWeakening({
+  return withTestDirection({
     required: true,
     ok: false,
     mode: "test-file",
-    reason: weakening.findings.length
-      ? `${behaviorFiles.length} behavior file(s) changed (${listFiles(behaviorFiles)}) and every test file in the diff was ` +
-        "weakened. Touching a test is not the same as covering a change."
-      : `${behaviorFiles.length} behavior file(s) changed (${listFiles(behaviorFiles)}) and no test file did. A green suite ` +
-        "that was already green proves nothing about this change.",
+    reason: untestedReason(behaviorFiles, weakening.findings.length > 0, neutral),
     riskSource: risk.source,
     riskPaths: risk.matchedPaths,
     changedFiles,

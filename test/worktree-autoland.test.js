@@ -504,7 +504,9 @@ test('auto-land: a failed re-verify of a stale chain root fails before land ever
 // high-risk path to make `scoreDiffRisk` resolve to "high".
 function touchHighRiskFile(worktreePath, message) {
   fs.writeFileSync(path.join(worktreePath, 'payment.js'), 'module.exports = {};\n');
-  fs.writeFileSync(path.join(worktreePath, 'payment.test.js'), '// covers payment.js\n');
+  // A test that holds code: since story 19-08 a comment-only test file is not
+  // a test added, and would not satisfy the gate.
+  fs.writeFileSync(path.join(worktreePath, 'payment.test.js'), "require('node:assert').ok(require('./payment'));\n");
   commitAll(worktreePath, message);
 }
 
