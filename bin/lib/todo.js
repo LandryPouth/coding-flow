@@ -9,7 +9,8 @@
 // `when`, `ai-flow todo done`, `next`'s "We need you" block). Its API is small
 // on purpose: `collectTodos(root, { headings })` returns the grouped items,
 // `todoHeadings(config)` the headings an epic index is read under, and
-// `TODO_KINDS` the item kinds. Nothing here writes a file.
+// `TODO_KINDS` the item kinds. Only `todo done` and `todo drop` write, one
+// checkbox line each, under a lock.
 
 const crypto = require("crypto");
 const fs = require("fs");
@@ -410,9 +411,7 @@ function ownedByHuman(scan) {
 // bookkeeping. A finished story's deferred criteria stay listed: a deferral is
 // still a debt.
 function deferredCriteria(scan) {
-  return scan.blocks
-    .filter((block) => block.type === "item" && block.box === "~" && underAny(block, ["Acceptance Criteria"]))
-    .map((block) => block.text);
+  return scan.blocks.filter((block) => block.type === "item" && block.box === "~" && underAny(block, ["Acceptance Criteria"]));
 }
 
 // The story's files, each read once: a single-file story answers every part
@@ -467,8 +466,11 @@ function storyItems(root, story, epic) {
     }
   }
 
+  // `file` and `line` say where the criterion is, so `todo drop` can set it
+  // aside (`source` stays the story directory, as it always was).
   if (spec) {
-    items.push(...deferredCriteria(spec).map((text) => item("deferred", text)));
+    const file = normalizePortable(path.relative(root, specFile.file));
+    items.push(...deferredCriteria(spec).map((block) => item("deferred", block.text, { file, line: block.line })));
   }
 
   return items;
@@ -503,7 +505,40 @@ function collectTodos(root, { headings = DEFAULT_TODO_HEADINGS } = {}) {
     }
   }
 
-  return { count: grouped.reduce((sum, epic) => sum + epic.items.length, 0), epics: grouped };
+  const count = grouped.reduce((sum, epic) => sum + epic.items.length, 0);
+
+  // `totals` per group (story 34-01), only when something waits: an empty
+  // list stays `{ count: 0, epics: [] }`.
+  return count === 0 ? { count, epics: grouped } : { count, totals: totalsOf(grouped), epics: grouped };
+}
+
+// ---------------------------------------------------------------------------
+// The four groups `todo` counts on its first line (story 34-01), named per item
+// in `--json` as `group`: before the deploy, before the next story (a
+// `next-story` item, a Needs you question, an `Owner: human` story), no deadline
+// (`later` items, `todo.headings` items), and deferred criteria to check by hand.
+// ---------------------------------------------------------------------------
+
+const GROUPS = ["deploy", "next-story", "later", "check"];
+const GROUP_WORDS = { deploy: "before deploy", "next-story": "before the next story", later: "to do later", check: "to check by hand" };
+const WHEN_OF_KIND = { "needs-you": "next-story", "human-owner": "next-story", maintainer: "later" };
+
+function groupOf(item) {
+  if (item.kind === "deferred") {
+    return "check";
+  }
+
+  return item.kind === "human-todo" ? item.when : WHEN_OF_KIND[item.kind];
+}
+
+function totalsOf(grouped) {
+  const totals = Object.fromEntries(GROUPS.map((group) => [group, 0]));
+
+  for (const item of grouped.flatMap((epic) => epic.items)) {
+    totals[item.group] += 1;
+  }
+
+  return totals;
 }
 
 const normalizedText = (text) => text.toLowerCase().replace(/\s+/g, " ").trim();
@@ -516,7 +551,7 @@ function finishItem(entry, epic, patterns) {
   const id = todoId(epic, item.story, item.text);
   const options = item.options ? { options: item.options.map((option) => maskSecrets(option, patterns).text) } : {};
 
-  return { id, ...item, ...options, text: masked.text, ...(masked.secret ? { secret: masked.secret } : {}) };
+  return { id, ...item, ...options, text: masked.text, group: groupOf(item), ...(masked.secret ? { secret: masked.secret } : {}) };
 }
 
 const KIND_LABELS = {
@@ -527,27 +562,82 @@ const KIND_LABELS = {
   deferred: "deferred",
 };
 
-function printTodos(payload) {
+// Up to this many items, `todo` lists them all, by epic; past it, the list is
+// read at a glance: the `before: deploy` items in full, one line per other group.
+const SHORT_LIST = 10;
+
+const labelOf = (item) => (item.kind === "human-todo" ? `before: ${item.when}` : KIND_LABELS[item.kind]);
+
+function printItem(item, where) {
+  log(`- [${labelOf(item)}] ${item.text}${where ? ` (${where})` : ""} [${item.id}]`);
+
+  for (const option of item.options || []) {
+    log(`    - ${option}`);
+  }
+}
+
+function countsLine(totals) {
+  const parts = GROUPS.filter((group) => totals[group] > 0).map((group) => `${totals[group]} ${GROUP_WORDS[group]}`);
+  return `Waiting on you: ${parts.join(", ")}`;
+}
+
+// Every item with its epic, oldest epic first (the order `collectTodos` keeps).
+const flatItems = (payload) => payload.epics.flatMap((epic) => epic.items.map((item) => ({ ...item, epic: epic.epic })));
+
+function printByEpic(payload) {
+  for (const epic of payload.epics) {
+    log("");
+    log(epic.epic);
+    epic.items.forEach((item) => printItem(item, item.story));
+  }
+}
+
+function printSummary(payload) {
+  const deploy = flatItems(payload).filter((item) => item.group === "deploy");
+
+  if (deploy.length > 0) {
+    log("");
+    log("Before deploy:");
+    deploy.forEach((item) => printItem(item, item.story || item.epic));
+  }
+
+  log("");
+
+  for (const group of GROUPS.filter((name) => name !== "deploy" && payload.totals[name] > 0)) {
+    log(`${payload.totals[group]} ${GROUP_WORDS[group]} — ai-flow todo --all`);
+  }
+}
+
+// `--all`: two sections, "To do" (deploy first, then next-story, then later)
+// and "To check by hand", each oldest epic first, every item with its id.
+function printAll(payload) {
+  const items = flatItems(payload);
+  const sections = [
+    ["To do", GROUPS.filter((group) => group !== "check").flatMap((group) => items.filter((item) => item.group === group))],
+    ["To check by hand", items.filter((item) => item.group === "check")],
+  ];
+
+  for (const [title, list] of sections.filter(([, entries]) => entries.length > 0)) {
+    log("");
+    log(`${title} (${list.length})`);
+    list.forEach((item) => printItem(item, item.story || item.epic));
+  }
+}
+
+function printTodos(payload, { all = false } = {}) {
   if (payload.count === 0) {
     log("Nothing is waiting on you.");
     return;
   }
 
-  log(`Waiting on you: ${payload.count} item(s)`);
+  log(countsLine(payload.totals));
 
-  for (const epic of payload.epics) {
-    log("");
-    log(epic.epic);
-
-    for (const item of epic.items) {
-      const where = item.story ? ` (${item.story})` : "";
-      const label = item.kind === "human-todo" ? `before: ${item.when}` : KIND_LABELS[item.kind];
-      log(`- [${label}] ${item.text}${where} [${item.id}]`);
-
-      for (const option of item.options || []) {
-        log(`    - ${option}`);
-      }
-    }
+  if (all) {
+    printAll(payload);
+  } else if (payload.count <= SHORT_LIST) {
+    printByEpic(payload);
+  } else {
+    printSummary(payload);
   }
 }
 
@@ -559,7 +649,6 @@ function printTodos(payload) {
 // criteria are a debt, not an action: they stay in `ai-flow todo` only.
 // ---------------------------------------------------------------------------
 
-const WHEN_OF_KIND = { "needs-you": "next-story", "human-owner": "next-story", maintainer: "later" };
 const WHEN_ORDER = { deploy: 0, "next-story": 1, later: 2 };
 
 function needsYouEntries(payload) {
@@ -738,10 +827,20 @@ function printUncapturedTodos(root, storyPath) {
 // `ai-flow todo done <id>`: ticks that one checkbox, under a lock, and nothing
 // else in the file. Only checkbox items (`## Human to-do`, `todo.headings`) can
 // be ticked; a question or an owner is answered in its file.
+//
+// `ai-flow todo drop <id> --reason "…"` (story 34-01) sets an item aside: the
+// same one line, ticked, with the date and the reason right after the box —
+//   - [x] (set aside 2026-11-25: obsolete since epic 30) (before: later) Rotate the key
+//   - [x] (set aside 2026-11-25: obsolete since epic 30) Given …, then …
+// A ticked line is closed for every reader (`todo`, `next`, `ship`, `land`);
+// the coverage gate reads a set-aside criterion as deferred, not proved
+// (`SET_ASIDE` in spec-drift.js). Deferred `[~]` criteria can be set aside too.
 // ---------------------------------------------------------------------------
 
 const TICKABLE = new Set(["human-todo", "maintainer"]);
+const DROPPABLE = new Set(["human-todo", "maintainer", "deferred"]);
 const UNCHECKED_BOX = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)\[ ?\]/;
+const DEFERRED_BOX = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)\[~\]/;
 
 function todoLockPath(root) {
   try {
@@ -752,7 +851,7 @@ function todoLockPath(root) {
   }
 }
 
-function findTodo(root, id) {
+function findTodo(root, id, { kinds = TICKABLE, verb = "tick" } = {}) {
   const matches = collectTodos(root, { headings: todoHeadings(readConfig(root)) }).epics.flatMap((epic) =>
     epic.items.filter((item) => item.id === id).map((item) => ({ ...item, epic: epic.epic })),
   );
@@ -762,10 +861,10 @@ function findTodo(root, id) {
   }
 
   if (matches.length > 1) {
-    throw new Error(`the id "${id}" names ${matches.length} items (${matches.map((item) => `${item.source}:${item.line}`).join(", ")}); tick the one you mean in its file.`);
+    throw new Error(`the id "${id}" names ${matches.length} items (${matches.map((item) => `${item.file || item.source}:${item.line}`).join(", ")}); ${verb} the one you mean in its file.`);
   }
 
-  if (!TICKABLE.has(matches[0].kind)) {
+  if (!kinds.has(matches[0].kind)) {
     throw new Error(`"${id}" is not a checkbox (${KIND_LABELS[matches[0].kind]}, in ${matches[0].source}); answer it in its file.`);
   }
 
@@ -774,55 +873,94 @@ function findTodo(root, id) {
 
 // The id of the open checkbox that starts on the item's line now (the same
 // hash `todo` lists, a wrapped item read whole), or null when that line no
-// longer starts an open checkbox.
+// longer starts an open checkbox (`[~]` for a deferred criterion).
 function currentTodoId(content, item) {
   const block = scanMarkdown(content).blocks.find((entry) => entry.type === "item" && entry.line === item.line);
 
-  if (!block || block.box !== " ") {
+  if (!block || block.box !== (item.kind === "deferred" ? "~" : " ")) {
     return null;
   }
 
   return todoId(item.epic, item.story, item.kind === "human-todo" ? parseWhen(block.text).text : block.text);
 }
 
-// `dryRun`: says which line would be ticked, and writes nothing.
-function todoDone(root, id, { dryRun = false } = {}) {
-  const item = findTodo(root, id);
-  const file = path.join(root, item.source);
+// Rewrites the item's one line with `edit(line)`, under the lock unless
+// `dryRun`. Re-read under the lock: the line must still be that open checkbox,
+// with the same text (another writer may have edited it since the read).
+function rewriteTodoLine(root, id, item, { dryRun, edit }) {
+  const relative = item.file || item.source;
+  const file = path.join(root, relative);
+  const box = item.kind === "deferred" ? DEFERRED_BOX : UNCHECKED_BOX;
 
-  const tick = () => {
+  const write = () => {
     const content = fs.readFileSync(file, "utf8");
     const eol = content.includes("\r\n") ? "\r\n" : "\n";
     const lines = content.split(/\r?\n/);
     const index = item.line - 1;
 
-    // Re-read under the lock: the line must still be that open checkbox, with
-    // the same text (another writer may have edited it since the read).
-    const now = UNCHECKED_BOX.test(lines[index] || "") ? currentTodoId(content, item) : null;
+    const now = box.test(lines[index] || "") ? currentTodoId(content, item) : null;
     if (now === null) {
-      throw new Error(`${item.source}:${item.line} is no longer an open checkbox; nothing was changed.`);
+      throw new Error(`${relative}:${item.line} is no longer an open checkbox; nothing was changed.`);
     }
     if (now !== id) {
-      throw new Error(`${item.source}:${item.line} changed since it was read (it no longer holds "${id}"); nothing was changed. Run "ai-flow todo" again.`);
+      throw new Error(`${relative}:${item.line} changed since it was read (it no longer holds "${id}"); nothing was changed. Run "ai-flow todo" again.`);
     }
 
-    lines[index] = lines[index].replace(UNCHECKED_BOX, "$1[x]");
+    lines[index] = edit(lines[index], box);
     if (!dryRun) {
       fs.writeFileSync(file, lines.join(eol));
     }
-    return { ...item, dryRun, ticked: maskSecrets(lines[index].trim(), secretPatternsOf(root)).text };
+    return { ...item, file: relative, dryRun, line: item.line, written: maskSecrets(lines[index].trim(), secretPatternsOf(root)).text };
   };
 
-  return dryRun ? tick() : withFileLock(todoLockPath(root), tick);
+  return dryRun ? write() : withFileLock(todoLockPath(root), write);
+}
+
+// `dryRun`: says which line would be ticked, and writes nothing.
+function todoDone(root, id, { dryRun = false } = {}) {
+  const item = findTodo(root, id);
+  const result = rewriteTodoLine(root, id, item, { dryRun, edit: (line, box) => line.replace(box, "$1[x]") });
+  return { ...result, ticked: result.written };
 }
 
 function todoDoneCommand(id, { dryRun = false } = {}) {
   const result = todoDone(cwd, id, { dryRun });
-  log(`${dryRun ? "Would tick" : "Ticked"} ${result.source}:${result.line}${dryRun ? " (dry run: nothing written)" : ""}`);
+  log(`${dryRun ? "Would tick" : "Ticked"} ${result.file}:${result.line}${dryRun ? " (dry run: nothing written)" : ""}`);
   log(`  ${result.ticked}`);
 }
 
-function todoCommand({ json = false } = {}) {
+// Today, local time, as the set-aside marker writes it.
+function today(now = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// The reason goes inside the marker's parentheses, on the item's own line: it
+// must be one non-empty line without parentheses.
+function checkReason(reason) {
+  if (typeof reason !== "string" || !reason.trim()) {
+    throw new Error('"todo drop" needs a reason: ai-flow todo drop <id> --reason "why it no longer applies".');
+  }
+  if (/[()\r\n]/.test(reason)) {
+    throw new Error("the --reason must be one line without ( or ): it is written inside the set-aside marker.");
+  }
+  return reason.trim().replace(/\s+/g, " ");
+}
+
+function todoDrop(root, id, { reason, dryRun = false, date = today() } = {}) {
+  const why = checkReason(reason);
+  const item = findTodo(root, id, { kinds: DROPPABLE, verb: "set aside" });
+  const edit = (line, box) => line.replace(box, `$1[x] (set aside ${date}: ${why.replace(/\$/g, "$$$$")})`);
+  return rewriteTodoLine(root, id, item, { dryRun, edit });
+}
+
+function todoDropCommand(id, { reason, dryRun = false } = {}) {
+  const result = todoDrop(cwd, id, { reason, dryRun });
+  log(`${dryRun ? "Would set aside" : "Set aside"} ${result.file}:${result.line}${dryRun ? " (dry run: nothing written)" : ""}`);
+  log(`  ${result.written}`);
+}
+
+function todoCommand({ json = false, all = false } = {}) {
   const payload = collectTodos(cwd, { headings: todoHeadings(readConfig(cwd)) });
 
   if (json) {
@@ -830,7 +968,7 @@ function todoCommand({ json = false } = {}) {
     return;
   }
 
-  printTodos(payload);
+  printTodos(payload, { all });
 }
 
 module.exports = {
@@ -844,6 +982,8 @@ module.exports = {
   todoCommand,
   todoDone,
   todoDoneCommand,
+  todoDrop,
+  todoDropCommand,
   parseWhen,
   maskSecrets,
   uncapturedTodoLines,

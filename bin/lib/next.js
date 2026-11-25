@@ -269,16 +269,31 @@ function needsYouLine(entry) {
 }
 
 // At most 5 lines (deploy first, then next-story and the questions), then one
-// count line for the rest; the full list is `ai-flow todo`.
+// count line for the rest; the full list is `ai-flow todo`. Past 5 (story
+// 34-01), only the `before: deploy` items are listed: the rest is the count,
+// one group at a time.
 function printNeedsYouLines(entries) {
   const urgent = entries.filter((entry) => entry.when !== "later");
   const later = entries.length - urgent.length;
-  const more = Math.max(0, urgent.length - NEEDS_YOU_LINES);
+  const listed = (urgent.length > NEEDS_YOU_LINES ? urgent.filter((entry) => entry.when === "deploy") : urgent).slice(0, NEEDS_YOU_LINES);
+  const hidden = urgent.filter((entry) => !listed.includes(entry));
+  const count = (test) => hidden.filter(test).length;
+  // Each group the count line hides is named (round 1 of 34-01): a bare
+  // "+ N more" did not say whether N was deploy work, a chained story or a
+  // question waiting for an answer.
+  const parts = [
+    [count((entry) => entry.when === "deploy"), (n) => `${n} more before deploy`],
+    [count((entry) => entry.kind === "human-todo" && entry.when === "next-story"), (n) => `${n} before the next story`],
+    [count((entry) => entry.kind === "needs-you"), (n) => `${n} question${n === 1 ? "" : "s"}`],
+    [count((entry) => entry.kind === "human-owner"), (n) => `${n} yours to do`],
+    [later, (n) => `${n} later`],
+  ]
+    .filter(([n]) => n > 0)
+    .map(([n, word]) => word(n));
 
-  urgent.slice(0, NEEDS_YOU_LINES).forEach((entry) => log(needsYouLine(entry)));
+  listed.forEach((entry) => log(needsYouLine(entry)));
 
-  if (more > 0 || later > 0) {
-    const parts = [more > 0 ? `${more} more` : "", later > 0 ? `${later} later` : ""].filter(Boolean);
+  if (parts.length > 0) {
     log(`  + ${parts.join(", ")} — ai-flow todo`);
   }
 }
