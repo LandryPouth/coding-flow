@@ -263,6 +263,52 @@
   1.4 / 3.3 ms. The hook as a process (35 calls): median 301 / 310 ms vs 334 /
   351 ms (+10 %, two readers and the frozen module's parse, under load 30).
 
+### Series 2, review round 1 (fresh reviewer: FAIL, 1 P1 — a claimed form, not a regression)
+
+The re-scope held: the frozen module is 3c90919's reader byte for byte apart
+from its header, 3,023 commands read the same by both, and the 568 fixture
+decisions match at base (0 weaker, 179 stronger at HEAD).
+
+- **S2R1-P1 — a glob or brace hid a modified file from criterion 7.** `rm
+  *.txt`, `rm a.*`, `rm a.t?t`, `rm [a].txt`, `rm {a,b}.txt`, `unlink a.*`,
+  `git rm -f *.txt`, `rm ./src/*` were allowed: `removesChanges` emitted only
+  for an operand on disk, and `indexHolds` took a glob word for a missing
+  file. Fix: braces are expanded in `destructive.js` (`braceWords`: commas,
+  nesting, `{1..9}`/`{a..e}` ranges; past 64 words, past 4 KB, or a stepped
+  range → unchecked, never allowed); a glob operand always reaches the check;
+  `indexHolds` returns false for a glob word; `settle` hands it to git as a
+  `:(glob)` pathspec (`*` stops at `/`, as in bash). Where git matches more
+  than bash (dotfiles) it is refused: noise, in the table. A glob outside the
+  repository is decided as a literal path there is (allowed). A range is
+  already never allowed: 29-03 refuses a word with `..` that could reach its
+  policy file.
+- **S2R1-P2-1 — the frozen reader pinned.** It read the live `shell-writes.js`,
+  which this story changed (additively). `bin/lib/shell-writes-29-03.js` is
+  now 3c90919's `shell-writes.js`, frozen; `destructive-29-03.js` requires it
+  (its one line changed besides the header). A test hashes both files
+  (header and that require aside) against the sha256 of 3c90919's files
+  (`test/fixtures/guard-29-03-sources.json`), and another runs the frozen
+  reader on the 568 commands with a host that spawns nothing and compares a
+  hash of its full output per case with what 3c90919's reader returned
+  (`git show 3c90919:` run from a scratch directory;
+  `test/fixtures/guard-29-03-reader-outputs.json`). The output test passed
+  before the copy too (the live module still reads those 568 the same): it
+  is a pin, not a red-first test; the hash test failed before the copy.
+- **S2R1-P2-2 — a hard cap on the line.** A command over 256 KB is refused
+  unread, before any reader. Refused, not unchecked as suggested: `standard`
+  lets an unchecked call run, so a padded `rm -rf .git; # <256 KB>` would pass
+  where 29-03 refused it — unchecked there would break the monotonic rule.
+  Linear cost measured at 250 KB (load 26, in-process `decide()`): short
+  segments 1.8 s, `node -e` with literals 1.3 s, `psql -c` 1.4 s, one long
+  word or comment 0.2 s, heredoc 0.1 s — far under the 60 s hook timeout.
+- **S2R1-P2-3.** `python3 -c "print('rm -rf is bad')"` is unchecked: added to
+  the accepted-noise row.
+- **S2R1-P2-4.** tasks.md Result and Rollback Notes rewritten to the diff.
+- **S2R1-P2-5 — latency, the reviewer's numbers.** In-process `decide()`:
+  1.2 → 2 ms per call; the CLI cold: 193 → 209 ms. (Mine, round 4, load
+  23–30: cold 7.3/9.3 → 14.5/14.4 ms per command, the hook process median
+  301/310 → 334/351 ms.) The cost is the second reader.
+
 ## Test Plan
 
 `decide()` on throwaway repos for each criterion; the 29-03 Lens B list

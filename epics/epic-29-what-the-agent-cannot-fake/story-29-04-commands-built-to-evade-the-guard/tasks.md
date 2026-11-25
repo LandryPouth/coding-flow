@@ -10,16 +10,32 @@
 
 ## Result
 
-The 29-03 reader now reads, as unproven (unchecked; refused in strict),
+The guard decides each Bash call with the strictest of two destructive
+readers (`strictestReading` in `bin/lib/guard.js`): 29-03's, frozen as it
+shipped at 3c90919 (`bin/lib/destructive-29-03.js` and the shell reader it
+uses, `bin/lib/shell-writes-29-03.js`, both pinned by a hash and by their
+output on a 568-command corpus), and this story's (`bin/lib/destructive.js`).
+A refusal or an unchecked from either stands, so nothing this story reads can
+weaken a 29-03 decision.
+
+This story's reader adds, as unproven (unchecked; refused in strict):
 destructive text in interpreter code (`python -c`, `node -e`, `perl -e`,
-`ruby -e`, `php -r`), policy-file names or destructive commands built from
-pieces, `git config alias.x` values, files the line writes then runs, psql's
-`\!` and SQL psql reads from its input. It refuses `DROP SCHEMA|TABLE` and
-`TRUNCATE` in `psql -c`, and `rm`/`unlink`/`git rm -f` of a tracked file with
-uncommitted changes. A git alias under `HOME=`/`GIT_CONFIG_GLOBAL=`/`GIT_DIR=`
-is unchecked. What it still does not read is one table in
-`docs/rules-and-limits.md`, each form with its cover. Latency on 29-03's
-everyday list: unchanged within noise (plan.md D9). Round 1 (2 P1, P2s) fixed: heredoc-written and copied scripts read, glued interpreter flags, escapes and argument lists, more SQL and `psql -f`, staged-only `rm` allowed, `rm` answered from `.git/index` without a spawn (plan.md, Review round 1). Round 2 (3 P1) fixed: a linear literal scanner (the list regex could hold the hook past its timeout), psql flag clusters, `\!`/`\i` read in every SQL source, SQL literals blanked, `DELETE` without `WHERE` per statement (plan.md, Review round 2). Round 3 (1 P1, a regression) fixed structurally: the SQL reading is monotonic over 29-03's (raw-text `DROP DATABASE`), the scanner keeps identifiers and dollar quotes right, and a 105-case differential test holds HEAD at least as strict as 3c90919 (plan.md, Review round 3). Round 4 hit the cap (P1 2/3/1/2, regressions in rounds 3 and 4): re-scoped structurally — the guard decides with the strictest of 29-03's reader, frozen as shipped, and this story's reader; shell-writes back to 29-03's behaviour; a 568-command corpus with recorded 3c90919 decisions guards it. A new review series starts at round 1.
+`ruby -e`, `php -r`, glued flags, escapes and argument lists), the policy file
+or a destructive command built from pieces, `git config alias.x` values, a
+file the line writes then runs (redirect, heredoc, `tee`, `cp`, download),
+psql's `\!`/`\i` and SQL psql reads from stdin or `-f`, a git alias under a
+config-changing prefix. It refuses `DROP SCHEMA|TABLE|OWNED|COLUMN`,
+`TRUNCATE` and `DELETE` without `WHERE` in psql, and `rm`/`unlink`/`git rm -f`
+of a tracked file with uncommitted changes — named, or matched by a glob or
+brace (series 2 round 1). `rm` of a clean file is answered from `.git/index`
+without a spawn. The new reader has a 3 s budget (then unchecked); a command
+over 256 KB is refused unread. `shell-writes.js` keeps 29-03's behaviour (only
+additive data: heredoc bodies on segments, two exports). What is still not
+read is one table in `docs/rules-and-limits.md`. Latency: in-process 1.2 →
+2 ms per call, the CLI cold 193 → 209 ms (reviewer's numbers; plan.md).
+
+Review history: first series 2/3/1/2 P1 (cap reached in round 4, re-scoped to
+the strictest of two readers); series 2 round 1: 1 P1 (globs), fixed (plan.md).
 
 ## Acceptance Traceability
 
@@ -29,11 +45,17 @@ everyday list: unchanged within noise (plan.md D9). Round 1 (2 P1, P2s) fixed: h
 4. `test/guard-evasion.test.js::a script file written and run on the same line is read through what was written`
 5. `test/guard-evasion.test.js::rules-and-limits: one table names every unread form with what covers it`
 6. `test/guard-evasion.test.js::psql: DROP SCHEMA/TABLE and TRUNCATE are refused; SQL from stdin is read when seen`
-7. `test/guard-evasion.test.js::rm and git rm -f of a modified tracked file are refused; of a clean file allowed`
+7. `test/guard-evasion.test.js::rm and git rm -f of a modified tracked file are refused; of a clean file allowed`; `test/guard-evasion.test.js::series 2 round 1: a glob or brace naming a modified tracked file is refused`
 8. `test/guard-destructive.test.js::Lens B: the everyday workflow is allowed`
 
 ### Rollback Notes
 
-Revert the story's commits: the reader additions are confined to
-`bin/lib/destructive.js` (plus two exports and `php -r` in
-`bin/lib/shell-writes.js`, and the `unproven` branch in `judgeDestructive`).
+Revert the story's commits. Code: `bin/lib/destructive.js` (the new reader),
+`bin/lib/destructive-29-03.js` and `bin/lib/shell-writes-29-03.js` (new,
+frozen copies), `bin/lib/guard.js` (`strictestReading`, the index fast path,
+the `unproven`/budget branches of `judgeDestructive`, the glob pathspec, the
+256 KB cap, `readSmall` and `gitAlias --local` on the host),
+`bin/lib/shell-writes.js` (additive: heredoc data, two exports), and the two
+new modules in `.coding-flow/harness.json` `highRiskPaths`. Tests and
+fixtures under `test/` go with them. Reverting restores 3c90919's decisions
+exactly.
