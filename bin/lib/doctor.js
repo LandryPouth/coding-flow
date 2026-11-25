@@ -467,6 +467,25 @@ function checkEpicFiles(warnings) {
   checkEpicIndex(warnings);
 }
 
+// Story 26-03: stale paths, scripts and links in the docs — counted and
+// pointed at, a warning that never fails doctor. Best-effort: a scan that
+// throws says nothing.
+function checkStaleDocs(warnings) {
+  let result;
+  try {
+    result = require("./docs-check").scanDocs({ root: cwd, suggest: false });
+  } catch {
+    return;
+  }
+  const count = result.findings.length;
+  if (count === 0) return;
+  warnings.push({
+    code: "docs_stale",
+    file: "docs",
+    message: `docs check: ${count} finding${count === 1 ? "" : "s"} (paths, scripts or links that no longer resolve) — run \`ai-flow docs check\``,
+  });
+}
+
 // `--fix` half of checkStoryLinks: rewrites each fixable entry to the canonical
 // link, the rest of its line kept.
 function fixAllStoryLinks() {
@@ -786,6 +805,7 @@ function collectMinimalReport({ strict = false } = {}) {
   checkReleaseTag(warnings);
   checkStoryLinks(warnings);
   checkEpicIndex(warnings);
+  checkStaleDocs(warnings);
 
   return {
     ok: errors.length === 0,
@@ -1009,6 +1029,7 @@ function collectDoctorReport({ strict = false } = {}) {
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
   checkEpicFiles(warnings);
+  checkStaleDocs(warnings);
   checkGeneratedDirectories(warnings);
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
