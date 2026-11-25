@@ -37,3 +37,10 @@ npm test
 - [x] P2 an ignored path under a deleted (not moved) folder is still skipped — say it plainly in docs/rules-and-limits.md.
 
 Held: bethl clone `git mv packages/ui packages/design` → 32/32 under `--changed`, same as full, all pointing at the new folder; `git rm -r` → 32 `deleted in`; the 3 new tests fail on 26-03 code and on targeted mutations; develop merge no-op, 34/34.
+
+### Round 2 — PASS (the branch lookup and the docs vs code) — lands
+
+- [x] P2 criterion 3 narrowed in round 1: a backticked name is silenced only when it is a branch git knows; bethl's `docs/GENERATED_REPORT.md:5` names a deleted branch and is reported again — accepted by the orchestrator: a word rule silenced real broken paths (round 1 P1); the limit is stated in docs/rules-and-limits.md.
+- [x] P3 `./docs/feat` is not stripped before the branch lookup (reported, while `docs/feat` is silenced) — left: it errs toward reporting.
+
+Held: deleted/renamed/moved paths reported even when a branch has the name; detached HEAD and plain clones agree; a `--single-branch --depth 1` clone gives the same 32 findings here (no branch names in CI); one cached `for-each-ref`, bethl in 3.1 s; doctor and `docs check` both 44 after `git mv packages/geo packages/geodata`; rules-and-limits rows true; both new tests fail on the round-1 code and under targeted mutations.
