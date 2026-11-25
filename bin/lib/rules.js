@@ -106,12 +106,20 @@ const ALWAYS = {
     const extra = require("./guard").shellBlockedPaths(policy).filter((entry) => !policy.blockedPaths.includes(entry));
     return extra.length ? `the guard also refuses shell writes to ${extra.join(", ")}` : null;
   },
-  // validation-run.js resolveCheckCommands: nothing declared, verify falls back.
+  // validation-run.js resolveCheckCommands: nothing declared, verify falls
+  // back; a story at a freshTestsFor risk level runs `freshCommands` instead.
   "validation.commands": () => {
-    const { source, commands } = validationRun().resolveCheckCommands({});
-    if (source === "config") return null;
-    const fallback = source ? `${commands.length} from ${source}` : "none found";
-    return `none declared: verify runs the story plan's commands, else package.json scripts (here ${fallback})`;
+    const plain = validationRun().resolveCheckCommands({});
+    const fresh = validationRun().resolveCheckCommands({ fresh: true });
+    const notes = [];
+    if (plain.source !== "config") {
+      const fallback = plain.source ? `${plain.commands.length} from ${plain.source}` : "none found";
+      notes.push(`none declared: verify runs the story plan's commands, else package.json scripts (here ${fallback})`);
+    }
+    if (!isDeepStrictEqual(fresh.commands, plain.commands)) {
+      notes.push(`at a freshTestsFor risk level, verify runs ${fresh.commands.length} command(s) from ${fresh.source} instead`);
+    }
+    return notes.length ? notes.join("; ") : null;
   },
 };
 

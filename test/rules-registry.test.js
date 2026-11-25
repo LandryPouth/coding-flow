@@ -517,6 +517,29 @@ test('blockedPaths and validation.commands say what the guard and verify add', (
   assert.match(byKey.blockedPaths.note, /shell writes to \.coding-flow\/harness\.json/);
   assert.match(byKey['validation.commands'].note, /here 1 from package\.json/);
 
+  // The note is what the guard does: with no blocked path at all, a shell
+  // write to harness.json is still refused.
+  const open = committed(t, JSON.stringify({ blockedPaths: [] }));
+  assert.match(ruleIn(open, 'blockedPaths').note, /shell writes to \.coding-flow\/harness\.json/);
+  assert.equal(switchDenied(open, 'echo {} > .coding-flow/harness.json'), true, 'the guard refuses the shell write');
+
   const declared = ruleIn(project(t, { config: { validation: { commands: ['npm test'] } } }), 'validation.commands');
   assert.equal(declared.note, null);
+});
+
+// New series, round 2: a story at a freshTestsFor risk runs freshCommands.
+test('validation.commands names the freshCommands a fresh run uses instead', (t) => {
+  const dir = project(t, { config: { validation: { freshCommands: ['npm run test:fresh'] } }, harness: { freshTestsFor: ['high'] } });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'node -e 0' } }));
+  const note = ruleIn(dir, 'validation.commands').note;
+  assert.match(note, /here 1 from package\.json/);
+  assert.match(note, /at a freshTestsFor risk level, verify runs 1 command\(s\) from config instead/);
+
+  const both = ruleIn(project(t, { config: { validation: { commands: ['npm test'], freshCommands: ['npm run test:fresh'] } } }), 'validation.commands');
+  assert.match(both.note, /at a freshTestsFor risk level, verify runs 1 command\(s\) from config instead/);
+});
+
+test('requiredChecks is described as the names the contract lists', () => {
+  assert.match(registry.ruleFor('requiredChecks').doc, /lists/);
+  assert.match(registry.ruleFor('requiredChecks').doc, /nothing runs them/);
 });

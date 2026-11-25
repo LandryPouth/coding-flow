@@ -143,8 +143,11 @@
 **Out of scope, seen in review:** `doctor`'s `epic_too_large` warning never
 shows (pre-existing, not this story's diff).
 
-**New review series** (after the split): round 1 FAIL, 1 P1 (`policyGlobs`
-under `--claim refactor`, D9 audit, D11).
+**Review history.** Series 1: 4 rounds, all FAIL, P1 per round 2 / 1 / 1 /
+2 → split at the cap (below). Series 2 (after the split): round 1 FAIL, 1 P1
+(`policyGlobs` under `--claim refactor`, D9 audit, D11); round 2 PASS, 0 P1,
+4 P2 fixed before closing (the `freshCommands` note, `requiredChecks`
+wording, the CHANGELOG, a guard assertion beside the `blockedPaths` note).
 
 ## Split (review cap, 2026-11-24)
 

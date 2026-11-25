@@ -79,7 +79,7 @@ const RULES = [
   { key: "ignoredPaths", file: "harness", scope: "project", defaultFrom: harnessDefault("ignoredPaths"), noun: "globs", doc: "Generated output left out of the signals." },
   { key: "blockedPaths", file: "harness", scope: "project", defaultFrom: () => require("./harness-config").defaultHarnessConfig().blockedPaths, noun: "globs", doc: "Paths the guard refuses to write." },
   { key: "sensitiveGlobs", file: "harness", scope: "project", defaultFrom: () => require("./harness-config").defaultHarnessConfig().sensitiveGlobs, noun: "globs", doc: "Files harness check flags." },
-  { key: "requiredChecks", file: "harness", scope: "project", defaultFrom: () => require("./harness-config").defaultHarnessConfig().requiredChecks, noun: "checks", doc: "Checks harness check runs." },
+  { key: "requiredChecks", file: "harness", scope: "project", defaultFrom: () => require("./harness-config").defaultHarnessConfig().requiredChecks, noun: "checks", doc: "Check names the harness contract lists (nothing runs them); a high-risk story adds 3." },
 
   // Story 29-03: read by the guard, which defines their fallbacks
   // (`destructivePolicy`); the human's edit only.
