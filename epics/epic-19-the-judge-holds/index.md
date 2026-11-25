@@ -88,6 +88,7 @@ passing. s4's detached job goes through s3's queue. s6 extends the
 8. [story-19-08-a-reformatted-test-is-not-a-stronger-test](story-19-08-a-reformatted-test-is-not-a-stronger-test/spec.md) *(STANDARD — added 2026-11-23 from 19-05's reviews: a neutral test edit no longer earns the coverage gate)*
 9. [story-19-09-a-failed-review-is-cleared-by-a-review](story-19-09-a-failed-review-is-cleared-by-a-review/story.md) *(STANDARD — added 2026-11-24 at the maintainer's request: after a FAIL, a pass needs a new review round; STRICT needs two)*
 10. [story-19-10-the-fixers-test-holds-under-load](story-19-10-the-fixers-test-holds-under-load/story.md) *(QUICK — added 2026-11-25: the 19-05 fixers test failed under load; cause: the throwaway index copy lost git's racy-clean re-read)*
+11. [story-19-11-one-tree-is-proved-once](story-19-11-one-tree-is-proved-once/story.md) *(STANDARD — added 2026-11-25 from the unattended run: land skips its re-verify on a fast-forward to the proved tree; flow-run stops running the suite before verify)*
 
 ### Follow-ups
 
