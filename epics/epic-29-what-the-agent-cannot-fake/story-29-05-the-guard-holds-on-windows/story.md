@@ -104,6 +104,12 @@ The checkout comparisons themselves (`primaryLock`, `effectiveDestructivePolicy`
 - [x] P2 bin/lib/validation-run.js:416 — `durationMs` includes up to 30 s of PowerShell/taskkill — fix: take the duration before the kill.
 - [x] Note: story Result cites Windows run 45547651944, which predates round-1 fixes; cite a run at the final HEAD.
 
+### Round 3 — FAIL (the process-tree kill as a real mechanism)
+
+- [ ] P1 bin/lib/validation-run.js:349-351 (`descendantsOf` bounds) — `Date.now()` and WMI `CreationDate` (timer ticks up to 15.6 ms, rounded down) are compared with no margin: a real child stamped a tick before `started` (or a `b` in `a && b` stamped just after `ended`) is spared and keeps running. Reasoned, not reproduced; CI would show it as rare flakiness. CHANGELOG states the selection as exact. — fix: a small tolerance on the shell's direct children, sized to the clock tick (tens of ms, not seconds — a wide `ended` margin would re-admit round 2's pid-reuse impostor); boundary tests on both sides, including that round 2's impostor test still holds; state the tolerance in the comment and the CHANGELOG.
+- [ ] P2 validation-run.js:371-373 — a live descendant can start a child between the listing and `taskkill` (no `/T`), which survives — fix: list-and-kill twice, or `/T` on pids known alive.
+- [ ] P3 LIST_PROCESSES — `CreationDate` local time cast to `[DateTimeOffset]` is ambiguous in the repeated DST hour → no kill — fix: use UTC (`ToUniversalTime()` / `CreationDate` via CIM as DateTime UTC) if cheap, else document.
+
 ## Acceptance Criteria
 
 - [ ] Given a path written as Git Bash writes it (`/c/…`, `/cygdrive/d/…`,
