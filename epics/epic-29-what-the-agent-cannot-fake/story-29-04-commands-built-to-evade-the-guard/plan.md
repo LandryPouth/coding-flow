@@ -447,3 +447,11 @@ See tasks.md (one line per criterion).
 ```bash
 npm test
 ```
+
+### Series 3 Round 1 — FAIL (is what remains honestly bounded and safe to land?)
+
+- [ ] P1 test/guard-evasion.test.js:807 — `reviewerRepo(t, '/tmp')` pins the frozen-reader test to `/tmp`: on macOS `/tmp` → `/private/tmp` (realpath) = two levels deep, the exact depth failure (simulated: 0 pass); on Windows `'/tmp'` → `\tmp` on the runner's drive, likely ENOENT. Nothing skips it; CI runs macos-latest and windows-latest — fix: make the recorded digest independent of the repo's location (placeholders for the repo path and its parents, or a virtual repo path through `readerHost`); re-check under TMPDIR=/tmp, a deep TMPDIR and a `/private`-style symlink.
+- [ ] P2 the branch adds the three `*-29-03.js` files to the high-risk paths (policy tightened; verify warns "policy changed: .coding-flow/harness.json") — add a one-line `## Policy Change` section to the story.
+- [ ] P2 29-06's criteria are not runnable as written ("the hook's 60 s never decides", "latency within noise", "aliases…; rm sub/*.txt") — give a number and an exact command for each.
+
+Held: frozen side byte-identical (hash pin), 40/40 under a deep TMPDIR on Linux, every ticked criterion has a test and none rests on 29-06/29-07, the 3 s budget and the 256 KB cap exist, CHANGELOG/rules-and-limits state the moved gaps.
