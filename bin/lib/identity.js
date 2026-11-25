@@ -90,6 +90,16 @@ const STORY_DIRS = ["epics", "specs", ".specify"];
 const OUTSIDE_TOKEN = new Set([EVIDENCE_DIR, ...STORY_DIRS]);
 const EXCLUDE_PATHSPECS = [...OUTSIDE_TOKEN].map((dir) => `:(exclude)${dir}`);
 
+// A throwaway copy of the index that keeps the real one's mtime. Git re-reads
+// an entry whose file is as new as the index ("racily clean"); a copy stamped
+// later would trust a same-size rewrite made within that second (story 19-10).
+// Date precision rounds down, which only makes more entries re-read.
+function copyIndex(realIndex, tempIndex) {
+  fs.copyFileSync(realIndex, tempIndex);
+  const { atime, mtime } = fs.statSync(realIndex);
+  fs.utimesSync(tempIndex, atime, mtime);
+}
+
 // The tree of the working tree's tracked content, or null. `stash create` comes
 // first so existing tokens keep their value. It refuses a tree holding an
 // intent-to-add entry (`git add -N`), and falling back to HEAD there would hide
@@ -117,7 +127,7 @@ function workingTreeTree(cwd, head) {
   try {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "coding-flow-index-"));
     const tempIndex = path.join(dir, "index");
-    fs.copyFileSync(path.resolve(cwd, index), tempIndex);
+    copyIndex(path.resolve(cwd, index), tempIndex);
     const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
 
     const stage = untracked ? ["add", "-A", "--", ".", ...EXCLUDE_PATHSPECS] : ["add", "-u"];
@@ -245,7 +255,7 @@ function workingTreeSnapshot(cwd) {
     const realIndex = path.resolve(cwd, index);
 
     if (fs.existsSync(realIndex)) {
-      fs.copyFileSync(realIndex, tempIndex);
+      copyIndex(realIndex, tempIndex);
     }
 
     const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
