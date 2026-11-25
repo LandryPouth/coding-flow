@@ -450,8 +450,30 @@ npm test
 
 ### Series 3 Round 1 — FAIL (is what remains honestly bounded and safe to land?)
 
-- [ ] P1 test/guard-evasion.test.js:807 — `reviewerRepo(t, '/tmp')` pins the frozen-reader test to `/tmp`: on macOS `/tmp` → `/private/tmp` (realpath) = two levels deep, the exact depth failure (simulated: 0 pass); on Windows `'/tmp'` → `\tmp` on the runner's drive, likely ENOENT. Nothing skips it; CI runs macos-latest and windows-latest — fix: make the recorded digest independent of the repo's location (placeholders for the repo path and its parents, or a virtual repo path through `readerHost`); re-check under TMPDIR=/tmp, a deep TMPDIR and a `/private`-style symlink.
-- [ ] P2 the branch adds the three `*-29-03.js` files to the high-risk paths (policy tightened; verify warns "policy changed: .coding-flow/harness.json") — add a one-line `## Policy Change` section to the story.
-- [ ] P2 29-06's criteria are not runnable as written ("the hook's 60 s never decides", "latency within noise", "aliases…; rm sub/*.txt") — give a number and an exact command for each.
+- [x] P1 test/guard-evasion.test.js:807 — `reviewerRepo(t, '/tmp')` pins the frozen-reader test to `/tmp`: on macOS `/tmp` → `/private/tmp` (realpath) = two levels deep, the exact depth failure (simulated: 0 pass); on Windows `'/tmp'` → `\tmp` on the runner's drive, likely ENOENT. Nothing skips it; CI runs macos-latest and windows-latest — fix: make the recorded digest independent of the repo's location (placeholders for the repo path and its parents, or a virtual repo path through `readerHost`); re-check under TMPDIR=/tmp, a deep TMPDIR and a `/private`-style symlink.
+- [x] P2 the branch adds the three `*-29-03.js` files to the high-risk paths (policy tightened; verify warns "policy changed: .coding-flow/harness.json") — add a one-line `## Policy Change` section to the story.
+- [x] P2 29-06's criteria are not runnable as written ("the hook's 60 s never decides", "latency within noise", "aliases…; rm sub/*.txt") — give a number and an exact command for each.
 
 Held: frozen side byte-identical (hash pin), 40/40 under a deep TMPDIR on Linux, every ticked criterion has a test and none rests on 29-06/29-07, the 3 s budget and the 256 KB cap exist, CHANGELOG/rules-and-limits state the moved gaps.
+
+Fixes (series 3 round 1):
+
+- P1: no re-recording — both frozen-reader digest tests now show the readers a
+  virtual repository, `/tmp/coding-flow-evasion-reviewer` (one level under `/tmp`,
+  where the fixtures were recorded), whatever the real directory is. The host maps
+  that path onto the real throwaway repository for `exists`/`isDirectory`; outside
+  it only `/` and `/tmp` exist. The frozen files are loaded unchanged, as a fresh
+  copy whose `require("path")` gets `path.posix`, under `process.platform` =
+  `linux` for the call, so a Windows runner reads POSIX paths as the Linux
+  recording did. The `/tmp` pin is gone. The fixtures are byte-identical, so the
+  recorded digests are still 3c90919's. The test still detects a change: with the
+  virtual repository one level deeper, it fails. Ran 40/40 with TMPDIR=/tmp, a
+  5-level-deep scratchpad TMPDIR, and TMPDIR set to a symlink to a directory
+  (the `/private/tmp` case). Windows was not run here.
+- P2 policy: `## Policy Change` added to spec.md (high-risk paths tightened with
+  the three frozen copies).
+- P2 29-06: each criterion now has an exact `node -e` line generator, the CLI
+  call, exit 2 and a time bound (20 s); the 48 s shape is written out (5 000
+  aliases then `rm sub/*.txt`); "60 s never decides" is a deadline at most 30 s
+  plus a slow-host test; "within noise" is a median at most 10 ms above develop's
+  over 20 calls.

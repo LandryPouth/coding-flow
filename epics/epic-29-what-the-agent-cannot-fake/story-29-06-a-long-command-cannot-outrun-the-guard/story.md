@@ -31,18 +31,39 @@ whole-call time is a guard-wide fail-open, not one reader's.)*
 
 ## Acceptance Criteria
 
-- [ ] Given each of the three measured shapes (`git checkout -- sub/qN;` ×
-      7 000, `git zzN;` × 11 000 with no such alias, `cd dN && rm c.txt;` ×
-      11 000) on a throwaway repository, when the guard CLI decides it, then
-      it answers in under 20 s and refuses it.
-- [ ] Given `aliases…; rm sub/*.txt` (the 48 s shape), then it is refused in
-      under 20 s.
-- [ ] Given any line under the cap, the hook's 60 s timeout never decides:
-      the guard's own deadline (well under 60 s) refuses first.
-- [ ] Given 29-03's and 29-04's everyday lists (Lens B), then every command is
-      decided as before, and the per-call latency stays within noise.
+Each shape is a line built by `node -e` and handed to the guard CLI as the hook
+hands it, timed from the shell, on a throwaway repository with one commit and
+`sub/c.txt`, `sub/deep/e.txt` modified (29-04's `subRepo`):
+
+```bash
+# SHAPE is the JS expression for the command line; the timing is the wall time of the call.
+node -e "process.stdout.write(JSON.stringify({tool_name:'Bash',tool_input:{command:SHAPE}}))" > in.json
+/usr/bin/time -f %e node "$CODING_FLOW/bin/ai-flow.js" guard < in.json
+```
+
+- [ ] Given `SHAPE` = `Array.from({length:7000},(_, i)=>'git checkout -- sub/q'+i+';').join(' ')`,
+      then the call is refused (exit 2) in under 20 s.
+- [ ] Given `SHAPE` = `Array.from({length:11000},(_, i)=>'git zz'+i+';').join(' ')`
+      (no such alias), then the call is refused (exit 2) in under 20 s.
+- [ ] Given `SHAPE` = `Array.from({length:11000},(_, i)=>'cd d'+i+' && rm c.txt;').join(' ')`,
+      then the call is refused (exit 2) in under 20 s.
+- [ ] Given 5 000 aliases set first (`for i in $(seq 5000); do git config alias.a$i status; done`)
+      and `SHAPE` = `Array.from({length:5000},(_, i)=>'git a'+(i+1)+';').join(' ')+' rm sub/*.txt'`
+      (the 48 s shape: one alias lookup per segment, then a removal of modified files),
+      then the call is refused (exit 2) in under 20 s.
+- [ ] Given any line under the 256 KB cap, the guard answers before the hook's
+      60 s timeout: a test asserts the guard's own deadline constant is at most
+      30 s and that a host whose every call sleeps 50 ms (so a long line would
+      take minutes) gets a refusal within deadline + 5 s.
+- [ ] Given 29-03's and 29-04's everyday lists (`EVERYDAY` in
+      `test/guard-destructive.test.js`, Lens B, and the everyday cases of
+      `test/guard-evasion.test.js`), then every command is decided as before
+      (`npm test` green), and the median of 20 `ai-flow guard` calls on
+      `git status` is no more than 10 ms above the same median on `develop`
+      (`for i in $(seq 20); do /usr/bin/time -f %e node bin/ai-flow.js guard < status.json; done`).
 - [ ] Given `docs/rules-and-limits.md`, then the row "a call whose reading
-      costs more than the hook's 60 s timeout" states the new bound.
+      costs more than the hook's 60 s timeout" states the new bound (the
+      deadline, in seconds, and that the call is refused when it runs out).
 
 ## Commands
 

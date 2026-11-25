@@ -785,40 +785,79 @@ function readerDigest(output, dir) {
   return require('node:crypto').createHash('sha256').update(text).digest('hex').slice(0, 16);
 }
 
+// Series 3 round 1: the recorded outputs hold paths relative to the repository
+// (`../../.env`, `cd /tmp`), recorded with it one level under /tmp on Linux. So the frozen
+// readers are shown that repository at a fixed POSIX path, whatever and wherever the real
+// directory is (a deep TMPDIR, macOS's /private/tmp, a Windows drive): their own code,
+// byte for byte, loaded with `path.posix` for `path` and run as on Linux; only the host
+// maps the virtual repository onto the real one, and nothing outside it exists but its parents.
+const VIRTUAL_REPO = '/tmp/coding-flow-evasion-reviewer';
+function virtualHost(dir) {
+  const inside = (at) => at === VIRTUAL_REPO || at.startsWith(`${VIRTUAL_REPO}/`);
+  const real = (at) => path.join(dir, ...at.slice(VIRTUAL_REPO.length).split('/').filter(Boolean));
+  const parents = new Set(['/', '/tmp']);
+  return {
+    ...readerHost(VIRTUAL_REPO),
+    exists: (file) => file !== null && (inside(file) ? fs.existsSync(real(file)) : parents.has(file)),
+    isDirectory: (at) => (inside(at) ? fs.existsSync(real(at)) && fs.statSync(real(at)).isDirectory() : parents.has(at)),
+  };
+}
+function posixFrozenReaders() {
+  const Module = require('node:module');
+  const files = ['../bin/lib/shell-writes-29-03', '../bin/lib/destructive-29-03'].map((file) => require.resolve(file));
+  const cached = files.map((file) => require.cache[file]);
+  const load = Module._load;
+  files.forEach((file) => delete require.cache[file]);
+  Module._load = function (request, parent, ...rest) {
+    if ((request === 'path' || request === 'node:path') && parent && files.includes(parent.filename)) return path.posix;
+    return load.call(this, request, parent, ...rest);
+  };
+  try {
+    return { readDestructive: require(files[1]).readDestructive, shellWrites: require(files[0]).shellWrites };
+  } finally {
+    Module._load = load;
+    files.forEach((file, i) => (cached[i] ? (require.cache[file] = cached[i]) : delete require.cache[file]));
+  }
+}
+function asOnLinux(run) {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { ...platform, value: 'linux' });
+  try {
+    return run();
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+  }
+}
+
 test("series 2 round 1: the frozen reader's output on the reviewers' corpus is 29-03's, case by case", (t) => {
-  const dir = reviewerRepo(t);
-  const { readDestructive } = require('../bin/lib/destructive-29-03');
+  const host = virtualHost(reviewerRepo(t));
+  const { readDestructive, shellWrites } = posixFrozenReaders();
   const { outputs } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-reader-outputs.json'), 'utf8'));
   const { cases } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-decisions.json'), 'utf8'));
   assert.equal(outputs.length, cases.length);
-  const host = readerHost(dir);
-  const moved = cases.filter(([command], i) => readerDigest(readDestructive(command, { cwd: dir, host }), dir) !== outputs[i]);
+  const moved = asOnLinux(() => cases.filter(([command], i) => readerDigest(readDestructive(command, { cwd: VIRTUAL_REPO, host }), VIRTUAL_REPO) !== outputs[i]));
   assert.deepEqual(moved.map(([command]) => command), []);
   // And the frozen shell reader's own reading of what each command writes.
-  const { shellWrites } = require('../bin/lib/shell-writes-29-03');
   const { writes } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-reader-outputs.json'), 'utf8'));
-  const rewritten = cases.filter(([command], i) => readerDigest(shellWrites(command, dir, host, { trees: true }), dir) !== writes[i]);
+  const rewritten = asOnLinux(() => cases.filter(([command], i) => readerDigest(shellWrites(command, VIRTUAL_REPO, host, { trees: true }), VIRTUAL_REPO) !== writes[i]));
   assert.deepEqual(rewritten.map(([command]) => command), []);
 });
 
 test("series 2 round 1: the frozen readers read the guard's own 29-03 test commands as 3c90919 did", (t) => {
-  // The recorded outputs hold paths relative to the repository (`../../.env`, `cd /tmp`),
-  // so the repository sits one level under /tmp, as when they were recorded, whatever TMPDIR is.
-  const dir = reviewerRepo(t, '/tmp');
-  const host = readerHost(dir);
-  const { readDestructive } = require('../bin/lib/destructive-29-03');
-  const { shellWrites } = require('../bin/lib/shell-writes-29-03');
+  const dir = reviewerRepo(t);
+  const host = virtualHost(dir);
+  const { readDestructive, shellWrites } = posixFrozenReaders();
   const { cases } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-shell-corpus.json'), 'utf8'));
   assert.ok(cases.length > 1000, `${cases.length} commands`);
   const digest = (read) => {
     try {
-      return readerDigest(read(), dir);
+      return readerDigest(read(), VIRTUAL_REPO);
     } catch (error) {
       return `throws ${error && error.name}`;
     }
   };
-  const moved = cases.filter(([command, reader, writes]) => digest(() => readDestructive(command, { cwd: dir, host })) !== reader
-    || digest(() => shellWrites(command, dir, host, { trees: true })) !== writes);
+  const moved = asOnLinux(() => cases.filter(([command, reader, writes]) => digest(() => readDestructive(command, { cwd: VIRTUAL_REPO, host })) !== reader
+    || digest(() => shellWrites(command, VIRTUAL_REPO, host, { trees: true })) !== writes));
   assert.deepEqual(moved.map(([command]) => command), []);
 });
 

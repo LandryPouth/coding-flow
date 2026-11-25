@@ -61,3 +61,7 @@ exactly where the guard stops and where the sandbox must take over.
 ## Out of Scope
 
 - Executing or sandboxing anything: the guard reads text, it never runs it.
+
+## Policy Change
+
+Tightened, not loosened: `.coding-flow/harness.json` adds the three frozen 29-03 copies (`bin/lib/destructive-29-03.js`, `bin/lib/shell-writes-29-03.js`, `bin/lib/destructive-judge-29-03.js`) to the high-risk paths, because the guard now runs them to judge every Bash call.
