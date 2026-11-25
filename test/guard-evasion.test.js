@@ -328,9 +328,10 @@ test('round 1: rm reads the index to skip git status, and still refuses through 
 // --- review round 2 ------------------------------------------------------------------
 
 // Hostile input, 10 KB each: a reader that backtracks would hold the hook past its
-// 60 s timeout, and the call would then run unchecked. Each is decided in a child
-// process (a regex cannot be interrupted in-process) killed after 20 s; the bound is
-// 1 s, far under the hook timeout and loose enough for a loaded machine.
+// 60 s timeout, and the call would then run unchecked. Each is read by this story's
+// reader (destructive.js; the frozen 29-03 reader is 29-03's) in a child process (a
+// regex cannot be interrupted in-process) killed after 20 s; the bound is 1 s, far
+// under the hook timeout and loose enough for a loaded machine.
 const HOSTILE = (n) => ({
   'list items, unclosed': `node -e 'x = [${'"a"  '.repeat(n / 5)}'`,
   'list items, closed': `node -e 'x = [${'"a", '.repeat(n / 5)}"b"]'`,
@@ -348,15 +349,16 @@ const HOSTILE = (n) => ({
   'alias value': `git config alias.x '!${'echo hi; '.repeat(n / 9)}'`,
   'redirects': `echo hi ${'> a '.repeat(n / 4)}`,
   'glued flag': `python3 -c${'"'.repeat(n)}`,
+  'psql backslashes': `psql -c "\\${'"a'.repeat(n / 2)}`,
 });
 
 test('round 2: every reader of this story stays linear on 10 KB of hostile input', (t) => {
   const dir = repo(t);
   const script = [
-    `const { decide } = require(${JSON.stringify(path.join(ROOT, 'bin', 'lib', 'guard'))});`,
+    `const { readDestructive } = require(${JSON.stringify(path.join(ROOT, 'bin', 'lib', 'destructive'))});`,
     'const command = require("fs").readFileSync(0, "utf8");',
     'const t0 = process.hrtime.bigint();',
-    `decide({ tool_name: 'Bash', cwd: ${JSON.stringify(dir)}, tool_input: { command } }, ${JSON.stringify(dir)});`,
+    `readDestructive(command, { cwd: ${JSON.stringify(dir)}, host: {} });`,
     'process.stdout.write(String(Number(process.hrtime.bigint() - t0) / 1e6));',
   ].join('\n');
   for (const [name, command] of Object.entries(HOSTILE(10000))) {
@@ -598,11 +600,85 @@ test('round 3: a comment that throws off the quote pairing does not hide a destr
   expectAll(dir, 'allow', [`python3 -c "# don't\nprint(1)"`]);
 });
 
-test('round 3: inside double quotes a backslash before an ordinary character stays, as in bash', (t) => {
+test('round 3, re-scoped in round 4: the shell-write guard reads backslashes as 29-03 did', (t) => {
   const dir = corpusRepo(t);
-  // `"\.env"` names a file called `\.env`, not `.env`.
-  expectAll(dir, 'allow', [`echo x > "\\.env"`]);
-  expectAll(dir, 'deny', ['echo x > .env', `echo x > ".env"`]);
+  // `"\.env"` names a file called `\.env` for bash; the shell-write guard reads it as
+  // `.env`, as 29-03 shipped it, and refuses it (accepted noise, plan.md R4). Only the
+  // destructive reader keeps bash's backslashes (`psql -c "\! rm -rf build"`).
+  expectAll(dir, 'deny', [`echo x > "\\.env"`, 'echo x > .env', `echo x > ".env"`]);
+  expectAll(dir, 'unchecked', [`psql -c "\\! rm -rf build"`]);
+});
+
+// --- review round 4: the strictest of two readers ----------------------------------
+
+// The reviewers' repository: aliases in .git/config (nuke = reset --hard, zap = !rm -rf
+// build, st = status), a.txt and src/m.js modified, c.txt staged.
+function reviewerRepo(t) {
+  const dir = tmp(t);
+  git(dir, 'init', '-q', '-b', 'main');
+  fs.mkdirSync(path.join(dir, '.coding-flow'));
+  fs.mkdirSync(path.join(dir, 'build'));
+  fs.mkdirSync(path.join(dir, 'src'));
+  const write = (file, text) => fs.writeFileSync(path.join(dir, file), text);
+  write('a.txt', 'one\n'); write('b.txt', 'one\n'); write('c.txt', 'one\n'); write('src/m.js', 'x\n'); write('build/out.js', 'x\n');
+  write('seed.sql', 'insert into users values (1);\n'); write('wipe.sql', 'delete from users;\n'); write('drop.sql', 'drop table users;\n');
+  write('shell.sql', 'select 1;\n\\! rm -rf build\n'); write('ok.sql', 'select 1;\n');
+  write('run.sh', 'echo hi\n'); write('evil.sh', 'rm -rf build\n');
+  git(dir, 'add', '.');
+  git(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init');
+  git(dir, 'config', 'alias.nuke', 'reset --hard');
+  git(dir, 'config', 'alias.zap', '!rm -rf build');
+  git(dir, 'config', 'alias.st', 'status');
+  write('a.txt', 'two\n'); write('src/m.js', 'y\n'); write('c.txt', 'two\n');
+  git(dir, 'add', 'c.txt');
+  return dir;
+}
+
+test("round 4: on the reviewers' corpus, no command is decided less strictly than 29-03 decided it", (t) => {
+  const { cases } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-decisions.json'), 'utf8'));
+  assert.ok(cases.length > 500, `${cases.length} recorded cases`);
+  const dir = reviewerRepo(t);
+  const rank = { allow: 0, unchecked: 1, deny: 2 };
+  const weaker = cases.filter(([command, before]) => rank[run(dir, command).decision] < rank[before]);
+  assert.deepEqual(weaker, []);
+});
+
+test('round 4: the two round-4 regressions are refused, as 29-03 refused them', (t) => {
+  const dir = reviewerRepo(t);
+  expectAll(dir, 'deny', [
+    'GIT_WORK_TREE=. git checkout -- a.txt',
+    'GIT_DIR=.git GIT_WORK_TREE=. git checkout -- a.txt',
+    'sudo GIT_WORK_TREE=. git checkout -- a.txt',
+    'GIT_INDEX_FILE=.git/index git restore a.txt',
+    'HOME=/tmp/x git nuke',
+    'XDG_CONFIG_HOME=/tmp/x git nuke',
+    'GIT_CONFIG_GLOBAL=/tmp/x git nuke',
+    'cd src && HOME=/tmp/x git nuke',
+  ]);
+  // A repository alias that destroys nothing stays allowed under a file-level prefix.
+  expectAll(dir, 'allow', ['HOME=/tmp/x git st', 'GIT_CONFIG_GLOBAL=/tmp/x git st']);
+  // Config given as on git's command line overrides the repository's: not read.
+  expectAll(dir, 'unchecked', ['GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.st GIT_CONFIG_VALUE_0=x git st']);
+});
+
+test('round 4: a quoted column dropped by ALTER TABLE is refused', (t) => {
+  const dir = reviewerRepo(t);
+  expectAll(dir, 'deny', [`psql -c 'alter table t drop "Email"'`, `psql -c 'ALTER TABLE t DROP COLUMN "Email"'`]);
+});
+
+test('round 4: a line that costs the reader more than its budget is unchecked, never allowed', (t) => {
+  const dir = reviewerRepo(t);
+  const { readDestructive } = require('../bin/lib/destructive');
+  const spent = readDestructive('echo a; echo b; rm -rf build', { cwd: dir, host: {}, deadline: Date.now() - 1 });
+  assert.equal(spent.findings.length, 0);
+  assert.ok(spent.unchecked.some((entry) => /time budget/.test(entry.reason)), JSON.stringify(spent.unchecked));
+  // Repetition: the same probe is answered once, and the call stays bounded.
+  const started = Date.now();
+  const repeated = run(dir, 'rm build; '.repeat(2000));
+  assert.ok(Date.now() - started < 20000, `${Date.now() - started} ms`);
+  assert.notEqual(repeated.decision, 'deny', repeated.reason);
+  const shells = run(dir, `psql <<'EOF'\n${'\\! echo hi\n'.repeat(9000)}\\! rm -rf build\nEOF`);
+  assert.notEqual(shells.decision, 'allow');
 });
 
 // --- criterion 5: one table of what the guard does not read ------------------------------

@@ -441,7 +441,7 @@ function readPrisma(out, args, cwd) {
 // statement with no `WHERE` anywhere in it.
 const RAW_SQL = /\bdrop\s+database\b/i;
 const DESTRUCTIVE_SQL = /\b(drop\s+(?:database|schema|table|owned|column)|truncate)\b/i;
-const ALTER_DROP = /\bdrop\s+(?!constraint\b|default\b|not\b|identity\b|expression\b|index\b)\w/i;
+const ALTER_DROP = /\bdrop\s+(?!constraint\b|default\b|not\b|identity\b|expression\b|index\b)[\w"]/i;
 
 function destructiveSql(text) {
   if (RAW_SQL.test(text)) {
@@ -530,7 +530,7 @@ function psqlPrograms(args) {
 
 function readPsql(out, command, cwd, ctx, segments, index) {
   const { args } = command;
-  const { programs, files } = psqlPrograms(args);
+  const { programs, files } = psqlPrograms(bashArgs(command, args));
   const shown = ["psql", ...args].join(" ");
   for (const program of programs) {
     const rule = destructiveSql(program);
@@ -686,6 +686,10 @@ function removesChanges(out, operands, words, cwd, host, worktree) {
 // settles each finding's check, then makes the call unchecked rather than refused
 // (29-03's claim: read but not proven).
 function readUnproven(out, text, cwd, ctx, reason, command, propagate = true) {
+  if (Date.now() > ctx.deadline) {
+    outOfTime(out);
+    return;
+  }
   const inner = { findings: [], unchecked: [], touched: [], substituted: [] };
   readScript(inner, text, cwd, { ...ctx, handed: true });
   out.findings.push(...inner.findings.map((finding) => ({ ...finding, unproven: reason, command })));
@@ -704,6 +708,54 @@ const INTERPRETER_NAME = /^(?:python[\d.]*|node|nodejs|bun|deno|perl|ruby|php)$/
 const BUILDS = /(['"\x60])\s*(?:[+.]\s*)?['"\x60]|%\s*[(\w]|\.format\(|\bf['"]|\$\{|\.join\(|\bsprintf\b/;
 const VERB_PIECE = /^\s*(?:rm|unlink|shred|git|dropdb|psql|prisma|docker|mv)(?:\s|$)/;
 const POLICY_PIECE = /harness|coding-flow/i;
+// The inline program an interpreter is handed: shell-writes' reading (left as 29-03
+// shipped it, so the shell-write guard decides exactly as it did), plus what this
+// reader adds: `php -r code`, and a flag glued to its code (`python3 -c"…"`,
+// `perl -e'…'`, `ruby -e'…'`, `php -r'…'`), only the no-value switches before it.
+const GLUED = [
+  [/^python[\d.]*$/, /^-[bBdEhiIOqsSuvVx]*c(.+)$/s],
+  [/^perl$/, /^-[lnpsawW0-9]*[eE](.+)$/s],
+  [/^ruby$/, /^-[lnpsawW]*e(.+)$/s],
+  [/^php$/, /^-r(.+)$/s],
+];
+
+function interpreterPrograms(name, args) {
+  const programs = inlineCode(name, args);
+  if (name === "php") {
+    args.forEach((arg, i) => arg === "-r" && args[i + 1] !== undefined && programs.push(args[i + 1]));
+  }
+  for (const [pattern, flag] of GLUED) {
+    if (pattern.test(name)) {
+      args.forEach((arg) => {
+        const glued = flag.exec(arg);
+        if (glued) {
+          programs.push(glued[1]);
+        }
+      });
+    }
+  }
+  return programs;
+}
+
+// A segment's words with the backslashes bash keeps: inside double quotes a backslash
+// escapes only `$`, a backtick, `"`, `\` and a newline (`"\! cmd"` is `\! cmd`;
+// shell-writes' tokenizer drops it, as 29-03 shipped). The arguments after the verb.
+const BASH_WORD = /(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\S)+/g;
+
+function bashArgs(command, args) {
+  const text = command.segment && command.segment.text;
+  if (!text || !text.includes("\\")) {
+    return args;
+  }
+  const words = (text.match(BASH_WORD) || []).map((word) =>
+    word.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([^\n])/g, (_, double, single, escaped) =>
+      double !== undefined ? double.replace(/\\([$`"\\\n])/g, "$1") : single !== undefined ? single : escaped,
+    ),
+  );
+  const at = words.findIndex((word) => word === "psql" || word.endsWith("/psql"));
+  return at === -1 || words.length - at - 1 !== args.length ? args : words.slice(at + 1);
+}
+
 const MAX_LITERAL = 4096;
 const RAW_VERB = /\b(?:rm\s+-\w*[rRf]|git\s+(?:reset\s+--hard|clean\s+-\w*f|push\s+(?:-f|--force)|checkout\s+--|branch\s+-D)|drop\s+(?:database|schema|table)|truncate\s+\w|dropdb\b)/i;
 const MAX_CODE = 65536; // longer code is not read: unchecked
@@ -820,14 +872,26 @@ const CONFIG_ENV_VARS = /^(?:GIT_DIR|GIT_COMMON_DIR|GIT_CONFIG|GIT_CONFIG_GLOBAL
 function gitEnv(assignments = []) {
   // `GIT_DIR=.git`: this repository, named.
   const elsewhere = assignments.filter((word) => !/^GIT_DIR=(?:\.\/)?\.git\/?$/.test(word));
-  return { repo: elsewhere.some((word) => REPO_ENV.test(word)), config: elsewhere.some((word) => CONFIG_ENV_VARS.test(word)) };
+  return {
+    repo: elsewhere.some((word) => REPO_ENV.test(word)),
+    config: elsewhere.some((word) => CONFIG_ENV_VARS.test(word)),
+    // Config given as on git's command line overrides the repository's own.
+    commandLine: elsewhere.some((word) => /^(?:GIT_DIR|GIT_COMMON_DIR|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_CONFIG_PARAMETERS|GIT_CONFIG)=/.test(word)),
+  };
 }
 
 // What git's config decides: an alias (read through the config, unchecked under a prefix
 // that changes which config git reads) or `git config alias.x VALUE`. True when handled.
 function readGitConfigured(out, sub, rest, dir, ctx) {
   if (!GIT_BUILTINS.has(sub) && !EXPANDS.test(sub)) {
-    if (gitEnv(ctx.env).config) {
+    const env = gitEnv(ctx.env);
+    // `HOME=/x git st`: another global or system file, but this repository's own
+    // config still wins — an alias defined there is read as usual (plan.md R4).
+    const local = env.config && !env.commandLine && dir !== null ? ctx.host.gitAlias(dir, sub, { local: true }) : null;
+    if (local && typeof local.value === "string") {
+      return readGitAlias(out, sub, rest, dir, { ...ctx, host: { ...ctx.host, gitAlias: (cwd, name) => ctx.host.gitAlias(cwd, name, { local: true }) } });
+    }
+    if (env.config) {
       out.unchecked.push({ reason: CONFIG_ENV, command: ["git", sub, ...rest].join(" ") });
       return true;
     }
@@ -922,7 +986,7 @@ function runsFile(command, raw) {
   if ((name === "source" || name === ".") && operand !== undefined) {
     return { word: operand, code: false };
   }
-  if (INTERPRETER_NAME.test(name) && !inlineCode(name, args).length && operand !== undefined) {
+  if (INTERPRETER_NAME.test(name) && !interpreterPrograms(name, args).length && operand !== undefined) {
     return { word: operand, code: true };
   }
   return raw && raw.includes("/") ? { word: raw, code: false } : null;
@@ -957,6 +1021,14 @@ function pastRedirects(command) {
     return command;
   }
   return { ...command, name: path.basename(words[at]), raw: words[at], args: [...words.slice(at + 1), ...words.slice(0, at)] };
+}
+
+// Past the call's budget the rest is not read: unchecked, never allowed in silence.
+const OUT_OF_TIME = "the line costs the destructive-command reader more than its time budget";
+function outOfTime(out) {
+  if (!out.unchecked.some((entry) => entry.reason === OUT_OF_TIME)) {
+    out.unchecked.push({ reason: OUT_OF_TIME, command: "(rest of the line)" });
+  }
 }
 
 const fileKey = (cwd, word, home) => resolveIn(cwd, word, home) || `?${word}`;
@@ -1232,7 +1304,7 @@ function readVerb(out, command, cwd, ctx, segments, index) {
   } else if (DOWNLOADERS.has(name)) {
     readDownload(out, command, cwd, segments, index);
   } else if (INTERPRETER_NAME.test(name)) {
-    readInterpreterCode(out, inlineCode(name, args), cwd, ctx, [name, ...args].join(" "));
+    readInterpreterCode(out, interpreterPrograms(name, args), cwd, ctx, [name, ...args].join(" "));
     readHiddenVerb(out, args, cwd, ctx);
   } else if (!isInert(command)) {
     readHiddenVerb(out, args, cwd, ctx);
@@ -1266,6 +1338,10 @@ function readLine(line, start, ctx) {
   ctx = { ...ctx, written };
   let cwd = start;
   segments.forEach((segment, index) => {
+    if (Date.now() > ctx.deadline) {
+      outOfTime(out);
+      return;
+    }
     const command = commandOf(segment);
     const piped = segment.before === "pipe" || segment.after === "pipe";
     if (command.name === "cd" || command.name === "pushd") {
@@ -1671,12 +1747,12 @@ function readSubstitutions(out, line, segments, start, ctx) {
 // `host`: `exists(absolutePath)`, `home()`, `onPath(program)` — each falls back
 // rather than throwing. A finding whose `check` needs a directory and has none
 // (`cd "$D" && git checkout -- .`) carries `cwd: null`; the guard makes it unchecked.
-function readDestructive(command, { cwd, host }) {
+function readDestructive(command, { cwd, host, deadline = Infinity }) {
   if (typeof command !== "string" || !command.trim()) {
     return { findings: [], unchecked: [], touched: [], substituted: [] };
   }
   const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), gitTop: () => null, readSmall: () => null, ...host };
-  return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0 });
+  return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), depth: 0, deadline });
 }
 
 module.exports = { readDestructive, substitutionsOf, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS, HIDDEN_VERB, UNREAD_SUBSTITUTION, UNMODELLED, HANDED_TEXT };

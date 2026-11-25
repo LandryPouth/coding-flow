@@ -50,9 +50,7 @@ function tokenize(segment) {
 function reduceWord(token) {
   return token.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([^\n])/g, (_, double, single, escaped) => {
     if (double !== undefined) {
-      // Inside double quotes a backslash escapes only `$`, a backtick, `"`, `\` and a
-      // newline; before anything else it stays (`"\! cmd"` is `\! cmd`).
-      return double.replace(/\\([$`"\\\n])/g, "$1");
+      return double.replace(/\\([\s\S])/g, "$1");
     }
     return single !== undefined ? single : escaped;
   });
@@ -1280,24 +1278,13 @@ function readScript(r, { name, args }) {
 // --- interpreters -------------------------------------------------------------
 
 // The inline program an interpreter was handed, in its flag spellings: `-c code`,
-// `-Bc code`, `-pe code`, `--eval code`, `--eval=code`, `perl -E code`, `deno eval [options] code`,
-// `php -r code`.
+// `-Bc code`, `-pe code`, `--eval code`, `--eval=code`, `perl -E code`, `deno eval [options] code`.
 const INTERPRETERS = [
   [/^python[\d.]*$/, /^-[A-Za-z]*c$/],
   [/^(node|nodejs|bun)$/, /^(-e|-p|-pe|--eval|--print)$/],
   [/^perl$/, /^-[A-Za-z\d]*[eE]$/],
   [/^ruby$/, /^-[A-Za-z]*e$/],
   [/^deno$/, /^eval$/],
-  [/^php$/, /^-r$/],
-];
-
-// The same flags glued to their code (`python3 -c"…"`, `perl -e'…'`, `php -r'…'`):
-// only the switches that take no value may come before the code flag.
-const GLUED = [
-  [/^python[\d.]*$/, /^-[bBdEhiIOqsSuvVx]*c(.+)$/s],
-  [/^perl$/, /^-[lnpsawW0-9]*[eE](.+)$/s],
-  [/^ruby$/, /^-[lnpsawW]*e(.+)$/s],
-  [/^php$/, /^-r(.+)$/s],
 ];
 
 function inlineCode(name, args) {
@@ -1316,16 +1303,6 @@ function inlineCode(name, args) {
         programs.push(unquote(arg.slice(arg.indexOf("=") + 1)));
       }
     });
-  }
-  for (const [pattern, flag] of GLUED) {
-    if (pattern.test(name)) {
-      args.forEach((arg) => {
-        const glued = flag.exec(arg);
-        if (glued) {
-          programs.push(glued[1]);
-        }
-      });
-    }
   }
   return programs;
 }

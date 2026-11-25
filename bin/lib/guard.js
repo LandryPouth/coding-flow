@@ -1116,8 +1116,8 @@ const destructiveHost = {
   onPath,
   // `{ value }`: the alias' expansion, null when `name` is none; `{ issue }` when git did not answer.
   // Only exit 1 means "no such alias"; any other failure is no answer.
-  gitAlias: (cwd, name) => {
-    const { out, issue, status } = gitNow(cwd, ["config", "--get", `alias.${name}`]);
+  gitAlias: (cwd, name, { local = false } = {}) => {
+    const { out, issue, status } = gitNow(cwd, ["config", ...(local ? ["--local"] : []), "--get", `alias.${name}`]);
     if (issue || (out === null && status !== 1)) {
       return { issue: issue || "git did not answer for the alias" };
     }
@@ -1327,8 +1327,12 @@ function allowedByPolicy(entries, words) {
 
 // `{ deny }` with the refusal, or `{ warnings }` (warn mode). An unsettled check
 // joins `ctx.issues`: the call is unchecked unless something else refuses it.
-function judgeDestructive(ctx, { findings, unchecked }) {
+// `deadline` (the 29-04 reader only): past it, what is left is unchecked — a line
+// built to cost thousands of git probes fails closed. The same check on the same
+// paths is answered once per call.
+function judgeDestructive(ctx, { findings, unchecked }, deadline = Infinity) {
   const policy = ctx.scopes[0].policy;
+  const answers = new Map();
   if (policy.destructiveCommands === "off") {
     return { warnings: [] };
   }
@@ -1342,7 +1346,17 @@ function judgeDestructive(ctx, { findings, unchecked }) {
     if (allowedByPolicy(policy.allowDestructive, finding.words)) {
       continue;
     }
-    const settled = settle(finding, policy);
+    if (Date.now() > deadline) {
+      if (!ctx.issues.includes(OUT_OF_TIME)) {
+        ctx.issues.push(OUT_OF_TIME);
+      }
+      break;
+    }
+    const key = finding.check ? JSON.stringify([finding.cwd, finding.check]) : null;
+    const settled = key !== null && answers.has(key) ? answers.get(key) : settle(finding, policy);
+    if (key !== null) {
+      answers.set(key, settled);
+    }
     if (settled.unchecked) {
       if (!ctx.issues.includes(settled.unchecked)) {
         ctx.issues.push(settled.unchecked);
@@ -1391,8 +1405,7 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   // The destructive check is settled first, and nothing after it can lose its
   // refusal: a later check that throws still returns it (review round 2).
   const destructiveIssues = [];
-  const reading = readDestructiveSafely(command, ctx, destructiveIssues);
-  const destructive = judgeDestructive({ ...ctx, issues: destructiveIssues }, reading);
+  const { reading, destructive } = strictestReading(command, ctx, destructiveIssues);
   try {
     return decideBashWrites(command, ctx, { reading, destructive, destructiveIssues }, caseInsensitive);
   } catch (error) {
@@ -1403,10 +1416,30 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
   }
 }
 
-// What the destructive reader makes of the command; a reader that throws makes the call unchecked.
-function readDestructiveSafely(command, ctx, issues) {
+// Story 29-04 (plan.md R4): two readers, the strictest wins. `destructive-29-03` is
+// 29-03's reader frozen as it shipped; `destructive` adds what 29-04 reads. A refusal
+// from either is a refusal, an unchecked from either is unchecked, and what either
+// says the line touches is checked — so no later reader can weaken a 29-03 decision.
+const OUT_OF_TIME = "the line costs the destructive-command reader more than its time budget";
+const NEW_READER_BUDGET_MS = 3000;
+
+function strictestReading(command, ctx, issues) {
+  const started = Date.now();
+  const frozen = readDestructiveSafely("frozen", command, ctx, issues, {});
+  const judged = judgeDestructive({ ...ctx, issues }, frozen);
+  const added = readDestructiveSafely("added", command, ctx, issues, { deadline: started + NEW_READER_BUDGET_MS });
+  const extra = judged.deny ? { warnings: [] } : judgeDestructive({ ...ctx, issues }, added, started + NEW_READER_BUDGET_MS);
+  return {
+    reading: { touched: [...frozen.touched, ...added.touched], substituted: [...frozen.substituted, ...added.substituted] },
+    destructive: { deny: judged.deny || extra.deny, warnings: [...new Set([...(judged.warnings || []), ...(extra.warnings || [])])] },
+  };
+}
+
+// What one destructive reader makes of the command; a reader that throws makes the call unchecked.
+function readDestructiveSafely(which, command, ctx, issues, options) {
   try {
-    return require("./destructive").readDestructive(command, { cwd: ctx.cwd, host: destructiveHost });
+    const reader = which === "frozen" ? require("./destructive-29-03") : require("./destructive");
+    return reader.readDestructive(command, { cwd: ctx.cwd, host: destructiveHost, ...options });
   } catch {
     issues.push("the destructive-command reader could not read this command");
     return { findings: [], unchecked: [], touched: [], substituted: [] };
