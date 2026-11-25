@@ -793,3 +793,22 @@ test('19-08: a hostile 100 KB line of escaped quotes is read in linear time', ()
 
   assert.ok(ms < 1000, `took ${ms} ms`);
 });
+
+for (const [name, content] of [
+  ['holding a NUL byte', "test('denies', () => {\n  expect(require('./auth')()).toBe(true);\n});\n\0binary\n"],
+  ['over 1 MB', "test('denies', () => {\n  expect(require('./auth')()).toBe(true);\n});\n" + 'expect(add(1, 2)).toBe(3);\n'.repeat(45000)],
+]) {
+  test(`19-08: an untracked test file ${name} is not read, and never strengthens`, (t) => {
+    // Series 2 round 4: untracked test files were read whole and tokenized with
+    // no size or binary check.
+    const dir = repo(t, 'skip-untracked');
+    const rel = story(dir);
+    commit(dir, BEHAVIOR, 'auth change');
+    write(dir, { 'src/auth.test.js': content });
+
+    const res = run(dir, ['verify', '--story', rel]);
+
+    assert.equal(res.code, 1, res.output);
+    assert.doesNotMatch(res.output, /strengthened/);
+  });
+}

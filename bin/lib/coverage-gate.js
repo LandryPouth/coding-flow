@@ -347,11 +347,16 @@ function testChangesForStrength(isTest) {
   // Every name here is from the repository top, as `git diff` gives them.
   const top = runGitText(["rev-parse", "--show-toplevel"]).trim() || cwd;
   const oldLines = (file) => runGitText(["show", `${base || "HEAD"}:${file}`]).split(/\r?\n/);
-  const deleted = new Map(deletedFilesInDiff().filter(isTest).map((file) => [file, oldLines(file)]));
+  const deleted = new Map(deletedFilesInDiff().filter(isTest).map((file) => {
+    const lines = oldLines(file);
+    return [file, { lines, tokens: tokensOf(lines) }];
+  }));
 
   for (const file of addedFilesInDiff().filter(isTest)) {
     if (!byFile[file]) {
-      const lines = readLines(path.join(top, file));
+      const lines = readTestText(path.join(top, file));
+      // Binary or oversized: never read as test code, so it never strengthens.
+      if (!lines) continue;
       const moved = closestDeleted(lines, deleted);
       byFile[file] = { added: lines, removed: moved ? moved.lines : [] };
       if (moved) deleted.delete(moved.file);
@@ -360,7 +365,7 @@ function testChangesForStrength(isTest) {
 
   for (const file of deletedFilesInDiff()) delete byFile[file];
 
-  return { changes: Object.entries(byFile), removedElsewhere: [...deleted.values()].flatMap((lines) => tokensOf(lines)) };
+  return { changes: Object.entries(byFile), removedElsewhere: [...deleted.values()].flatMap((old) => old.tokens) };
 }
 
 // Per test file: did this diff make it stronger, weaker, or neither? Weaker is
@@ -399,11 +404,17 @@ function scanBase() {
   return mergeBase || (runGitText(["rev-parse", "--verify", "-q", "HEAD"]).trim() ? "HEAD" : null);
 }
 
-function readLines(file) {
+// An untracked test file's lines, or null when it is not text worth reading:
+// unreadable, over 1 MB, or holding a NUL byte (a binary snapshot).
+const MAX_TEST_TEXT_BYTES = 1024 * 1024;
+
+function readTestText(file) {
   try {
-    return fs.readFileSync(file, "utf8").split(/\r?\n/);
+    if (fs.statSync(file).size > MAX_TEST_TEXT_BYTES) return null;
+    const text = fs.readFileSync(file, "utf8");
+    return text.includes("\0") ? null : text.split(/\r?\n/);
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -416,12 +427,11 @@ function closestDeleted(lines, deleted) {
   let best = null;
 
   for (const [file, old] of deleted) {
-    const theirs = tokensOf(old);
-    const shared = mine.length - consume(bagOf(theirs), mine).length;
-    const score = shared / Math.max(mine.length, theirs.length, 1);
+    const shared = mine.length - consume(bagOf(old.tokens), mine).length;
+    const score = shared / Math.max(mine.length, old.tokens.length, 1);
 
     if (score >= 0.5 && (!best || score > best.score)) {
-      best = { file, lines: old, score };
+      best = { file, lines: old.lines, score };
     }
   }
 

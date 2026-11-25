@@ -163,7 +163,8 @@ function stepCode(state, frame, line, index) {
 // an apostrophe with no partner (`the user's access`) is not a string. Linear
 // per line: once a quote kind has no partner from some point, no later quote
 // of that kind has one either (the scan from the earlier quote passed the later
-// one unescaped and went on from the same place), so it is not searched again.
+// one as an escaped character — unescaped, it would have been the partner —
+// and went on from the same place), so it is not searched again.
 function closingQuote(state, line, start) {
   const quote = line[start];
   if (state.noPartner.has(quote)) return -1;
