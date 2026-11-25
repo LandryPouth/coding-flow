@@ -21,7 +21,7 @@ in epic indexes and agent memory and are recalled by hand.
 - Documented examples in `docs/rules-and-limits.md`: `notify-send`
   (Linux), a PowerShell toast from WSL, an `ntfy` push.
 - `ai-flow todo [--json]`: read-only, across all epics: `## Needs you`
-  questions; stories `Owner: human` that are ready; maintainer to-do items
+  questions; stories `Owner: human` not done yet (plan.md *Decisions*); maintainer to-do items
   from epic indexes (headings from `todo.headings`, default `["Maintainer
   to-do", "Maintainer cleanup on delivery"]`, unchecked `- [ ]` lines);
   deferred criteria `[~]`; open browser checks; open risks (26-01). Grouped
@@ -32,16 +32,25 @@ in epic indexes and agent memory and are recalled by hand.
 
 ## Acceptance Criteria
 
-- [ ] Given `notify.command` set and a story parking on `Needs you`, then the
+- [~] Given `notify.command` set and a story parking on `Needs you`, then the
       command runs once with the event JSON on stdin.
-- [ ] Given a notify command that hangs, then it is killed at 10 s, logged,
+- [~] Given a notify command that hangs, then it is killed at 10 s, logged,
       and the run continues.
-- [ ] Given a project `config.json` declaring `notify.command`, then it is
+- [~] Given a project `config.json` declaring `notify.command`, then it is
       ignored and doctor warns.
-- [ ] Given two epics with unchecked maintainer to-do items and a `Needs you`
+- [x] Given two epics with unchecked maintainer to-do items and a `Needs you`
       story, then `ai-flow todo` lists all three, grouped by epic.
-- [ ] Given `todo.headings` set to a project's own heading (bethl: "À faire
+- [x] Given `todo.headings` set to a project's own heading (bethl: "À faire
       côté utilisateur"), then those items are listed too.
+
+## Deferred Criteria
+
+- The three notify criteria (`[~]`) and the `run.end` todo count: they need the
+  user global config (`~/.config/coding-flow/config.json`), which 24-02 creates.
+  Owner: the notify half of this story, run after 24-02 lands (recorded in
+  plan.md, *Split*).
+- Open browser checks and open risks in `ai-flow todo`: they need 26-01's risk
+  register. Owner: 26-07 (a task in its tasks.md).
 
 ## Edge Cases
 

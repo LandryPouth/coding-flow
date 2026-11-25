@@ -99,7 +99,8 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [x] 26-06 `ai-flow rules` — split at the cap (series 1: 4 rounds, P1 2/1/1/2; init change → new 26-08); series 2: P1 1/0; landed, re-proved, review captured
 - [ ] 26-03  - [ ] 26-07  - [ ] 26-08 init shows the rules it applies (split from 26-06)
 - [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
-- [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
+- [x] 26-02 `ai-flow todo` (reader half; notify half after 24-02) — 4 rounds (P1 1/1/1/0), landed, re-proved, review captured
+   - [ ] 28-01  - [ ] 19-08 (after 19-05)
 - [x] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24) — 1 review round (0 P1, 8 P2 fixed), landed, re-proved, review captured
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
@@ -274,3 +275,6 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 - 2026-11-25 — the flaky `harness-fixers` test was a real bug (index copy newer than
   the index, so git skipped its racy re-read): story 19-10, in review. land.sh: the
   slot wrapper's wait lines must not count toward the output it keeps.
+- 2026-11-25 — `worktree land` needs the story's directory on the base branch: a story
+  created inside its own branch (19-10, 29-05) cannot land until its story file is
+  copied to develop first. Tool gap — follow-up for epic 20 (the epic runs itself).
