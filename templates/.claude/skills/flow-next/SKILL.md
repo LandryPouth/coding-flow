@@ -31,6 +31,11 @@ ai-flow next
 
 ## Behavior
 
+- **We need you** comes first: when anything waits on a human (`## Human to-do`
+  items, `## Needs you` questions, `Owner: human` stories), `next` prints that
+  block above the recommendation — `before: deploy` first, at most 5 lines plus a
+  count. Report it verbatim, before the recommendation. Never run
+  `ai-flow todo done` for the maintainer: only they tick what only they can do.
 - Read-only: it never verifies, commits, ships or creates a worktree — it names the
   command that would.
 - Scoped to the checkout it runs from, like `git status`: with several worktrees
@@ -40,6 +45,8 @@ ai-flow next
 
 - [ ] `ai-flow next` ran: the recommendation is its output, not your reading of the
       project.
+- [ ] A We need you block, when printed, was reported verbatim before the
+      recommendation.
 - [ ] The tier and the reason it ranked there were reported, not only the command.
 - [ ] The recommended command was **not** run without asking first.
 

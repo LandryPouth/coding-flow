@@ -42,6 +42,58 @@
 - **Every epic of the checkout, landed included**, for `next`'s block only:
   `before: deploy` items outlive the land by design.
 
+- **D1 — `todo.js` stays the one reader.** `## Human to-do` items, ids,
+  masking, `todo done`, the needsYou list and the uncaptured check all read
+  through 26-02's `scanMarkdown`; the scanner now keeps each block's line
+  number (to tick a checkbox where it is and to name a warning's line). No third
+  Markdown reader.
+- **D2 — `when` of the other kinds.** A `## Needs you` question and a ready
+  `Owner: human` story block the chain → `next-story`; a `todo.headings` item
+  has no deadline → `later`; deferred `[~]` criteria are a debt, not an action,
+  and stay in `ai-flow todo` only.
+- **D3 — The block's cap.** 5 lines from `deploy` then `next-story`; `later`
+  items are never listed one by one. When the urgent items overflow, the count
+  line says both: `+ 3 more, 1 later — ai-flow todo`. `We need you (N)` counts
+  everything listed in `needsYou`.
+- **D4 — Ids.** 7 hex characters of sha1(epic, story, normalized text without
+  the `(before: …)` prefix): changing `when` keeps the id, editing the text
+  changes it. Every listed item has one; only checkbox items (`## Human to-do`,
+  `todo.headings`) can be ticked by `todo done`. An id naming two items (the
+  same text twice in one story) is refused with both locations.
+- **D5 — `todo done` writes under a lock in the git dir**
+  (`<git-common-dir>/coding-flow/todo.lock`, `.coding-flow/todo.lock` outside
+  git), never next to the story file, and re-checks under the lock that the line
+  is still that open checkbox. It keeps CRLF.
+- **D6 — Masking is applied when the items are collected**, so `todo`, `next`,
+  `--json`, `status`, `ship` and `land` can only print the masked text; the id is
+  computed from the raw text (a hash: it leaks nothing). The patterns are the
+  project's `secretPatterns` from `harness.json` (the guard's own); doctor
+  errors (`todo_secret`) only for checkbox items, where a value would be acted on.
+- **D7 — Uncaptured prose** reads every block under a `Result` heading
+  (sub-headings such as `### Rollback Notes` included) of the story's files,
+  outside code and comments, and only when the story has no open
+  `## Human to-do` item. Each `todo.uncapturedPatterns` entry is a
+  case-insensitive regex (`before (the )?deploy`); a broken entry is skipped.
+  On this repository the defaults raise 0 warnings. `verify` prints it from the
+  command layer (`bin/ai-flow.js`, after the verdict, not with `--json` or
+  `--dry-run`): the verify core may not require `todo.js` (test/layering: a core
+  module never depends on a layer one; test/security-core-risk: everything the
+  verify core requires is a high-risk path). So the warning is not recorded in
+  the evidence — it is advice, not proof.
+- **D8 — "Stories in the branch" for ship**: the story named after the branch,
+  plus every story whose files the branch changed since the base
+  (`git diff --name-only base...HEAD`). The PR body section sits between its own
+  markers, is replaced on each ship and removed when no item is left; an
+  unchanged body is not re-edited.
+- **D9 — Epic closure (26-04) is not shipped**: its print is a task in 26-04
+  (`openDeployTodos` + `printDeployTodos`).
+- **D10 — 26-01's open risks and browser checks in `ai-flow todo`**: skipped,
+  26-01 has not landed (its register does not exist yet).
+- **D11 — One 26-02 test changed on purpose.** `todo.test.js` "an extra argument
+  is refused" pinned `todo done` as an unknown argument; `done` is now this
+  story's subcommand. The test now asserts another word (`list`) is refused and
+  that `todo done` without its id is refused with its own message.
+
 ## Test Plan
 
 Fixture project with: a story `## Human to-do` of each `when`; an epic index
@@ -53,15 +105,41 @@ Assert `next` text and `--json`, `todo done` diff (one line), `ship` PR body
 
 ## Acceptance Traceability
 
-- 1–4 → `test/next.test.js::we need you`
-- 5 → `test/todo.test.js::done`
-- 6 → `test/doctor.test.js::todo.uncaptured`, `test/verify.test.js::todo warning`
-- 7 → `test/ship.test.js::before you deploy`
-- 8 → `test/doctor.test.js::todo secret`
-- 9 → `test/next.test.js::json needsYou`
+(Moved to tasks.md, one line per criterion, with the tests as written.)
 
 ## Commands
 
 ```bash
 npm test
 ```
+
+## Review findings
+
+### Round 1 — FAIL (secrets, real projects)
+
+- [x] P1 todo.js uncapturedTodoLines/printUncapturedTodos + doctor todo_uncaptured — the uncaptured-prose warning printed the raw `## Result` line unmasked (a live Stripe key in full in `verify --story` and `doctor`). Fix: mask with the project's secret patterns in uncapturedTodoLines; test with a key built at run time. Fixed: `uncapturedTodoLines` masks each line with `secretPatternsOf(root)`; test "the uncaptured warning masks a secret of the Result line, in verify and in doctor".
+- [x] P2 `## Needs you` option sub-items were never masked (an AWS key showed in `todo` and `todo --json` options) — mask options in finishItem; test. Fixed in `finishItem`; test "the options of a Needs you question are masked in todo and todo --json".
+- [x] P2 `todo done` re-checked only "some open checkbox" under the lock — compare the parsed text under the lock; refuse if it changed; test. Fixed: under the lock the item starting on that line is re-scanned and its id recomputed; a different id is refused ("changed since it was read"); test "todo done refuses when the line changed between the read and the lock".
+- [x] P2 `todo done` had no `--dry-run` (hard rule: every write has one) — add it, printing the line it would tick and writing nothing; test. Fixed: `todo done <id> --dry-run` prints "Would tick …" and the ticked line, writes nothing; test.
+- [x] P2 verify warned only with `--story`; use the story verify resolved implicitly too. Fixed: with no `--story`, `printUncapturedTodos` reads the active Spec Kit feature (the only implicit scope verify has, `speckit.detectFeature`); test.
+- [x] P2 autoland → sayDeployTodos only announced the `--story` passed and an absolute path matched nothing — announce every story of the landed chain, paths made relative. Fixed: `chainStoryPaths` (worktree-plan.js) lists the chain's stories relative to the root; `openDeployTodos` makes an absolute path relative; test.
+- [x] P2 noise: on a bethl copy doctor raised 63 todo_uncaptured warnings in 45 files, at least half from bare `in production`/`en prod(uction)?` and Rollback Notes sub-blocks — drop the bare defaults (keep phrases with an action verb), skip `### Rollback` sub-headings; test both. Fixed: bare phrases replaced by verb + `in production`/`en prod` patterns, `### Rollback…` sub-blocks skipped; test. This repository: still 0 warnings.
+- [~] P2 default secret patterns miss `postgres://user:pass@` and JWTs — not done: the defaults are the guard's own (`harness-config.js`), so a change alters what the guard refuses on every write of every project; not low-risk inside this story. Added under epic 26's `## Follow-ups`.
+
+### Round 2 — FAIL (user-facing behaviour on real projects: bethl, ai-learn, pomo)
+
+- [x] P1 bin/lib/todo.js:630 — default pattern `côté utilisateur` flags product behaviour as a to-do (bethl `epics/epic-26-annonce-page-visual-redesign/story-26-05-share-and-seo/story.md:78`: "…échec/annulation côté utilisateur silencieux, la modale reste ouverte…") — fix: drop it from the defaults or require an action verb with it; test with this exact sentence. Fixed: bare `côté utilisateur` dropped from the defaults, `à faire côté utilisateur` kept; test "product behaviour \"côté utilisateur\" is not a to-do" with the bethl sentence verbatim. bethl doctor: 8 → 7 warnings.
+- [x] P2 todo.js:627/634 — `[^.]*` stops at the first period, so a file name breaks the match ("Run `scripts/backfill.ts` in production after merge.", "Lancer `scripts/seed.ts` en prod.") — fix: stop at sentence end only (`\.(\s|$)`) or skip code spans; tests. Fixed: the verb-to-"in production"/"en prod" gap is `(?:[^.]|\.(?!\s|$))*` (a period ends it only before a space or the end); test "a file name in the sentence does not break…" (both sentences, plus a two-sentence negative).
+- [x] P3 also missed: "after the deploy, run…", "À faire après le déploiement : …", "The maintainer has to…". Fixed with an action required: `^after (the )?deploy(ment)?` + verb, `à faire après (le )?déploiement`, `^après (le )?déploiement` + verb, `the maintainer (must|has to|needs to)`; test includes "After the deploy the page loads in 1s" / "Après le déploiement, la page charge…" as non-matches.
+- [x] P3 `todo --dry-run` without `done` exits 0 and silently drops the flag — refuse it or say it. Fixed: refused (exit 1, `--dry-run only applies to "todo done"`); test.
+- [~] P3 autoland covered only by unit tests of `chainStoryPaths` and `sayDeployTodos` (no criterion rests on it) — an end-to-end test if cheap. Not done: a real autoland needs a worktree chain, a green verify per story and a merge — not cheap; the two halves stay unit-tested (`chainStoryPaths`, `sayDeployTodos`) and no criterion rests on it.
+
+Held: todo/next/next --json, We need you (12) on bethl with deploy items first, `todo done` (dry-run and real), ship's "Before you deploy", verify exit code and warning after the verdict, doctor 63 → 8 warnings on bethl (6 true positives), round-1 fixes present.
+
+### Round 3 — PASS (criteria one by one against code and tests; round-2 fixes on bethl)
+
+- [~] P2 todo.js:628/641 — French action verbs lack a left word boundary (`vider` in "provider", `lancer` in "relancer"); no real Result hits it → epic 26 Follow-ups.
+- [~] P3 "nothing to do" lines ("Rien à lancer en prod.") match → epic 26 Follow-ups.
+- [~] P3 `todo --dry-run` exits 1 while read-only commands ignore unknown flags — accepted, stated in CHANGELOG.
+
+Held: each of the 9 criteria has a test that fails if the behaviour breaks; no weakened test; bethl 7 warnings all true; 0 elsewhere; claims match the code.
