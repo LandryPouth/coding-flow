@@ -46,12 +46,29 @@ record as an epic archive:
       story's files come back byte-identical.
 - [ ] Given the epic later finished, when `ai-flow archive <epic>` runs, then
       its index entry includes the stories archived earlier, once.
+- [ ] **Dependents (maintainer, 2026-11-25: "les stories qui dépendent d'une
+      autre déjà sortie").** Given an epic whose dependency tree has `s2` and
+      `s3` hanging off `s1`, with `s1` archived and `s2`, `s3` planned, then
+      `status`, `next`, `worktree plan` and the autoland chain treat `s1` as
+      finished (never missing, never blocking), `doctor` reports no broken link
+      or tree edge, and `worktree add --story s2` works.
+- [ ] Given an archived story, when `ai-flow archive show <epic>/<NN>` (or the
+      story id) runs, then it prints the story's files from the recorded commit
+      without restoring them, so an agent building on it can read what it
+      promised. `flow-run`'s skill says to use it when a story it builds on is
+      archived.
+- [ ] Given a story that is finished but still referenced by an open story
+      in-flight in a worktree (the worktree's branch contains the dependency's
+      files), then archiving it on the base does not break that worktree's
+      verify or land (tested with a real worktree in a throwaway repo).
 - [ ] `ai-flow archive --stories` with no epic does every live epic. The
       Result records the bytes removed from this repository's checkout.
 
 ## Out of Scope
 
-- Archiving automatically. 26-04 (the epic closes itself) may call it later.
+- Archiving automatically. 26-04 (the epic closes itself) may call it later;
+  the maintainer's epic-run guidance runs `archive --stories` at each wave end
+  once the release reached main.
 
 ## Commands
 
@@ -59,6 +76,6 @@ record as an epic archive:
 npm test
 ```
 
-## Status: planned
+## Status: in-progress
 
 ## Result
