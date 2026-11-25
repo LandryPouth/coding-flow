@@ -1225,26 +1225,81 @@ const MAX_INDEX_BYTES = 2 * 1024 * 1024;
 const GLOB_WORD = /[*?[]/;
 const GIT_STATUS_FAILED = "git status failed on the paths a destructive command names (the check was not run)";
 
-// What the new reader's dirty check hands `git status` (series 2 round 2): the paths
-// inside this repository (one outside makes git fail, and is not this repository's
-// to lose); `rm`'s words quoted for git — a glob as `:(glob)` (`*` stops at `/`, as in
-// bash), any other word `:(literal)`, so `:!a.txt` cannot exclude what bash removes;
-// any other command's words (git's own pathspecs) as written.
+// What the new reader's dirty check hands `git status` (series 2 round 2), as
+// `[{ top, specs }]`: one `git status` per repository. A shell `rm` word is checked
+// in the repository that holds it (series 2 round 3: `rm ../locked/sub/c.txt` from a
+// linked worktree is the primary's file to lose), found from its directory resolved
+// on disk, symlinks included; a path in no repository is no repository's to lose.
+// `rm`'s words are quoted for git — a glob as `:(glob)` (`*` stops at `/`, as in bash),
+// any other word `:(literal)`, so `:!a.txt` cannot exclude what bash removes. Any other
+// command's words (git's own pathspecs) go to the cwd's repository as written, those
+// inside it only: git fails on the others, and does not remove them.
 function pathspecsIn(cwd, check) {
-  const repo = gitDirOf(cwd);
-  if (!repo) {
-    return [];
-  }
   const fileOf = (word) => path.resolve(cwd, word.replace(/^~(?=\/|$)/, os.homedir()));
-  const inside = (word) => {
-    const rel = path.relative(repo.top, fileOf(word));
-    return !rel.startsWith("..") && !path.isAbsolute(rel);
-  };
   if (check.removal !== "shell") {
-    return check.paths.filter((word) => word.startsWith(":") || inside(word));
+    const repo = gitDirOf(cwd);
+    if (!repo) {
+      return [];
+    }
+    const inside = (word) => {
+      const rel = path.relative(repo.top, fileOf(word));
+      return !rel.startsWith("..") && !path.isAbsolute(rel);
+    };
+    const specs = check.paths.filter((word) => word.startsWith(":") || inside(word));
+    return specs.length ? [{ top: cwd, specs }] : [];
   }
-  const relative = (word) => (word.startsWith("~") ? path.relative(cwd, fileOf(word)) || "." : word);
-  return check.paths.filter(inside).map((word) => `${GLOB_WORD.test(word) ? ":(glob)" : ":(literal)"}${relative(word)}`);
+  const groups = new Map();
+  const real = new Map(); // one realpath and one repository lookup per directory
+  const repoOf = (dir) => {
+    if (!real.has(`repo:${dir}`)) {
+      const repo = gitDirOf(dir);
+      real.set(`repo:${dir}`, repo && realOrSame(repo.top));
+    }
+    return real.get(`repo:${dir}`);
+  };
+  for (const word of check.paths) {
+    const file = onDisk(cwd, word.replace(/^~(?=\/|$)/, os.homedir()), real);
+    const top = repoOf(path.dirname(file));
+    if (!top) {
+      continue;
+    }
+    const rel = path.relative(top, file).split(path.sep).join("/") || ".";
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      continue;
+    }
+    if (!groups.has(top)) {
+      groups.set(top, []);
+    }
+    groups.get(top).push(`${GLOB_WORD.test(word) ? ":(glob)" : ":(literal)"}${rel}`);
+  }
+  return [...groups].map(([top, specs]) => ({ top, specs }));
+}
+
+const realOrSame = (dir) => {
+  try {
+    return fs.realpathSync.native(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+};
+
+// Where the shell finds `word` from `cwd`: its directory resolved by the kernel
+// (`link/..` is the link target's parent, not `.`) up to the first glob component;
+// the rest as written. A directory that does not exist is resolved by its words.
+function onDisk(cwd, word, memo = null) {
+  const parts = word.split("/");
+  const name = parts.pop();
+  const globAt = parts.findIndex((part) => GLOB_WORD.test(part));
+  const dirParts = globAt === -1 ? parts : parts.slice(0, globAt);
+  const rest = globAt === -1 ? [name] : [...parts.slice(globAt), name];
+  const joined = word.startsWith("/") ? dirParts.join("/") || "/" : [cwd, ...dirParts].join("/");
+  if (!memo) {
+    return path.join(realOrSame(joined), ...rest);
+  }
+  if (!memo.has(`dir:${joined}`)) {
+    memo.set(`dir:${joined}`, realOrSame(joined));
+  }
+  return path.join(memo.get(`dir:${joined}`), ...rest);
 }
 
 function gitDirOf(cwd) {
@@ -1294,14 +1349,21 @@ function indexHolds(cwd, paths) {
   if (paths.some((word) => GLOB_WORD.test(word))) {
     return false; // a glob is the shell's: git reads it as a pathspec
   }
+  if (paths.some((word) => word.startsWith("~"))) {
+    return false; // the shell's home, not a directory named `~`
+  }
   try {
-    const repo = gitDirOf(cwd);
+    const base = realOrSame(cwd);
+    const repo = gitDirOf(base);
     const index = repo && indexEntries(path.join(repo.gitDir, "index"));
     if (!index) {
       return false;
     }
     return paths.every((word) => {
-      const file = path.resolve(cwd, word);
+      const file = path.resolve(base, word);
+      if (onDisk(cwd, word) !== file) {
+        return false; // through a symlinked directory (series 2 round 3): `git status` decides
+      }
       const rel = path.relative(repo.top, file).split(path.sep).join("/");
       const stat = fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
       if (!stat || rel.startsWith("..")) {
@@ -1350,16 +1412,19 @@ function settle(finding, policy) {
     if (check.worktree && indexHolds(finding.cwd, check.paths)) {
       return { applies: false }; // a plain `rm` of files the index holds as they are: no spawn
     }
-    const specs = pathspecsIn(finding.cwd, check);
-    if (!specs.length) {
-      return { applies: false }; // outside any repository, or every path outside this one
+    const files = [];
+    for (const { top, specs } of pathspecsIn(finding.cwd, check)) {
+      const { out, issue } = gitNow(top, ["status", "--porcelain", "--untracked-files=no", "--", ...specs]);
+      if (issue || out === null) {
+        return { unchecked: issue || GIT_STATUS_FAILED }; // a git error is no answer, never "clean"
+      }
+      // `worktree`: only a change the index does not hold is lost (`rm` of a staged file).
+      const lost = porcelainFiles(check.worktree ? out.split("\n").filter((line) => line[1] !== " ").join("\n") : out);
+      // A shell removal's files are named from the cwd: one may be another repository's.
+      const from = check.removal === "shell" ? realOrSame(finding.cwd) : null;
+      files.push(...lost.map((file) => (from ? path.relative(from, path.join(top, file)) || file : file)));
     }
-    const { out, issue } = gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no", "--", ...specs]);
-    if (issue || out === null) {
-      return { unchecked: issue || GIT_STATUS_FAILED }; // a git error is no answer, never "clean"
-    }
-    // `worktree`: only a change the index does not hold is lost (`rm` of a staged file).
-    const files = porcelainFiles(check.worktree ? (out || "").split("\n").filter((line) => line[1] !== " ").join("\n") : out);
+    // None: outside any repository, or nothing tracked and changed among the paths.
     return { applies: files.length > 0, detail: fileList(files) };
   }
   if (check.kind === "changes") {

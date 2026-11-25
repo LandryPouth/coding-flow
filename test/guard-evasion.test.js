@@ -744,7 +744,19 @@ test('series 2 round 1: the frozen 29-03 reader and its shell reader are pinned 
     assert.equal(crypto.createHash('sha256').update(text).digest('hex'), recorded[where], `${where} is 3c90919's`);
   }
   const outside = judge.replace(/^\/\/ --- 3c90919[\s\S]*^\/\/ --- end of 3c90919 ---$/m, '');
-  assert.doesNotMatch(outside, /^function /m, 'no code of its own outside the frozen blocks but `use`');
+  // Series 2 round 3: outside the blocks, nothing but comments, blank lines and these
+  // lines (the requires, `use`, the export) — any other code fails, not only a `function`.
+  const code = outside.split('\n').filter((line) => line.trim() !== '' && !/^\s*\/\//.test(line));
+  assert.deepEqual(code, [
+    '"use strict";',
+    'const path = require("path");',
+    'const { execFileSync } = require("child_process");',
+    'let loadPolicy = null;',
+    'const use = (loader) => {',
+    '  loadPolicy = loader;',
+    '};',
+    'module.exports = { use, judgeDestructive, gitBudget };',
+  ], 'no code of its own outside the frozen blocks but the requires, `use` and the export');
 });
 
 // A host with no spawn and nothing from this machine (home, PATH), so a reader's output
@@ -853,6 +865,60 @@ test('series 2 round 2: a git error is no answer, and a pathspec word cannot emp
   const plain = tmp(t);
   fs.writeFileSync(path.join(plain, 'x.txt'), 'x');
   expectAll(plain, 'allow', ['rm x.txt', 'rm *.txt', 'git rm -f x.txt']);
+});
+
+// --- series 2 round 3 -------------------------------------------------------------------
+
+// A primary checkout `locked/` (subRepo's layout: sub/c.txt and sub/deep/e.txt modified,
+// top.txt clean) with a linked worktree `wt/` beside it.
+function linkedLayout(t) {
+  const base = tmp(t);
+  const locked = path.join(base, 'locked');
+  fs.mkdirSync(locked);
+  git(locked, 'init', '-q', '-b', 'main');
+  fs.mkdirSync(path.join(locked, 'sub', 'deep'), { recursive: true });
+  const write = (file, text) => fs.writeFileSync(path.join(locked, file), text);
+  write('top.txt', 'one\n'); write('sub/c.txt', 'one\n'); write('sub/deep/e.txt', 'one\n');
+  git(locked, 'add', '.');
+  git(locked, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init');
+  write('sub/c.txt', 'two\n'); write('sub/deep/e.txt', 'two\n');
+  const wt = path.join(base, 'wt');
+  git(locked, 'worktree', 'add', '-q', '-b', 'story', wt);
+  return { base, locked, wt };
+}
+
+test("series 2 round 3: a path in another repository is checked in that repository", (t) => {
+  const { locked, wt } = linkedLayout(t);
+  expectAll(wt, 'deny', [
+    'rm ../locked/sub/c.txt',
+    `rm ${locked}/sub/c.txt`,
+    'unlink ../locked/sub/deep/e.txt',
+    'rm ../locked/sub/*.txt',
+    `rm -f ${locked}/sub/deep/*.txt`,
+    'rm top.txt ../locked/sub/c.txt',
+    'cd ../locked && rm sub/c.txt',
+  ]);
+  // Clean or missing files of the other repository are not lost.
+  expectAll(wt, 'allow', ['rm ../locked/top.txt', `rm ${locked}/top.txt`, 'rm ../locked/nothing.txt', 'rm top.txt']);
+  // A repository git will not answer for is no answer, never clean.
+  fs.writeFileSync(path.join(locked, '.git', 'HEAD'), 'garbage\n');
+  const result = run(wt, 'rm ../locked/sub/c.txt');
+  assert.notEqual(result.decision, 'allow', result.reason);
+});
+
+test('series 2 round 3: a path through a symlinked directory is not answered from the index', (t) => {
+  const dir = subRepo(t);
+  fs.symlinkSync('sub', path.join(dir, 'link'));
+  for (const command of ['rm link/c.txt', 'rm link/deep/e.txt', 'rm link/*.txt', 'unlink link/c.txt']) {
+    assert.notEqual(run(dir, command).decision, 'allow', command);
+  }
+  expectAll(dir, 'deny', ['rm link/c.txt', 'rm link/*.txt']);
+  // A symlinked directory that points into another repository.
+  const { wt } = linkedLayout(t);
+  fs.symlinkSync('../locked/sub', path.join(wt, 'ext'));
+  expectAll(wt, 'deny', ['rm ext/c.txt', 'rm ext/deep/e.txt']);
+  // The clean file through the link stays allowed.
+  expectAll(dir, 'allow', ['rm link/../top.txt']);
 });
 
 test('series 2 round 1: a command longer than the guard reads is refused, never allowed', (t) => {
