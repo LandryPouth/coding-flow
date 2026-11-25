@@ -52,6 +52,16 @@ l'automatisation que tu run actuellement".
 - [ ] Given a story whose PR was merged on GitHub, when `worktree land` runs,
       then the base fast-forwards to the remote, and the worktree and branch are
       removed, with no second merge.
+- [ ] **No protection available (seen on bethl, 2026-11-25: a private
+      repository on GitHub Free answers "Upgrade to GitHub Pro or make this
+      repository public"; its CI only runs on PRs into `main`, and the
+      repository has auto-merge disabled).** Given a base that cannot be
+      protected, `story` mode falls back to *watch and merge*: it opens the PR,
+      waits for the PR's own checks, and merges with `gh pr merge --merge`
+      only when every check is green. It never merges a PR with no checks at
+      all: it says "no CI runs on pull requests into <base>" and leaves the PR
+      open. `protect` (29-08) reports the plan limit in one line instead of a
+      raw API error.
 - [ ] This repository's `.coding-flow/config.json` has `"ship": "story"`, and
       `ai-flow rules` shows it.
 

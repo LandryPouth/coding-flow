@@ -77,12 +77,29 @@ function classify(token) {
   return "path";
 }
 
-function expandHome(target, home) {
+function expandHome(target, home, platform = process.platform) {
   if (target === "~" || target.startsWith("~/")) {
     return path.join(home, target.slice(1));
   }
   const match = HOME_PREFIX.exec(target);
-  return match ? path.join(home, target.slice(match[0].length)) : target;
+  return match ? path.join(home, target.slice(match[0].length)) : nativeShellPath(target, platform);
+}
+
+// The path a shell word names, in the platform's own form. On Windows the agent's
+// shell is Git Bash (MSYS), which hands a native program `/c/Users/x` as
+// `C:/Users/x` (and `/cygdrive/c/…` likewise): read here as `/c/Users/x`, it would
+// resolve to `<current drive>:\c\Users\x` — a directory that does not exist — and
+// a write or a branch switch aimed at the checkout would be judged elsewhere.
+// Anywhere else a word is a path as written.
+const MSYS_DRIVE = /^\/(?:cygdrive\/)?([A-Za-z])(?=\/|$)/;
+
+function nativeShellPath(word, platform = process.platform) {
+  if (platform !== "win32" || typeof word !== "string") {
+    return word;
+  }
+  const match = MSYS_DRIVE.exec(word);
+  // `/c` alone is the drive's root, not `C:` (the current directory on drive C).
+  return match ? `${match[1].toUpperCase()}:${word.slice(match[0].length) || "/"}` : word;
 }
 
 // util's `normalizePortable`, repeated so this module needs no other.
@@ -247,7 +264,7 @@ function reader(startCwd, host, options = {}) {
   return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0, acted: options.after || 0, substitutes: Boolean(options.substitutes), platform: options.platform || process.platform };
 }
 
-const homeOf = (r, target) => expandHome(target, r.host.home());
+const homeOf = (r, target) => expandHome(target, r.host.home(), r.platform);
 
 function add(r, word, kind, extra = {}) {
   const token = reduceWord(word);
@@ -1240,7 +1257,7 @@ function readForwarded(r, command) {
 // A script handed to `bash -c` / `eval` runs from the current directory. With the
 // directory unknown, only its absolute targets can still be judged; a relative one is unchecked.
 function followScript(r, program) {
-  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees, after: r.segments, substitutes: r.substitutes })) {
+  for (const entry of shellWrites(unquote(program), r.cwd === null ? r.startCwd : r.cwd, r.host, { trees: r.trees, after: r.segments, substitutes: r.substitutes, platform: r.platform })) {
     if (entry.unchecked) {
       r.found.push(entry);
     } else if (r.cwd === null && !path.isAbsolute(homeOf(r, entry.target))) {
@@ -1527,4 +1544,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { heredocWord, isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
+module.exports = { heredocWord, isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, nativeShellPath, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
