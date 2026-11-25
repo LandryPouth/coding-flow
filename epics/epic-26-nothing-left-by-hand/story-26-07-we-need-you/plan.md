@@ -125,3 +125,13 @@ npm test
 - [x] P2 autoland → sayDeployTodos only announced the `--story` passed and an absolute path matched nothing — announce every story of the landed chain, paths made relative. Fixed: `chainStoryPaths` (worktree-plan.js) lists the chain's stories relative to the root; `openDeployTodos` makes an absolute path relative; test.
 - [x] P2 noise: on a bethl copy doctor raised 63 todo_uncaptured warnings in 45 files, at least half from bare `in production`/`en prod(uction)?` and Rollback Notes sub-blocks — drop the bare defaults (keep phrases with an action verb), skip `### Rollback` sub-headings; test both. Fixed: bare phrases replaced by verb + `in production`/`en prod` patterns, `### Rollback…` sub-blocks skipped; test. This repository: still 0 warnings.
 - [~] P2 default secret patterns miss `postgres://user:pass@` and JWTs — not done: the defaults are the guard's own (`harness-config.js`), so a change alters what the guard refuses on every write of every project; not low-risk inside this story. Added under epic 26's `## Follow-ups`.
+
+### Round 2 — FAIL (user-facing behaviour on real projects: bethl, ai-learn, pomo)
+
+- [ ] P1 bin/lib/todo.js:630 — default pattern `côté utilisateur` flags product behaviour as a to-do (bethl `epics/epic-26-annonce-page-visual-redesign/story-26-05-share-and-seo/story.md:78`: "…échec/annulation côté utilisateur silencieux, la modale reste ouverte…") — fix: drop it from the defaults or require an action verb with it; test with this exact sentence.
+- [ ] P2 todo.js:627/634 — `[^.]*` stops at the first period, so a file name breaks the match ("Run `scripts/backfill.ts` in production after merge.", "Lancer `scripts/seed.ts` en prod.") — fix: stop at sentence end only (`\.(\s|$)`) or skip code spans; tests.
+- [ ] P3 also missed: "after the deploy, run…", "À faire après le déploiement : …", "The maintainer has to…".
+- [ ] P3 `todo --dry-run` without `done` exits 0 and silently drops the flag — refuse it or say it.
+- [ ] P3 autoland covered only by unit tests of `chainStoryPaths` and `sayDeployTodos` (no criterion rests on it) — an end-to-end test if cheap.
+
+Held: todo/next/next --json, We need you (12) on bethl with deploy items first, `todo done` (dry-run and real), ship's "Before you deploy", verify exit code and warning after the verdict, doctor 63 → 8 warnings on bethl (6 true positives), round-1 fixes present.
