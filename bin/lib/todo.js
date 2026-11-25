@@ -676,7 +676,32 @@ function uncapturedTodoLines(root, storyDir, config) {
   return found;
 }
 
-const UNCAPTURED_SHAPE = "## Human to-do\n- [ ] (before: deploy) <the action, in order>";
+// Printed by `verify --story` after its verdict, from the command layer (the
+// verify core does not read story to-dos): a warning, never part of the proof.
+function printUncapturedTodos(root, storyPath) {
+  if (!storyPath) {
+    return;
+  }
+
+  let lines = [];
+  try {
+    lines = uncapturedTodoLines(root, path.resolve(root, storyPath), readConfig(root));
+  } catch {
+    return; // best effort: a read error never changes a verify.
+  }
+
+  if (lines.length === 0) {
+    return;
+  }
+
+  log(`Warning — todo.uncaptured: ${lines.length} line(s) of the Result say something only a human can do, and the story has no open \`## Human to-do\` item:`);
+
+  for (const entry of lines) {
+    log(`  ${entry.source}:${entry.line}: ${entry.text}`);
+  }
+
+  log("  Write it as: `## Human to-do` then `- [ ] (before: deploy|next-story|later) <the action>`.");
+}
 
 // ---------------------------------------------------------------------------
 // `ai-flow todo done <id>`: ticks that one checkbox, under a lock, and nothing
@@ -769,7 +794,7 @@ module.exports = {
   maskSecrets,
   uncapturedTodoLines,
   uncapturedPatterns,
-  UNCAPTURED_SHAPE,
+  printUncapturedTodos,
   DEFAULT_UNCAPTURED_PATTERNS,
   secretPatternsOf,
   headingMatches,

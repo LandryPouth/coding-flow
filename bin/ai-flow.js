@@ -90,7 +90,7 @@ const {
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
-const { todoCommand, todoDoneCommand } = require("./lib/todo");
+const { todoCommand, todoDoneCommand, printUncapturedTodos } = require("./lib/todo");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { recoverScan } = require("./lib/recover");
 const { harnessCommand, ensureHarnessConfig, registerStoryLocator } = require("./lib/harness");
@@ -912,12 +912,20 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
 } else if (command === "harness") {
   if (commandArgs[0] === "verify") refuseVerifyAwayFromStoryWork(getFlagValue("--story", null));
   harnessCommand({ commandArgs, getFlagValue, flags });
+
+  if (commandArgs[0] === "verify" && !flags.has("--json") && !flags.has("--dry-run")) {
+    printUncapturedTodos(cwd, getFlagValue("--story", null));
+  }
 } else if (command === "verify") {
   // Top-level alias of `harness verify`. The harness namespace earns itself for
   // preflight/check/evidence, which nobody types by hand; verify is the one a
   // user reaches for — re-proving a story that went `stale` after a small edit.
   refuseVerifyAwayFromStoryWork(getFlagValue("--story", null));
   harnessCommand({ commandArgs: ["verify"], getFlagValue, flags });
+
+  if (!flags.has("--json") && !flags.has("--dry-run")) {
+    printUncapturedTodos(cwd, getFlagValue("--story", null));
+  }
 } else if (command === "report") {
   reportCommand({ getFlagValue, flags });
 } else if (command === "rules") {

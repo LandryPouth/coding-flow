@@ -270,7 +270,8 @@ test('criterion 6: a Result in French with no Human to-do passes verify with a t
 
   const verify = run(dir, ['verify', '--story', STORY]);
   assert.strictEqual(verify.code, 0, verify.output);
-  assert.match(verify.output, /todo\.uncaptured: 1 line\(s\)/);
+  assert.match(verify.output, /Harness verify passed/);
+  assert.match(verify.output, /Warning — todo\.uncaptured: 1 line\(s\)/);
   assert.match(verify.output, /story-01-01-backfill\/story\.md:\d+: Lancer le script de backfill avant le déploiement/);
   assert.match(verify.output, /- \[ \] \(before: deploy\|next-story\|later\)/);
 

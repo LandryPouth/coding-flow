@@ -74,7 +74,12 @@
   outside code and comments, and only when the story has no open
   `## Human to-do` item. Each `todo.uncapturedPatterns` entry is a
   case-insensitive regex (`before (the )?deploy`); a broken entry is skipped.
-  On this repository the defaults raise 0 warnings.
+  On this repository the defaults raise 0 warnings. `verify` prints it from the
+  command layer (`bin/ai-flow.js`, after the verdict, not with `--json` or
+  `--dry-run`): the verify core may not require `todo.js` (test/layering: a core
+  module never depends on a layer one; test/security-core-risk: everything the
+  verify core requires is a high-risk path). So the warning is not recorded in
+  the evidence — it is advice, not proof.
 - **D8 — "Stories in the branch" for ship**: the story named after the branch,
   plus every story whose files the branch changed since the base
   (`git diff --name-only base...HEAD`). The PR body section sits between its own
