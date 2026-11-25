@@ -14,15 +14,15 @@ const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'bin', 'lib');
 
 const CORE = [
-  'archive-members', 'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'destructive', 'detect', 'diff-base',
+  'archive-members', 'audit', 'claim', 'complexity', 'config', 'context', 'coverage', 'coverage-gate', 'destructive', 'destructive-29-03', 'destructive-judge-29-03', 'detect', 'diff-base',
   'diff-scope', 'epic-index', 'evidence', 'guard', 'harness', 'harness-config', 'harness-report',
   'identity', 'mutation', 'policy', 'policy-drift', 'policy-fingerprint', 'red-at-base', 'report', 'risk', 'rules-registry',
-  'security-policy', 'shell-writes', 'spec-drift', 'story', 'test-tokens', 'util', 'validation-run',
+  'security-policy', 'shell-writes', 'shell-writes-29-03', 'spec-drift', 'story', 'test-tokens', 'util', 'validation-run',
 ];
 
 // Core modules that read nothing but their arguments: no fs, no config, no other
 // module of the tool. Whatever they need from the host is handed in.
-const PURE = ['shell-writes', 'test-tokens'];
+const PURE = ['shell-writes', 'shell-writes-29-03', 'test-tokens'];
 
 // `story` is core: a pure fs/path reader of the optional story files, used only
 // when verify is given a story. `doctor` is a layer for now: it mixes the core

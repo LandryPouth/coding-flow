@@ -198,7 +198,8 @@ const CodingFlowGuard = async ({ directory }) => ({
       // fail-open (the write proceeds, the harness scan is the net) but never
       // silent: it is reported as unchecked.
       if (result && result.decision === "unchecked" && local) {
-        process.stderr.write(`coding-flow guard: ${result.reason}; this write was NOT checked\n`);
+        // The guard's own line: it says what to do with an unproven call.
+        process.stderr.write(typeof local.uncheckedLine === "function" ? local.uncheckedLine(result.reason) : `coding-flow guard: ${result.reason}; this write was NOT checked\n`);
       }
       if (result && result.decision === "deny") {
         throw new Error(`coding-flow guard: ${result.reason}`);

@@ -19,7 +19,7 @@
 // depended on but could not read (an expansion where a flag may sit).
 
 const path = require("path");
-const { splitSegments, commandOf, verbAt, tokenize, heredocWord, nativeShellPath, SHELLS } = require("./shell-writes");
+const { splitSegments, commandOf, verbAt, tokenize, heredocWord, inlineCode, stringLiterals, nativeShellPath, SHELLS } = require("./shell-writes");
 
 const EXPANDS = /[$`]/;
 const ASK = "stop and ask the human";
@@ -33,6 +33,22 @@ const HIDDEN_VERB = "a destructive command may be run by a command the guard doe
 const UNREAD_SUBSTITUTION = "a command substitution the guard cannot read";
 const UNMODELLED = "the command uses shell syntax the guard does not model";
 const HANDED_TEXT = "a command is handed text the guard reads as a destructive command";
+// Story 29-04: what is read but cannot be proven destructive here is unchecked.
+const INTERPRETER_CODE = "an interpreter is handed code the guard reads as a destructive command";
+const CONFIG_ALIAS = "git config sets an alias to a destructive command";
+const WRITTEN_SCRIPT = "the line runs a file it wrote, holding a destructive command";
+const WRITTEN_UNREAD = "the line runs a file it wrote, which the guard cannot read";
+const PSQL_STDIN = "psql reads SQL from input the guard cannot read, or that destroys data";
+const PSQL_SHELL = "psql runs a shell command the guard reads as destructive";
+const CONFIG_ENV = "a git alias read under a prefix that changes which config git reads";
+const HIDDEN = "the code, SQL or script run is given by an expansion the guard cannot see";
+// Where an unproven finding was read, as its refusal or warning names it.
+const UNPROVEN_FORMS = new Map([
+  [INTERPRETER_CODE, "an interpreter string"],
+  [CONFIG_ALIAS, "a git alias set by git config"],
+  [WRITTEN_SCRIPT, "a script file the line wrote"],
+  [PSQL_SHELL, "a psql \\! shell escape"],
+]);
 
 // Short options glued in one word (`-fdx`) and long options (`--force=…`), up to `--`.
 // `has(letter, name)` reads a long option as git and GNU tools do: any prefix
@@ -273,7 +289,10 @@ function readGit(out, args, cwd, ctx) {
   }
   const rest = args.slice(i + 1);
   const words = ["git", sub, ...rest];
-  if (!GIT_BUILTINS.has(sub) && !EXPANDS.test(sub) && readGitAlias(out, sub, rest, dir, ctx)) {
+  if (gitEnv(ctx.env).repo) {
+    dir = null; // `GIT_DIR=../other/.git git checkout -- f`: another repository's checks
+  }
+  if (readGitConfigured(out, sub, rest, dir, ctx)) {
     return;
   }
   if (sub === "submodule" && rest.includes("foreach")) {
@@ -295,6 +314,7 @@ function readGit(out, args, cwd, ctx) {
   }
   if (sub === "rm") {
     readRemoval(out, rest, dir);
+    readGitRmForced(out, rest, words, dir, ctx);
   } else if (sub === "mv") {
     readMove(out, rest, dir);
   }
@@ -398,6 +418,7 @@ function readRm(out, args, cwd, ctx) {
     return;
   }
   if (!options.has("r", "recursive") && !options.short.has("R")) {
+    removesChanges(out, operandsOf(args), ["rm", ...args], cwd, ctx, true);
     return;
   }
   const operands = operandsOf(args);
@@ -422,20 +443,196 @@ function readPrisma(out, args, cwd) {
   }
 }
 
-function readPsql(out, args, cwd) {
-  const programs = [];
-  args.forEach((arg, i) => {
-    if (arg === "-c" || arg === "--command") {
-      programs.push(args[i + 1] || "");
-    } else if (arg.startsWith("--command=")) {
-      programs.push(arg.slice("--command=".length));
-    } else if (/^-c./.test(arg)) {
-      programs.push(arg.slice(2));
-    }
-  });
-  if (programs.some((program) => /\bdrop\s+database\b/i.test(program))) {
-    add(out, { rule: "DROP DATABASE", ...DATA_LOSS }, ["psql", ...args], cwd);
+// SQL that destroys data. Monotonic (plan.md R3): 29-03's check reads the raw text,
+// exactly as it did, so a scanner mistake can only add a refusal, never remove one —
+// `SELECT 'drop database x'` stays refused (accepted noise). The checks this story
+// added read the text with comments and literals blanked: `DROP SCHEMA`, `TABLE`,
+// `OWNED`, `COLUMN` (and `ALTER TABLE … DROP c`), `TRUNCATE`, and a `DELETE FROM`
+// statement with no `WHERE` anywhere in it.
+const RAW_SQL = /\bdrop\s+database\b/i;
+const DESTRUCTIVE_SQL = /\b(drop\s+(?:database|schema|table|owned|column)|truncate)\b/i;
+const ALTER_DROP = /\bdrop\s+(?!constraint\b|default\b|not\b|identity\b|expression\b|index\b)[\w"]/i;
+
+function destructiveSql(text) {
+  if (RAW_SQL.test(text)) {
+    return "DROP DATABASE";
   }
+  for (const statement of sqlCode(text).split(";")) {
+    const sql = DESTRUCTIVE_SQL.exec(statement);
+    if (sql) {
+      return sql[1].replace(/\s+/g, " ").toUpperCase();
+    }
+    if (/\balter\s+table\b/i.test(statement) && ALTER_DROP.test(statement)) {
+      return "DROP COLUMN";
+    }
+    if (/\bdelete\s+from\b/i.test(statement) && !/\bwhere\b/i.test(statement)) {
+      return "DELETE FROM without WHERE";
+    }
+  }
+  return null;
+}
+
+// SQL with its comments and string literals blanked, in one pass: `-- …`, `/* … */`,
+// `'…'` (`''` inside; a backslash escapes in `E'…'`), `$tag$…$tag$` (only where a
+// dollar quote can start: not after a letter, digit, `_` or `$`). A `"…"` identifier
+// is opaque (`""` inside): nothing in it opens a comment or a literal.
+function sqlCode(text) {
+  let code = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const end = sqlSkip(text, i);
+    if (end === null) {
+      code += text[i];
+      continue;
+    }
+    code += text[i] === '"' ? '"_"' : " ";
+    i = end <= i ? text.length : end;
+  }
+  return code;
+}
+
+// Where the comment, literal or identifier starting at `i` ends (its last index;
+// -1 when it does not close), or null when none starts there.
+function sqlSkip(text, i) {
+  const ch = text[i];
+  const two = text.slice(i, i + 2);
+  if (two === "--") {
+    return text.indexOf("\n", i);
+  }
+  if (two === "/*") {
+    const close = text.indexOf("*/", i + 2);
+    return close === -1 ? -1 : close + 1;
+  }
+  if (ch === "'" || ch === '"') {
+    const escapes = ch === "'" && /[eE]/.test(text[i - 1] || "") && !/[\w$]/.test(text[i - 2] || "");
+    let end = i + 1;
+    while (end < text.length && (text[end] !== ch || text[end + 1] === ch)) {
+      end += (escapes && text[end] === "\\") || text[end] === ch ? 2 : 1;
+    }
+    return end < text.length ? end : -1;
+  }
+  const dollar = ch === "$" && !/[\w$]/.test(text[i - 1] || "") ? /^\$(?:[A-Za-z_]\w*)?\$/.exec(text.slice(i, i + 64)) : null;
+  if (dollar) {
+    const close = text.indexOf(dollar[0], i + dollar[0].length);
+    return close === -1 ? -1 : close + dollar[0].length - 1;
+  }
+  return null;
+}
+
+// `-c SQL`, `--command SQL`, `--command=SQL`, `-cSQL`, and a cluster ending in `c`
+// (`-tAc SQL`, `-qcSQL`); `-f FILE` likewise, as `files`.
+const PSQL_CLUSTER = /^-([aAbeEHnqsStxXwWlz01]*)([cf])(.*)$/s;
+
+function psqlPrograms(args) {
+  const programs = [];
+  const files = [];
+  args.forEach((arg, i) => {
+    const cluster = PSQL_CLUSTER.exec(arg);
+    const long = /^--(command|file)(?:=(.*))?$/s.exec(arg);
+    const flag = cluster ? cluster[2] : long ? long[1][0] : null;
+    if (flag === null) {
+      return;
+    }
+    const glued = cluster ? cluster[3] : long[2];
+    (flag === "f" ? files : programs).push(glued ? glued : glued === "" && long ? "" : args[i + 1] || "");
+  });
+  return { programs, files };
+}
+
+// `$'DROP TABLE x'` is bash's ANSI-C quoting: the word psql gets, escapes decoded
+// (the tokenizer keeps the `$`), when the words line up.
+function ansiC(command, args, ctx) {
+  const raws = (wordsAfter(command, ctx, "psql")[0] || []).map((entry) => entry.raw);
+  if (raws.length !== args.length) {
+    return args;
+  }
+  return args.map((arg, i) => {
+    const match = /^\$'((?:\\[\s\S]|[^'\\])*)'$/.exec(raws[i]);
+    return match ? unescape(match[1]) : arg;
+  });
+}
+
+function readPsql(out, command, cwd, ctx, segments, index) {
+  const args = ansiC(command, command.args, ctx);
+  const { programs, files } = psqlPrograms(ansiC(command, bashArgs(command, command.args, ctx), ctx));
+  const shown = ["psql", ...args].join(" ");
+  // SQL given as an expansion (`-c "$Q"`): the guard does not see what psql runs.
+  if (wordsAfter(command, ctx, "psql").some((words) => psqlPrograms(words.map((entry) => entry.raw)).programs.some((raw) => hidesBehind(raw, ctx.assigned)))) {
+    out.unchecked.push({ reason: HIDDEN, command: shown });
+  }
+  for (const program of programs) {
+    const rule = destructiveSql(program);
+    if (rule) {
+      add(out, { rule, ...DATA_LOSS }, ["psql", ...args], cwd);
+    }
+    psqlMeta(out, program, cwd, ctx, shown);
+  }
+  for (const file of files) {
+    psqlInput(out, sqlFile(file, cwd, ctx), cwd, ctx, shown);
+  }
+  if (!programs.length && !files.length) {
+    psqlInput(out, psqlStdin(command, cwd, ctx, segments, index), cwd, ctx, shown);
+  }
+}
+
+// psql's own commands in its input: `\! cmd` runs a shell here (read, unproven);
+// `\i file`, `\ir`, `\include`, `\o |cmd`, `\copy … program` read or run what the
+// guard does not see (unchecked).
+function psqlMeta(out, text, cwd, ctx, shown) {
+  for (const line of text.split("\n")) {
+    const shell = /\\!\s*(.*)/.exec(line);
+    if (shell) {
+      readUnproven(out, shell[1], cwd, ctx, PSQL_SHELL, shown);
+    }
+    if (/\\(?:ir?|include(?:_relative)?)\b|\\o\s*\||\\g\s*\||\bprogram\s+'/i.test(line)) {
+      out.unchecked.push({ reason: PSQL_STDIN, command: shown });
+    }
+  }
+}
+
+// What psql reads on its input, when it reads it: the text when the guard sees it,
+// null when it cannot, undefined when psql reads none (interactive, or a terminal).
+function psqlStdin({ args }, cwd, ctx, segments, index) {
+  const segment = segments && segments[index];
+  const from = args.find((arg) => /^\d*<(?![<(])/.test(arg));
+  const heredoc = segment && segment.heredocs && segment.heredocs[0];
+  if (heredoc) {
+    return heredoc.literal || !EXPANDS.test(heredoc.body) ? heredoc.body : null;
+  }
+  if (from !== undefined) {
+    const word = from.replace(/^\d*</, "");
+    return sqlFile(word === "" ? args[args.indexOf(from) + 1] : word, cwd, ctx);
+  }
+  if (segment && segment.text.includes("<<<")) {
+    return null;
+  }
+  if (!segment || segment.before !== "pipe") {
+    return undefined;
+  }
+  const source = commandOf(segments[index - 1]);
+  return ["echo", "printf"].includes(source.name) && !source.args.some((arg) => EXPANDS.test(arg)) ? source.args.join(" ") : null;
+}
+
+// An SQL file: what this line wrote into it, else the file on disk when small.
+function sqlFile(word, cwd, ctx) {
+  const key = word === undefined ? null : fileKey(cwd, word, ctx);
+  if (key === null) {
+    return null;
+  }
+  if (ctx.written && ctx.written.has(key)) {
+    return writtenText(ctx, key);
+  }
+  return key.startsWith("?") ? null : ctx.host.readSmall(key);
+}
+
+function psqlInput(out, sql, cwd, ctx, command) {
+  if (sql === undefined) {
+    return;
+  }
+  if (sql === null || destructiveSql(sql)) {
+    out.unchecked.push({ reason: PSQL_STDIN, command });
+    return;
+  }
+  psqlMeta(out, sql, cwd, ctx, command);
 }
 
 const DOCKER_VALUE_GLOBALS = new Set(["-H", "--host", "--context", "-c", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey"]);
@@ -486,6 +683,726 @@ function readDownload(out, command, cwd, segments, index) {
       add(out, PIPED, [command.name, ...command.args], cwd);
     }
   }
+}
+
+// --- story 29-04: what hides a destructive command ------------------------------------
+
+// A removal of a tracked file with uncommitted changes (`rm a.txt`, `git rm -f a.txt`)
+// loses them, as `git checkout -- a.txt` would: refused when the disk says so.
+// `worktree`: a plain `rm` loses only what the index does not hold, so a change that
+// is all staged stays allowed; `git rm -f` drops the index entry too. Marked `local`:
+// handed to `ssh` or a wrapper the guard does not read, it is not this repository's.
+// Not judged: a path set by an expansion, a directory the line made unknown, a path
+// that is not on disk (nothing to lose, and no `git status` to run) (plan.md D3).
+// A glob or a brace (`rm *.txt`, `rm {a,b}.txt`, series 2 round 1) is the shell's: the
+// braces are expanded here, bounded, and a glob is handed to git as a pathspec — an
+// expansion past the bound is unchecked, never allowed. `git rm -f`'s operands are
+// git's own pathspecs (`:/a.txt`, `'*.txt'`): handed to git as written, with no
+// existence check first (series 2 round 2); the guard quotes `rm`'s for git.
+function removesChanges(out, operands, words, cwd, ctx, worktree) {
+  const host = ctx.host;
+  const paths = [];
+  for (const [index, operand] of operands.filter((word) => word && !EXPANDS.test(word)).entries()) {
+    if (index % 256 === 255 && Date.now() > ctx.deadline) {
+      outOfTime(out); // thousands of words: the rest is unchecked, never allowed
+      return;
+    }
+    const expanded = braceWords(operand);
+    if (expanded) {
+      paths.push(...expanded);
+    } else {
+      out.unchecked.push({ reason: BRACE_UNREAD, command: words.map(quoted).join(" ") });
+    }
+  }
+  const onDisk = (word) => GLOB.test(word) || host.exists(resolveIn(cwd, word, ctx));
+  if (!paths.length || cwd === null || (worktree && !paths.some(onDisk))) {
+    return;
+  }
+  add(out, {
+    rule: "removing a file with uncommitted changes",
+    destroys: "the uncommitted changes in the files it removes",
+    alternative: "`git stash push -u -m \"<why>\"` first, so they can come back (or `trash` the file)",
+    check: { kind: "dirty", paths, worktree, removal: worktree ? "shell" : "git" },
+    local: true,
+  }, words, cwd);
+}
+
+const GLOB = /[*?[]/;
+const MAX_BRACE_WORDS = 64;
+const MAX_BRACE_TEXT = 4096;
+const BRACE_UNREAD = "a brace expansion too large for the guard to list (or a {a..b..step} it does not read)";
+
+// bash's brace expansion of one word: `{a,b}`, nested, and `{1..9}` / `{a..e}` ranges.
+// null when it would make more than MAX_BRACE_WORDS words, or for a form not read.
+function braceWords(word) {
+  if (!word.includes("{")) {
+    return [word];
+  }
+  if (word.length > MAX_BRACE_TEXT) {
+    return null;
+  }
+  let words = [word];
+  for (let pending = true; pending; ) {
+    pending = false;
+    const next = [];
+    for (const each of words) {
+      const brace = firstBrace(each);
+      if (brace === null) {
+        return null;
+      }
+      if (!brace) {
+        next.push(each);
+        continue;
+      }
+      pending = true;
+      next.push(...brace.parts.map((part) => each.slice(0, brace.start) + part + each.slice(brace.end + 1)));
+      if (next.length > MAX_BRACE_WORDS) {
+        return null;
+      }
+    }
+    words = next;
+  }
+  return words.filter(Boolean); // `{,}`: bash drops an empty word
+}
+
+// The first `{…}` bash expands in `word`: `{ start, end, parts }`; false when there is
+// none (`{}`, `{a}` and an unclosed `{` stay as written); null for a form not read.
+function firstBrace(word) {
+  for (let start = word.indexOf("{"); start !== -1; start = word.indexOf("{", start + 1)) {
+    let depth = 0;
+    const commas = [];
+    let end = -1;
+    for (let at = start; at < word.length && end === -1; at += 1) {
+      if (word[at] === "{") {
+        depth += 1;
+      } else if (word[at] === "}") {
+        depth -= 1;
+        end = depth === 0 ? at : -1;
+      } else if (word[at] === "," && depth === 1) {
+        commas.push(at);
+      }
+    }
+    if (end === -1) {
+      return false;
+    }
+    const inner = word.slice(start + 1, end);
+    if (commas.length) {
+      const cuts = [start, ...commas, end];
+      return { start, end, parts: cuts.slice(1).map((cut, i) => word.slice(cuts[i] + 1, cut)) };
+    }
+    const range = /^(-?\d+|[a-zA-Z])\.\.(-?\d+|[a-zA-Z])(\.\.-?\d+)?$/.exec(inner);
+    if (range) {
+      return range[3] ? null : braceRange(start, end, range[1], range[2]);
+    }
+  }
+  return false;
+}
+
+function braceRange(start, end, from, to) {
+  const numeric = /\d/.test(from);
+  if (numeric !== /\d/.test(to)) {
+    return false;
+  }
+  const [a, b] = numeric ? [Number(from), Number(to)] : [from.charCodeAt(0), to.charCodeAt(0)];
+  if (Math.abs(b - a) >= MAX_BRACE_WORDS) {
+    return null;
+  }
+  const step = a <= b ? 1 : -1;
+  const parts = [];
+  for (let n = a; n !== b + step; n += step) {
+    parts.push(numeric ? String(n) : String.fromCharCode(n));
+  }
+  return { start, end, parts };
+}
+
+// Text that runs here, later or inside another program (interpreter code, a git alias
+// set now, a file the line wrote, psql's `\!`): what it finds is `unproven` — the guard
+// settles each finding's check, then makes the call unchecked rather than refused
+// (29-03's claim: read but not proven).
+function readUnproven(out, text, cwd, ctx, reason, command, propagate = true) {
+  if (Date.now() > ctx.deadline) {
+    outOfTime(out);
+    return;
+  }
+  const inner = { findings: [], unchecked: [], touched: [], substituted: [] };
+  readScript(inner, text, cwd, { ...ctx, handed: true });
+  // `inner`: the destructive command itself, which the refusal names; `command`: the line around it.
+  out.findings.push(...inner.findings.map((finding) => ({ ...finding, unproven: reason, form: UNPROVEN_FORMS.get(reason), inner: finding.inner || finding.command, command })));
+  if (propagate) {
+    out.unchecked.push(...inner.unchecked);
+  }
+}
+
+// `python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`: each string literal of the
+// code (escapes decoded), the literals joined, and each list of literals
+// (`spawnSync("rm", ["-rf", "build"])`) are read as scripts. Joined with nothing they
+// are tested for the policy file (`"harness" ".json"`). A program built from pieces
+// (concatenation, format) with a piece naming the policy file or a destructive verb is
+// unchecked: the guard cannot join what the program computes.
+const INTERPRETER_NAME = /^(?:python[\d.]*|node|nodejs|bun|deno|perl|ruby|php)$/;
+const BUILDS = /(['"\x60])\s*(?:[+.]\s*)?['"\x60]|%\s*[(\w]|\.format\(|\bf['"]|\$\{|\.join\(|\bsprintf\b/;
+const VERB_PIECE = /^\s*(?:rm|unlink|shred|git|dropdb|psql|prisma|docker|mv)(?:\s|$)/;
+const POLICY_PIECE = /harness|coding-flow/i;
+// The inline program an interpreter is handed: shell-writes' reading (left as 29-03
+// shipped it, so the shell-write guard decides exactly as it did), plus what this
+// reader adds: `php -r code`, and a flag glued to its code (`python3 -c"…"`,
+// `perl -e'…'`, `ruby -e'…'`, `php -r'…'`), only the no-value switches before it.
+const GLUED = [
+  [/^python[\d.]*$/, /^-[bBdEhiIOqsSuvVx]*c(.+)$/s],
+  [/^perl$/, /^-[lnpsawW0-9]*[eE](.+)$/s],
+  [/^ruby$/, /^-[lnpsawW]*e(.+)$/s],
+  [/^php$/, /^-r(.+)$/s],
+];
+
+function interpreterPrograms(name, args) {
+  const programs = inlineCode(name, args);
+  if (name === "php") {
+    args.forEach((arg, i) => arg === "-r" && args[i + 1] !== undefined && programs.push(args[i + 1]));
+  }
+  for (const [pattern, flag] of GLUED) {
+    if (pattern.test(name)) {
+      args.forEach((arg) => {
+        const glued = flag.exec(arg);
+        if (glued) {
+          programs.push(glued[1]);
+        }
+      });
+    }
+  }
+  return programs;
+}
+
+// A segment's words as bash reads them: a backslash outside quotes escapes the next
+// character (`rm\ -rf\ build` is one word); inside double quotes it escapes only `$`,
+// a backtick, `"`, `\` and a newline (`"\! cmd"` is `\! cmd`; shell-writes' tokenizer
+// drops it, as 29-03 shipped). `{ raw, word }`: the word as written, and as bash hands it.
+const BASH_WORD = /(?:\\[\s\S]|"(?:\\[\s\S]|[^"\\])*"|'[^']*'|[^\s\\])+/g;
+
+function shellWords(text) {
+  return (text.match(BASH_WORD) || []).map((raw) => ({
+    raw,
+    word: raw.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([\s\S])/g, (_, double, single, escaped) =>
+      double !== undefined ? double.replace(/\\([$`"\\\n])/g, "$1") : single !== undefined ? single : escaped,
+    ),
+  }));
+}
+
+// The words after each occurrence of the verb `name` in the segment, read by bash's
+// rules (every occurrence: a wrapper or an argument may repeat the name); [] when the
+// segment is not seen.
+function wordsAfter(command, ctx, name) {
+  const segment = command.segment || ctx.segment;
+  if (!segment || !segment.text) {
+    return [];
+  }
+  const words = shellWords(segment.text);
+  return words.flatMap((entry, at) => (path.basename(entry.word) === name ? [words.slice(at + 1)] : []));
+}
+
+// A word that bash expands: `$VAR`, `${…}`, `$(…)`, `$((…))` or a backtick outside
+// single quotes. `'$x'` and `\$x` are literal.
+function expandsRaw(raw) {
+  let double = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (ch === "\\") {
+      i += 1;
+    } else if (ch === "'" && !double) {
+      const end = raw.indexOf("'", i + 1);
+      i = end === -1 ? raw.length : end;
+    } else if (ch === '"') {
+      double = !double;
+    } else if (ch === "`" || (ch === "$" && /[A-Za-z_{(0-9@*#?!$-]/.test(raw[i + 1] || ""))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// psql's arguments with the backslashes bash keeps, when the segment has any and the
+// words line up with the tokenizer's (else the tokenizer's, as 29-03 read them).
+function bashArgs(command, args, ctx = {}) {
+  const segment = command.segment || ctx.segment;
+  if (!segment || !segment.text || !segment.text.includes("\\")) {
+    return args;
+  }
+  const words = (wordsAfter(command, ctx, "psql")[0] || []).map((entry) => entry.word);
+  return words.length !== args.length ? args : words;
+}
+
+// The names a line assigns (`C=…`, `export C=…`, `read C`, `for C in`, `printf -v C`):
+// a variable set on the line may hold what the guard cannot see. Over-reading only
+// makes more calls unchecked.
+function assignedNames(line) {
+  const names = new Set();
+  for (const match of line.matchAll(/(?:^|[^\w$.-])([A-Za-z_]\w*)\+?=/g)) {
+    names.add(match[1]);
+  }
+  for (const match of line.matchAll(/\b(?:read|mapfile|readarray)\b([^;&|\n]*)/g)) {
+    for (const word of match[1].trim().split(/\s+/)) {
+      if (/^[A-Za-z_]\w*$/.test(word)) {
+        names.add(word);
+      }
+    }
+  }
+  for (const match of line.matchAll(/\b(?:for|select|getopts\s+\S+)\s+([A-Za-z_]\w*)|\bprintf\s+-v\s*([A-Za-z_]\w*)/g)) {
+    names.add(match[1] || match[2]);
+  }
+  return names;
+}
+
+// Story 29-04 (series 3 round 3): an expansion hides the code, SQL or script from the
+// guard when the word is (or starts with) one (`"$C"`), holds a command substitution
+// (`$(…)`, backticks), a `${…}` that is not a plain name, a positional parameter, or a
+// variable assigned on the same line. A plain environment variable inside a literal
+// (`print('$HOME')`, `WHERE id = $ID`) is read as written. `leading: false` drops the
+// first rule (a script named `"$S"`).
+function hidesBehind(raw, assigned = new Set(), leading = true) {
+  let double = false;
+  let first = true;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (ch === '"') {
+      double = !double;
+      continue;
+    }
+    if (ch === "'" && !double) {
+      const end = raw.indexOf("'", i + 1);
+      first = first && end === i + 1;
+      i = end === -1 ? raw.length : end;
+      continue;
+    }
+    if (ch === "\\") {
+      i += 1;
+      first = false;
+      continue;
+    }
+    if (ch === "`") {
+      return true;
+    }
+    if (ch === "$") {
+      const next = raw[i + 1] || "";
+      const name = /^[A-Za-z_]\w*/.exec(raw.slice(i + 1));
+      const braced = next === "{" ? /^\{(#?)([A-Za-z_]\w*)?(\}?)/.exec(raw.slice(i + 1)) : null;
+      if (next === "(" && raw[i + 2] !== "(") {
+        return true;
+      }
+      if (braced && (!braced[2] || !braced[3] || assigned.has(braced[2]))) {
+        return true;
+      }
+      if ((name && assigned.has(name[0])) || /[1-9@*]/.test(next)) {
+        return true;
+      }
+      if (leading && first && (name || braced || /[0#?!$-]/.test(next) || next === "(")) {
+        return true;
+      }
+    }
+    first = false;
+  }
+  return false;
+}
+
+const MAX_LITERAL = 4096;
+const RAW_VERB = /\b(?:rm\s+-\w*[rRf]|git\s+(?:reset\s+--hard|clean\s+-\w*f|push\s+(?:-f|--force)|checkout\s+--|branch\s+-D)|drop\s+(?:database|schema|table)|truncate\s+\w|dropdb\b)/i;
+const MAX_CODE = 65536; // longer code is not read: unchecked
+const QUOTES = new Set(["'", '"', "\x60"]);
+
+const ESCAPES = { n: "\n", t: "\t", r: "\r", 0: "\0" };
+const unescape = (text) =>
+  text.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|.)/gs, (_, code) => (code.length > 1 ? String.fromCharCode(parseInt(code.slice(1), 16)) : ESCAPES[code] ?? code));
+
+// The code as tokens, in one pass (no regex to backtrack on hostile input): each
+// quoted literal (`{ literal }`, escapes decoded) and each other visible character
+// (`{ mark }`). An unclosed quote ends the scan: the rest is not a literal.
+function codeTokens(code) {
+  const tokens = [];
+  for (let i = 0; i < code.length; i += 1) {
+    const ch = code[i];
+    if (QUOTES.has(ch)) {
+      let j = i + 1;
+      while (j < code.length && code[j] !== ch) {
+        j += code[j] === "\\" ? 2 : 1;
+      }
+      if (j >= code.length) {
+        break;
+      }
+      tokens.push({ literal: unescape(code.slice(i + 1, j)) });
+      i = j;
+    } else if (ch.trim()) {
+      tokens.push({ mark: ch });
+    }
+  }
+  return tokens;
+}
+
+const literalsOf = (tokens) => tokens.filter((token) => token.literal && token.literal.length <= MAX_LITERAL).map((token) => token.literal);
+
+// `("rm", ["-rf", "build"])`, `['git', 'reset', '--hard']`: the argument vector, as a command.
+const SHELL_WORD = /^[\w./=:@%+,-]+$/;
+const shellQuote = (word) => (SHELL_WORD.test(word) ? word : ["'", word.split("'").join("'\\''"), "'"].join(""));
+
+function literalLists(tokens) {
+  const lists = [];
+  tokens.forEach((token, i) => {
+    if (token.mark !== "[") {
+      return;
+    }
+    const words = [];
+    let j = i + 1;
+    for (; j < tokens.length && (tokens[j].literal !== undefined || tokens[j].mark === ","); j += 1) {
+      if (tokens[j].literal !== undefined) {
+        words.push(tokens[j].literal);
+      }
+    }
+    if (!words.length || !tokens[j] || tokens[j].mark !== "]") {
+      return;
+    }
+    const head = i >= 2 && tokens[i - 1].mark === "," && tokens[i - 2].literal !== undefined ? [tokens[i - 2].literal] : [];
+    lists.push([...head, ...words].map(shellQuote).join(" "));
+  });
+  return lists;
+}
+
+// The code an interpreter is handed, as the tokenizer reads it and as bash does
+// (`-c import\ os\;…` is one word); `null` (unchecked) when the code is an expansion
+// (`-c "$C"`, `-c "$(cat f)"`): the guard does not see what it runs.
+function interpreterView(command, ctx) {
+  const { name, args } = command;
+  const views = wordsAfter(command, ctx, name);
+  if (views.some((words) => interpreterPrograms(name, words.map((entry) => entry.raw)).some((raw) => hidesBehind(raw, ctx.assigned)))) {
+    return null;
+  }
+  const programs = interpreterPrograms(name, args);
+  const segment = command.segment || ctx.segment;
+  if (segment && segment.text && segment.text.includes("\\")) {
+    views.forEach((words) => programs.push(...interpreterPrograms(name, words.map((entry) => entry.word))));
+  }
+  return [...new Set(programs)];
+}
+
+function readInterpreterCode(out, programs, cwd, ctx, command) {
+  if (programs === null) {
+    out.unchecked.push({ reason: HIDDEN, command });
+    return;
+  }
+  for (const code of programs) {
+    if (code.length > MAX_CODE) {
+      out.unchecked.push({ reason: INTERPRETER_CODE, command });
+      continue;
+    }
+    const tokens = codeTokens(code);
+    const pieces = literalsOf(tokens);
+    if (!pieces.length) {
+      continue;
+    }
+    for (const text of new Set([...pieces, pieces.join(" "), pieces.join(""), ...literalLists(tokens)])) {
+      if (/\s/.test(text)) {
+        readUnproven(out, text, cwd, ctx, INTERPRETER_CODE, command, false);
+      }
+    }
+    // A comment (`# don't`) or a quote the scan pairs wrongly can hide a literal:
+    // a destructive verb in the raw code that no literal holds is unchecked.
+    if (RAW_VERB.test(code) && !pieces.some((piece) => RAW_VERB.test(piece))) {
+      out.unchecked.push({ reason: INTERPRETER_CODE, command });
+    }
+    const built = pieces.length > 1 && BUILDS.test(code);
+    if (POLICY_TEXT.test(pieces.join("")) || (built && pieces.some((piece) => POLICY_PIECE.test(piece) || VERB_PIECE.test(piece)))) {
+      out.unchecked.push({ reason: INTERPRETER_CODE, command });
+    }
+  }
+}
+
+// `git config [scope] [--add] alias.x VALUE` (or `git config set alias.x VALUE`): the
+// value is what a later `git x` runs — a `!` value as a shell script, any other as git's
+// arguments. Destructive: unchecked when it is set.
+const CONFIG_VALUE_OPTIONS = new Set(["-f", "--file", "--blob", "--type", "--default", "--comment", "--value"]);
+
+const EXPANDED = "\0(an expansion)";
+
+function configValue(rest) {
+  const operands = operandsOf(rest, CONFIG_VALUE_OPTIONS).filter((word, i) => !(i === 0 && ["set", "add"].includes(word)));
+  const at = operands.findIndex((word) => /^alias\./i.test(word));
+  return at === -1 ? undefined : operands[at + 1];
+}
+
+function readConfigAlias(out, rest, dir, ctx) {
+  const command = ["git", "config", ...rest].join(" ");
+  // The words as bash reads them: `!rm\ -rf\ build` is one value; `"$A"` is an expansion.
+  const views = ctx.segment ? wordsAfter({}, ctx, "config") : [];
+  const values = [configValue(rest)];
+  for (const words of views) {
+    if (configValue(words.map((entry) => (expandsRaw(entry.raw) ? EXPANDED : entry.word))) === EXPANDED) {
+      out.unchecked.push({ reason: CONFIG_ALIAS, command });
+      return;
+    }
+    values.push(configValue(words.map((entry) => entry.word)));
+  }
+  for (const value of new Set(values)) {
+    if (value !== undefined) {
+      readAliasValue(out, value, dir, ctx, command);
+    }
+  }
+}
+
+function readAliasValue(out, value, dir, ctx, command) {
+  const text = value.trim().startsWith("!") ? value.trim().slice(1) : `git ${value}`;
+  readUnproven(out, text, dir, { ...ctx, aliases: MAX_ALIASES }, CONFIG_ALIAS, command, false);
+}
+
+// A prefix that points git at another repository (`GIT_DIR=`, `GIT_WORK_TREE=`) or
+// another config file (`GIT_CONFIG_GLOBAL=`, `HOME=`): its checks and aliases are not
+// this directory's. `GIT_CONFIG_NOSYSTEM`, `GIT_PAGER` and the like change no alias
+// the guard would resolve.
+const REPO_ENV = /^(?:GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_INDEX_FILE)=/;
+const CONFIG_ENV_VARS = /^(?:GIT_DIR|GIT_COMMON_DIR|GIT_CONFIG|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_CONFIG_PARAMETERS|HOME|XDG_CONFIG_HOME)=/;
+
+function gitEnv(assignments = []) {
+  // `GIT_DIR=.git`: this repository, named.
+  const elsewhere = assignments.filter((word) => !/^GIT_DIR=(?:\.\/)?\.git\/?$/.test(word));
+  return {
+    repo: elsewhere.some((word) => REPO_ENV.test(word)),
+    config: elsewhere.some((word) => CONFIG_ENV_VARS.test(word)),
+    // Config given as on git's command line overrides the repository's own.
+    commandLine: elsewhere.some((word) => /^(?:GIT_DIR|GIT_COMMON_DIR|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_CONFIG_PARAMETERS|GIT_CONFIG)=/.test(word)),
+  };
+}
+
+// What git's config decides: an alias (read through the config, unchecked under a prefix
+// that changes which config git reads) or `git config alias.x VALUE`. True when handled.
+function readGitConfigured(out, sub, rest, dir, ctx) {
+  if (!GIT_BUILTINS.has(sub) && !EXPANDS.test(sub)) {
+    const env = gitEnv(ctx.env);
+    // `HOME=/x git st`: another global or system file, but this repository's own
+    // config still wins — an alias defined there is read as usual (plan.md R4).
+    const local = env.config && !env.commandLine && dir !== null ? ctx.host.gitAlias(dir, sub, { local: true }) : null;
+    if (local && typeof local.value === "string") {
+      return readGitAlias(out, sub, rest, dir, { ...ctx, host: { ...ctx.host, gitAlias: (cwd, name) => ctx.host.gitAlias(cwd, name, { local: true }) } });
+    }
+    if (env.config) {
+      out.unchecked.push({ reason: CONFIG_ENV, command: ["git", sub, ...rest].join(" ") });
+      return true;
+    }
+    if (readGitAlias(out, sub, rest, dir, ctx)) {
+      return true;
+    }
+  }
+  if (sub === "config") {
+    readConfigAlias(out, rest, dir, ctx);
+    return true;
+  }
+  return false;
+}
+
+// `git rm -f a.txt` (not `--cached`) drops the file's uncommitted changes, staged ones too.
+function readGitRmForced(out, rest, words, dir, ctx) {
+  const options = optionsOf(rest);
+  if (options.has("f", "force") && !options.long.has("cached")) {
+    removesChanges(out, operandsOf(rest), words, dir, ctx, false);
+  }
+}
+
+// --- a file written, then run, on the same line ----------------------------------------
+
+// The files a segment writes: `{ word, text }`. `text` is the content when the guard
+// sees all of it, else null: `echo`/`printf` output, a heredoc `cat` or `tee` copies
+// (null when its unquoted body expands), `>>` onto a file this line wrote, a `cp` of a
+// file (`{ from }`, read when it is run). A download, `>>` onto a file already there,
+// `cat` of a file: null.
+function writesOf(command, tokens, known) {
+  const shown = ["echo", "printf"].includes(command.name) ? [] : null;
+  const plain = [];
+  const redirects = [];
+  // `(echo …) > f`: after the group closes, the redirection is the segment's first word.
+  const verb = verbAt(tokens);
+  for (let i = /^(?:\d|&)?>/.test(tokens[verb] || "") ? verb : verb + 1; i < tokens.length; i += 1) {
+    const redirect = /^(?:\d|&)?(>>|>\||>)(.*)$/.exec(tokens[i]);
+    if (/^<<-?$/.test(tokens[i])) {
+      i += 1; // `<< EOF`: the delimiter word
+    } else if (!redirect) {
+      (/^<</.test(tokens[i]) ? [] : plain).push(tokens[i]);
+    } else {
+      const word = redirect[2] || tokens[(i += 1)];
+      if (word && !/^&|^\/dev\//.test(word)) {
+        redirects.push({ word, append: redirect[1] === ">>" });
+      }
+    }
+  }
+  const content = heredocContent(command, plain) ?? (shown === null ? null : plain.join(" ").replace(/\\n/g, "\n").replace(/\\t/g, "\t"));
+  const text = ({ word, append }) => {
+    if (content === null || (append && !known(word))) {
+      return null;
+    }
+    const before = append ? known(word).text : null;
+    return before === null ? (append ? null : content) : `${before}\n${content}`;
+  };
+  const named = [];
+  if (command.name === "tee") {
+    named.push(...operandsOf(command.args).filter((word) => !/^<</.test(word)).map((word) => ({ word, text: content })));
+  } else if (DOWNLOADERS.has(command.name)) {
+    command.args.forEach((arg, i) => /^(?:-o|--output|-O|--output-document)$/.test(arg) && named.push({ word: command.args[i + 1], text: null }));
+  } else if (["cp", "install"].includes(command.name)) {
+    const operands = operandsOf(command.args);
+    named.push({ word: operands[operands.length - 1], text: operands.length === 2 ? { from: operands[0] } : null });
+  } else if (["mv", "ln"].includes(command.name)) {
+    named.push({ word: operandsOf(command.args).slice(-1)[0], text: null });
+  }
+  return [...redirects.map((entry) => ({ word: entry.word, text: text(entry) })), ...named.filter((entry) => entry.word)];
+}
+
+// `cat <<EOF`, `tee f <<'EOF'`: the heredoc body, when nothing else is read (no input
+// file for `cat`) and it does not expand. Undefined when the command copies no heredoc.
+function heredocContent(command, plain) {
+  const heredoc = command.segment && command.segment.heredocs && command.segment.heredocs[0];
+  if (!heredoc || !["cat", "tee"].includes(command.name)) {
+    return undefined;
+  }
+  if (!heredoc.closed || (command.name === "cat" && plain.some((word) => !word.startsWith("-")))) {
+    return null;
+  }
+  return heredoc.literal || !EXPANDS.test(heredoc.body) ? heredoc.body : null;
+}
+
+// The file a command runs: `bash x.sh`, `sh ./x.sh`, `source x.sh`, `. x.sh`,
+// `./x.sh`, `python3 x.py`. `{ word, code }`, `code` when it is an interpreter's.
+function runsFile(command, raw) {
+  const { name, args } = command;
+  const operand = args.find((arg) => !arg.startsWith("-") && !arg.startsWith("<"));
+  if (SHELLS.has(name) && shellProgram(args) === undefined && operand !== undefined) {
+    return { word: operand, code: false };
+  }
+  if ((name === "source" || name === ".") && operand !== undefined) {
+    return { word: operand, code: false };
+  }
+  if (INTERPRETER_NAME.test(name) && !interpreterPrograms(name, args).length && operand !== undefined) {
+    return { word: operand, code: true };
+  }
+  return raw && raw.includes("/") ? { word: raw, code: false } : null;
+}
+
+// A file name that reads as a script: a script extension, or none (`run`, `out/a`).
+const SCRIPT_LIKE = /(?:^|\/)[^/.]+$|\.(?:sh|bash|zsh|ksh|dash|fish|py|js|mjs|cjs|ts|pl|rb|php|lua|command)$/i;
+
+// A glob (`*`, `?`, `[…]`, `{a,b}`) resolved in `cwd`, as a whole-path pattern; null
+// when it does not resolve or does not translate.
+function globPattern(cwd, word, ctx) {
+  const at = resolveIn(cwd, word, ctx);
+  if (at === null) {
+    return null;
+  }
+  let source = "";
+  let braces = 0;
+  for (let i = 0; i < at.length; i += 1) {
+    const ch = at[i];
+    if (ch === "*") {
+      source += "[^/]*";
+    } else if (ch === "?") {
+      source += "[^/]";
+    } else if (ch === "[") {
+      const end = at.indexOf("]", i + 2);
+      if (end === -1) {
+        return null;
+      }
+      const body = at.slice(i + 1, end).replace(/^!/, "^").replace(/[\\\]]/g, "\\$&");
+      source += `[${body}]`;
+      i = end;
+    } else if (ch === "{") {
+      braces += 1;
+      source += "(?:";
+    } else if (ch === "}" && braces) {
+      braces -= 1;
+      source += ")";
+    } else if (ch === "," && braces) {
+      source += "|";
+    } else {
+      source += ch.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    }
+  }
+  if (braces) {
+    return null;
+  }
+  try {
+    return new RegExp(`^${source}$`);
+  } catch {
+    return null;
+  }
+}
+
+// Story 29-04 (series 3 round 3): `bash x.s?`, `bash "$F"` may name a file the line
+// wrote. A glob is matched against the written files; an expansion is unchecked when it
+// hides behind a substitution or a variable set on the line, or when the line wrote a
+// script-like file. `bash scripts/*.sh` after `> build.log` stays allowed.
+function namesWritten(run, cwd, ctx) {
+  const keys = [...ctx.written.keys()];
+  if (EXPANDS.test(run.word)) {
+    return hidesBehind(run.word, ctx.assigned, false) || keys.some((key) => SCRIPT_LIKE.test(key.replace(/^\?/, "")));
+  }
+  const pattern = globPattern(cwd, run.word, ctx);
+  return pattern === null || keys.some((key) => key.startsWith("?") || pattern.test(key));
+}
+
+function readWrittenRun(out, command, raw, cwd, ctx) {
+  const run = runsFile(command, raw);
+  if (run && ctx.written.size && /[$`*?[{]/.test(run.word)) {
+    if (namesWritten(run, cwd, ctx)) {
+      out.unchecked.push({ reason: HIDDEN, command: [raw || command.name, ...command.args].join(" ") });
+    }
+    return;
+  }
+  const key = run && fileKey(cwd, run.word, ctx);
+  if (!run || !ctx.written.has(key)) {
+    return;
+  }
+  const text = writtenText(ctx, key);
+  const shown = [raw || command.name, ...command.args].join(" ");
+  if (text === null) {
+    out.unchecked.push({ reason: WRITTEN_UNREAD, command: shown });
+  } else if (run.code) {
+    readInterpreterCode(out, [`"${text.replace(/[\\"]/g, "\\$&")}"`, text], cwd, ctx, shown);
+  } else {
+    readUnproven(out, text, cwd, ctx, WRITTEN_SCRIPT, shown);
+  }
+}
+
+// `<in.sql psql app`, `>out.txt git reset --hard`: a redirection may come before the
+// command; the command is the first word after them (the redirections stay as args).
+function pastRedirects(command) {
+  const words = [command.raw || command.name, ...command.args]; // `2>/dev/null` is named `null`
+  let at = 0;
+  while (at < words.length && /^\d*(?:<|>>?|>\||&>)/.test(words[at] || "") && !/^<<|^<\(|^>\(/.test(words[at])) {
+    at += /^\d*(?:<|>>?|>\||&>)$/.test(words[at]) ? 2 : 1;
+  }
+  if (at === 0 || at >= words.length) {
+    return command;
+  }
+  return { ...command, name: path.basename(words[at]), raw: words[at], args: [...words.slice(at + 1), ...words.slice(0, at)] };
+}
+
+// Past the call's budget the rest is not read: unchecked, never allowed in silence.
+const OUT_OF_TIME = "the line costs the destructive-command reader more than its time budget";
+function outOfTime(out) {
+  if (!out.unchecked.some((entry) => entry.reason === OUT_OF_TIME)) {
+    out.unchecked.push({ reason: OUT_OF_TIME, command: "(rest of the line)" });
+  }
+}
+
+const fileKey = (cwd, word, ctx) => resolveIn(cwd, word, ctx) || `?${word}`;
+
+function recordWrites(command, tokens, cwd, ctx) {
+  const known = (file) => (ctx.written.has(fileKey(cwd, file, ctx)) ? { text: writtenText(ctx, fileKey(cwd, file, ctx)) } : null);
+  for (const { word, text } of writesOf(command, tokens, known)) {
+    const from = text !== null && typeof text === "object" ? resolveIn(cwd, text.from, ctx) : undefined;
+    ctx.written.set(fileKey(cwd, word, ctx), from === undefined ? text : from === null ? null : { from });
+  }
+}
+
+// What this line wrote into `key`: its text, or a copied file's, read now (null when
+// the guard cannot read it).
+function writtenText(ctx, key) {
+  const text = ctx.written.get(key);
+  if (text === null || typeof text === "string") {
+    return text;
+  }
+  return ctx.host.readSmall(text.from);
 }
 
 // --- one command, then the line --------------------------------------------------------
@@ -717,6 +1634,9 @@ function readVerb(out, command, cwd, ctx, segments, index) {
     readRm(out, args, cwd, ctx);
   } else if (REMOVERS.has(name)) {
     readRemoval(out, args, cwd);
+    if (name !== "trash") {
+      removesChanges(out, operandsOf(args), [name, ...args], cwd, ctx, true);
+    }
   } else if (name === "mv") {
     readMove(out, args, cwd);
   } else if (COPIERS.has(name)) {
@@ -726,7 +1646,7 @@ function readVerb(out, command, cwd, ctx, segments, index) {
   } else if (name === "dropdb") {
     add(out, { rule: "dropdb", ...DATA_LOSS }, ["dropdb", ...args], cwd);
   } else if (name === "psql") {
-    readPsql(out, args, cwd);
+    readPsql(out, command, cwd, ctx, segments, index);
   } else if (name === "docker") {
     // `docker run IMAGE rm -rf /w`, `docker exec c …`: a command run in a container
     // whose volumes the guard cannot see is read as hidden when nothing else was found.
@@ -737,6 +1657,9 @@ function readVerb(out, command, cwd, ctx, segments, index) {
     }
   } else if (DOWNLOADERS.has(name)) {
     readDownload(out, command, cwd, segments, index);
+  } else if (INTERPRETER_NAME.test(name)) {
+    readInterpreterCode(out, interpreterView(command, ctx), cwd, ctx, [name, ...args].join(" "));
+    readHiddenVerb(out, args, cwd, ctx);
   } else if (!isInert(command)) {
     readHiddenVerb(out, args, cwd, ctx);
   }
@@ -753,7 +1676,7 @@ function readHiddenVerb(out, args, cwd, ctx) {
     }
     const inner = { findings: [], unchecked: [], touched: [], substituted: [] };
     readCommand(inner, { name: path.basename(word), args: args.slice(i + 1) }, cwd, { ...ctx, hidden: true });
-    if (inner.findings.length || inner.unchecked.length) {
+    if (inner.findings.some((finding) => !finding.local) || inner.unchecked.length) {
       out.unchecked.push({ reason: HIDDEN_VERB, command: args.slice(i).join(" ") });
     }
     out.touched.push(...inner.touched.map((entry) => ({ ...entry, maybe: true })));
@@ -765,8 +1688,17 @@ function readLine(line, start, ctx) {
   const joined = line.replace(/\\\n/g, "");
   const segments = splitSegments(joined);
   const stack = [];
+  // The files this line wrote: path → their text, `{ from }` or null. One map for the
+  // line and every reading nested in it (`bash -c`, `.`, interpreter code), so a file
+  // written outside is known inside.
+  const written = ctx.written || new Map();
+  ctx = { ...ctx, written, assigned: new Set([...(ctx.assigned || []), ...assignedNames(joined)]) };
   let cwd = start;
   segments.forEach((segment, index) => {
+    if (Date.now() > ctx.deadline) {
+      outOfTime(out);
+      return;
+    }
     const command = commandOf(segment);
     const piped = segment.before === "pipe" || segment.after === "pipe";
     if (command.name === "cd" || command.name === "pushd") {
@@ -784,11 +1716,14 @@ function readLine(line, start, ctx) {
       if (unmodelledBraces(tokens, command)) {
         out.unchecked.push({ reason: `${UNMODELLED}: brace expansion`, command: segment.text.trim() });
       }
-      readCommand(out, { ...command, raw, args: wholeLastWord(command.args, segment, segments[index + 1]) }, cwd, ctx, segments, index);
-      readHandedText(out, command, cwd, ctx);
       // `PAGER='rm -rf x' git log`, `env GIT_EDITOR=… git commit`: a variable set
       // for the command may be run by it, so its value is read as handed text.
       const assignments = tokens.slice(0, verbAt(tokens)).filter((token) => /^[A-Za-z_]\w*=/.test(token));
+      const segmentCtx = assignments.length ? { ...ctx, env: assignments, segment } : { ...ctx, segment };
+      readCommand(out, pastRedirects({ ...command, raw, args: wholeLastWord(command.args, segment, segments[index + 1]) }), cwd, segmentCtx, segments, index);
+      readHandedText(out, command, cwd, ctx);
+      readWrittenRun(out, command, raw, cwd, ctx);
+      recordWrites(command, tokens, cwd, ctx);
       if (assignments.length) {
         readHandedText(out, { name: "(assignment)", args: assignments }, cwd, ctx);
       }
@@ -954,7 +1889,7 @@ function readHandedText(out, command, cwd, ctx) {
         readScript(inner, text, cwd, { ...ctx, handed: true });
       }
     }
-    if (inner.findings.length || (unread && POLICY_TEXT.test(word))) {
+    if (inner.findings.some((finding) => !finding.local) || (unread && POLICY_TEXT.test(word))) {
       out.unchecked.push({ reason: HANDED_TEXT, command: [command.name, ...command.args].join(" ") });
       return;
     }
@@ -1169,12 +2104,12 @@ function readSubstitutions(out, line, segments, start, ctx) {
 // `host`: `exists(absolutePath)`, `home()`, `onPath(program)` — each falls back
 // rather than throwing. A finding whose `check` needs a directory and has none
 // (`cd "$D" && git checkout -- .`) carries `cwd: null`; the guard makes it unchecked.
-function readDestructive(command, { cwd, host }) {
+function readDestructive(command, { cwd, host, deadline = Infinity }) {
   if (typeof command !== "string" || !command.trim()) {
     return { findings: [], unchecked: [], touched: [], substituted: [] };
   }
-  const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), gitTop: () => null, ...host };
-  return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), platform: safeHost.platform || process.platform, depth: 0 });
+  const safeHost = { exists: () => false, home: () => cwd, onPath: () => false, gitAlias: () => ({ value: null }), gitTop: () => null, readSmall: () => null, ...host };
+  return readLine(command, path.resolve(cwd), { host: safeHost, home: safeHost.home(), platform: safeHost.platform || process.platform, depth: 0, deadline });
 }
 
 module.exports = { readDestructive, substitutionsOf, UNKNOWN_CWD, EXPANSION, TOO_DEEP, CLI_ALIAS, HIDDEN_VERB, UNREAD_SUBSTITUTION, UNMODELLED, HANDED_TEXT };
