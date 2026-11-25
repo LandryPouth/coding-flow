@@ -49,8 +49,10 @@ test('a timed-out command on Windows kills only what it started, found by parent
 test('a live process now holding the dead shell id is not the shell: its children are not killed', () => {
   const processes = [
     { pid: 200, parentPid: 100, created: STARTED + 5 }, // the shell's own child, before the shell died
-    { pid: 100, parentPid: 7, created: STARTED + 500 }, // a new process reusing id 100
-    { pid: 210, parentPid: 100, created: STARTED + 600 }, // its child
+    { pid: 100, parentPid: 7, created: STARTED + 310 }, // a new process reusing id 100
+    // Its child, inside the shell's window (ENDED + the tolerance): only the
+    // impostor's creation time keeps it out.
+    { pid: 210, parentPid: 100, created: ENDED + 20 },
   ];
   assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200]);
 });
@@ -160,8 +162,10 @@ test('the second pass spares a process that took a killed pid and what it starte
   const killedAt = Date.now();
   const listings = [
     `200 100 ${STARTED + 5}\n`,
-    // 200 was killed; a new process now holds id 200 and started 220.
-    `200 7 ${killedAt + 1000}\n220 200 ${killedAt + 1100}\n`,
+    // 200 was killed; a new process now holds id 200 and started 220, inside
+    // the second pass's window (the kill + the tolerance): only the impostor's
+    // creation time keeps 220 out.
+    `200 7 ${killedAt + 10}\n220 200 ${killedAt + 20}\n`,
   ];
   const record = (command, args) => {
     calls.push([command, ...args]);
@@ -173,6 +177,16 @@ test('the second pass spares a process that took a killed pid and what it starte
 
 test('a failing kill never throws: the timeout is still reported', () => {
   assert.deepEqual(killTree(100, STARTED, ENDED, 'win32', () => { throw new Error('ENOENT'); }), []);
+});
+
+test('a script handed to bash -c is read with the platform of the command around it', () => {
+  const { shellWrites } = require('../bin/lib/guard');
+  const direct = shellWrites('cd /c/x && echo a > f', '/w', { platform: 'win32' });
+  const nested = shellWrites('bash -c "cd /c/x && echo a > f"', '/w', { platform: 'win32' });
+  assert.deepEqual(direct, [{ target: 'C:/x/f', kind: 'write' }]);
+  assert.deepEqual(nested, direct);
+  assert.deepEqual(shellWrites('eval "cd /c/x && echo a > f"', '/w', { platform: 'win32' }), direct);
+  assert.notDeepEqual(shellWrites('bash -c "cd /c/x && echo a > f"', '/w', { platform: 'linux' }), direct);
 });
 
 test('the destructive reader takes its platform from the host: a Git Bash cd is read on Windows only', () => {

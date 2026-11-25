@@ -137,9 +137,9 @@ The checkout comparisons themselves (`primaryLock`, `effectiveDestructivePolicy`
 
 ### Round 4 — PASS (the guard and verify on Windows end to end; round-3 regressions)
 
-- [ ] P2 test/windows-paths.test.js:49 and :158 — the impostor's child sits outside the `until` bound in both tests (+600 vs ENDED+50, killedAt+1100 vs killedAt+50), so removing the impostor check (`before`) in either pass keeps them green — fix: put the child inside the window (e.g. ENDED+20) and add the same case for the second pass; prove each fails without the check.
-- [ ] P3 CHANGELOG.md:70 / validation-run.js:~340 — the pid-reuse window is "between its death and 50 ms after the kill returned", not "within those 50 ms" — reword.
-- [ ] P3 shell-writes.js:1259 — `followScript` calls the nested `shellWrites` without `platform`; pass it through.
+- [x] P2 test/windows-paths.test.js:49 and :158 — the impostor's child sits outside the `until` bound in both tests (+600 vs ENDED+50, killedAt+1100 vs killedAt+50), so removing the impostor check (`before`) in either pass keeps them green — fix: put the child inside the window (e.g. ENDED+20) and add the same case for the second pass; prove each fails without the check.
+- [x] P3 CHANGELOG.md:70 / validation-run.js:~340 — the pid-reuse window is "between its death and 50 ms after the kill returned", not "within those 50 ms" — reword.
+- [x] P3 shell-writes.js:1259 — `followScript` calls the nested `shellWrites` without `platform`; pass it through.
 
 Held: Git Bash paths (`/x/…`, `/cygdrive/x/…`, `~`) across cd/pushd, git -C, globs and find; `durationMs` excludes the kill; Linux/macOS unchanged; UTC cast; second pass spares a surviving root; 18/18.
 Series 1 ends at its cap with round 4 clean; STRICT needs a second clean round → series 2 round 1 after this fix.
@@ -167,7 +167,7 @@ Series 1 ends at its cap with round 4 clean; STRICT needs a second clean round �
 
 ## Acceptance Traceability
 
-1. test/windows-paths.test.js::a Git Bash path is read as the Windows path it names, on Windows only
+1. test/windows-paths.test.js::a Git Bash path is read as the Windows path it names, on Windows only — test/windows-paths.test.js::a script handed to bash -c is read with the platform of the command around it
 2. test/guard-destructive.test.js::git switch in the primary checkout is refused when primaryLocked (the shell form is exercised for real on the Windows CI job)
 3. test/harness-fixers.test.js::a fixer with its own time limit is killed at it (the marker check runs on the Windows CI job) — test/windows-paths.test.js::a timed-out command on Windows kills only what it started, found by parent id and creation time — test/windows-paths.test.js::a process naming the dead shell as parent but created after the shell died is not its child, nor are its children — test/windows-paths.test.js::a command whose output overflows has its tree killed, with the window it ran in — test/windows-paths.test.js::a shell child stamped a clock tick before the command started is still its child; one stamped beyond the tolerance is not — test/windows-paths.test.js::a shell child stamped a clock tick after spawnSync returned is still its child; one stamped beyond the tolerance is not — test/windows-paths.test.js::what a killed process started between the listing and the kill is killed by a second pass
 4. test/harness-fixers.test.js::a guard log cut otherwise than the guard trims it is a forbidden write

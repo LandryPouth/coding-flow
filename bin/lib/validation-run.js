@@ -335,8 +335,10 @@ function isUnattended() {
 // `started`, or younger than `ended`. CLOCK_TOLERANCE_MS widens both bounds by
 // 50 ms: two ticks with room for the rounding, and still small next to what
 // letting an impostor in takes (the shell dies, its id is handed out again, and
-// the new holder starts a process, all inside that 50 ms window, and exits
-// before the list is read; a holder still alive is caught by the bound above).
+// the new holder starts a process, all between the shell's death and 50 ms after
+// `spawnSync` returned — for the second pass, between a killed process's death
+// and 50 ms after the kill returned — and exits before the list is read; a
+// holder still alive is caught by the bound above).
 // The selection is therefore bounded, not exact.
 //
 // The creation time is converted to UTC before it becomes a number. .NET keeps
