@@ -458,13 +458,15 @@ function checkEpicIndex(warnings) {
   });
 }
 
-// What `doctor` reads from the epics on disk: size, numbering, story links, the index.
+// What `doctor` reads from the epics and docs on disk: size, numbering, story
+// links, the index, and the docs' stale references (story 26-03).
 function checkEpicFiles(warnings) {
   checkOversizedEpics(warnings);
   checkDuplicateNumbering(warnings);
   checkEpicNumberCollisions(warnings);
   checkStoryLinks(warnings);
   checkEpicIndex(warnings);
+  checkStaleDocs(warnings);
 }
 
 // Story 26-03: stale paths, scripts and links in the docs — counted and
@@ -1029,7 +1031,6 @@ function collectDoctorReport({ strict = false } = {}) {
   // unfinished onboarding is not a broken install.
   checkBrownfieldOnboarding(warnings);
   checkEpicFiles(warnings);
-  checkStaleDocs(warnings);
   checkGeneratedDirectories(warnings);
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
