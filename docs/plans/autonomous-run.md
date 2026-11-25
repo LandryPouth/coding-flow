@@ -33,8 +33,8 @@ stand-in for epic 20:
 
 ## Rules
 
-- At most 4 agents at once since 2026-11-24 (the maintainer: the machine is
-  free; was 2), implementers and reviewers together; two stories run in
+- At most 2 agents at once since 2026-11-25 (the maintainer works on bethl on
+  the same machine; was 4 from 2026-11-24), implementers and reviewers together; two stories run in
   parallel only when their files are disjoint.
 - TMPDIR under the session scratchpad, never inside a repository.
 - Every review brief says: experiments only in a throwaway repo, as
