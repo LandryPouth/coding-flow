@@ -65,8 +65,9 @@ Short lists (≤ 10 items) keep the per-epic listing under the new count line, s
 (`deploy`, `next-story`, `later`, `check`) and `totals` (only when something
 waits: the empty payload stays `{ count: 0, epics: [] }`); a deferred criterion
 also gains `file` and `line`. `next`: past 5 urgent lines, only `before: deploy`
-items are listed — still capped at 5 (26-07's contract), the count line covers
-the rest.
+items are listed — still capped at 5 (26-07's contract), the count line names
+each group it hides: `N more before deploy`, `N before the next story`,
+`N question(s)`, `N yours to do`, `N later` (review round 1).
 
 bethl, `git clone --no-hardlinks` of a6f090b2, `ai-flow todo`, first 15 lines
 (cut at 110 columns). Before (88 lines):
@@ -108,8 +109,26 @@ Before deploy:
 31 to check by hand — ai-flow todo --all
 ```
 
-bethl's `next` block is the same before and after (8 deploy, 14 later, no
-next-story item): 5 deploy lines and `+ 3 more, 14 later — ai-flow todo`.
+bethl's `next` block (clone refreshed for round 1: 7 deploy, 14 later, no
+next-story item), lines cut at 110 columns:
+
+```text
+We need you (21)
+  - (before: deploy) Si ce n'est pas déjà fait : trancher d'abord la décision ouverte (profils désactivés ou
+  - (before: deploy) La migration `drop_visit_forfeit` supprime trois colonnes au démarrage de l'API (Render
+  - (before: deploy) Rien à lancer à la main : au déploiement de l'API, Render applique la migration `2026112
+  - (before: deploy) 43-02 — Rien à lancer à la main : le passage tourne seul chaque nuit à 2 h (heure du se
+  - (before: deploy) 43-03 — Rien à lancer à la main : au déploiement de l'API, Render applique la migration
+  + 2 more before deploy, 14 later — ai-flow todo
+```
+
+Round 1: the count line names its groups. Three new tests (1 deploy + 6
+next-story → `+ 6 before the next story`; bethl-like 7 deploy + 14 later →
+`+ 2 more before deploy, 14 later`; questions and `Owner: human` stories →
+`2 questions, 1 yours to do`) fail on HEAD (`git archive`) and pass here. Two
+expected strings moved with the format, none dropped: 26-07's `+ 3 more, 1 later`
+is now `+ 3 more before deploy, 1 later`, 34-01 criterion 6's `+ 4 more, 1 later`
+is now `+ 4 before the next story, 1 later`.
 
 Tests: `test/human-todo.test.js` gains six 34-01 tests (one per criterion);
 all six fail on the base tree (`git archive HEAD`) and pass here.
@@ -118,7 +137,7 @@ all six fail on the base tree (`git archive HEAD`) and pass here.
 
 ### Round 1 — PASS (the maintainer's real pile, and the write) — two P2s to fix before landing
 
-- [ ] P2 bin/lib/next.js:277 — past 5 urgent items `next` lists only `before: deploy` items; `next-story` items and `## Needs you` questions fall into a bare "+ N more" (26-07 listed them) — fix: name the groups in the count line, e.g. "+ 6 before the next story, 14 later — ai-flow todo".
-- [ ] P2 bin/lib/next.js:277 — on bethl "+ 2 more, 14 later" does not say the 2 are deploy items — fix: "+ 2 more before deploy".
+- [x] P2 bin/lib/next.js:277 — past 5 urgent items `next` lists only `before: deploy` items; `next-story` items and `## Needs you` questions fall into a bare "+ N more" (26-07 listed them) — fix: name the groups in the count line, e.g. "+ 6 before the next story, 14 later — ai-flow todo".
+- [x] P2 bin/lib/next.js:277 — on bethl "+ 2 more, 14 later" does not say the 2 are deploy items — fix: "+ 2 more before deploy".
 
 Held: bethl `todo` counts line + all 7 deploy items + 2 summary lines; `--all` two sections; ≤10 still opens with counts; `--json` 52 items, 0 existing fields changed; `drop` one line in the documented shape, dry-run writes nothing, CRLF/final newline kept, wrapped criterion first line only, fences ignored, `$&`/`$1`/backslashes literal, duplicate id refused with both locations, bad reason/unknown id exit 1; `criterionItems` counts set-aside as deferred; `todo done` works; mutations caught; no existing test changed.

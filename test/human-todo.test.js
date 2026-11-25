@@ -117,7 +117,7 @@ test('the block never prints more than 5 lines plus the count', (t) => {
   const lines = res.output.split('\n');
   const items = lines.filter((line) => line.startsWith('  - '));
   assert.strictEqual(items.length, 5, res.output);
-  assert.ok(lines.includes('  + 3 more, 1 later — ai-flow todo'), res.output);
+  assert.ok(lines.includes('  + 3 more before deploy, 1 later — ai-flow todo'), res.output);
   assert.match(res.output, /^We need you \(9\)$/m);
 });
 
@@ -711,6 +711,57 @@ test('34-01 criterion 6: past 5 items, next lists the before-deploy items and on
     'We need you (7)',
     '  - (before: deploy) Deploy step 1',
     '  - (before: deploy) Deploy step 2',
-    '  + 4 more, 1 later — ai-flow todo',
+    '  + 4 before the next story, 1 later — ai-flow todo',
+  ]);
+});
+
+// Round 1 of 34-01: the count line names each group it hides.
+function nextBlock(dir) {
+  story(dir, 'epics/epic-01-shop/story-01-09-next', { status: 'planned' });
+  const res = run(dir, ['next']);
+  assert.strictEqual(res.code, 0, res.output);
+  return res.output.split('\n\n')[0].split('\n').map((line) => line.replace(/ — story-[\w-]+ \[[0-9a-f]{7}\]$/, ''));
+}
+
+test('34-01 round 1: one deploy item and six next-story items — the count line says they are before the next story', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, {
+    todo: `- [ ] (before: deploy) Run the backfill\n${lines('- [ ] (before: next-story) Chain step', 6)}`,
+  });
+
+  assert.deepStrictEqual(nextBlock(dir), [
+    'We need you (7)',
+    '  - (before: deploy) Run the backfill',
+    '  + 6 before the next story — ai-flow todo',
+  ]);
+});
+
+test('34-01 round 1: seven deploy items and fourteen later (bethl) — the two unlisted are said to be before deploy', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, {
+    todo: `${lines('- [ ] (before: deploy) Deploy step', 7)}\n${lines('- [ ] (before: later) Later chore', 14)}`,
+  });
+
+  assert.deepStrictEqual(nextBlock(dir), [
+    'We need you (21)',
+    ...Array.from({ length: 5 }, (_, i) => `  - (before: deploy) Deploy step ${i + 1}`),
+    '  + 2 more before deploy, 14 later — ai-flow todo',
+  ]);
+});
+
+test('34-01 round 1: past 5 items, Needs you questions and Owner: human stories keep their name in the count line', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, {
+    todo: `${lines('- [ ] (before: deploy) Deploy step', 2)}\n${lines('- [ ] (before: next-story) Chain step', 2)}\n- [ ] (before: later) Someday`,
+  });
+  story(dir, 'epics/epic-01-shop/story-01-02-ask', { extra: '\n## Needs you\n\nWhich provider: A or B?\n' });
+  story(dir, 'epics/epic-01-shop/story-01-03-ask', { extra: '\n## Needs you\n\nWhich region?\n' });
+  story(dir, 'epics/epic-01-shop/story-01-04-sign', { status: 'planned', extra: '\nOwner: human — signs the terms\n' });
+
+  assert.deepStrictEqual(nextBlock(dir), [
+    'We need you (8)',
+    '  - (before: deploy) Deploy step 1',
+    '  - (before: deploy) Deploy step 2',
+    '  + 2 before the next story, 2 questions, 1 yours to do, 1 later — ai-flow todo',
   ]);
 });
