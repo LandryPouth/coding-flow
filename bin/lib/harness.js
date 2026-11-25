@@ -28,7 +28,6 @@ const {
   fail,
   log,
   normalizePortable,
-  readJson,
   writeJson,
   addIssue,
   walkProjectFiles,
@@ -165,8 +164,33 @@ function buildHarnessEvidence({ story = null } = {}) {
   };
 }
 
+// The harness.json on disk: absent, a readable object, or a user's file that
+// does not parse (never mistaken for a missing one). A file that parses to
+// something other than an object counts as existing, with nothing to keep.
+function existingHarnessFile(file) {
+  if (!fs.existsSync(file)) {
+    return { exists: false, config: null, error: null };
+  }
+
+  try {
+    const value = JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+    const config = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    return { exists: true, config, error: null };
+  } catch (error) {
+    return { exists: true, config: null, error: error.message };
+  }
+}
+
 function harnessInit({ json = false, dryRun = false, force = false, mode = null } = {}) {
-  const existing = readJson(harnessConfigPath(), null);
+  const file = existingHarnessFile(harnessConfigPath());
+  const shown = normalizePortable(path.relative(cwd, harnessConfigPath()));
+
+  if (file.error && !force) {
+    fail(`${shown} cannot be read (${file.error}). Fix it, or run \`harness init --force\` to replace it with the defaults.`);
+  }
+
+  // An unreadable file replaced with --force is written as a new one.
+  const existing = file.error ? null : file.config;
   const allowedModes = new Set(HARNESS_MODES);
   // A new file shows the keys the readers resolve without it (26-08); an
   // existing one is completed with the defaults only, as before.
@@ -191,7 +215,7 @@ function harnessInit({ json = false, dryRun = false, force = false, mode = null 
     return;
   }
 
-  if (existing && !force) {
+  if (file.exists && !file.error && !force) {
     if (!json) {
       log("Harness config already exists. Use --force to overwrite it.");
     }
@@ -202,6 +226,9 @@ function harnessInit({ json = false, dryRun = false, force = false, mode = null 
   fs.mkdirSync(harnessRunsDir(), { recursive: true });
 
   if (!json) {
+    if (file.error) {
+      log(`Replaced ${shown}, which could not be read, with the defaults.`);
+    }
     log("Security evidence harness initialized.");
     log(`Config: ${normalizePortable(path.relative(cwd, harnessConfigPath()))}`);
     log(`Runs: ${normalizePortable(path.relative(cwd, harnessRunsDir()))}`);

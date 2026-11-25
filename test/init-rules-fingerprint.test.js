@@ -131,3 +131,54 @@ test('after init, no rule says its project value is ignored', (t) => {
   const ignored = JSON.parse(res.stdout).rules.filter((rule) => /ignored/.test(String(rule.source)));
   assert.deepEqual(ignored.map((rule) => rule.key), []);
 });
+
+// Plan D3: only an exact match of the written default is left out. A partial
+// coverageFloor is hashed as policy (the conservative direction).
+test('a partial coverageFloor, even at default values, moves the fingerprint', (t) => {
+  const dir = repo(t);
+  assert.equal(cli(dir, ['harness', 'init']).code, 0);
+  const base = fingerprint(dir);
+  const file = path.join(dir, '.coding-flow', 'harness.json');
+  fs.writeFileSync(file, JSON.stringify({ ...written(dir), coverageFloor: { high: 'auto' } }));
+  assert.notEqual(fingerprint(dir), base);
+});
+
+// Review round 1 (pre-existing): a harness.json that does not parse is a user's
+// file, not a missing one — never overwritten without --force.
+test('harness init refuses an unparsable harness.json without --force, names it, and keeps it', (t) => {
+  const dir = repo(t);
+  const file = path.join(dir, '.coding-flow', 'harness.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '{"mode":"strict",');
+
+  for (const args of [['harness', 'init'], ['harness', 'init', '--dry-run']]) {
+    const res = cli(dir, args);
+    assert.notEqual(res.code, 0, args.join(' '));
+    assert.match(res.out, /\.coding-flow\/harness\.json cannot be read/, args.join(' '));
+    assert.match(res.out, /--force/, args.join(' '));
+    assert.equal(fs.readFileSync(file, 'utf8'), '{"mode":"strict",', 'the file is untouched');
+  }
+});
+
+test('harness init --force replaces an unparsable harness.json and says so', (t) => {
+  const dir = repo(t);
+  const file = path.join(dir, '.coding-flow', 'harness.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '{"mode":"strict",');
+
+  const res = cli(dir, ['harness', 'init', '--force']);
+  assert.equal(res.code, 0, res.out);
+  assert.match(res.out, /replaced/i);
+  assert.equal(written(dir).failOnContrarySignals, false);
+});
+
+test('harness init does not overwrite a harness.json that parses to a non-object without --force', (t) => {
+  const dir = repo(t);
+  const file = path.join(dir, '.coding-flow', 'harness.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'null');
+  const res = cli(dir, ['harness', 'init']);
+  assert.equal(res.code, 0, res.out);
+  assert.match(res.out, /already exists/);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'null');
+});
