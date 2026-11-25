@@ -1,6 +1,6 @@
 # Story 29-05 — The guard holds on Windows
 
-## Status: in-progress
+## Status: done
 
 PR #61 (develop → main, head e93ffc1) was red on `test (windows-latest, 22.x)`
 only (run 45533563113, job 138934554291): six tests. This story finds the cause
@@ -144,25 +144,31 @@ The checkout comparisons themselves (`primaryLock`, `effectiveDestructivePolicy`
 Held: Git Bash paths (`/x/…`, `/cygdrive/x/…`, `~`) across cd/pushd, git -C, globs and find; `durationMs` excludes the kill; Linux/macOS unchanged; UTC cast; second pass spares a surviving root; 18/18.
 Series 1 ends at its cap with round 4 clean; STRICT needs a second clean round → series 2 round 1 after this fix.
 
+### Round 5 — PASS (readiness to land and release) — second clean round in a row
+
+- [x] P2 CHANGELOG: the DST limit added (a misread hour can only spare a real child, never kill a stranger).
+- [x] P2 Result brought up to date (below).
+- Criteria 1 and 6 are proved on Linux too; criteria 2–5 and 7 are proved only on Windows: by the required `test (windows-latest, 22.x)` job of this story's PR, which gates its auto-merge (branches protected 2026-11-25).
+
 ## Acceptance Criteria
 
-- [ ] Given a path written as Git Bash writes it (`/c/…`, `/cygdrive/d/…`,
+- [x] Given a path written as Git Bash writes it (`/c/…`, `/cygdrive/d/…`,
       `/c`), when read on win32, then it names the drive path; on Linux and
       macOS, and for any other word, it is unchanged.
-- [ ] Given a linked worktree and `primaryLocked`, when the agent runs
+- [x] Given a linked worktree and `primaryLocked`, when the agent runs
       `git -C <primary> switch main`, `cd <primary> && git switch main` or
       `rm <primary>/.coding-flow/harness.json`, the path quoted or in shell
       form, then the guard denies it.
-- [ ] Given a fixer that outlives its time limit, then it is reported
+- [x] Given a fixer that outlives its time limit, then it is reported
       `timedOut`, and on win32 what its shell started is killed.
-- [ ] Given a fixer that cuts the guard log to 199 lines, then verify refuses
+- [x] Given a fixer that cuts the guard log to 199 lines, then verify refuses
       it as a forbidden write on every platform.
-- [ ] Given a git that hangs on its first lookup, when one decision needs
+- [x] Given a git that hangs on its first lookup, when one decision needs
       four, then it is `unchecked` after one timeout, on every platform the CI
       runs (the fake git runs on Windows too).
-- [ ] Given `find ~/<project>/.coding-flow -delete` with `~` the project's
+- [x] Given `find ~/<project>/.coding-flow -delete` with `~` the project's
       parent, then the guard denies it as it denies the `rm`.
-- [ ] Given the PR CI, then `test (windows-latest, 22.x)` and every other job
+- [x] Given the PR CI, then `test (windows-latest, 22.x)` and every other job
       are green.
 
 ## Acceptance Traceability
@@ -182,6 +188,9 @@ npm test
 ```
 
 ## Result
+
+- **Final (2026-11-25, HEAD after d94c8c7):** review rounds 4 and 5 PASS (STRICT, two lenses). `ai-flow verify --story` green (evidence `.coding-flow/runs/2026-11-25T17-15-51-650Z-verify.json`, coverage 98.3%). The Windows proof of criteria 2–5 and 7 is the required `windows-latest` job of the story's PR into `develop`: GitHub merges only when it is green.
+- Earlier history:
 
 - Linux: `npm test` passed (1969 passed, 0 failed, 2 TODOs owned by story 26-08).
   `ai-flow verify --story` passed on the story merged with develop (19-10
