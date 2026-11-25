@@ -21,8 +21,10 @@ what it is.
   3 and 4, plan.md).
 - A test file with a neutral change (rename of the file or of a title,
   reformat — real formatter output included — re-split, a test case moved
-  from or to another test file) is listed as `neutral` in the gate's
-  output and evidence, never as strengthened and never as weakened.
+  into it from another test file) is listed as `neutral` in the gate's
+  output and evidence, never as strengthened. What reads as weakened is
+  unchanged by this story: the file a test case moved OUT of still reports
+  its assertions removed, as before (re-scope, plan.md).
 - When every changed test file is neutral, the gate's "test-file" mode does
   not pass; the message names the neutral files and says what would satisfy
   it (new test code that exercises the change, or a measured coverage report).
@@ -35,7 +37,8 @@ what it is.
 - [x] Given the same change and a test file that adds one assertion, then
       the gate passes in test-file mode.
 - [x] Given a test file renamed without other change, then it is neutral,
-      not weakened; so is a test case moved into another test file.
+      not weakened; the file a test case is moved into is neutral, and the
+      file it left reads as before this story (assertions removed).
 - [x] Given a fixer (19-05) that reformats a test file during verify, then
       the result is the same as a hand reformat: neutral, gate not passed.
 - [x] Given a measured coverage report, then the verdict is unchanged by

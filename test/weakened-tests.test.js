@@ -513,6 +513,8 @@ test('19-08: a test case moved from one test file into another is neutral', (t) 
   assert.equal(res.code, 1, res.output);
   assert.doesNotMatch(res.output, /strengthened/);
   assert.ok(evidenceOf(dir).coverage.neutralTests.includes('src/b.test.js'), JSON.stringify(evidenceOf(dir).coverage));
+  // The source reads as it did before this story: its assertions were removed.
+  assert.deepEqual(evidenceOf(dir).coverage.weakenedTests.map((f) => [f.file, f.signal]), [['src/a.test.js', 'assertions-removed']]);
 });
 
 test('19-08: a test case moved into a new test file is neutral', (t) => {
@@ -775,4 +777,19 @@ test('19-08: in a project inside an e2e/ folder, a new untracked behaviour file 
   assert.equal(res.code, 1, res.output);
   assert.doesNotMatch(res.output, /strengthened/);
   assert.match(res.output, /no test file did|no test file adds/);
+});
+
+test('19-08: a hostile 100 KB line of escaped quotes is read in linear time', () => {
+  // Series 2 round 3: each unpartnered quote rescanned to the line's end, so
+  // `'` followed by `\'` x 40000 took 7.5 s. The lexer reads the test files of
+  // every verify; a line like this in a fixture must not stall the gate.
+  const { tokensOf } = require('../bin/lib/test-tokens');
+  const line = `'${"\\'".repeat(50000)}`;
+  assert.equal(line.length, 100001);
+
+  const started = process.hrtime.bigint();
+  tokensOf([line, `"${'\\"'.repeat(50000)}`]);
+  const ms = Number(process.hrtime.bigint() - started) / 1e6;
+
+  assert.ok(ms < 1000, `took ${ms} ms`);
 });

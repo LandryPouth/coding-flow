@@ -236,6 +236,19 @@
   - Regression test: a project in `e2e/`, an untracked high-risk behaviour
     file, no test: exit 1. Fails on f52a745.
 
+- **Series 2, round 3 (PASS, fixes before the STRICT round 4).** 222
+  differential scenarios, never looser. Fixed: (1) the spec promised the file
+  a case moved OUT of is never weakened; after the re-scope it reads
+  "assertions removed" as at efede92, so the requirement and criterion 3 say
+  what holds, and the cross-file test asserts the source's verdict; (2)
+  `closingQuote` rescanned to the line's end for each unpartnered quote,
+  quadratic (`'` + `\'`×40000 took 7.5 s): once a quote kind has no partner
+  on a line it is not searched again (a later quote of that kind was passed
+  unescaped by the earlier scan, which went on from the same place), with a
+  timing test (100 KB hostile lines < 1 s; 10 s before). (3) Pre-existing at
+  efede92: a project inside `e2e/`/`cypress/` names committed files from the
+  top, all matching a test glob — a follow-up in epic 19's index, not fixed.
+
 ## Test Plan
 
 Throwaway repos with a high-risk path, a neutral, an added-assertion and a

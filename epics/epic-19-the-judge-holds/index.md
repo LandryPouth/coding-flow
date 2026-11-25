@@ -103,6 +103,14 @@ passing. s4's detached job goes through s3's queue. s6 extends the
   file, as it always has; 19-08 pairs them only to read the new file's
   strength. Treating it as a move would loosen the weakening signal, so it
   needs its own story and a differential test against the old gate.
+- **A project inside a test-glob folder reads its behaviour as tests**
+  (pre-existing, found in 19-08's series 2 round 3, true at efede92 too). In
+  a project below the repository top inside `e2e/` or `cypress/` (any folder
+  a default test glob matches), committed and staged files are named from the
+  top, so every one matches `**/e2e/**`: a high-risk change plus a reformat
+  reads "no behavior file changed" and passes. Fix: classify with
+  project-relative names (or match globs against them); needs its own story
+  and a differential test.
 
 ## Decisions
 

@@ -57,6 +57,7 @@ function lex(lines) {
 function lexLine(state, line) {
   state.code = "";
   state.segment = "";
+  state.noPartner = new Set();
 
   if (!state.comment && !state.triple && state.stack.length === 1 && /^\s*\*/.test(line)) {
     return "";
@@ -133,7 +134,7 @@ const isLineComment = (line, index) =>
 function stepCode(state, frame, line, index) {
   const char = line[index];
   const inTemplate = state.stack.length > 1;
-  const close = char === '"' || char === "'" ? closingQuote(line, index) : -1;
+  const close = char === '"' || char === "'" ? closingQuote(state, line, index) : -1;
 
   if (isLineComment(line, index)) return line.length;
   if (line.startsWith('"""', index) || line.startsWith("'''", index) || line.startsWith("/*", index)) {
@@ -159,12 +160,20 @@ function stepCode(state, frame, line, index) {
 }
 
 // The index of the quote closing the one at `start` on the same line, or -1:
-// an apostrophe with no partner (`the user's access`) is not a string.
-function closingQuote(line, start) {
+// an apostrophe with no partner (`the user's access`) is not a string. Linear
+// per line: once a quote kind has no partner from some point, no later quote
+// of that kind has one either (the scan from the earlier quote passed the later
+// one unescaped and went on from the same place), so it is not searched again.
+function closingQuote(state, line, start) {
+  const quote = line[start];
+  if (state.noPartner.has(quote)) return -1;
+
   for (let index = start + 1; index < line.length; index += 1) {
     if (line[index] === "\\") index += 1;
-    else if (line[index] === line[start]) return index;
+    else if (line[index] === quote) return index;
   }
+
+  state.noPartner.add(quote);
   return -1;
 }
 
