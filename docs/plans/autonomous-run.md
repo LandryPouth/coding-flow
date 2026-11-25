@@ -109,7 +109,7 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 
 - [x] 26-06 `ai-flow rules` — split at the cap (series 1: 4 rounds, P1 2/1/1/2; init change → new 26-08); series 2: P1 1/0; landed, re-proved, review captured
 - [x] 26-03 `docs check` — 4 rounds (P1 1/2/3/1), split at the cap → 26-09 (folder mentions under --changed); landed, re-proved
-- [ ] 26-07
+- [x] 26-07 — PR #64, auto-merged 2026-11-25 (macOS symlinked tmp fix on the way)
 - [ ] 26-09 a moved folder is checked too (split from 26-03)
 - [x] 26-08 init shows the rules it applies (split from 26-06) — STRICT, 2 rounds (P1 0/0), landed, re-proved, review captured
 - [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
