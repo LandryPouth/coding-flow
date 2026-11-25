@@ -1,0 +1,5 @@
+{
+ "about": "Story 29-04: sha256 of the two files 29-03 shipped at 3c90919, which bin/lib/destructive-29-03.js and bin/lib/shell-writes-29-03.js copy (header and the frozen require aside).",
+ "bin/lib/destructive.js": "eec9568096bfcaf2f412d8883255c93766ef1c747d95b70ef27eae21bc3886ee",
+ "bin/lib/shell-writes.js": "99e39804c0e409adfe08269d6d2a1fecd2c6a693f9ff8e70325551e3e0e32d1d"
+}

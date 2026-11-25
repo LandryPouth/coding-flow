@@ -3,7 +3,8 @@
 // FROZEN: 29-03 destructive reader exactly as shipped at 3c90919 (story 29-04, plan.md
 // R4 re-scope). The guard decides with the strictest of this reader and
 // destructive.js, so no reader added later can weaken a decision 29-03 made. Do not
-// edit: a fix belongs in destructive.js, which can only add refusals.
+// edit: a fix belongs in destructive.js, which can only add refusals. It reads the
+// line with shell-writes-29-03.js, frozen too; both are pinned by a hash.
 
 // Story 29-03 — commands that throw away work or history wait for the human.
 //
@@ -24,7 +25,7 @@
 // depended on but could not read (an expansion where a flag may sit).
 
 const path = require("path");
-const { splitSegments, commandOf, verbAt, tokenize, heredocWord, SHELLS } = require("./shell-writes");
+const { splitSegments, commandOf, verbAt, tokenize, heredocWord, SHELLS } = require("./shell-writes-29-03");
 
 const EXPANDS = /[$`]/;
 const ASK = "stop and ask the human";

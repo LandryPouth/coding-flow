@@ -1179,6 +1179,9 @@ const EXPANDS = /[$`]/;
 // than the index itself (git's own racy rule). Anything else — a bigger or newer
 // index format, a conflict, a directory — is null, and `git status` decides.
 const MAX_INDEX_BYTES = 2 * 1024 * 1024;
+const GLOB_WORD = /[*?[]/;
+// A word as git should read it: a glob with the shell's rule that `*` stops at `/`.
+const pathspecOf = (word) => (GLOB_WORD.test(word) ? `:(glob)${word}` : word);
 
 function gitDirOf(cwd) {
   for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
@@ -1224,6 +1227,9 @@ function indexEntries(file) {
 }
 
 function indexHolds(cwd, paths) {
+  if (paths.some((word) => GLOB_WORD.test(word))) {
+    return false; // a glob is the shell's: git reads it as a pathspec
+  }
   try {
     const repo = gitDirOf(cwd);
     const index = repo && indexEntries(path.join(repo.gitDir, "index"));
@@ -1285,7 +1291,7 @@ function settle(finding, policy) {
     if (check.worktree && indexHolds(finding.cwd, check.paths)) {
       return { applies: false }; // a plain `rm` of files the index holds as they are: no spawn
     }
-    const { out, issue } = gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no", "--", ...check.paths]);
+    const { out, issue } = gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no", "--", ...check.paths.map(pathspecOf)]);
     if (issue) {
       return { unchecked: issue };
     }
@@ -1384,6 +1390,13 @@ function judgeDestructive(ctx, { findings, unchecked }, deadline = Infinity) {
   return { warnings };
 }
 
+// The readers' cost is linear in the line (story 29-04, series 2 round 1): past
+// 256 KB the guard does not read it at all, so the hook cannot reach its 60 s timeout
+// and fail open. Refused, not unchecked: `standard` lets an unchecked call run, and a
+// padded `rm -rf .git; # …` would then pass where 29-03 refused it.
+const MAX_COMMAND_LENGTH = 256 * 1024;
+const TOO_LONG = "this command is longer than the 256 KB the guard reads, so it is refused unread. Write the content with a write tool, or the script to a file, and run that.";
+
 function decideBash(toolInput, hook, root, caseInsensitive) {
   // A missing or renamed `command` is not an empty one: only `""` has nothing to check.
   if (!toolInput || typeof toolInput !== "object" || typeof toolInput.command !== "string") {
@@ -1398,6 +1411,10 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
 
   if (grantsPlanCommands(command)) {
     return { decision: "deny", reason: PLAN_COMMANDS_GRANT, path: null };
+  }
+
+  if (command.length > MAX_COMMAND_LENGTH) {
+    return { decision: "deny", reason: TOO_LONG, path: null };
   }
 
   const ctx = context(hook, root);

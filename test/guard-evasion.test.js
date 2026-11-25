@@ -681,6 +681,88 @@ test('round 4: a line that costs the reader more than its budget is unchecked, n
   assert.notEqual(shells.decision, 'allow');
 });
 
+// --- series 2, review round 1 -----------------------------------------------------------
+
+// The repo above, plus `src/c.txt` (tracked, modified) and `src/d.js` (tracked, clean).
+function globRepo(t) {
+  const dir = repo(t);
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'c.txt'), 'one\n');
+  fs.writeFileSync(path.join(dir, 'src', 'd.js'), 'one\n');
+  fs.writeFileSync(path.join(dir, 'e.log'), 'untracked\n');
+  git(dir, 'add', 'src');
+  git(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'src');
+  fs.writeFileSync(path.join(dir, 'src', 'c.txt'), 'two\n');
+  return dir;
+}
+
+test('series 2 round 1: a glob or brace naming a modified tracked file is refused', (t) => {
+  const dir = globRepo(t);
+  expectAll(dir, 'deny', ['rm *.txt', 'rm a.*', 'rm a.t?t', 'rm [a].txt', 'rm {a,b}.txt', 'unlink a.*', 'git rm -f *.txt', 'rm ./src/*', 'rm -f src/*.txt', 'rm {x,{a,y}}.txt', 'rm src/{c,d}.*']);
+  // Clean, untracked or unmatched: allowed, as the literal path is.
+  expectAll(dir, 'allow', ['rm b.*', 'rm build/*', 'rm *.log', 'rm src/*.js', 'rm {b,x}.txt', 'rm nothing*', 'rm src/{d,z}.js', 'git rm -f b.*']);
+  assert.match(run(dir, 'rm *.txt').reason, /a\.txt/);
+  // An expansion too big to list is unchecked, never allowed.
+  expectAll(dir, 'unchecked', ['rm {a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}.txt', 'rm {a,b}{c,d}{e,f}{g,h}{i,j}{k,l}{m,n}.txt']);
+  // A range: 29-03 already refuses a word with `..` near its policy file; never allowed.
+  for (const command of ['rm f{1..500}.txt', 'rm a{1..3}.txt']) {
+    assert.notEqual(run(dir, command).decision, 'allow', command);
+  }
+});
+
+test('series 2 round 1: the frozen 29-03 reader and its shell reader are pinned to 3c90919', () => {
+  const crypto = require('node:crypto');
+  const pinned = { 'destructive-29-03.js': 'bin/lib/destructive.js', 'shell-writes-29-03.js': 'bin/lib/shell-writes.js' };
+  const recorded = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-sources.json'), 'utf8'));
+  for (const [file, was] of Object.entries(pinned)) {
+    const text = fs.readFileSync(path.join(ROOT, 'bin', 'lib', file), 'utf8');
+    // The header after `"use strict";`, and the one require that names the frozen shell reader.
+    const body = text.replace(/^("use strict";\n)\n\/\/ FROZEN[^\n]*\n(?:\/\/[^\n]*\n)*/, '$1').replace('require("./shell-writes-29-03")', 'require("./shell-writes")');
+    assert.equal(crypto.createHash('sha256').update(body).digest('hex'), recorded[was], `${file} is 3c90919's ${was}`);
+  }
+});
+
+// A host with no spawn and nothing from this machine (home, PATH), so a reader's output
+// on the corpus depends on the reader alone; the aliases are reviewerRepo's.
+const REVIEWER_ALIASES = { nuke: 'reset --hard', zap: '!rm -rf build', st: 'status' };
+function readerHost(dir) {
+  return {
+    exists: (file) => file !== null && fs.existsSync(file),
+    readSmall: () => null,
+    home: () => '/home/reviewer',
+    onPath: () => false,
+    gitAlias: (cwd, name) => ({ value: REVIEWER_ALIASES[name] || null }),
+    gitTop: () => dir,
+  };
+}
+
+// What a reader said about one command, as a short hash, with the throwaway directory named `<repo>`.
+function readerDigest(output, dir) {
+  const text = JSON.stringify(output).split(dir).join('<repo>');
+  return require('node:crypto').createHash('sha256').update(text).digest('hex').slice(0, 16);
+}
+
+test("series 2 round 1: the frozen reader's output on the reviewers' corpus is 29-03's, case by case", (t) => {
+  const dir = reviewerRepo(t);
+  const { readDestructive } = require('../bin/lib/destructive-29-03');
+  const { outputs } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-reader-outputs.json'), 'utf8'));
+  const { cases } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-decisions.json'), 'utf8'));
+  assert.equal(outputs.length, cases.length);
+  const host = readerHost(dir);
+  const moved = cases.filter(([command], i) => readerDigest(readDestructive(command, { cwd: dir, host }), dir) !== outputs[i]);
+  assert.deepEqual(moved.map(([command]) => command), []);
+});
+
+test('series 2 round 1: a command longer than the guard reads is refused, never allowed', (t) => {
+  const dir = repo(t);
+  const padded = `rm -rf .git; # ${'x'.repeat(256 * 1024)}`;
+  const result = run(dir, padded);
+  assert.equal(result.decision, 'deny', result.reason);
+  assert.match(result.reason, /256 KB/);
+  expectAll(dir, 'deny', [`echo ${'y'.repeat(300 * 1024)}`]);
+  expectAll(dir, 'allow', [`echo ${'y'.repeat(200 * 1024)}`]);
+});
+
 // --- criterion 5: one table of what the guard does not read ------------------------------
 
 // 29-03's plan.md, D9 and D9 (extended): the forms it said it does not read.

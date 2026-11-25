@@ -667,9 +667,20 @@ function readDownload(out, command, cwd, segments, index) {
 // handed to `ssh` or a wrapper the guard does not read, it is not this repository's.
 // Not judged: a path set by an expansion, a directory the line made unknown, a path
 // that is not on disk (nothing to lose, and no `git status` to run) (plan.md D3).
+// A glob or a brace (`rm *.txt`, `rm {a,b}.txt`, series 2 round 1) is the shell's: the
+// braces are expanded here, bounded, and a glob is handed to git as a pathspec — an
+// expansion past the bound is unchecked, never allowed.
 function removesChanges(out, operands, words, cwd, host, worktree) {
-  const paths = operands.filter((operand) => operand && !EXPANDS.test(operand));
-  if (!paths.length || cwd === null || !paths.some((word) => host.exists(resolveIn(cwd, word, host.home())))) {
+  const paths = [];
+  for (const operand of operands.filter((word) => word && !EXPANDS.test(word))) {
+    const expanded = braceWords(operand);
+    if (expanded) {
+      paths.push(...expanded);
+    } else {
+      out.unchecked.push({ reason: BRACE_UNREAD, command: words.map(quoted).join(" ") });
+    }
+  }
+  if (!paths.length || cwd === null || !paths.some((word) => GLOB.test(word) || host.exists(resolveIn(cwd, word, host.home())))) {
     return;
   }
   add(out, {
@@ -679,6 +690,94 @@ function removesChanges(out, operands, words, cwd, host, worktree) {
     check: { kind: "dirty", paths, worktree },
     local: true,
   }, words, cwd);
+}
+
+const GLOB = /[*?[]/;
+const MAX_BRACE_WORDS = 64;
+const MAX_BRACE_TEXT = 4096;
+const BRACE_UNREAD = "a brace expansion too large for the guard to list (or a {a..b..step} it does not read)";
+
+// bash's brace expansion of one word: `{a,b}`, nested, and `{1..9}` / `{a..e}` ranges.
+// null when it would make more than MAX_BRACE_WORDS words, or for a form not read.
+function braceWords(word) {
+  if (!word.includes("{")) {
+    return [word];
+  }
+  if (word.length > MAX_BRACE_TEXT) {
+    return null;
+  }
+  let words = [word];
+  for (let pending = true; pending; ) {
+    pending = false;
+    const next = [];
+    for (const each of words) {
+      const brace = firstBrace(each);
+      if (brace === null) {
+        return null;
+      }
+      if (!brace) {
+        next.push(each);
+        continue;
+      }
+      pending = true;
+      next.push(...brace.parts.map((part) => each.slice(0, brace.start) + part + each.slice(brace.end + 1)));
+      if (next.length > MAX_BRACE_WORDS) {
+        return null;
+      }
+    }
+    words = next;
+  }
+  return words;
+}
+
+// The first `{…}` bash expands in `word`: `{ start, end, parts }`; false when there is
+// none (`{}`, `{a}` and an unclosed `{` stay as written); null for a form not read.
+function firstBrace(word) {
+  for (let start = word.indexOf("{"); start !== -1; start = word.indexOf("{", start + 1)) {
+    let depth = 0;
+    const commas = [];
+    let end = -1;
+    for (let at = start; at < word.length && end === -1; at += 1) {
+      if (word[at] === "{") {
+        depth += 1;
+      } else if (word[at] === "}") {
+        depth -= 1;
+        end = depth === 0 ? at : -1;
+      } else if (word[at] === "," && depth === 1) {
+        commas.push(at);
+      }
+    }
+    if (end === -1) {
+      return false;
+    }
+    const inner = word.slice(start + 1, end);
+    if (commas.length) {
+      const cuts = [start, ...commas, end];
+      return { start, end, parts: cuts.slice(1).map((cut, i) => word.slice(cuts[i] + 1, cut)) };
+    }
+    const range = /^(-?\d+|[a-zA-Z])\.\.(-?\d+|[a-zA-Z])(\.\.-?\d+)?$/.exec(inner);
+    if (range) {
+      return range[3] ? null : braceRange(start, end, range[1], range[2]);
+    }
+  }
+  return false;
+}
+
+function braceRange(start, end, from, to) {
+  const numeric = /\d/.test(from);
+  if (numeric !== /\d/.test(to)) {
+    return false;
+  }
+  const [a, b] = numeric ? [Number(from), Number(to)] : [from.charCodeAt(0), to.charCodeAt(0)];
+  if (Math.abs(b - a) >= MAX_BRACE_WORDS) {
+    return null;
+  }
+  const step = a <= b ? 1 : -1;
+  const parts = [];
+  for (let n = a; n !== b + step; n += step) {
+    parts.push(numeric ? String(n) : String.fromCharCode(n));
+  }
+  return { start, end, parts };
 }
 
 // Text that runs here, later or inside another program (interpreter code, a git alias
