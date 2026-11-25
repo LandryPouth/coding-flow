@@ -29,6 +29,17 @@ stand-in for epic 20:
    checkout with `ai-flow worktree land --story` (dry-run first); re-verify
    on `develop` with `--base <pre-land tip>` and re-capture the review (the
    land deletes the worktree's `runs/` until story 18-02 ships).
+   **Since 2026-11-25 (maintainer): one PR per story, auto-merged on green.**
+   `main` and `develop` are protected (the 5 CI test jobs are required), so
+   instead of the local land: merge `origin/develop` into the story branch,
+   verify only if the tree changed, push the branch, `ai-flow ship` (PR to
+   `develop` with the proof), `gh pr merge --auto --merge`. After the merge,
+   fast-forward the primary checkout's `develop` (`git merge --ff-only
+   origin/develop`) and remove the worktree. A red CI is fixed on the same
+   branch like a red verify. Never `--auto` on a base without required checks
+   (check `gh api …/branches/<base>/protection/required_status_checks` first):
+   GitHub would merge at once. Release PRs (develop → main) at wave ends use
+   the same rule.
 4. Tick the story below, commit.
 
 ## Rules
