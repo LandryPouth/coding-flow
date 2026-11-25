@@ -1089,7 +1089,9 @@ const POLICY_MAYBE = `a command the guard does not read may remove or overwrite 
 
 // Whether one entry of `touched` reaches the policy file. An operand built by an
 // expansion that may name it joins the issues instead.
-function entryReaches(ctx, entry, policies, caseInsensitive) {
+// `answers`: one call's memo, so a word repeated by both readers (or 40 000 times) is
+// resolved on disk once (series 2 round 2: the hook's worst case).
+function entryReaches(ctx, entry, policies, caseInsensitive, answers = new Map()) {
   const unsure = (reason) => !ctx.issues.includes(reason) && ctx.issues.push(reason);
   if (entry.find) {
     if (entry.cwd === null || entry.find.starts.some((start) => EXPANDS.test(start))) {
@@ -1105,7 +1107,11 @@ function entryReaches(ctx, entry, policies, caseInsensitive) {
       }
       return false;
     }
-    return reaches(entry.cwd, operand, entry.mode, policies, caseInsensitive);
+    const key = `${entry.cwd}\0${entry.mode}\0${operand}`;
+    if (!answers.has(key)) {
+      answers.set(key, reaches(entry.cwd, operand, entry.mode, policies, caseInsensitive));
+    }
+    return answers.get(key);
   });
 }
 
@@ -1115,10 +1121,11 @@ function entryReaches(ctx, entry, policies, caseInsensitive) {
 function touchesPolicyFile(ctx, touched, caseInsensitive) {
   const policies = policyPaths(ctx);
   const unsure = (reason) => !ctx.issues.includes(reason) && ctx.issues.push(reason);
+  const answers = new Map();
   for (const entry of touched) {
     if (entry.unseen) {
       unsure(POLICY_UNSEEN);
-    } else if (entryReaches(ctx, entry, policies, caseInsensitive)) {
+    } else if (entryReaches(ctx, entry, policies, caseInsensitive, answers)) {
       if (!entry.maybe) {
         return `this command removes, moves, overwrites or links to ${POLICY_FILE} (or a directory holding it), which holds the destructive-command policy; without it the defaults apply and a locked primary checkout is unlocked. Ask the human.`;
       }
@@ -1216,8 +1223,29 @@ const EXPANDS = /[$`]/;
 // index format, a conflict, a directory — is null, and `git status` decides.
 const MAX_INDEX_BYTES = 2 * 1024 * 1024;
 const GLOB_WORD = /[*?[]/;
-// A word as git should read it: a glob with the shell's rule that `*` stops at `/`.
-const pathspecOf = (word) => (GLOB_WORD.test(word) ? `:(glob)${word}` : word);
+const GIT_STATUS_FAILED = "git status failed on the paths a destructive command names (the check was not run)";
+
+// What the new reader's dirty check hands `git status` (series 2 round 2): the paths
+// inside this repository (one outside makes git fail, and is not this repository's
+// to lose); `rm`'s words quoted for git — a glob as `:(glob)` (`*` stops at `/`, as in
+// bash), any other word `:(literal)`, so `:!a.txt` cannot exclude what bash removes;
+// any other command's words (git's own pathspecs) as written.
+function pathspecsIn(cwd, check) {
+  const repo = gitDirOf(cwd);
+  if (!repo) {
+    return [];
+  }
+  const fileOf = (word) => path.resolve(cwd, word.replace(/^~(?=\/|$)/, os.homedir()));
+  const inside = (word) => {
+    const rel = path.relative(repo.top, fileOf(word));
+    return !rel.startsWith("..") && !path.isAbsolute(rel);
+  };
+  if (check.removal !== "shell") {
+    return check.paths.filter((word) => word.startsWith(":") || inside(word));
+  }
+  const relative = (word) => (word.startsWith("~") ? path.relative(cwd, fileOf(word)) || "." : word);
+  return check.paths.filter(inside).map((word) => `${GLOB_WORD.test(word) ? ":(glob)" : ":(literal)"}${relative(word)}`);
+}
 
 function gitDirOf(cwd) {
   for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
@@ -1322,9 +1350,13 @@ function settle(finding, policy) {
     if (check.worktree && indexHolds(finding.cwd, check.paths)) {
       return { applies: false }; // a plain `rm` of files the index holds as they are: no spawn
     }
-    const { out, issue } = gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no", "--", ...check.paths.map(pathspecOf)]);
-    if (issue) {
-      return { unchecked: issue };
+    const specs = pathspecsIn(finding.cwd, check);
+    if (!specs.length) {
+      return { applies: false }; // outside any repository, or every path outside this one
+    }
+    const { out, issue } = gitNow(finding.cwd, ["status", "--porcelain", "--untracked-files=no", "--", ...specs]);
+    if (issue || out === null) {
+      return { unchecked: issue || GIT_STATUS_FAILED }; // a git error is no answer, never "clean"
     }
     // `worktree`: only a change the index does not hold is lost (`rm` of a staged file).
     const files = porcelainFiles(check.worktree ? (out || "").split("\n").filter((line) => line[1] !== " ").join("\n") : out);
@@ -1422,8 +1454,9 @@ function judgeDestructive(ctx, { findings, unchecked }, deadline = Infinity) {
 }
 
 // The readers' cost is linear in the line (story 29-04, series 2 round 1): past
-// 256 KB the guard does not read it at all, so the hook cannot reach its 60 s timeout
-// and fail open. Refused, not unchecked: `standard` lets an unchecked call run, and a
+// 256 KB (UTF-8 bytes) the guard does not read it at all, so the hook cannot reach its
+// 60 s timeout and fail open. Worst case measured at the cap, both readers: 6.4 s
+// (plan.md, series 2 round 2). Refused, not unchecked: `standard` lets an unchecked call run, and a
 // padded `rm -rf .git; # …` would then pass where 29-03 refused it.
 const MAX_COMMAND_LENGTH = 256 * 1024;
 const TOO_LONG = "this command is longer than the 256 KB the guard reads, so it is refused unread. Write the content with a write tool, or the script to a file, and run that.";
@@ -1444,12 +1477,13 @@ function decideBash(toolInput, hook, root, caseInsensitive) {
     return { decision: "deny", reason: PLAN_COMMANDS_GRANT, path: null };
   }
 
-  if (command.length > MAX_COMMAND_LENGTH) {
+  if (command.length > MAX_COMMAND_LENGTH / 4 && Buffer.byteLength(command, "utf8") > MAX_COMMAND_LENGTH) {
     return { decision: "deny", reason: TOO_LONG, path: null };
   }
 
   const ctx = context(hook, root);
   gitBudget.spent = false;
+  frozenJudge().gitBudget.spent = false;
   // The destructive check is settled first, and nothing after it can lose its
   // refusal: a later check that throws still returns it (review round 2).
   const destructiveIssues = [];
@@ -1474,13 +1508,24 @@ const NEW_READER_BUDGET_MS = 3000;
 function strictestReading(command, ctx, issues) {
   const started = Date.now();
   const frozen = readDestructiveSafely("frozen", command, ctx, issues, {});
-  const judged = judgeDestructive({ ...ctx, issues }, frozen);
+  const judged = frozenJudge().judgeDestructive({ ...ctx, issues }, frozen);
+  if (judged.deny) {
+    return { reading: frozen, destructive: judged }; // refused as 29-03 refused it: the new reader adds nothing
+  }
   const added = readDestructiveSafely("added", command, ctx, issues, { deadline: started + NEW_READER_BUDGET_MS });
-  const extra = judged.deny ? { warnings: [] } : judgeDestructive({ ...ctx, issues }, added, started + NEW_READER_BUDGET_MS);
+  const extra = judgeDestructive({ ...ctx, issues }, added, started + NEW_READER_BUDGET_MS);
   return {
     reading: { touched: [...frozen.touched, ...added.touched], substituted: [...frozen.substituted, ...added.substituted] },
-    destructive: { deny: judged.deny || extra.deny, warnings: [...new Set([...(judged.warnings || []), ...(extra.warnings || [])])] },
+    destructive: { deny: extra.deny, warnings: [...new Set([...(judged.warnings || []), ...(extra.warnings || [])])] },
   };
+}
+
+// 29-03's judging, frozen with its reader (series 2 round 2): its findings are settled
+// by 3c90919's own code, so a rule added for the new reader cannot move them.
+function frozenJudge() {
+  const judge = require("./destructive-judge-29-03");
+  judge.use(loadPolicy);
+  return judge;
 }
 
 // What one destructive reader makes of the command; a reader that throws makes the call unchecked.

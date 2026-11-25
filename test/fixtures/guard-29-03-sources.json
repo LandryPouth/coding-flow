@@ -1,5 +1,8 @@
 {
- "about": "Story 29-04: sha256 of the two files 29-03 shipped at 3c90919, which bin/lib/destructive-29-03.js and bin/lib/shell-writes-29-03.js copy (header and the frozen require aside).",
+ "about": "Story 29-04: sha256 of what 29-03 shipped at 3c90919 and the frozen copies hold: bin/lib/destructive.js and bin/lib/shell-writes.js (copied whole by destructive-29-03.js and shell-writes-29-03.js, header and the frozen require aside), and the blocks of bin/lib/guard.js copied between the markers of destructive-judge-29-03.js (each block hashed with a final newline).",
  "bin/lib/destructive.js": "eec9568096bfcaf2f412d8883255c93766ef1c747d95b70ef27eae21bc3886ee",
- "bin/lib/shell-writes.js": "99e39804c0e409adfe08269d6d2a1fecd2c6a693f9ff8e70325551e3e0e32d1d"
+ "bin/lib/shell-writes.js": "99e39804c0e409adfe08269d6d2a1fecd2c6a693f9ff8e70325551e3e0e32d1d",
+ "bin/lib/guard.js:789": "b7924629c9ea060d7e873b836444855ff984af8921164fef6c5775129ef58ff3",
+ "bin/lib/guard.js:792-793": "3433f7a180d716fc96cef25763706589da9ae2b21975a0934600f0a75d0e75ff",
+ "bin/lib/guard.js:1129-1275": "02e0b9a98fe767aa760195e7a7dd606f4244516aee6a8913df0eaad96351e841"
 }

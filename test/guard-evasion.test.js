@@ -672,6 +672,10 @@ test('round 4: a line that costs the reader more than its budget is unchecked, n
   const spent = readDestructive('echo a; echo b; rm -rf build', { cwd: dir, host: {}, deadline: Date.now() - 1 });
   assert.equal(spent.findings.length, 0);
   assert.ok(spent.unchecked.some((entry) => /time budget/.test(entry.reason)), JSON.stringify(spent.unchecked));
+  // Thousands of words in one command: the deadline is read inside the word loop too.
+  const words = readDestructive(`rm ${'a.txt '.repeat(200000)}`, { cwd: dir, host: { exists: () => true, home: () => '/h' }, deadline: Date.now() + 1 });
+  assert.equal(words.findings.length, 0);
+  assert.ok(words.unchecked.some((entry) => /time budget/.test(entry.reason)), JSON.stringify(words.unchecked));
   // Repetition: the same probe is answered once, and the call stays bounded.
   const started = Date.now();
   const repeated = run(dir, 'rm build; '.repeat(2000));
@@ -732,6 +736,15 @@ test('series 2 round 1: the frozen 29-03 reader and its shell reader are pinned 
     const body = text.replace(/^("use strict";\n)\n\/\/ FROZEN[^\n]*\n(?:\/\/[^\n]*\n)*/, '$1').replace('require("./shell-writes-29-03")', 'require("./shell-writes")');
     assert.equal(crypto.createHash('sha256').update(body).digest('hex'), recorded[was], `${file} is 3c90919's ${was}`);
   }
+  // 29-03's judging (series 2 round 2): each block between the markers is 3c90919's guard.js lines.
+  const judge = fs.readFileSync(path.join(ROOT, 'bin', 'lib', 'destructive-judge-29-03.js'), 'utf8');
+  const blocks = [...judge.matchAll(/^\/\/ --- 3c90919 (bin\/lib\/guard\.js:[\d-]+) ---\n([\s\S]*?)(?=^\/\/ --- )/gm)];
+  assert.deepEqual(blocks.map((block) => block[1]), ['bin/lib/guard.js:789', 'bin/lib/guard.js:792-793', 'bin/lib/guard.js:1129-1275']);
+  for (const [, where, text] of blocks) {
+    assert.equal(crypto.createHash('sha256').update(text).digest('hex'), recorded[where], `${where} is 3c90919's`);
+  }
+  const outside = judge.replace(/^\/\/ --- 3c90919[\s\S]*^\/\/ --- end of 3c90919 ---$/m, '');
+  assert.doesNotMatch(outside, /^function /m, 'no code of its own outside the frozen blocks but `use`');
 });
 
 // A host with no spawn and nothing from this machine (home, PATH), so a reader's output
@@ -795,6 +808,53 @@ test("series 2 round 1: the frozen readers read the guard's own 29-03 test comma
   assert.deepEqual(moved.map(([command]) => command), []);
 });
 
+// --- series 2, review round 2 -----------------------------------------------------------
+
+// Only `sub/c.txt` and `sub/deep/e.txt` are modified (tracked): git's own `*` crosses
+// `/`, bash's does not, and 29-03 judged `git checkout -- '*.txt'` with git's.
+function subRepo(t) {
+  const dir = tmp(t);
+  git(dir, 'init', '-q', '-b', 'main');
+  fs.mkdirSync(path.join(dir, 'sub', 'deep'), { recursive: true });
+  const write = (file, text) => fs.writeFileSync(path.join(dir, file), text);
+  write('top.txt', 'one\n'); write('sub/c.txt', 'one\n'); write('sub/deep/e.txt', 'one\n');
+  git(dir, 'add', '.');
+  git(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init');
+  write('sub/c.txt', 'two\n'); write('sub/deep/e.txt', 'two\n');
+  return dir;
+}
+
+test("series 2 round 2: 29-03's findings are judged by 29-03's own code — no decision weaker than 3c90919's", (t) => {
+  const recorded = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'guard-29-03-decisions-round2.json'), 'utf8'));
+  const rank = { allow: 0, unchecked: 1, deny: 2 };
+  for (const [fixture, dir] of [['reviewer', reviewerRepo(t)], ['sub', subRepo(t)]]) {
+    const weaker = recorded[fixture].filter(([command, before]) => rank[run(dir, command).decision] < rank[before]);
+    assert.deepEqual(weaker, [], fixture);
+  }
+  // The P1 of the round: each was unchecked or allowed.
+  expectAll(subRepo(t), 'deny', ["git checkout -- '*.txt'", "git restore '*.txt'", "git checkout -- 's*'", "git restore '*'", "git rm -f '*.txt'", 'rm sub/*.txt']);
+  expectAll(subRepo(t), 'allow', ['rm *.txt', 'rm top.txt']);
+});
+
+test('series 2 round 2: a git error is no answer, and a pathspec word cannot empty the check', (t) => {
+  const dir = reviewerRepo(t);
+  expectAll(dir, 'deny', [
+    // A path outside the repository made git fail, read as clean.
+    'rm *.txt /etc/hostname', 'unlink a.txt /etc/hostname', 'git rm -f a.txt /etc/hostname',
+    // `{,}` is no word; `:(bogus)` is a file name for rm.
+    'rm -f a.txt {,}', "rm -f a.txt ':(bogus)x'",
+    // git's exclude magic in a word bash hands rm as a file name.
+    "rm a.txt ':!a.txt'", 'rm a.txt :^a.txt', "rm a.txt ':(exclude)a.txt'",
+    // git rm's own pathspecs reach git without an existence check.
+    'git rm -f :/a.txt', "git rm -f ':(top)a.txt'", "git rm -f -- ':(glob)*.txt'",
+  ]);
+  expectAll(dir, 'allow', ['rm ../a.txt', 'rm ~/nothing-here.txt', 'rm -- -a.txt', 'rm b.txt /etc/hostname', 'git rm -f b.txt']);
+  // Outside any repository: nothing tracked to lose.
+  const plain = tmp(t);
+  fs.writeFileSync(path.join(plain, 'x.txt'), 'x');
+  expectAll(plain, 'allow', ['rm x.txt', 'rm *.txt', 'git rm -f x.txt']);
+});
+
 test('series 2 round 1: a command longer than the guard reads is refused, never allowed', (t) => {
   const dir = repo(t);
   const padded = `rm -rf .git; # ${'x'.repeat(256 * 1024)}`;
@@ -803,6 +863,8 @@ test('series 2 round 1: a command longer than the guard reads is refused, never 
   assert.match(result.reason, /256 KB/);
   expectAll(dir, 'deny', [`echo ${'y'.repeat(300 * 1024)}`]);
   expectAll(dir, 'allow', [`echo ${'y'.repeat(200 * 1024)}`]);
+  // Measured in UTF-8 bytes: 140 K characters of two bytes each are past the cap.
+  expectAll(dir, 'deny', [`echo ${'é'.repeat(140 * 1024)}`]);
 });
 
 // --- criterion 5: one table of what the guard does not read ------------------------------

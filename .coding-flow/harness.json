@@ -103,6 +103,7 @@
     "bin/lib/destructive.js",
     "bin/lib/destructive-29-03.js",
     "bin/lib/shell-writes-29-03.js",
+    "bin/lib/destructive-judge-29-03.js",
     "bin/lib/archive-members.js",
     "bin/lib/risk.js",
     "bin/lib/harness-config.js",

@@ -304,7 +304,7 @@ function readGit(out, args, cwd, ctx) {
   }
   if (sub === "rm") {
     readRemoval(out, rest, dir);
-    readGitRmForced(out, rest, words, dir, ctx.host);
+    readGitRmForced(out, rest, words, dir, ctx);
   } else if (sub === "mv") {
     readMove(out, rest, dir);
   }
@@ -408,7 +408,7 @@ function readRm(out, args, cwd, ctx) {
     return;
   }
   if (!options.has("r", "recursive") && !options.short.has("R")) {
-    removesChanges(out, operandsOf(args), ["rm", ...args], cwd, ctx.host, true);
+    removesChanges(out, operandsOf(args), ["rm", ...args], cwd, ctx, true);
     return;
   }
   const operands = operandsOf(args);
@@ -669,10 +669,17 @@ function readDownload(out, command, cwd, segments, index) {
 // that is not on disk (nothing to lose, and no `git status` to run) (plan.md D3).
 // A glob or a brace (`rm *.txt`, `rm {a,b}.txt`, series 2 round 1) is the shell's: the
 // braces are expanded here, bounded, and a glob is handed to git as a pathspec — an
-// expansion past the bound is unchecked, never allowed.
-function removesChanges(out, operands, words, cwd, host, worktree) {
+// expansion past the bound is unchecked, never allowed. `git rm -f`'s operands are
+// git's own pathspecs (`:/a.txt`, `'*.txt'`): handed to git as written, with no
+// existence check first (series 2 round 2); the guard quotes `rm`'s for git.
+function removesChanges(out, operands, words, cwd, ctx, worktree) {
+  const host = ctx.host;
   const paths = [];
-  for (const operand of operands.filter((word) => word && !EXPANDS.test(word))) {
+  for (const [index, operand] of operands.filter((word) => word && !EXPANDS.test(word)).entries()) {
+    if (index % 256 === 255 && Date.now() > ctx.deadline) {
+      outOfTime(out); // thousands of words: the rest is unchecked, never allowed
+      return;
+    }
     const expanded = braceWords(operand);
     if (expanded) {
       paths.push(...expanded);
@@ -680,14 +687,15 @@ function removesChanges(out, operands, words, cwd, host, worktree) {
       out.unchecked.push({ reason: BRACE_UNREAD, command: words.map(quoted).join(" ") });
     }
   }
-  if (!paths.length || cwd === null || !paths.some((word) => GLOB.test(word) || host.exists(resolveIn(cwd, word, host.home())))) {
+  const onDisk = (word) => GLOB.test(word) || host.exists(resolveIn(cwd, word, host.home()));
+  if (!paths.length || cwd === null || (worktree && !paths.some(onDisk))) {
     return;
   }
   add(out, {
     rule: "removing a file with uncommitted changes",
     destroys: "the uncommitted changes in the files it removes",
     alternative: "`git stash push -u -m \"<why>\"` first, so they can come back (or `trash` the file)",
-    check: { kind: "dirty", paths, worktree },
+    check: { kind: "dirty", paths, worktree, removal: worktree ? "shell" : "git" },
     local: true,
   }, words, cwd);
 }
@@ -727,7 +735,7 @@ function braceWords(word) {
     }
     words = next;
   }
-  return words;
+  return words.filter(Boolean); // `{,}`: bash drops an empty word
 }
 
 // The first `{…}` bash expands in `word`: `{ start, end, parts }`; false when there is
@@ -1006,10 +1014,10 @@ function readGitConfigured(out, sub, rest, dir, ctx) {
 }
 
 // `git rm -f a.txt` (not `--cached`) drops the file's uncommitted changes, staged ones too.
-function readGitRmForced(out, rest, words, dir, host) {
+function readGitRmForced(out, rest, words, dir, ctx) {
   const options = optionsOf(rest);
   if (options.has("f", "force") && !options.long.has("cached")) {
-    removesChanges(out, operandsOf(rest), words, dir, host, false);
+    removesChanges(out, operandsOf(rest), words, dir, ctx, false);
   }
 }
 
@@ -1380,7 +1388,7 @@ function readVerb(out, command, cwd, ctx, segments, index) {
   } else if (REMOVERS.has(name)) {
     readRemoval(out, args, cwd);
     if (name !== "trash") {
-      removesChanges(out, operandsOf(args), [name, ...args], cwd, ctx.host, true);
+      removesChanges(out, operandsOf(args), [name, ...args], cwd, ctx, true);
     }
   } else if (name === "mv") {
     readMove(out, args, cwd);

@@ -1,0 +1,147 @@
+{
+ "about": "Story 29-04, series 2 review round 2: commands of that review, each with the decision 3c90919 (29-03) gave, recorded by running it. reviewer: on test/guard-evasion.test.js reviewerRepo; sub: on subRepo (only sub/c.txt and sub/deep/e.txt modified, tracked).",
+ "reviewer": [
+  [
+   "rm *.txt /etc/hostname",
+   "allow"
+  ],
+  [
+   "rm -f a.txt {,}",
+   "allow"
+  ],
+  [
+   "rm -f a.txt ':(bogus)x'",
+   "allow"
+  ],
+  [
+   "unlink a.txt /etc/hostname",
+   "allow"
+  ],
+  [
+   "git rm -f a.txt /etc/hostname",
+   "allow"
+  ],
+  [
+   "rm a.txt ':!a.txt'",
+   "allow"
+  ],
+  [
+   "rm a.txt :^a.txt",
+   "allow"
+  ],
+  [
+   "rm a.txt ':(exclude)a.txt'",
+   "allow"
+  ],
+  [
+   "git rm -f :/a.txt",
+   "allow"
+  ],
+  [
+   "git rm -f ':(top)a.txt'",
+   "allow"
+  ],
+  [
+   "git rm -f -- ':(glob)*.txt'",
+   "allow"
+  ],
+  [
+   "git checkout -- a.txt /etc/hostname",
+   "allow"
+  ],
+  [
+   "rm '*.txt'",
+   "allow"
+  ],
+  [
+   "rm \\*.txt",
+   "allow"
+  ],
+  [
+   "rm ~/nothing-here.txt",
+   "allow"
+  ],
+  [
+   "rm a.txt -- b.txt",
+   "allow"
+  ],
+  [
+   "rm -- -a.txt",
+   "allow"
+  ],
+  [
+   "rm ./a.txt",
+   "allow"
+  ],
+  [
+   "rm src/../a.txt",
+   "allow"
+  ],
+  [
+   "rm ../a.txt",
+   "allow"
+  ]
+ ],
+ "sub": [
+  [
+   "git checkout -- '*.txt'",
+   "deny"
+  ],
+  [
+   "git checkout -- *.txt",
+   "deny"
+  ],
+  [
+   "git restore '*.txt'",
+   "deny"
+  ],
+  [
+   "git restore -- '*.txt'",
+   "deny"
+  ],
+  [
+   "git checkout HEAD -- '*.txt'",
+   "deny"
+  ],
+  [
+   "git restore --source=HEAD '*.txt'",
+   "deny"
+  ],
+  [
+   "git checkout -- 's*'",
+   "deny"
+  ],
+  [
+   "git checkout -f -- '*.txt'",
+   "deny"
+  ],
+  [
+   "git restore '*'",
+   "deny"
+  ],
+  [
+   "git rm -f '*.txt'",
+   "allow"
+  ],
+  [
+   "rm *.txt",
+   "allow"
+  ],
+  [
+   "rm sub/*.txt",
+   "allow"
+  ],
+  [
+   "rm -f sub/deep/*",
+   "allow"
+  ],
+  [
+   "git rm -f 'sub/*.txt'",
+   "allow"
+  ],
+  [
+   "git rm -f -- sub/deep/e.txt",
+   "allow"
+  ]
+ ]
+}
