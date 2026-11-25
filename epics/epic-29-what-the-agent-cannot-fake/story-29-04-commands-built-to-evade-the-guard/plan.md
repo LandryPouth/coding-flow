@@ -502,3 +502,13 @@ Note (orchestrator): 3 series, 10 rounds. The spec promises classes over an open
 
 Held: every new rule is pinned by a failing-on-removal test; 44/44; frozen side untouched; exec/timeout/nohup/sudo/bash --/-e/$(echo x.sh)/written x.py, `!sh -c`, `!$(printf …)`, `psql -c "$(printf …)"` all unchecked or refused; 78/86 everyday commands same as develop.
 Round 4 is the last of series 3.
+
+### Series 3 Round 4 — FAIL (did the narrowing reopen round 2? is the story coherent?) — docs only
+
+- [ ] P1 docs/rules-and-limits.md:85 — the "What it claims" sentence of *Destructive commands wait for the human* still says interpreter strings, two-step aliases and written-then-run scripts are out of reach, contradicting the same row's limits, the new table and CHANGELOG — fix: "partly read since 29-04 (see the table below); against an adversarial agent the protection is still the sandbox and permissions".
+- [ ] P2 code reading the environment at run time is allowed (`C=$(printf …); python3 -c "import os;os.system(os.environ['C'])"`) — add to the limits row (a value the text does not hold).
+- [ ] P2 the same-line-variable rule's everyday cost (`N=3; python3 -c "print($N * 2)"`, `T=users; psql -c "SELECT count(*) FROM $T"` now unchecked) — pin both with tests (expected unchecked) and name the cost in the row.
+- [ ] P2 CHANGELOG line 16 lists fewer triggers than the docs row (positional parameters, backticks).
+
+Held: all 13 round-2 evasions still unchecked; 60 new variants unchecked except the run-time env read and two stated limits; 7 round-3 everyday examples pass; 27/30 everyday commands same as develop (3 = the documented same-line rule); frozen side unchanged; 100/100.
+Series 3 ends at its cap with the code holding; next: series 4 round 1 after this docs fix.
