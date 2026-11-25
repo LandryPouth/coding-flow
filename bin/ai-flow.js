@@ -90,7 +90,7 @@ const {
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
-const { todoCommand, todoDoneCommand, printUncapturedTodos } = require("./lib/todo");
+const { todoCommand, todoDoneCommand, todoDropCommand, printUncapturedTodos } = require("./lib/todo");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { recoverScan } = require("./lib/recover");
 const { harnessCommand, ensureHarnessConfig, registerStoryLocator } = require("./lib/harness");
@@ -874,24 +874,37 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
 } else if (command === "next") {
   nextCommand({ flags });
 } else if (command === "todo") {
-  const extra = commandArgs.filter((arg) => !arg.startsWith("-"));
+  // `--reason` takes a value: it is not a positional argument.
+  const reasonAt = commandArgs.indexOf("--reason");
+  const extra = commandArgs.filter((arg, index) => !arg.startsWith("-") && !(reasonAt !== -1 && index === reasonAt + 1));
+  const hasReason = commandArgs.some((arg) => arg === "--reason" || arg.startsWith("--reason="));
 
-  if (extra[0] === "done") {
+  if (extra[0] === "done" || extra[0] === "drop") {
     if (extra.length !== 2) {
-      fail('"todo done" takes one id: ai-flow todo done <id> (ids are printed by "ai-flow todo").');
+      fail(`"todo ${extra[0]}" takes one id: ai-flow todo ${extra[0]} <id>${extra[0] === "drop" ? ' --reason "…"' : ""} (ids are printed by "ai-flow todo").`);
+    }
+    if (extra[0] === "done" && hasReason) {
+      fail('--reason only applies to "todo drop".');
     }
 
     try {
-      todoDoneCommand(extra[1], { dryRun: flags.has("--dry-run") });
+      const dryRun = flags.has("--dry-run");
+      if (extra[0] === "done") {
+        todoDoneCommand(extra[1], { dryRun });
+      } else {
+        todoDropCommand(extra[1], { reason: getFlagValue("--reason", null), dryRun });
+      }
     } catch (error) {
       fail(error.message);
     }
   } else if (extra.length > 0) {
     fail(`unexpected argument "${extra[0]}" for "todo". Run "ai-flow todo --help".`);
   } else if (flags.has("--dry-run")) {
-    fail('--dry-run only applies to "todo done": "ai-flow todo" writes nothing.');
+    fail('--dry-run only applies to "todo done" and "todo drop": "ai-flow todo" writes nothing.');
+  } else if (hasReason) {
+    fail('--reason only applies to "todo drop".');
   } else {
-    todoCommand({ json: flags.has("--json") });
+    todoCommand({ json: flags.has("--json"), all: flags.has("--all") });
   }
 } else if (command === "bootstrap") {
   if (!flags.has("--scan")) {
