@@ -99,7 +99,8 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [x] 26-06 `ai-flow rules` — split at the cap (series 1: 4 rounds, P1 2/1/1/2; init change → new 26-08); series 2: P1 1/0; landed, re-proved, review captured
 - [ ] 26-03  - [ ] 26-07  - [ ] 26-08 init shows the rules it applies (split from 26-06)
 - [x] 19-05 fixers run before the checks — re-scoped after 4 rounds; new series 4 rounds (P1 2/1/1/0), landed, re-proved, review captured
-- [ ] 26-02 (todo)  - [ ] 28-01  - [ ] 19-08 (after 19-05)
+- [x] 26-02 `ai-flow todo` (reader half; notify half after 24-02) — 4 rounds (P1 1/1/1/0), landed, re-proved, review captured
+   - [ ] 28-01  - [ ] 19-08 (after 19-05)
 - [x] 19-09 a failed review is cleared by a review (maintainer request 2026-11-24) — 1 review round (0 P1, 8 P2 fixed), landed, re-proved, review captured
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
