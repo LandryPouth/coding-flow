@@ -22,8 +22,8 @@ function git(dir, ...args) {
   return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
-function tmp(t) {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-evasion-')));
+function tmp(t, base = os.tmpdir()) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(base, 'coding-flow-evasion-')));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -613,8 +613,8 @@ test('round 3, re-scoped in round 4: the shell-write guard reads backslashes as 
 
 // The reviewers' repository: aliases in .git/config (nuke = reset --hard, zap = !rm -rf
 // build, st = status), a.txt and src/m.js modified, c.txt staged.
-function reviewerRepo(t) {
-  const dir = tmp(t);
+function reviewerRepo(t, base) {
+  const dir = tmp(t, base);
   git(dir, 'init', '-q', '-b', 'main');
   fs.mkdirSync(path.join(dir, '.coding-flow'));
   fs.mkdirSync(path.join(dir, 'build'));
@@ -802,7 +802,9 @@ test("series 2 round 1: the frozen reader's output on the reviewers' corpus is 2
 });
 
 test("series 2 round 1: the frozen readers read the guard's own 29-03 test commands as 3c90919 did", (t) => {
-  const dir = reviewerRepo(t);
+  // The recorded outputs hold paths relative to the repository (`../../.env`, `cd /tmp`),
+  // so the repository sits one level under /tmp, as when they were recorded, whatever TMPDIR is.
+  const dir = reviewerRepo(t, '/tmp');
   const host = readerHost(dir);
   const { readDestructive } = require('../bin/lib/destructive-29-03');
   const { shellWrites } = require('../bin/lib/shell-writes-29-03');

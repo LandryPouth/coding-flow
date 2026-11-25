@@ -405,6 +405,34 @@ Measured after the fix (in-process `decide()`, fresh process, load ~12): `rm` wi
 0.8 → 2.2 s (one `realpath` and one repository walk per distinct directory,
 memoized per call; the cap on distinct directories is 29-06's).
 
+### Series 2 Round 4 — FAIL (round-3 fixes and regressions) → split to 29-07
+
+The last round of the second series: coordinator decision, split. The removal judged
+where it lands is story 29-07
+(`epics/epic-29-what-the-agent-cannot-fake/story-29-07-a-removal-is-judged-where-it-lands/story.md`).
+
+- [~] split to 29-07 — P1 bin/lib/guard.js:1262 — a glob in a directory part skips the
+  cross-repository removal check: from a linked worktree `rm ../?/src/a.js`,
+  `rm ../[r]/src/a.js`, `rm $D/?/src/a.js`, `rm ../*/src/b.js` are allowed while
+  `rm ../r/src/a.js` is denied (`onDisk` stops at the first glob component, `repoOf`
+  finds no repo on the lexical path, `continue` → applies:false). → 29-07.
+- [~] split to 29-07 — P2 bin/lib/destructive.js:690 — `rm linkdir/../sub0/s.txt`
+  through a symlink to another repo is allowed (`..` resolved lexically). → 29-07.
+- [~] split to 29-07 — P2 guard.js `indexHolds` — modified file in a nested
+  (non-submodule) repo `rm nested/n.txt` allowed; `rm sm/*.txt` denied but
+  `rm sm/s.txt` allowed. → 29-07.
+- [x] P2 docs/rules-and-limits.md:139 still lists "through a symlinked directory" as
+  not judged → fixed here: the row now says a path through a symlinked directory is
+  judged in the repository it lands in, and a new row states what is not judged yet
+  (a glob in a directory part of a removal into another repository, `..` after a
+  symlinked directory, a modified file in a nested repository; story 29-07).
+- [x] P2 test/guard-evasion.test.js:804 (added by this story) fails when the temp dir
+  is deeper than `/tmp/x` (15 corpus commands move); `npm test` is red with the run's
+  TMPDIR → fixed here: the recorded outputs hold paths relative to the repository
+  (`../../.env`, `cd /tmp`), so that test builds its repository one level under
+  `/tmp` (as when recorded) whatever TMPDIR is, and removes it after; the assertion is
+  unchanged. Passes with TMPDIR=/tmp and with the run's deeper TMPDIR.
+
 ## Test Plan
 
 `decide()` on throwaway repos for each criterion; the 29-03 Lens B list

@@ -94,6 +94,7 @@ The three stories are independent (disjoint files: `scan.js`,
 3. [story-29-03-destructive-commands-wait-for-the-human](story-29-03-destructive-commands-wait-for-the-human/spec.md) — guard refuses destructive commands and names the safe one *(STRICT — guard)*
 4. [story-29-04-commands-built-to-evade-the-guard](story-29-04-commands-built-to-evade-the-guard/spec.md) — interpreter strings, git alias values, written-then-run scripts; the unread forms stated with their cover *(STRICT — added 2026-11-24 from 29-03's four reviews)*
 6. [story-29-06-a-long-command-cannot-outrun-the-guard](story-29-06-a-long-command-cannot-outrun-the-guard/story.md) — one deadline over the whole call, refused when it runs out, so the hook's 60 s timeout never decides *(STRICT — added 2026-11-25: 29-04's round 3 measured lines under the cap at 98–120 s, a fail-open already at 3c90919 and on 29-03's frozen side)*
+7. [story-29-07-a-removal-is-judged-where-it-lands](story-29-07-a-removal-is-judged-where-it-lands/story.md) — a removal into another repository is judged in the repository it lands in, whatever its spelling: a glob in a directory part, `..` after a symlinked directory, a nested repository *(STRICT — added 2026-11-25: split from 29-04 at its review cap; series 2 round 4 found these spellings allowed while the plain path is refused)*
 
 ## Decisions
 
