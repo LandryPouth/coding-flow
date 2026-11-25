@@ -364,12 +364,16 @@ test('19-08: a test file moved with an unstaged mv is neutral, not a new test', 
   const res = run(dir, ['verify', '--story', rel]);
 
   assert.equal(res.code, 1, res.output);
-  assert.doesNotMatch(res.output, /was removed/);
+  // The old name is reported removed, as before this story (re-scope).
+  assert.match(res.output, /was removed/);
   assert.doesNotMatch(res.output, /strengthened/);
   assert.ok(evidenceOf(dir).coverage.neutralTests.includes('src/arith.test.js'), JSON.stringify(evidenceOf(dir).coverage));
 });
 
-test('19-08: a test file moved with an unstaged mv and given one more assertion earns the rung', (t) => {
+// Re-scope (new series, round 1): this test first asserted the move earned the
+// rung, which was looser than before this story. A test file moved without
+// staging is reported removed and the gate refuses, exactly as before.
+test('19-08: a test file moved with an unstaged mv and given one more assertion is still reported removed, as before', (t) => {
   const dir = repo(t, 'neutral-unstaged-mv-plus');
   const rel = story(dir);
   commit(dir, BEHAVIOR, 'auth change');
@@ -378,9 +382,9 @@ test('19-08: a test file moved with an unstaged mv and given one more assertion 
 
   const res = run(dir, ['verify', '--story', rel]);
 
-  assert.equal(res.code, 0, res.output);
-  assert.match(res.output, /test file\(s\) strengthened/);
-  assert.doesNotMatch(res.output, /was removed/);
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /the test file was removed/);
+  assert.doesNotMatch(res.output, /test file\(s\) strengthened/);
 });
 
 const FRAMEWORKS = [
@@ -656,7 +660,7 @@ test('19-08: a "should" inside a title does not count as an assertion removed', 
   assert.equal(evidenceOf(dir).coverage.weakenedTests, undefined);
 });
 
-test('19-08: an unstaged move that also reformats is a move, not a deletion', (t) => {
+test('19-08: an unstaged move that also reformats is neutral, and the old name reported removed as before', (t) => {
   const dir = repo(t, 'neutral-mv-reformat', { 'src/math.test.js': PRETTIER_BEFORE });
   const rel = story(dir);
   commit(dir, BEHAVIOR, 'auth change');
@@ -666,7 +670,7 @@ test('19-08: an unstaged move that also reformats is a move, not a deletion', (t
   const res = run(dir, ['verify', '--story', rel]);
 
   assert.equal(res.code, 1, res.output);
-  assert.doesNotMatch(res.output, /was removed/);
+  assert.match(res.output, /was removed/);
   assert.deepEqual(evidenceOf(dir).coverage.neutralTests, ['src/arith.test.js']);
 });
 
@@ -729,3 +733,16 @@ for (const [name, before, after] of [
     assert.doesNotMatch(res.output, /strengthened/);
   });
 }
+
+test('19-08: an assertion added in a commit and turned into plain code in the working tree is still an assertion removed', (t) => {
+  const dir = repo(t, 'weak-three-diffs');
+  const rel = story(dir);
+  commit(dir, { ...BEHAVIOR, 'src/math.test.js': BASELINE_TEST.replace('});', '  expect(add(2, 2)).toBe(4);\n});') }, 'auth change, one more assertion');
+  write(dir, { 'src/math.test.js': BASELINE_TEST.replace('});', '  const z = add(2, 2);\n});') });
+
+  const res = run(dir, ['verify', '--story', rel]);
+
+  assert.equal(res.code, 1, res.output);
+  assert.match(res.output, /1 more assertion\(s\) removed/);
+  assert.doesNotMatch(res.output, /test file\(s\) strengthened/);
+});

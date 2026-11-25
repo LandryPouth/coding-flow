@@ -97,6 +97,11 @@ passing. s4's detached job goes through s3's queue. s6 extends the
   diff-hunk fragments: 19-08's lexer on fragments left a template or block
   comment open and hid removed assertions. Owner: a new story in this epic;
   `test/weakened-tests.test.js` keeps it as a `todo`.
+- **A test file moved without staging is reported removed** (from 19-08, new
+  series round 1). An unstaged `mv` reads as a deletion plus an untracked
+  file, as it always has; 19-08 pairs them only to read the new file's
+  strength. Treating it as a move would loosen the weakening signal, so it
+  needs its own story and a differential test against the old gate.
 
 ## Decisions
 

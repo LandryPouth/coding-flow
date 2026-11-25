@@ -190,6 +190,31 @@
   - Note only: `closestDeleted` is O(N×M) in untracked × deleted test files,
     each tokenised; fine for the sizes seen, not optimised.
 
+- **New series, round 1 (finish the re-scope).** Two P1s, both round-1
+  changes kept on the weakening side: (1) one diff against the base instead
+  of three summed — an assertion added in a commit and turned into plain
+  code in the working tree was no longer "1 more assertion(s) removed";
+  (2) an unstaged `mv` paired with its untracked file dropped "the test file
+  was removed". Decided:
+  - `weakeningAsBefore` is efede92's loop, unchanged in behaviour: the three
+    diffs summed, markers on raw lines, every deleted test file reported. It
+    alone decides findings, `weakenedFiles` and the measured-coverage test
+    set (`unweakened`, efede92's old `strengthened`).
+  - `testChangesForStrength` (one diff against the base, untracked files read
+    whole, an unstaged move compared to its old file) feeds only the token
+    bag. A file strengthens only when it is not weakened, adds non-neutral
+    code, AND the gate passed before this story (an unweakened file, or no
+    weakening at all); otherwise it is held back (`heldBack`), never neutral.
+    So a pass now implies a pass at efede92.
+  - Round 1's pass branch "test file(s) changed alongside" stays removed:
+    that is the narrowing the story is for.
+  - The test "an unstaged mv and given one more assertion earns the rung"
+    pinned the looser behaviour; it is a test this story added, so its
+    expectation is now efede92's (exit 1, "the test file was removed"), as
+    are two other unstaged-mv tests' "not removed" lines. Treating an
+    unstaged move as a move is a follow-up line in epic 19's index.
+  - Regression tests for both scenarios fail on a9455b1.
+
 ## Test Plan
 
 Throwaway repos with a high-risk path, a neutral, an added-assertion and a
