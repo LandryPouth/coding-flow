@@ -25,14 +25,14 @@ maintainer noticed and a 59-file refresh fixed them (2026-11-13).
 
 ## Acceptance Criteria
 
-- [ ] Given a doc naming `` `src/old.js` `` after a rename to `src/new.js`,
+- [x] Given a doc naming `` `src/old.js` `` after a rename to `src/new.js`,
       then the check reports the line and suggests `src/new.js`.
-- [ ] Given `pnpm --filter api run seed` and no `seed` script in api's
+- [x] Given `pnpm --filter api run seed` and no `seed` script in api's
       `package.json`, then it is reported.
-- [ ] Given a link to `other.md#missing`, then the anchor is reported.
-- [ ] Given `<placeholder>/path` and `https://…` in backticks, then nothing is
+- [x] Given a link to `other.md#missing`, then the anchor is reported.
+- [x] Given `<placeholder>/path` and `https://…` in backticks, then nothing is
       reported.
-- [ ] Given `--changed develop`, then only docs mentioning a file changed
+- [x] Given `--changed develop`, then only docs mentioning a file changed
       since `develop` are checked.
 
 ## Edge Cases

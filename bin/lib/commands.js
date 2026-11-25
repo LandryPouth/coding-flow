@@ -143,6 +143,9 @@ Daily (you run these):
                absolute paths, --json for machines, --out FILE to write it).
   rules        Every rule's value in force here and where it comes from (default, project file,
                auto with its reason, fixed). "rules <key>" for one; --json for machines.
+  docs         check: the backticked repository paths, npm/pnpm script names and relative links
+               the docs name that no longer resolve, with the line and the closest existing name.
+               Read-only. --changed <base> reads only the docs mentioning a file changed since base.
 
 Machinery (usually run FOR you by the skills, CI, or the git hook):
   harness      Run security checks (check), execute declared validation commands (verify), write evidence.

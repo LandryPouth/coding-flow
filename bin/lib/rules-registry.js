@@ -42,6 +42,9 @@ const RULES = [
   { key: "validation.security", file: "config", scope: "project", default: [], noun: "commands", doc: "Scanners; one that cannot run is not examined." },
   { key: "validation.fix", file: "config", scope: "project", default: [], noun: "commands", story: "19-05", doc: "Fixers verify runs before any check." },
   { key: "validation.timeoutMs", file: "config", scope: "project", default: 600000, unit: "ms", cap: "a non-positive value is dropped", doc: "Time limit per validation command." },
+  { key: "docs.check.include", file: "config", scope: "project", default: ["docs/**/*.md", "README.md", "RULES.md"], noun: "globs", story: "26-03", cap: "a list of non-empty strings, else the default", doc: "The docs `ai-flow docs check` reads." },
+  { key: "docs.check.exclude", file: "config", scope: "project", default: [], noun: "globs", story: "26-03", doc: "Docs left out of `docs check`." },
+  { key: "docs.check.ignorePaths", file: "config", scope: "project", default: [], noun: "globs", story: "26-03", doc: "Missing paths `docs check` never reports." },
 
   // .coding-flow/harness.json
   { key: "mode", file: "harness", scope: "project", defaultFrom: harnessDefault("mode"), cap: "only `strict` tightens", doc: "How hard the gates and the guard bite." },
