@@ -108,7 +108,7 @@ its earlier proofs read "policy changed".
 
 ## Policy Change
 
-Tightened, not loosened: `.coding-flow/harness.json` adds `bin/lib/read-memo.js` to the high-risk paths, because `identity.js` and `audit.js` (both high-risk) now require it and it decides which tree token a proof is judged against (`test/security-core-risk.test.js` asks every module a high-risk module requires to be high-risk itself). Earlier proofs of this repository now read "policy changed".
+Tightened, not loosened: `.coding-flow/harness.json` adds `bin/lib/read-memo.js` to the high-risk paths, because `identity.js`, `audit.js`, `policy.js` and `policy-fingerprint.js` (all high-risk) now require it and it decides which tree token a proof is judged against (`test/security-core-risk.test.js` asks every module a high-risk module requires to be high-risk itself). Earlier proofs of this repository now read "policy changed".
 
 ## Review findings
 
@@ -147,3 +147,10 @@ green, 3/3 commands (the whole suite included), coverage 97.1% of 240 added
 lines; warnings only: the then-open npm-test criterion (ticked now: the suite
 passed unchanged) and "policy changed: .coding-flow/harness.json" (declared
 above).
+
+### Round 2 — PASS (the refactor and the claims, on this repository)
+
+- [x] P2 story.md Policy Change named only identity.js and audit.js; policy.js and policy-fingerprint.js require read-memo.js too — fixed by the orchestrator.
+- P2 noted: `archive --stories` is not in this build (it lands with 31-04); `archive <epic> --dry-run`, `--json` and `--refresh --dry-run` were compared instead.
+
+Held: the split hides no logic change; byte-identical `status --json`, `next --all --json`, `next` vs develop's bin on this repository (primary 1.6/1.4/1.3 s vs 2.9/4.7/6.7 s; worktree 0.7/0.8/0.9 vs 0.9/1.2/1.3 s); archive dry-runs and `doctor` identical (1.2 s vs 2.3 s); Policy Change read by verify, no "undeclared"; function size ok; criteria hold.
