@@ -83,4 +83,13 @@ npm test
 
 ## Result
 
-*(Filled in once the Windows CI has run.)*
+- Linux: `npm test` passed (1969 passed, 0 failed, 2 TODOs owned by story 26-08).
+  `ai-flow verify --story` passed on the story merged with develop (19-10
+  included); evidence is in `.coding-flow/runs/2026-11-25T03-50-51-753Z-verify.json`.
+- Draft PR #62 (CI only, not to be merged):
+  - Run 45543675335: the six failures from PR #61 were fixed. One new
+    failure appeared ("readDestructive is pure", `/x` is a drive) and was
+    fixed in ec6efd3.
+  - Run 45547651944: every job passed — ubuntu 18/20/22, macOS 22 and
+    **windows-latest 22.x** (30 min 32 s).
+    https://github.com/LandryPouth/coding-flow/actions/runs/45547651944
