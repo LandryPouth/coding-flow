@@ -31,7 +31,10 @@ function gitWrapper(base) {
 
 // `count` stories over epics of ten: every other one marked done with a green
 // verify (the path that read the tree token several times per story), the rest
-// planned.
+// planned. Every fourth story also has a captured review (half of them pinned
+// to a tree token, so the review's staleness is read), and the second to last
+// story — a done one — is worked in a linked worktree whose own last verify is
+// red, so its proof is read there and its command runs there.
 function generateRepo(base, count) {
   const repo = path.join(base, `repo-${count}`);
   fs.mkdirSync(repo);
@@ -55,14 +58,31 @@ function generateRepo(base, count) {
         JSON.stringify({ generatedAt: new Date().toISOString(), story: `epics/${epic}/${story}`, ok: true, commandsFound: 1, results: [] }),
       );
     }
+    if (i % 4 === 0) {
+      const provenance = i % 8 === 0 ? { provenance: { git: { treeToken: 'tree-of-another-day' } } } : {};
+      fs.writeFileSync(
+        path.join(runs, `${String(i).padStart(4, '0')}-review.json`),
+        JSON.stringify({ generatedAt: new Date().toISOString(), story: `epics/${epic}/${story}`, ok: i % 3 !== 0, reviewer: 'independent', ...provenance }),
+      );
+    }
   }
 
   sh(repo, 'git', ['add', '-A']);
   sh(repo, 'git', ['commit', '-m', 'init']);
-  return repo;
+
+  const last = count - 2;
+  const epic = `epic-${String(Math.floor(last / 10) + 1).padStart(2, '0')}-e`;
+  const story = `story-${String(Math.floor(last / 10) + 1).padStart(2, '0')}-${String((last % 10) + 1).padStart(2, '0')}-s`;
+  const worktree = `${repo}-wt`;
+  sh(repo, 'git', ['worktree', 'add', '-q', '-b', story, worktree]);
+  fs.writeFileSync(
+    path.join(worktree, '.coding-flow', 'runs', '9999-verify.json'),
+    JSON.stringify({ generatedAt: new Date().toISOString(), story: `epics/${epic}/${story}`, ok: false, commandsFound: 1, results: [] }),
+  );
+  return { repo, worktreeStory: story, worktreeDir: path.basename(worktree) };
 }
 
-function gitSpawnsOfNext(base, wrapper, repo) {
+function gitSpawnsOfNext(base, wrapper, { repo }) {
   fs.writeFileSync(wrapper.counter, '');
   const output = execFileSync(process.execPath, [CLI, 'next', '--all', '--json'], {
     cwd: repo,
@@ -80,13 +100,23 @@ test('next spawns as many git processes for 200 stories as for 20', { skip: proc
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const wrapper = gitWrapper(base);
 
-  const small = gitSpawnsOfNext(base, wrapper, generateRepo(base, 20));
-  const large = gitSpawnsOfNext(base, wrapper, generateRepo(base, 200));
+  const smallRepo = generateRepo(base, 20);
+  const largeRepo = generateRepo(base, 200);
+  const small = gitSpawnsOfNext(base, wrapper, smallRepo);
+  const large = gitSpawnsOfNext(base, wrapper, largeRepo);
 
   t.diagnostic(`git spawns: ${small.calls} for 20 stories, ${large.calls} for 200`);
   // The stories were all read: 10 vs 100 planned ones are ranked.
   assert.equal(small.items.filter((item) => item.tier === 7).length, 10);
   assert.equal(large.items.filter((item) => item.tier === 7).length, 100);
+  // The worktree story's proof was read in its worktree: red there, so it is
+  // asked to verify again, there.
+  for (const [generated, result] of [[smallRepo, small], [largeRepo, large]]) {
+    const redThere = result.items.find((item) => item.story === generated.worktreeStory);
+    assert.ok(redThere, `${generated.worktreeStory} is ranked`);
+    assert.equal(redThere.tier, 3);
+    assert.match(redThere.command, new RegExp(`^cd \\.\\./${generated.worktreeDir} && ai-flow verify`));
+  }
   assert.ok(small.calls > 0, 'the wrapper saw the git calls');
   assert.ok(
     large.calls <= small.calls + 5,
