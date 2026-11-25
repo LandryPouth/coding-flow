@@ -50,7 +50,9 @@ function tokenize(segment) {
 function reduceWord(token) {
   return token.replace(/"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([^\n])/g, (_, double, single, escaped) => {
     if (double !== undefined) {
-      return double.replace(/\\([\s\S])/g, "$1");
+      // Inside double quotes a backslash escapes only `$`, a backtick, `"`, `\` and a
+      // newline; before anything else it stays (`"\! cmd"` is `\! cmd`).
+      return double.replace(/\\([$`"\\\n])/g, "$1");
     }
     return single !== undefined ? single : escaped;
   });

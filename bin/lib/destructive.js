@@ -433,29 +433,70 @@ function readPrisma(out, args, cwd) {
   }
 }
 
-// SQL that destroys data, comments stripped (`DROP/**/TABLE`): `DROP DATABASE`,
-// `SCHEMA`, `TABLE`, `OWNED`, `COLUMN`, `TRUNCATE`, a `DELETE FROM t` with no `WHERE`.
-const DESTRUCTIVE_SQL = /\b(drop\s+(?:database|schema|table|owned|column)|truncate)\b|\b(delete\s+from)\s+(?:only\s+)?[\w."]+\s*(?:;|$)/im;
+// SQL that destroys data, read after comments and string literals are blanked
+// (`DROP/**/TABLE`; `SELECT 'drop table x'` is text): `DROP DATABASE`, `SCHEMA`,
+// `TABLE`, `OWNED`, `COLUMN`, `TRUNCATE`, and a `DELETE FROM` statement with no
+// `WHERE` anywhere in it (an alias, `USING`, `RETURNING` change nothing).
+const DESTRUCTIVE_SQL = /\b(drop\s+(?:database|schema|table|owned|column)|truncate)\b/i;
 
 function destructiveSql(text) {
-  const sql = DESTRUCTIVE_SQL.exec(text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " "));
-  if (!sql) {
-    return null;
+  for (const statement of sqlCode(text).split(";")) {
+    const sql = DESTRUCTIVE_SQL.exec(statement);
+    if (sql) {
+      return sql[1].replace(/\s+/g, " ").toUpperCase();
+    }
+    if (/\bdelete\s+from\b/i.test(statement) && !/\bwhere\b/i.test(statement)) {
+      return "DELETE FROM without WHERE";
+    }
   }
-  return sql[1] ? sql[1].replace(/\s+/g, " ").toUpperCase() : "DELETE FROM without WHERE";
+  return null;
 }
 
-// `-c SQL`, `--command SQL`, `--command=SQL`, `-cSQL`; `-f FILE` likewise as `files`.
+// SQL with its comments and its literals ('…', $tag$…$tag$) blanked, in one pass.
+function sqlCode(text) {
+  let code = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const two = text.slice(i, i + 2);
+    const dollar = text[i] === "$" ? /^\$\w*\$/.exec(text.slice(i, i + 64)) : null;
+    let end = -1;
+    if (two === "--") {
+      end = text.indexOf("\n", i);
+    } else if (two === "/*") {
+      end = text.indexOf("*/", i + 2) + 1;
+    } else if (text[i] === "'") {
+      end = i + 1;
+      while (end < text.length && (text[end] !== "'" || text[end + 1] === "'")) {
+        end += text[end] === "'" ? 2 : 1;
+      }
+    } else if (dollar) {
+      const close = text.indexOf(dollar[0], i + dollar[0].length);
+      end = close === -1 ? -1 : close + dollar[0].length - 1;
+    } else {
+      code += text[i];
+      continue;
+    }
+    code += " ";
+    i = end <= i ? text.length : end;
+  }
+  return code;
+}
+
+// `-c SQL`, `--command SQL`, `--command=SQL`, `-cSQL`, and a cluster ending in `c`
+// (`-tAc SQL`, `-qcSQL`); `-f FILE` likewise, as `files`.
+const PSQL_CLUSTER = /^-([aAbeEnqsStxXwWlz01]*)([cf])(.*)$/s;
+
 function psqlPrograms(args) {
   const programs = [];
   const files = [];
   args.forEach((arg, i) => {
-    const glued = /^(?:-([cf])(.+)|--(command|file)=(.*))$/s.exec(arg);
-    if (arg === "-c" || arg === "--command" || arg === "-f" || arg === "--file") {
-      (/f/.test(arg) ? files : programs).push(args[i + 1] || "");
-    } else if (glued) {
-      ((glued[1] || glued[3]).startsWith("f") ? files : programs).push(glued[2] ?? glued[4]);
+    const cluster = PSQL_CLUSTER.exec(arg);
+    const long = /^--(command|file)(?:=(.*))?$/s.exec(arg);
+    const flag = cluster ? cluster[2] : long ? long[1][0] : null;
+    if (flag === null) {
+      return;
     }
+    const glued = cluster ? cluster[3] : long[2];
+    (flag === "f" ? files : programs).push(glued ? glued : glued === "" && long ? "" : args[i + 1] || "");
   });
   return { programs, files };
 }
@@ -463,26 +504,34 @@ function psqlPrograms(args) {
 function readPsql(out, command, cwd, ctx, segments, index) {
   const { args } = command;
   const { programs, files } = psqlPrograms(args);
+  const shown = ["psql", ...args].join(" ");
   for (const program of programs) {
     const rule = destructiveSql(program);
     if (rule) {
       add(out, { rule, ...DATA_LOSS }, ["psql", ...args], cwd);
     }
-    // `\! cmd`: psql's shell escape, run here.
-    const shell = /\\!\s*(.*)/.exec(program);
-    if (shell) {
-      readUnproven(out, shell[1], cwd, ctx, PSQL_SHELL, ["psql", ...args].join(" "));
-    }
+    psqlMeta(out, program, cwd, ctx, shown);
   }
-  if (programs.length && !files.length) {
-    return;
-  }
-  const shown = ["psql", ...args].join(" ");
   for (const file of files) {
-    psqlInput(out, sqlFile(file, cwd, ctx), shown);
+    psqlInput(out, sqlFile(file, cwd, ctx), cwd, ctx, shown);
   }
-  if (!files.length) {
-    psqlInput(out, psqlStdin(command, cwd, ctx, segments, index), shown);
+  if (!programs.length && !files.length) {
+    psqlInput(out, psqlStdin(command, cwd, ctx, segments, index), cwd, ctx, shown);
+  }
+}
+
+// psql's own commands in its input: `\! cmd` runs a shell here (read, unproven);
+// `\i file`, `\ir`, `\include`, `\o |cmd`, `\copy … program` read or run what the
+// guard does not see (unchecked).
+function psqlMeta(out, text, cwd, ctx, shown) {
+  for (const line of text.split("\n")) {
+    const shell = /\\!\s*(.*)/.exec(line);
+    if (shell) {
+      readUnproven(out, shell[1], cwd, ctx, PSQL_SHELL, shown);
+    }
+    if (/\\(?:ir?|include(?:_relative)?)\b|\\o\s*\||\\g\s*\||\bprogram\s+'/i.test(line)) {
+      out.unchecked.push({ reason: PSQL_STDIN, command: shown });
+    }
   }
 }
 
@@ -520,11 +569,15 @@ function sqlFile(word, cwd, ctx) {
   return key.startsWith("?") ? null : ctx.host.readSmall(key);
 }
 
-function psqlInput(out, sql, command) {
-  if (sql === undefined || (sql !== null && !destructiveSql(sql))) {
+function psqlInput(out, sql, cwd, ctx, command) {
+  if (sql === undefined) {
     return;
   }
-  out.unchecked.push({ reason: PSQL_STDIN, command });
+  if (sql === null || destructiveSql(sql)) {
+    out.unchecked.push({ reason: PSQL_STDIN, command });
+    return;
+  }
+  psqlMeta(out, sql, cwd, ctx, command);
 }
 
 const DOCKER_VALUE_GLOBALS = new Set(["-H", "--host", "--context", "-c", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey"]);
@@ -620,41 +673,81 @@ function readUnproven(out, text, cwd, ctx, reason, command, propagate = true) {
 // (concatenation, format) with a piece naming the policy file or a destructive verb is
 // unchecked: the guard cannot join what the program computes.
 const INTERPRETER_NAME = /^(?:python[\d.]*|node|nodejs|bun|deno|perl|ruby|php)$/;
-const BUILDS = /(['"\x60])\s*(?:\+|\.)?\s*['"\x60]|%\s*[(\w]|\.format\(|\bf['"]|\$\{|\.join\(|\bsprintf\b/;
+const BUILDS = /(['"\x60])\s*(?:[+.]\s*)?['"\x60]|%\s*[(\w]|\.format\(|\bf['"]|\$\{|\.join\(|\bsprintf\b/;
 const VERB_PIECE = /^\s*(?:rm|unlink|shred|git|dropdb|psql|prisma|docker|mv)(?:\s|$)/;
 const POLICY_PIECE = /harness|coding-flow/i;
-const LITERAL = /(['"\x60])((?:\\.|(?!\1)[^\\])*)\1/gs;
 const MAX_LITERAL = 4096;
+const MAX_CODE = 65536; // longer code is not read: unchecked
+const QUOTES = new Set(["'", '"', "\x60"]);
 
 const ESCAPES = { n: "\n", t: "\t", r: "\r", 0: "\0" };
 const unescape = (text) =>
   text.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|.)/gs, (_, code) => (code.length > 1 ? String.fromCharCode(parseInt(code.slice(1), 16)) : ESCAPES[code] ?? code));
 
-function codeLiterals(code) {
-  return [...code.matchAll(LITERAL)].map((match) => unescape(match[2])).filter((text) => text && text.length <= MAX_LITERAL);
+// The code as tokens, in one pass (no regex to backtrack on hostile input): each
+// quoted literal (`{ literal }`, escapes decoded) and each other visible character
+// (`{ mark }`). An unclosed quote ends the scan: the rest is not a literal.
+function codeTokens(code) {
+  const tokens = [];
+  for (let i = 0; i < code.length; i += 1) {
+    const ch = code[i];
+    if (QUOTES.has(ch)) {
+      let j = i + 1;
+      while (j < code.length && code[j] !== ch) {
+        j += code[j] === "\\" ? 2 : 1;
+      }
+      if (j >= code.length) {
+        break;
+      }
+      tokens.push({ literal: unescape(code.slice(i + 1, j)) });
+      i = j;
+    } else if (ch.trim()) {
+      tokens.push({ mark: ch });
+    }
+  }
+  return tokens;
 }
 
+const literalsOf = (tokens) => tokens.filter((token) => token.literal && token.literal.length <= MAX_LITERAL).map((token) => token.literal);
+
 // `("rm", ["-rf", "build"])`, `['git', 'reset', '--hard']`: the argument vector, as a command.
-const LITERAL_LIST = /(?:(['"\x60])((?:\\.|(?!\1)[^\\])*)\1\s*,\s*)?\[((?:\s*(['"\x60])(?:\\.|(?!\4)[^\\])*\4\s*,?)+)\s*\]/gs;
 const SHELL_WORD = /^[\w./=:@%+,-]+$/;
 const shellQuote = (word) => (SHELL_WORD.test(word) ? word : ["'", word.split("'").join("'\\''"), "'"].join(""));
 
-function literalLists(code) {
+function literalLists(tokens) {
   const lists = [];
-  for (const match of code.matchAll(LITERAL_LIST)) {
-    const head = match[2] === undefined ? [] : [unescape(match[2])];
-    lists.push([...head, ...codeLiterals(match[3])].map(shellQuote).join(" "));
-  }
+  tokens.forEach((token, i) => {
+    if (token.mark !== "[") {
+      return;
+    }
+    const words = [];
+    let j = i + 1;
+    for (; j < tokens.length && (tokens[j].literal !== undefined || tokens[j].mark === ","); j += 1) {
+      if (tokens[j].literal !== undefined) {
+        words.push(tokens[j].literal);
+      }
+    }
+    if (!words.length || !tokens[j] || tokens[j].mark !== "]") {
+      return;
+    }
+    const head = i >= 2 && tokens[i - 1].mark === "," && tokens[i - 2].literal !== undefined ? [tokens[i - 2].literal] : [];
+    lists.push([...head, ...words].map(shellQuote).join(" "));
+  });
   return lists;
 }
 
 function readInterpreterCode(out, programs, cwd, ctx, command) {
   for (const code of programs) {
-    const pieces = codeLiterals(code);
+    if (code.length > MAX_CODE) {
+      out.unchecked.push({ reason: INTERPRETER_CODE, command });
+      continue;
+    }
+    const tokens = codeTokens(code);
+    const pieces = literalsOf(tokens);
     if (!pieces.length) {
       continue;
     }
-    for (const text of new Set([...pieces, pieces.join(" "), pieces.join(""), ...literalLists(code)])) {
+    for (const text of new Set([...pieces, pieces.join(" "), pieces.join(""), ...literalLists(tokens)])) {
       if (/\s/.test(text)) {
         readUnproven(out, text, cwd, ctx, INTERPRETER_CODE, command, false);
       }
@@ -734,7 +827,9 @@ function writesOf(command, tokens, known) {
   const shown = ["echo", "printf"].includes(command.name) ? [] : null;
   const plain = [];
   const redirects = [];
-  for (let i = verbAt(tokens) + 1; i < tokens.length; i += 1) {
+  // `(echo …) > f`: after the group closes, the redirection is the segment's first word.
+  const verb = verbAt(tokens);
+  for (let i = /^(?:\d|&)?>/.test(tokens[verb] || "") ? verb : verb + 1; i < tokens.length; i += 1) {
     const redirect = /^(?:\d|&)?(>>|>\||>)(.*)$/.exec(tokens[i]);
     if (/^<<-?$/.test(tokens[i])) {
       i += 1; // `<< EOF`: the delimiter word

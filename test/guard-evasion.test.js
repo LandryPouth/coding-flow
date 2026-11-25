@@ -325,6 +325,102 @@ test('round 1: rm reads the index to skip git status, and still refuses through 
   expectAll(linked, 'allow', ['rm b.txt']);
 });
 
+// --- review round 2 ------------------------------------------------------------------
+
+// Hostile input, 10 KB each: a reader that backtracks would hold the hook past its
+// 60 s timeout, and the call would then run unchecked. Each is decided in a child
+// process (a regex cannot be interrupted in-process) killed after 20 s; the bound is
+// 1 s, far under the hook timeout and loose enough for a loaded machine.
+const HOSTILE = (n) => ({
+  'list items, unclosed': `node -e 'x = [${'"a"  '.repeat(n / 5)}'`,
+  'list items, closed': `node -e 'x = [${'"a", '.repeat(n / 5)}"b"]'`,
+  'quote then spaces': `node -e '"${' '.repeat(n)}x'`,
+  'quote plus quote': `node -e '${'"a" + '.repeat(n / 6)}'`,
+  'escapes': `python3 -c '"${'\\x'.repeat(n / 2)}'`,
+  'unclosed quotes': `node -e '${'"a'.repeat(n / 2)}'`,
+  'sql comments': `psql -c "${'/*'.repeat(n / 2)}"`,
+  'sql quotes': `psql -c "${"'a".repeat(n / 2)}"`,
+  'sql dollars': `psql -c "${'$a$'.repeat(n / 3)}"`,
+  'sql delete': `psql -c "delete from ${'a '.repeat(n / 2)}"`,
+  'psql meta': `psql <<'EOF'\n${'\\! echo\n'.repeat(n / 9)}EOF`,
+  'heredoc script': `cat > x.sh <<'EOF'\n${'echo hi\n'.repeat(n / 8)}EOF\nbash x.sh`,
+  'echo script': `echo '${'echo hi; '.repeat(n / 9)}' > x.sh && bash x.sh`,
+  'alias value': `git config alias.x '!${'echo hi; '.repeat(n / 9)}'`,
+  'redirects': `echo hi ${'> a '.repeat(n / 4)}`,
+  'glued flag': `python3 -c${'"'.repeat(n)}`,
+});
+
+test('round 2: every reader of this story stays linear on 10 KB of hostile input', (t) => {
+  const dir = repo(t);
+  const script = [
+    `const { decide } = require(${JSON.stringify(path.join(ROOT, 'bin', 'lib', 'guard'))});`,
+    'const command = require("fs").readFileSync(0, "utf8");',
+    'const t0 = process.hrtime.bigint();',
+    `decide({ tool_name: 'Bash', cwd: ${JSON.stringify(dir)}, tool_input: { command } }, ${JSON.stringify(dir)});`,
+    'process.stdout.write(String(Number(process.hrtime.bigint() - t0) / 1e6));',
+  ].join('\n');
+  for (const [name, command] of Object.entries(HOSTILE(10000))) {
+    const child = spawnSync(process.execPath, ['-e', script], { input: command, encoding: 'utf8', timeout: 20000 });
+    assert.equal(child.status, 0, `${name}: did not finish (${child.signal || child.stderr})`);
+    assert.ok(Number(child.stdout) < 1000, `${name}: ${child.stdout} ms`);
+  }
+});
+
+test('round 2: psql flag clusters ending in c or f are read', (t) => {
+  const dir = repo(t);
+  fs.writeFileSync(path.join(dir, 'drop.sql'), 'drop table users;\n');
+  expectAll(dir, 'deny', [
+    `psql -tAc 'DROP DATABASE x'`,
+    `psql -Atc 'TRUNCATE t'`,
+    `psql -qc 'DROP TABLE t'`,
+    `psql -qc'DROP TABLE t'`,
+  ]);
+  expectAll(dir, 'unchecked', ['psql -tAf drop.sql', 'psql -qfdrop.sql']);
+  expectAll(dir, 'allow', [`psql -tAc 'select 1'`, 'psql -tA -d app']);
+});
+
+test("round 2: psql's \\! and \\i are read wherever psql reads its commands", (t) => {
+  const dir = repo(t);
+  fs.writeFileSync(path.join(dir, 'shell.sql'), 'select 1;\n\\! rm -rf build\n');
+  fs.writeFileSync(path.join(dir, 'ok.sql'), 'select 1;\n\\! echo done\n');
+  expectAll(dir, 'unchecked', [
+    "psql <<'EOF'\n\\! rm -rf build\nEOF",
+    'psql -f shell.sql',
+    'psql < shell.sql',
+    `echo '\\! rm -rf build' | psql`,
+    `psql -c '\\i other.sql'`,
+    `psql -c "\\i other.sql"`,
+    `psql -c "\\! rm -rf build"`,
+    "psql <<'EOF'\n\\ir more.sql\nEOF",
+  ]);
+  expectAll(dir, 'allow', ['psql -f ok.sql', "psql <<'EOF'\nselect 1;\nEOF"]);
+});
+
+test('round 2: DELETE with no WHERE whatever follows the table; SQL inside a string is text', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'deny', [
+    `psql -c 'delete from t u'`,
+    `psql -c 'DELETE FROM t AS u'`,
+    `psql -c 'delete from t returning *'`,
+    `psql -c 'delete from t using x'`,
+    `psql -c 'select 1; delete from t'`,
+  ]);
+  expectAll(dir, 'allow', [
+    `psql -c "SELECT 'drop table x'"`,
+    `psql -c "insert into notes values ('truncate the log')"`,
+    `psql -c 'select $$drop table x$$'`,
+    `psql -c 'delete from t u using x where u.id = x.id'`,
+  ]);
+});
+
+test('round 2: a group redirected into a file, then run, is not read as clean', (t) => {
+  const dir = repo(t);
+  expectAll(dir, 'unchecked', [
+    `(echo 'rm -rf build') > x.sh && bash x.sh`,
+    `{ echo 'rm -rf build'; } > x.sh && bash x.sh`,
+  ]);
+});
+
 // --- criterion 5: one table of what the guard does not read ------------------------------
 
 // 29-03's plan.md, D9 and D9 (extended): the forms it said it does not read.
@@ -356,7 +452,7 @@ test('rules-and-limits: one table names every unread form with what covers it', 
     assert.ok(table.includes(form), `the table names 29-03's D9 form ${form}`);
   }
   // This story's own limits.
-  for (const form of ['python script.py', 'interpreter API', 'base64', 'git submodule foreach', 'core.hooksPath', 'make -f']) {
+  for (const form of ['python script.py', 'interpreter API', 'base64', 'git submodule foreach', 'core.hooksPath', 'make -f', 'rm *.txt', 'symlink', 'case-insensitive', 'is dangerous']) {
     assert.ok(table.includes(form), `the table names ${form}`);
   }
 });
