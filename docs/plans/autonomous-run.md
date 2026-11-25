@@ -108,6 +108,7 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [x] 13-14 a deletion is a structural signal (QUICK; from 17-01's review) — landed, re-proved, review captured
 - [x] 13-13 the guard's long tail (STRICT; follow-up of 13-09) — 3 reviews, landed, re-proved, review captured
 - [x] 29-03 destructive commands wait for the human — claim re-scoped at the cap; 2 series × 4 rounds (new series P1 2/1/0/0, STRICT two clean), landed, re-proved, review captured
+- [ ] 19-11 one tree is proved once (from this run, 2026-11-25: land skips its re-verify on a fast-forward; flow-run stops running the suite before verify) — next free agent slot
 - [ ] 29-01 `ai-flow scan`
 - [ ] 29-04 commands built to evade the guard (after 29-03; from its reviews)
 
