@@ -435,6 +435,24 @@ function statusPayload(config, { epics, looseWorktrees, worktreesActive, policy,
   };
 }
 
+// story-26-07: one header line when anything waits on a human; the block
+// itself is `ai-flow next`'s. Best effort: a read failure never blocks status.
+function printNeedsYouHeader() {
+  let entries = [];
+
+  try {
+    entries = require("./todo").collectNeedsYou(cwd);
+  } catch {
+    return;
+  }
+
+  if (entries.length > 0) {
+    const deploy = entries.filter((entry) => entry.when === "deploy").length;
+    log(`We need you: ${entries.length} (${deploy} before deploy) — ai-flow next`);
+    log("");
+  }
+}
+
 function status({ json = false } = {}) {
   const config = readConfig(cwd);
   const { epics, looseWorktrees, worktreesActive, policy, untrackedPlans, recovery } = buildStatusModel(config);
@@ -443,6 +461,8 @@ function status({ json = false } = {}) {
     log(JSON.stringify(statusPayload(config, { epics, looseWorktrees, worktreesActive, policy, untrackedPlans, recovery }), null, 2));
     return;
   }
+
+  printNeedsYouHeader();
 
   if (epics.length === 0) {
     log("No epics found.");

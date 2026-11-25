@@ -129,9 +129,11 @@ Setup (you run these):
 
 Daily (you run these):
   status       List epics, stories, and inferred story status (verified / stale / blocked).
-  next         Rank the same state status reads and print the one command worth running now.
-  todo         List everything waiting on a human across all epics: maintainer to-dos, Needs you,
-               Owner: human stories, deferred [~] criteria. Read-only.
+  next         Rank the same state status reads and print the one command worth running now,
+               under a "We need you" block when something waits on a human.
+  todo         List everything waiting on a human across all epics: ## Human to-do items, maintainer
+               to-dos, Needs you, Owner: human stories, deferred [~] criteria, each with its id.
+               "todo done <id>" ticks that one checkbox. Read-only otherwise.
   run          Verify a batch of stories (all, one --epic, or one --story) and emit one proof report.
   ship         Commit a dirty tree, push, and open/update one PR to the base (uses gh if available).
   verify       Re-prove one story: run its declared validation commands and capture the result.

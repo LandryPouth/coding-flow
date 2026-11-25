@@ -674,6 +674,22 @@ function extraProofs({ redAtBase, refused, cleaned, commandsOk, skipCoverage, st
   };
 }
 
+// story-26-07: `## Result` lines that say something only a human can do, in a
+// story with no open `## Human to-do` item. A warning, never part of `ok`.
+function uncapturedFields(storyDir) {
+  if (!storyDir) {
+    return {};
+  }
+
+  try {
+    const { uncapturedTodoLines } = require("./todo");
+    const lines = uncapturedTodoLines(cwd, storyDir, require("./config").readConfig(cwd));
+    return lines.length > 0 ? { todoUncaptured: lines } : {};
+  } catch {
+    return {};
+  }
+}
+
 function verifyStoryOnce({
   story = null,
   exemption = null,
@@ -751,6 +767,7 @@ function verifyStoryOnce({
     diffBase: publicDiffBase(currentDiffBase(cwd)),
     coverage,
     acceptanceCriteria,
+    ...uncapturedFields(storyDir),
     // The policy the contrary-signals verdict was judged under, for the same
     // reason as `coverageFloor`: an edit to it must not leave a stale "ok".
     contraryPolicy: contraryPolicy(config),

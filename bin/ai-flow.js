@@ -90,7 +90,7 @@ const {
 const { doctor } = require("./lib/doctor");
 const { status } = require("./lib/status");
 const { nextCommand } = require("./lib/next");
-const { todoCommand } = require("./lib/todo");
+const { todoCommand, todoDoneCommand } = require("./lib/todo");
 const { bootstrapScan, scanProject, printProjectScanSummary } = require("./lib/bootstrap");
 const { recoverScan } = require("./lib/recover");
 const { harnessCommand, ensureHarnessConfig, registerStoryLocator } = require("./lib/harness");
@@ -110,7 +110,7 @@ const { traceCommand } = require("./lib/trace");
 const { archiveCommand } = require("./lib/archive");
 const { ciCommand } = require("./lib/ci");
 const { pluginCommand } = require("./lib/plugin");
-const { worktreeCommand, storyWorkElsewhere } = require("./lib/worktree");
+const { worktreeCommand, storyWorkElsewhere, sayDeployTodos } = require("./lib/worktree");
 
 // `verify --story` run from a checkout that is not where the story's work is
 // would prove this checkout's copy — green on the wrong tree, recorded as
@@ -875,11 +875,21 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
 } else if (command === "todo") {
   const extra = commandArgs.filter((arg) => !arg.startsWith("-"));
 
-  if (extra.length > 0) {
-    fail(`unexpected argument "${extra[0]}" for "todo". Run "ai-flow todo --help".`);
-  }
+  if (extra[0] === "done") {
+    if (extra.length !== 2) {
+      fail('"todo done" takes one id: ai-flow todo done <id> (ids are printed by "ai-flow todo").');
+    }
 
-  todoCommand({ json: flags.has("--json") });
+    try {
+      todoDoneCommand(extra[1]);
+    } catch (error) {
+      fail(error.message);
+    }
+  } else if (extra.length > 0) {
+    fail(`unexpected argument "${extra[0]}" for "todo". Run "ai-flow todo --help".`);
+  } else {
+    todoCommand({ json: flags.has("--json") });
+  }
 } else if (command === "bootstrap") {
   if (!flags.has("--scan")) {
     fail("bootstrap currently requires --scan");
@@ -998,6 +1008,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     log(JSON.stringify(result, null, 2));
   } else if (result.landed) {
     log(`Landed: chain ${result.chainId} ("${result.worktreeName}") merged and its worktree removed.`);
+    sayDeployTodos(cwd, { story: { path: story } });
   } else if (result.reason === "chain-not-finished") {
     log(`Chain ${result.chainId} is not finished yet — nothing to land.`);
   } else if (reviewGateMessages[result.reason]) {

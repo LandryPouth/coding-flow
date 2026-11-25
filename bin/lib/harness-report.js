@@ -203,7 +203,7 @@ function printRedAtBase(red) {
 // deserves a look (weakened tests, open criteria, warnings), and the claims.
 function printPassed(evidence, coverage, contrary) {
   const survivors = evidence.mutation && evidence.mutation.ran ? evidence.mutation.unexcused.length : 0;
-  const warnings = [describeNotExamined(evidence.results), describeContraryWarnings(contrary), describeGrew(evidence.complexity),
+  const warnings = [describeNotExamined(evidence.results), describeContraryWarnings(contrary), describeGrew(evidence.complexity), describeUncaptured(evidence),
     survivors > 0 ? `${survivors} mutant(s) survived` : "", evidence.mutation && evidence.mutation.ran === false && !evidence.mutation.skipped ? "mutation not examined" : ""]
     .filter(Boolean).join(", ");
   log(warnings
@@ -243,6 +243,27 @@ function printPassed(evidence, coverage, contrary) {
   printOpenCriteria(evidence);
   printContraryFailures(contrary);
   printClaimHeld(evidence.claim);
+  printUncaptured(evidence);
+}
+
+// story-26-07: never a failure; names each line and shows the shape to write.
+function describeUncaptured(evidence) {
+  const count = evidence.todoUncaptured ? evidence.todoUncaptured.length : 0;
+  return count > 0 ? `todo.uncaptured: ${count} line(s)` : "";
+}
+
+function printUncaptured(evidence) {
+  if (!evidence.todoUncaptured || evidence.todoUncaptured.length === 0) {
+    return;
+  }
+
+  log("  todo.uncaptured — the Result says something only a human can do, and the story has no open `## Human to-do` item:");
+
+  for (const entry of evidence.todoUncaptured) {
+    log(`    ${entry.source}:${entry.line}: ${entry.text}`);
+  }
+
+  log("  Write it as: `## Human to-do` then `- [ ] (before: deploy|next-story|later) <the action>`.");
 }
 
 function printVerify(evidence, outputPath) {

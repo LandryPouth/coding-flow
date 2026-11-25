@@ -25,12 +25,15 @@ const { coverageTier } = require("./coverage");
 const { describeMutation } = require("./mutation");
 const { describeScope, resolveDiffBase } = require("./diff-base");
 const { latestVerifyByStoryDir } = require("./audit");
+const { openDeployTodos, printDeployTodos } = require("./todo");
 
 // Idempotent markers: the evidence section is replaced between them, never the
 // human text around it. Ship can thus refresh the proof without overwriting the
 // PR description.
 const EVIDENCE_START = "<!-- coding-flow:evidence:start -->";
 const EVIDENCE_END = "<!-- coding-flow:evidence:end -->";
+const DEPLOY_START = "<!-- coding-flow:before-deploy:start -->";
+const DEPLOY_END = "<!-- coding-flow:before-deploy:end -->";
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -307,6 +310,103 @@ function upsertEvidenceBlock(body, block) {
   }
 
   return current.trim() ? `${current.trim()}\n\n${block}\n` : `${block}\n`;
+}
+
+// story-26-07: the open `before: deploy` items of the stories in the branch, as
+// a PR body section. Null when there are none: the section is then absent.
+function buildDeployBlock(entries) {
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const lines = [DEPLOY_START, "### Before you deploy", ""];
+
+  for (const entry of entries) {
+    lines.push(`- [ ] ${entry.text} (\`${entry.story || entry.epic}\`, id \`${entry.id}\`)`);
+  }
+
+  lines.push("", "_Listed by `ai-flow ship` from the stories' `## Human to-do` sections; tick them there (`ai-flow todo done <id>`)._", DEPLOY_END);
+  return lines.join("\n");
+}
+
+// Puts the section in the body, replaces it, or removes it (block null); the
+// human text around it is never touched.
+function upsertDeployBlock(body, block) {
+  const current = body || "";
+  const startIndex = current.indexOf(DEPLOY_START);
+  const endIndex = current.indexOf(DEPLOY_END);
+
+  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+    const before = current.slice(0, startIndex);
+    const after = current.slice(endIndex + DEPLOY_END.length);
+    if (block) {
+      return `${before}${block}${after}`;
+    }
+
+    const rest = `${before.trimEnd()}\n\n${after.trimStart()}`.trim();
+    return rest ? `${rest}\n` : "";
+  }
+
+  if (!block) {
+    return current;
+  }
+
+  return current.trim() ? `${current.trim()}\n\n${block}\n` : `${block}\n`;
+}
+
+// The story dirs this branch carries: the story named after the branch, and
+// every story whose files the branch changed since the base.
+function storiesInBranch(root, config, branch, baseRef) {
+  const dirs = new Set();
+  const own = findStoryAndEpic(root, config, branch);
+
+  if (own) {
+    dirs.add(own.story.path);
+  }
+
+  const changed = git(root, ["diff", "--name-only", `${baseRef}...HEAD`], { allowFail: true });
+  const files = changed.code === 0 ? changed.stdout.split(/\r?\n/).filter(Boolean) : [];
+
+  try {
+    for (const epic of getStorage(root, config).listEpics()) {
+      for (const story of epic.stories) {
+        if (files.some((file) => file.startsWith(`${story.path}/`))) {
+          dirs.add(story.path);
+        }
+      }
+    }
+  } catch {
+    // best effort, like findStoryAndEpic: never block ship on a storage read.
+  }
+
+  return [...dirs];
+}
+
+function deployTodosOf(root, config, branch, baseRef) {
+  try {
+    return openDeployTodos(root, storiesInBranch(root, config, branch, baseRef));
+  } catch {
+    return [];
+  }
+}
+
+// Writes the Before you deploy section into the PR body, or takes it out.
+function syncDeployIntoPr(root, branch, block) {
+  const view = gh(["pr", "view", branch, "--json", "body"], root);
+
+  if (view.code !== 0) {
+    return false;
+  }
+
+  let body = "";
+  try {
+    body = JSON.parse(view.stdout).body || "";
+  } catch {
+    return false;
+  }
+
+  const next = upsertDeployBlock(body, block);
+  return next === body || gh(["pr", "edit", branch, "--body", next], root).code === 0;
 }
 
 // Refreshes the evidence section in the PR body (gh required).
@@ -696,6 +796,7 @@ function ship({
   }
 
   const dirty = git(root, ["status", "--porcelain"], { allowFail: true }).stdout.trim().length > 0;
+  const deployTodos = deployTodosOf(root, config, branch, baseRef);
   const github = isGitHubRemote(remoteUrl);
   const canPr = github && ghAvailable();
   const evidence = includeEvidence ? latestVerifyEvidence(root) : null;
@@ -739,6 +840,7 @@ function ship({
         log("  evidence: none (run `ai-flow verify --story <dir>` before you ship to attach the proof).");
       }
     }
+    printDeployTodos(deployTodos, (line) => log(`  ${line}`));
     return;
   }
 
@@ -751,6 +853,7 @@ function ship({
     fail(`push failed: ${push.stderr.trim()}`);
   }
   log(`Pushed: origin/${branch}`);
+  printDeployTodos(deployTodos);
 
   if (!github) {
     log("Non-GitHub remote: branch pushed, PR not managed.");
@@ -778,6 +881,13 @@ function ship({
     }
   }
 
+  // Never blocks: a to-do is not a failure, it only must not pass unseen.
+  function attachDeployTodos() {
+    if (syncDeployIntoPr(root, branch, buildDeployBlock(deployTodos)) && deployTodos.length > 0) {
+      log(`Before you deploy: ${deployTodos.length} item(s) listed in the PR body.`);
+    }
+  }
+
   // gh present: existing PR? (idempotent — the push already updated it)
   const existing = gh(["pr", "view", branch, "--json", "url,state"], root);
   if (existing.code === 0) {
@@ -789,6 +899,7 @@ function ship({
     }
     log(`PR already open (updated by the push)${url ? `: ${url}` : "."}`);
     attachEvidence();
+    attachDeployTodos();
     maybeAutoMerge(root, config, branch, targetBase, { autoMerge: autoMergeEnabled, mergeMethod });
     if (web && url) {
       gh(["pr", "view", branch, "--web"], root);
@@ -813,6 +924,7 @@ function ship({
   const url = created.stdout.trim().split(/\s+/).find((token) => token.startsWith("http")) || created.stdout.trim();
   log(`PR ${draft ? "(draft) " : ""}created: ${url}`);
   attachEvidence();
+  attachDeployTodos();
   if (!draft) {
     maybeAutoMerge(root, config, branch, targetBase, { autoMerge: autoMergeEnabled, mergeMethod });
   }
@@ -848,6 +960,8 @@ module.exports = {
   shipCommand,
   buildEvidenceBlock,
   upsertEvidenceBlock,
+  buildDeployBlock,
+  upsertDeployBlock,
   latestVerifyEvidence,
   epicCompleteness,
   openSiblingsAhead,

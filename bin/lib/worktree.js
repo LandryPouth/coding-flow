@@ -1095,11 +1095,23 @@ function worktreeLand(name, { cwd, story, dryRun = false }) {
 
         landCleanup(root, match, branch, found);
         log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
+        sayDeployTodos(root, found);
       },
       { waitTimeoutMs, staleMs },
     );
   } catch (err) {
     fail(err.message);
+  }
+}
+
+// story-26-07: the landed story's open `before: deploy` items, said out loud
+// after the land. Never blocks, never fails the land: a read error says nothing.
+function sayDeployTodos(root, found) {
+  try {
+    const { openDeployTodos, printDeployTodos } = require("./todo");
+    printDeployTodos(openDeployTodos(root, found && found.story ? [found.story.path] : []));
+  } catch {
+    // best effort only
   }
 }
 
@@ -1186,6 +1198,7 @@ function worktreeCommand({ commandArgs, from, deps, dryRun, force, cwd, story })
 }
 
 module.exports = {
+  sayDeployTodos,
   worktreeCommand,
   collectWorktrees,
   realDirtyLines,

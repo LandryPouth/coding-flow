@@ -34,6 +34,7 @@ const { policyFingerprint } = require("./policy-fingerprint");
 const { defaultOf } = require("./rules-registry");
 const { defaultBranch, currentBranch } = require("./policy");
 const { resolveDiffBase } = require("./diff-base");
+const { collectNeedsYou } = require("./todo");
 
 const TIER_LABELS = {
   1: "blocked",
@@ -254,17 +255,57 @@ function printItem(item, index) {
   }
 }
 
+// story-26-07: what waits on a human is printed apart, above the ranked
+// command — a to-do has no command to run, so it is not a tier. Read from every
+// epic of the checkout, landed ones included: a `before: deploy` item outlives
+// the land by design.
+const NEEDS_YOU_LINES = 5;
+const WHEN_LABELS = { deploy: "before: deploy", "next-story": "before: next-story" };
+const KIND_WORDS = { "needs-you": "needs you", "human-owner": "yours to do" };
+
+function needsYouLine(entry) {
+  const label = entry.kind === "human-todo" ? WHEN_LABELS[entry.when] : KIND_WORDS[entry.kind];
+  return `  - (${label}) ${entry.text} — ${entry.story || entry.epic} [${entry.id}]`;
+}
+
+// At most 5 lines (deploy first, then next-story and the questions), then one
+// count line for the rest; the full list is `ai-flow todo`.
+function printNeedsYouLines(entries) {
+  const urgent = entries.filter((entry) => entry.when !== "later");
+  const later = entries.length - urgent.length;
+  const more = Math.max(0, urgent.length - NEEDS_YOU_LINES);
+
+  urgent.slice(0, NEEDS_YOU_LINES).forEach((entry) => log(needsYouLine(entry)));
+
+  if (more > 0 || later > 0) {
+    const parts = [more > 0 ? `${more} more` : "", later > 0 ? `${later} later` : ""].filter(Boolean);
+    log(`  + ${parts.join(", ")} — ai-flow todo`);
+  }
+}
+
 function next({ all = false, json = false } = {}) {
   const items = buildQueue();
+  const needsYou = collectNeedsYou(cwd);
 
   if (json) {
-    log(JSON.stringify({ items: all ? items : items.slice(0, 1) }, null, 2));
+    log(JSON.stringify({ items: all ? items : items.slice(0, 1), needsYou }, null, 2));
     return;
   }
 
   if (items.length === 0) {
-    log("Nothing waiting on you — status is caught up.");
+    if (needsYou.length === 0) {
+      log("Nothing waiting on you — status is caught up.");
+    } else {
+      log("No command to run — but we need you:");
+      printNeedsYouLines(needsYou);
+    }
     return;
+  }
+
+  if (needsYou.length > 0) {
+    log(`We need you (${needsYou.length})`);
+    printNeedsYouLines(needsYou);
+    log("");
   }
 
   if (!all) {

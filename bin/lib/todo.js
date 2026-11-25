@@ -11,21 +11,84 @@
 // `todoHeadings(config)` the headings an epic index is read under, and
 // `TODO_KINDS` the item kinds. Nothing here writes a file.
 
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
+const { execFileSync } = require("child_process");
+
 const { getStorage } = require("./storage");
+const { withFileLock } = require("./placement-store");
 const { storyPartPath, FINISHED_STATUSES } = require("./story");
-const { log } = require("./util");
+const { log, normalizePortable } = require("./util");
+const { readHarnessConfig } = require("./harness-config");
+const { getSecretPatterns, findSecretsInContent } = require("./security-policy");
 
 const DEFAULT_TODO_HEADINGS = ["Maintainer to-do", "Maintainer cleanup on delivery"];
 
 // Order inside an epic: what the epic index asks of the maintainer, then each
 // story's items in story order (a question first, then the story itself, then
 // what it deferred).
-const TODO_KINDS = ["maintainer", "needs-you", "human-owner", "deferred"];
+const TODO_KINDS = ["maintainer", "human-todo", "needs-you", "human-owner", "deferred"];
+
+// `## Human to-do` (story 26-07): one checkbox line per action only a human can
+// take, `- [ ] (before: deploy) Run the backfill, then deploy`. `when` says
+// before what: the deploy, the next story of the chain, or nothing (`later`).
+const HUMAN_TODO_HEADING = "Human to-do";
+const WHEN_VALUES = ["deploy", "next-story", "later"];
+const WHEN_PREFIX = /^\(\s*before\s*:\s*([^)]*?)\s*\)\s*/i;
+
+// `(before: deploy) text` → { when, text }. No prefix, or a value outside the
+// three, reads as `later` and says why (`whenIssue`), for doctor to warn.
+function parseWhen(text) {
+  const match = text.match(WHEN_PREFIX);
+
+  if (!match) {
+    return { when: "later", text, whenIssue: "missing" };
+  }
+
+  const rest = text.slice(match[0].length);
+  const value = match[1].toLowerCase();
+
+  return WHEN_VALUES.includes(value) ? { when: value, text: rest } : { when: "later", text: rest, whenIssue: `unknown "${match[1]}"` };
+}
+
+// A short id derived from where the item is and what it says: editing the text
+// changes it, which is fine (it names this line, not a ticket).
+function todoId(epic, story, text) {
+  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
+  return crypto.createHash("sha1").update(`${epic}\n${story || ""}\n${normalized}`).digest("hex").slice(0, 7);
+}
+
+// The project's secret patterns (the guard's own), compiled once per read.
+function secretPatternsOf(root) {
+  try {
+    return getSecretPatterns(readHarnessConfig(root).config);
+  } catch {
+    return getSecretPatterns(null);
+  }
+}
+
+// Masks every match of every pattern that fires on `text`. Returns the masked
+// text and the first pattern's name, or null when nothing fired.
+function maskSecrets(text, patterns) {
+  const found = findSecretsInContent(text, patterns);
+
+  if (found.length === 0) {
+    return { text, secret: null };
+  }
+
+  let masked = text;
+
+  for (const pattern of patterns) {
+    const flags = pattern.regex.flags.includes("g") ? pattern.regex.flags : `${pattern.regex.flags}g`;
+    masked = masked.replace(new RegExp(pattern.regex.source, flags), "[masked]");
+  }
+
+  return { text: masked, secret: found[0].name };
+}
 
 // `todo.headings` from the project's config.json; anything but a list of
 // non-empty strings falls back to the defaults, like every other key.
@@ -116,7 +179,10 @@ function scanMarkdown(content) {
   const front = frontMatter(all);
   const state = { blocks: [], headings: [], fence: null, comment: false, afterBlank: true, inIndentedCode: false, listStack: [], last: null };
 
-  for (const raw of all.slice(front.length)) {
+  for (const [offset, raw] of all.slice(front.length).entries()) {
+    // 1-based line in the file, kept on each block so a checkbox can be ticked
+    // where it is (`ai-flow todo done`) and a warning can name its line.
+    state.lineNo = front.length + offset + 1;
     // A blockquote's content is read like any other (`> - [ ] task`), except
     // that a quoted heading is quoted text, not a section.
     const quoted = /^ {0,3}>/.test(raw);
@@ -244,6 +310,7 @@ function addItem(state, item) {
     indent,
     children: [],
     headings: state.headings,
+    line: state.lineNo,
   };
 
   if (parent) {
@@ -269,6 +336,7 @@ function addText(state, line) {
 
     if (state.last.lines) {
       state.last.lines.push(text);
+      state.last.lineNumbers.push(state.lineNo);
     }
   } else if (state.afterBlank && open && indent > open.indent) {
     open.text = `${open.text} ${text}`;
@@ -278,7 +346,7 @@ function addText(state, line) {
       state.listStack = state.listStack.filter((entry) => entry.indent < indent);
     }
 
-    state.last = { type: "prose", text, lines: [text], headings: state.headings };
+    state.last = { type: "prose", text, lines: [text], lineNumbers: [state.lineNo], headings: state.headings, line: state.lineNo };
     state.blocks.push(state.last);
   }
 }
@@ -298,10 +366,14 @@ const underAny = (block, names) =>
 
 // Unchecked `- [ ]` items, at any depth, under the configured headings of an
 // epic index.
-function maintainerItems(indexContent, headings) {
-  return scanMarkdown(indexContent)
-    .blocks.filter((block) => block.type === "item" && block.box === " " && underAny(block, headings))
-    .map((block) => block.text);
+function maintainerItems(scan, headings) {
+  return scan.blocks.filter((block) => block.type === "item" && block.box === " " && underAny(block, headings));
+}
+
+// Open `- [ ]` items under `## Human to-do` (any level, any depth), with the
+// line they sit on. A checked `[x]` item is done; a plain bullet is not a to-do.
+function humanTodoBlocks(scan) {
+  return scan.blocks.filter((block) => block.type === "item" && block.box === " " && underAny(block, [HUMAN_TODO_HEADING]));
 }
 
 // A story file's `## Needs you` items: each top-level list item not checked
@@ -345,21 +417,44 @@ function deferredCriteria(scan) {
 // The story's files, each read once: a single-file story answers every part
 // with story.md. `spec` is the file that holds the acceptance criteria.
 function storyFiles(storyDir) {
-  const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null);
+  const read = (file) => (fs.existsSync(file) ? { file, content: fs.readFileSync(file, "utf8") } : null);
   const specFile = storyPartPath(storyDir, "spec");
   const others = [...new Set(["plan", "tasks"].map((part) => storyPartPath(storyDir, part)))].filter(
     (file) => file !== specFile,
   );
 
-  return { spec: read(specFile), others: others.map(read).filter((content) => content !== null) };
+  return { spec: read(specFile), others: others.map(read).filter(Boolean) };
 }
 
-function storyItems(root, story) {
+// `## Human to-do` items of one file, as to-do entries. Listed whatever the
+// story's status: a `before: deploy` item outlives the land by design.
+function humanTodoItems(root, file, scan, { epic, story = null }) {
+  const source = normalizePortable(path.relative(root, file));
+
+  return humanTodoBlocks(scan).map((block) => {
+    const parsed = parseWhen(block.text);
+
+    return {
+      kind: "human-todo",
+      when: parsed.when,
+      text: parsed.text,
+      ...(parsed.whenIssue ? { whenIssue: parsed.whenIssue } : {}),
+      ...(story ? { story } : {}),
+      source,
+      line: block.line,
+      _epic: epic,
+    };
+  });
+}
+
+function storyItems(root, story, epic) {
   const files = storyFiles(path.join(root, story.path));
-  const spec = files.spec === null ? null : scanMarkdown(files.spec);
-  const scans = [spec, ...files.others.map(scanMarkdown)].filter(Boolean);
+  const specFile = files.spec;
+  const scanned = [specFile, ...files.others].filter(Boolean).map((entry) => ({ ...entry, scan: scanMarkdown(entry.content) }));
+  const spec = specFile ? scanned[0].scan : null;
+  const scans = scanned.map((entry) => entry.scan);
   const item = (kind, text, extra = {}) => ({ kind, text, ...extra, story: story.name, source: story.path });
-  const items = [];
+  const items = scanned.flatMap((entry) => humanTodoItems(root, entry.file, entry.scan, { epic, story: story.name }));
 
   // A finished story asks nothing any more: its Needs you and its owner are
   // history. Its deferred criteria stay listed (a deferral is still a debt).
@@ -382,31 +477,49 @@ function storyItems(root, story) {
 // with nothing waiting are left out.
 function collectTodos(root, { headings = DEFAULT_TODO_HEADINGS } = {}) {
   const epics = [...getStorage(root).listEpics()].sort(byEpicAge);
+  const patterns = secretPatternsOf(root);
   const grouped = [];
 
   for (const epic of epics) {
     const indexFile = path.join(root, epic.path, "index.md");
     const indexContent = fs.existsSync(indexFile) ? fs.readFileSync(indexFile, "utf8") : "";
-    const items = maintainerItems(indexContent, headings).map((text) => ({
+    const indexScan = scanMarkdown(indexContent);
+    const items = maintainerItems(indexScan, headings).map((block) => ({
       kind: "maintainer",
-      text,
+      text: block.text,
       source: `${epic.path}/index.md`,
+      line: block.line,
     }));
+    const indexTodos = humanTodoItems(root, indexFile, indexScan, { epic: epic.name });
+    const storyTodos = epic.stories.flatMap((story) => storyItems(root, story, epic.name));
+    // The same text under a story and the epic index is listed once: the story wins.
+    const storyTexts = new Set(storyTodos.filter((entry) => entry.kind === "human-todo").map((entry) => normalizedText(entry.text)));
 
-    for (const story of epic.stories) {
-      items.push(...storyItems(root, story));
-    }
+    items.push(...indexTodos.filter((entry) => !storyTexts.has(normalizedText(entry.text))), ...storyTodos);
 
     if (items.length > 0) {
-      grouped.push({ epic: epic.name, path: epic.path, items });
+      grouped.push({ epic: epic.name, path: epic.path, items: items.map((entry) => finishItem(entry, epic.name, patterns)) });
     }
   }
 
   return { count: grouped.reduce((sum, epic) => sum + epic.items.length, 0), epics: grouped };
 }
 
+const normalizedText = (text) => text.toLowerCase().replace(/\s+/g, " ").trim();
+
+// Every item gets its id; its text is masked when it matches a secret pattern
+// (printed and in --json alike), and says which pattern fired.
+function finishItem(entry, epic, patterns) {
+  const { _epic, ...item } = entry;
+  const masked = maskSecrets(item.text, patterns);
+  const id = todoId(epic, item.story, item.text);
+
+  return { id, ...item, text: masked.text, ...(masked.secret ? { secret: masked.secret } : {}) };
+}
+
 const KIND_LABELS = {
   maintainer: "to-do",
+  "human-todo": "human to-do",
   "needs-you": "needs you",
   "human-owner": "yours to do",
   deferred: "deferred",
@@ -426,13 +539,208 @@ function printTodos(payload) {
 
     for (const item of epic.items) {
       const where = item.story ? ` (${item.story})` : "";
-      log(`- [${KIND_LABELS[item.kind]}] ${item.text}${where}`);
+      const label = item.kind === "human-todo" ? `before: ${item.when}` : KIND_LABELS[item.kind];
+      log(`- [${label}] ${item.text}${where} [${item.id}]`);
 
       for (const option of item.options || []) {
         log(`    - ${option}`);
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// What waits on a human, flattened for `next`'s We need you block (and its
+// `--json` `needsYou`): `## Human to-do` items keep their `when`; a Needs you
+// question and a ready `Owner: human` story block the chain (`next-story`);
+// an item under a `todo.headings` heading has no deadline (`later`). Deferred
+// criteria are a debt, not an action: they stay in `ai-flow todo` only.
+// ---------------------------------------------------------------------------
+
+const WHEN_OF_KIND = { "needs-you": "next-story", "human-owner": "next-story", maintainer: "later" };
+const WHEN_ORDER = { deploy: 0, "next-story": 1, later: 2 };
+
+function needsYouEntries(payload) {
+  const entries = payload.epics.flatMap((epic) =>
+    epic.items
+      .filter((item) => item.kind !== "deferred")
+      .map((item) => ({
+        id: item.id,
+        when: item.kind === "human-todo" ? item.when : WHEN_OF_KIND[item.kind],
+        epic: epic.epic,
+        story: item.story || null,
+        text: item.text,
+        source: item.source,
+        kind: item.kind,
+      })),
+  );
+
+  // A stable sort: epic order is kept inside each `when`.
+  return entries.sort((a, b) => WHEN_ORDER[a.when] - WHEN_ORDER[b.when]);
+}
+
+function collectNeedsYou(root) {
+  return needsYouEntries(collectTodos(root, { headings: todoHeadings(readConfig(root)) }));
+}
+
+// Open `before: deploy` items of the given stories (story dirs, as storage names
+// their `path`). What `ship`, `land` and `autoland` say out loud.
+function openDeployTodos(root, storyPaths) {
+  const wanted = new Set(storyPaths.map((entry) => normalizePortable(entry).replace(/^\.\//, "").replace(/\/+$/, "")));
+
+  return collectNeedsYou(root).filter(
+    (entry) => entry.kind === "human-todo" && entry.when === "deploy" && [...wanted].some((dir) => entry.source.startsWith(`${dir}/`)),
+  );
+}
+
+// The lines `ship` and `land` print; nothing when there is nothing to say.
+function printDeployTodos(entries, write = log) {
+  if (entries.length === 0) {
+    return;
+  }
+
+  write(`Before you deploy (${entries.length}):`);
+
+  for (const entry of entries) {
+    write(`  - [ ] ${entry.text} (${entry.story || entry.epic}) [${entry.id}]`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Uncaptured prose (`todo.uncaptured`): a story whose `## Result` says
+// something only a human can do ("before the deploy", "à faire par
+// l'utilisateur") while it has no open `## Human to-do` item. A warning in
+// `verify` and `doctor`, never a failure: the phrase list is a heuristic.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_UNCAPTURED_PATTERNS = [
+  "the maintainer must",
+  "to do by the user",
+  "before (the )?deploy",
+  "in production",
+  "à faire par l'utilisateur",
+  "côté utilisateur",
+  "avant (le )?déploiement",
+  "en prod(uction)?\\b",
+];
+
+// `todo.uncapturedPatterns`: each entry a case-insensitive regular expression.
+// A value that is not a list of strings falls back to the defaults; an entry
+// that does not compile is skipped.
+function uncapturedPatterns(config) {
+  const declared = config && config.todo && config.todo.uncapturedPatterns;
+  const source = Array.isArray(declared) && declared.some((entry) => typeof entry === "string" && entry.trim())
+    ? declared.filter((entry) => typeof entry === "string" && entry.trim())
+    : DEFAULT_UNCAPTURED_PATTERNS;
+
+  return source.flatMap((entry) => {
+    try {
+      return [new RegExp(entry, "iu")];
+    } catch {
+      return [];
+    }
+  });
+}
+
+// The lines of a block, each with its line number.
+function blockLines(block) {
+  return block.type === "prose"
+    ? block.lines.map((text, index) => ({ text, line: block.lineNumbers[index] }))
+    : [{ text: block.text, line: block.line }];
+}
+
+// `storyDir` is the story's directory (absolute). Returns `[{ source, line,
+// text }]`, empty when the story already holds an open `## Human to-do` item.
+function uncapturedTodoLines(root, storyDir, config) {
+  const files = storyFiles(storyDir);
+  const scanned = [files.spec, ...files.others].filter(Boolean).map((entry) => ({ ...entry, scan: scanMarkdown(entry.content) }));
+
+  if (scanned.some((entry) => humanTodoBlocks(entry.scan).length > 0)) {
+    return [];
+  }
+
+  const patterns = uncapturedPatterns(config);
+  const found = [];
+
+  for (const entry of scanned) {
+    const source = normalizePortable(path.relative(root, entry.file));
+    const result = entry.scan.blocks.filter((block) => underAny(block, ["Result"]));
+
+    for (const { text, line } of result.flatMap(blockLines)) {
+      if (patterns.some((pattern) => pattern.test(text))) {
+        found.push({ source, line, text });
+      }
+    }
+  }
+
+  return found;
+}
+
+const UNCAPTURED_SHAPE = "## Human to-do\n- [ ] (before: deploy) <the action, in order>";
+
+// ---------------------------------------------------------------------------
+// `ai-flow todo done <id>`: ticks that one checkbox, under a lock, and nothing
+// else in the file. Only checkbox items (`## Human to-do`, `todo.headings`) can
+// be ticked; a question or an owner is answered in its file.
+// ---------------------------------------------------------------------------
+
+const TICKABLE = new Set(["human-todo", "maintainer"]);
+const UNCHECKED_BOX = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)\[ ?\]/;
+
+function todoLockPath(root) {
+  try {
+    const common = execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return path.join(path.resolve(root, common), "coding-flow", "todo.lock");
+  } catch {
+    return path.join(root, ".coding-flow", "todo.lock");
+  }
+}
+
+function findTodo(root, id) {
+  const matches = collectTodos(root, { headings: todoHeadings(readConfig(root)) }).epics.flatMap((epic) =>
+    epic.items.filter((item) => item.id === id),
+  );
+
+  if (matches.length === 0) {
+    throw new Error(`no open to-do has the id "${id}". Run "ai-flow todo" to list them with their ids.`);
+  }
+
+  if (matches.length > 1) {
+    throw new Error(`the id "${id}" names ${matches.length} items (${matches.map((item) => `${item.source}:${item.line}`).join(", ")}); tick the one you mean in its file.`);
+  }
+
+  if (!TICKABLE.has(matches[0].kind)) {
+    throw new Error(`"${id}" is not a checkbox (${KIND_LABELS[matches[0].kind]}, in ${matches[0].source}); answer it in its file.`);
+  }
+
+  return matches[0];
+}
+
+function todoDone(root, id) {
+  const item = findTodo(root, id);
+  const file = path.join(root, item.source);
+
+  return withFileLock(todoLockPath(root), () => {
+    const content = fs.readFileSync(file, "utf8");
+    const eol = content.includes("\r\n") ? "\r\n" : "\n";
+    const lines = content.split(/\r?\n/);
+    const index = item.line - 1;
+
+    // Re-read under the lock: the line must still be that open checkbox.
+    if (!UNCHECKED_BOX.test(lines[index] || "")) {
+      throw new Error(`${item.source}:${item.line} is no longer an open checkbox; nothing was changed.`);
+    }
+
+    lines[index] = lines[index].replace(UNCHECKED_BOX, "$1[x]");
+    fs.writeFileSync(file, lines.join(eol));
+    return { ...item, ticked: maskSecrets(lines[index].trim(), secretPatternsOf(root)).text };
+  });
+}
+
+function todoDoneCommand(id) {
+  const result = todoDone(cwd, id);
+  log(`Ticked ${result.source}:${result.line}`);
+  log(`  ${result.ticked}`);
 }
 
 function todoCommand({ json = false } = {}) {
@@ -446,4 +754,27 @@ function todoCommand({ json = false } = {}) {
   printTodos(payload);
 }
 
-module.exports = { scanMarkdown, collectTodos, todoHeadings, todoCommand, DEFAULT_TODO_HEADINGS, TODO_KINDS };
+module.exports = {
+  scanMarkdown,
+  collectTodos,
+  collectNeedsYou,
+  needsYouEntries,
+  openDeployTodos,
+  printDeployTodos,
+  todoHeadings,
+  todoCommand,
+  todoDone,
+  todoDoneCommand,
+  parseWhen,
+  maskSecrets,
+  uncapturedTodoLines,
+  uncapturedPatterns,
+  UNCAPTURED_SHAPE,
+  DEFAULT_UNCAPTURED_PATTERNS,
+  secretPatternsOf,
+  headingMatches,
+  DEFAULT_TODO_HEADINGS,
+  TODO_KINDS,
+  WHEN_VALUES,
+  HUMAN_TODO_HEADING,
+};
