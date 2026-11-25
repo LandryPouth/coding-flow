@@ -303,9 +303,10 @@ decisions match at base (0 weaker, 179 stronger at HEAD).
   unread, before any reader. Refused, not unchecked as suggested: `standard`
   lets an unchecked call run, so a padded `rm -rf .git; # <256 KB>` would pass
   where 29-03 refused it — unchecked there would break the monotonic rule.
-  Linear cost measured at 250 KB (load 26, in-process `decide()`): short
-  segments 1.8 s, `node -e` with literals 1.3 s, `psql -c` 1.4 s, one long
-  word or comment 0.2 s, heredoc 0.1 s — far under the 60 s hook timeout.
+  Measured at 250 KB on a handful of shapes (load 26): short segments 1.8 s,
+  `node -e` 1.3 s, `psql -c` 1.4 s. *Corrected in series 2 round 2:* those
+  shapes were not the worst; `rm a a a …` took 37 s and the reader was not
+  linear end to end (see S2R2-P1-4).
 - **S2R1-P2-3.** `python3 -c "print('rm -rf is bad')"` is unchecked: added to
   the accepted-noise row.
 - **S2R1-P2-4.** tasks.md Result and Rollback Notes rewritten to the diff.
@@ -313,6 +314,50 @@ decisions match at base (0 weaker, 179 stronger at HEAD).
   1.2 → 2 ms per call; the CLI cold: 193 → 209 ms. (Mine, round 4, load
   23–30: cold 7.3/9.3 → 14.5/14.4 ms per command, the hook process median
   301/310 → 334/351 ms.) The cost is the second reader.
+
+### Series 2, review round 2 (fresh reviewer, bypass lens: FAIL, 4 P1 — the first a regression)
+
+- **S2R2-P1-1 — the new pathspec rule reached 29-03's findings (regression).**
+  `settle` quoted every dirty check's glob as `:(glob)`, the frozen reader's
+  too: `git checkout -- '*.txt'` with only `sub/c.txt` modified went deny →
+  unchecked (`:(glob)*.txt` does not cross `/`; git's `*.txt` does). Fixed
+  structurally: 29-03's findings are judged by `bin/lib/destructive-judge-29-03.js`,
+  3c90919's `gitNow`, `settle`, `destructiveReason`, `allowedByPolicy` and
+  `judgeDestructive` (guard.js lines 789, 792–793, 1129–1275) copied between
+  markers and pinned by hash; only `loadPolicy` is handed in. The new reader's
+  findings go through guard.js's own judging. `strictestReading` returns the
+  frozen decision as soon as it refuses (P1-4), else the strictest of the two.
+  From reading to decision, nothing on 29-03's side is this story's code.
+  `:(glob)` now applies only to a shell `rm`/`unlink` operand (the finding
+  says `removal: "shell"`). The round's commands are recorded with 3c90919's
+  decisions (`test/fixtures/guard-29-03-decisions-round2.json`, two fixtures:
+  the reviewers' repo and one where only `sub/c.txt`, `sub/deep/e.txt` are
+  modified); HEAD is never weaker, and both tests fail on the round-1 code.
+- **S2R2-P1-2 — a git error read as clean.** `git status` that exits non-zero
+  (a path outside the repository) returned no output and no issue, so
+  `applies: false`. Now, on the new side: a non-zero exit is unchecked; paths
+  outside the repository are left out of the pathspec list (git would fail on
+  them, and they are not this repository's to lose); outside any repository
+  the check does not apply; `{,}` yields no word.
+- **S2R2-P1-3 — pathspec injection.** `rm a.txt ':!a.txt'` handed git an
+  exclude. A shell `rm`/`unlink` word now goes to git as `:(literal)…`, a glob
+  as `:(glob)…` (any leading `:` then literal). `git rm -f`'s operands are git's
+  own pathspecs: handed as written, with no existence check first (`:/a.txt`,
+  `':(top)a.txt'`, `':(glob)*.txt'` were skipped as missing files).
+- **S2R2-P1-4 — the worst case.** The new reader no longer runs once 29-03's
+  refused. The deadline is also read inside the operand loop of a removal.
+  The 37 s was not a reader: `touchesPolicyFile` resolved each word on disk
+  (`realpath`, `lstat`), twice (both readers list it). Memoized per call (a
+  pure function of cwd, mode and word), it fell to 2.3 s. Worst case at the cap
+  (255 KB, both readers, in-process, load 14), over 16 shapes: `git checkout --`
+  with 43 000 words 6.4 s (two `git status` with every word, unchecked),
+  `xargs` nested 4.5 s (both readers overflow the stack: unchecked), `rm` with
+  65 000 globs 3.5 s, `rm {a,a,…}` 3.2 s, every other shape ≤ 2.3 s;
+  `rm -rf .git; rm {a,a,…}` 0.2 s. The cap stays at 256 KB, now in UTF-8
+  bytes: 6.4 s is under the 20 s bound with room for a loaded machine.
+- **P2.** In the limits table: an overwrite of a modified file (`> a.txt`,
+  `truncate -s0`, `cp`/`mv` onto it); `rm '*.txt'` and `rm \*.txt` refused as
+  a glob (noise); padding a line past the 3 s budget makes it unchecked.
 
 ## Test Plan
 
