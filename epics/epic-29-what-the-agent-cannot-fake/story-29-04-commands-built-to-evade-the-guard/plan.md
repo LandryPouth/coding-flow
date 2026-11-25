@@ -557,3 +557,11 @@ Held: no deny dropped; mixed lines unchecked in both orders; `rh` → reset --ha
 - [x] P2 `git commit -am '…rm -rf…'` unchecked (pre-existing on develop) — stated as a limit row.
 
 Held: all 8 criteria, 132/132, a decide probe per criterion; 34 own probes match the docs; develop merge clean, 168/168, plugin check in sync; frozen 29-03 side unchanged since 8ac8fee.
+
+### Series 5 Round 2 — FAIL (an attacker who has read the docs) → claim narrowed, story lands with its limits
+
+- [x] P1 bin/lib/destructive.js:1094-1110 — a verb split by concatenation next to any other string literal is allowed (`print('go');os.system('r' + 'm -rf build')`, node/ruby equivalents, `"g"+"it reset --hard"`); docs and CHANGELOG claimed "built from pieces" without that condition — resolved by narrowing the claim (orchestrator, per the run's rule after five series, the code having held otherwise): rules-and-limits row and CHANGELOG now say pieces are joined only when they are the code's only literals, and a limit row states the split verb next to another literal. A follow-up may read each run of `+`-joined literals.
+- [x] P2 `find … -exec rm {} +` / `-exec unlink {} \;` allowed (`{}` is not on disk) — stated in the `find -delete` limit row.
+
+Held: 120 crafted commands, the other forms refused or unchecked; both new limit rows true when driven; 18 everyday commands allowed.
+Decision: five series (4+4+4+4+2 rounds), the code held for the last two; what is left is a reader extension, not a defect in what the story claims now. Lands.
