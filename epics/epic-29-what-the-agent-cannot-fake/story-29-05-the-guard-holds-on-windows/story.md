@@ -20,6 +20,13 @@ the test was wrong, without weakening any assertion.
 | `harness-fixers.test.js:203` "a fixer with its own time limit is killed at it" (EBUSY removing the temp dir) | `spawnSync(…, { shell: true, timeout })` kills `cmd.exe` only. The `node` it started keeps running in the temp dir, and `rmSync` gets EBUSY. On Linux the grandchild also survives (checked: a timed-out `sh -c "node …"` still wrote its file 1.5 s later), but Linux lets a directory in use be removed. | On win32, `runValidationCommand` kills the timed-out shell's descendants by parent id (PowerShell `Win32_Process`, since `taskkill /T` cannot walk from a parent that is already dead). The POSIX limit is stated in the code: a process group would cut Ctrl-C, which is story 19-04's trade. |
 | `harness-fixers.test.js:922` "a guard log cut otherwise than the guard trims it is a forbidden write" (exit 0, "no change to evaluate") | The test's fixer split the log on `'\\n'` inside `node -e "…"`. Through sh's double quotes that reaches node as `\n` (a newline). Through cmd.exe's it reaches node as a backslash and an `n`, so the split found one line, `slice(-199)` kept the whole file, and the "cut" was a pure append. The guard-log rule was right to call it the guard's own work. | The fixer builds the newline (`String.fromCharCode(10)`), so it cuts on every shell. The assertion is unchanged. |
 
+The first Windows CI run of this story (run 45543675335) fixed all six and
+found one more: "readDestructive is pure" used `cd /x` and expected
+`path.resolve('/x')` (`D:\x`). In Git Bash `/x` is drive X, which the guard now
+reads as `X:\`, so the test was asserting the old misreading. Its word is now
+`/work`. The assertion is unchanged, and the drive mapping is pinned in
+`test/windows-paths.test.js`.
+
 ## The code change: Git Bash paths
 
 On Windows the agent's shell is Git Bash (MSYS), and it writes a checkout as

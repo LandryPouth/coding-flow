@@ -427,10 +427,11 @@ test('outside a repository, a checkout or restore has nothing to discard', (t) =
 
 test('readDestructive is pure: words in, findings out', () => {
   const host = { exists: () => false, home: () => '/home/u' };
-  const { findings, unchecked } = readDestructive('cd /x && git push origin +main; echo ok', { cwd: '/w', host });
+  // `/work`, not a one-letter name: in Git Bash `/x` is drive X (windows-paths.test.js).
+  const { findings, unchecked } = readDestructive('cd /work && git push origin +main; echo ok', { cwd: '/w', host });
   assert.equal(findings.length, 1);
   assert.equal(findings[0].rule, 'forced push');
-  assert.equal(findings[0].cwd, path.resolve('/x'));
+  assert.equal(findings[0].cwd, path.resolve('/work'));
   assert.deepEqual(unchecked, []);
   assert.deepEqual(readDestructive('echo hi', { cwd: '/w', host }), { findings: [], unchecked: [], touched: [], substituted: [] });
   assert.deepEqual(readDestructive('cd sub && bash -c "rm a b"', { cwd: '/w', host }).touched, [{ cwd: path.resolve('/w/sub'), paths: ['a', 'b'], mode: 'remove' }]);
