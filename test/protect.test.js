@@ -31,8 +31,22 @@ function git(cwd, args) {
   return execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
+// Unless a test says otherwise (`pulls`), every branch has had one pull request
+// whose head commit reported the same checks as the branch: those checks are
+// known to run on pull requests.
+function withPulls(state) {
+  if (state.pulls) return state;
+  const pulls = Object.entries(state.branches || {}).map(([base, branch], index) => ({
+    base,
+    headRefOid: `${index + 1}`.repeat(39) + "p",
+    checkRuns: branch.checkRuns,
+  }));
+  return { ...state, pulls };
+}
+
 // A GitHub-looking repository, a fake gh, and what it saw.
-function sandbox(t, state, { withGh = true } = {}) {
+function sandbox(t, rawState, { withGh = true } = {}) {
+  const state = withPulls(rawState);
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "coding-flow-protect-")));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -197,6 +211,7 @@ const BLOCKERS = [
   ["no admin rights", unprotected({ repo: { ...ADMIN, viewerPermission: "WRITE" } }), {}, /no admin rights on acme\/app/, /ask a repository admin/],
   ["no gh", unprotected(), { withGh: false }, /`gh` \(GitHub CLI\) is not installed/, /gh auth login/],
   ["no check runs", unprotected({ branches: { main: { sha: "d".repeat(40), checkRuns: [], protection: null } } }), {}, /no check runs on "main"'s latest commit .* needs CI first/, /ai-flow ci init/],
+  ["no pull request yet", unprotected({ pulls: [] }), {}, /open one pull request first, so the checks that run on pull requests are known/, /open a pull request into "main"/],
 ];
 
 for (const [name, state, options, reason, next] of BLOCKERS) {
@@ -217,6 +232,67 @@ for (const [name, state, options, reason, next] of BLOCKERS) {
     assert.equal(sb.writes().length, 0);
   });
 }
+
+// Review round 1, P1: a check that runs only on push (deploy, release, pages)
+// never reports on a pull request; requiring it would keep every PR pending.
+test("a push-only check on the branch is not required; the checks seen on a pull request are", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({
+    branches: { main: { sha: "a".repeat(40), checkRuns: [...THREE, "deploy"], protection: null } },
+    pulls: [
+      { base: "main", headRefOid: "9".repeat(40), checkRuns: ["build", "lint"] },
+      { base: "main", headRefOid: "8".repeat(40), checkRuns: ["test"] },
+      { base: "develop", headRefOid: "7".repeat(40), checkRuns: ["deploy"] },
+    ],
+  }));
+  const res = cli(sb, ["protect"]);
+
+  assert.equal(res.code, 0, res.out);
+  const writes = sb.writes();
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].body.required_status_checks.checks.map((check) => check.context).sort(), THREE);
+  assert.match(res.stdout, /not required \(never seen on a pull request\): deploy/);
+
+  const listed = sb.calls().find((call) => call.args[0] === "pr" && call.args[1] === "list");
+  assert.ok(listed, "the pull requests into main were read");
+  assert.equal(listed.args[listed.args.indexOf("--base") + 1], "main");
+});
+
+test("only push checks on the branch: protect exits 2 and sends nothing", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({
+    branches: { main: { sha: "a".repeat(40), checkRuns: ["deploy"], protection: null } },
+    pulls: [{ base: "main", headRefOid: "9".repeat(40), checkRuns: ["preview"] }],
+  }));
+  const res = cli(sb, ["protect"]);
+
+  assert.equal(res.code, 2, res.out);
+  assert.match(res.out, /none of the checks on "main"'s latest commit \(deploy\) was seen on a pull request/);
+  assert.equal(sb.writes().length, 0);
+});
+
+test("an existing protection gains only the checks seen on a pull request", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({
+    branches: {
+      main: {
+        sha: "a".repeat(40),
+        checkRuns: [...THREE, "deploy"],
+        protection: { required_status_checks: { strict: false, contexts: ["test"], checks: [{ context: "test" }] } },
+      },
+    },
+    pulls: [{ base: "main", headRefOid: "9".repeat(40), checkRuns: THREE }],
+  }));
+  const res = cli(sb, ["protect"]);
+
+  assert.equal(res.code, 0, res.out);
+  const writes = sb.writes();
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].body, { contexts: ["build", "lint"] });
+
+  sb.reset();
+  const again = cli(sb, ["protect"]);
+  assert.equal(again.code, 0, again.out);
+  assert.equal(sb.writes().length, 0, "deploy is never added");
+  assert.match(again.stdout, /main: nothing to change — already requires .*; not required \(never seen on a pull request\): deploy/);
+});
 
 // Criterion 4.
 function withDevelop() {
@@ -329,6 +405,16 @@ test("ship --auto-merge on an already protected base arms auto-merge without wri
   assert.equal(res.code, 0, res.out);
   assert.equal(sb.writes().length, 0);
   assert.equal(merges(sb).length, 1);
+});
+
+test("ship --auto-merge when the base's protection cannot be read does not arm auto-merge", { skip }, (t) => {
+  const sb = shipReady(t, unprotected({ protectionError: "gh: Server Error (HTTP 500)" }));
+  const res = cli(sb, ["ship", "--auto-merge", "--no-evidence", "--no-commit"]);
+
+  assert.equal(res.code, 0, res.out);
+  assert.equal(merges(sb).length, 0, "auto-merge is not armed");
+  assert.equal(sb.writes().length, 0);
+  assert.match(res.out, /Auto-merge: not armed — .*could not read "main"'s protection \(gh: Server Error \(HTTP 500\)\)/);
 });
 
 // Criterion 6.

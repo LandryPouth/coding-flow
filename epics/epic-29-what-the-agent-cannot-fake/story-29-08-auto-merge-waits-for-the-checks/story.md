@@ -17,7 +17,13 @@ protection auto du projet dans lequel il est installé".
   default branch and the configured base (both when they differ) on GitHub
   through `gh api`:
   - required status checks = the check runs seen on the branch's latest
-    commit (names read from GitHub, never guessed), `strict: false`;
+    commit **that are also seen on a pull-request commit**: the head commit of
+    the most recent pull requests into that branch (`gh pr list --base <branch>
+    --state all -L 5 --json headRefOid`, then `commits/<sha>/check-runs`).
+    Names are read from GitHub, never guessed; `strict: false`. A check that
+    runs only on push (deploy, release, pages) never reports on a pull request:
+    requiring it would leave every PR pending forever, so it is listed as "not
+    required" and left out;
   - `enforce_admins: false`, no required reviews, no force pushes, no
     deletion.
   - **It never weakens an existing protection.** An existing rule keeps its
@@ -27,6 +33,11 @@ protection auto du projet dans lequel il est installé".
     is missing and what to run, and exits 2. It never fails `init`.
   - When the branch has no check runs yet (no CI), it does not protect it with
     an empty check list. It says the project needs CI first.
+  - With no pull request into the branch yet, the pull-request checks are
+    unknown: it does not protect, says "open one pull request first, so the
+    checks that run on pull requests are known", and exits 2 (`init` prints it
+    and succeeds). A branch whose checks are already all required is left
+    unchanged without that lookup.
 - **`init` protects automatically** when the project is a GitHub repository,
   `gh` is authenticated with admin rights, and CI checks exist: it prints what
   it protected. `init --no-protect` and the setting `protectBranches: false`
@@ -43,7 +54,7 @@ protection auto du projet dans lequel il est installé".
 
 ### Round 1 — FAIL (safety of a tool that writes someone's GitHub settings)
 
-- [ ] P1 bin/lib/protect.js:156-165, :233 — every check run on the branch's latest commit becomes required, including checks that only run on push (deploy, release, pages, CodeQL-on-push, a Vercel production deploy). Such a check never reports on a PR, so every PR stays pending forever and auto-merge never fires — and `init` does it by default. — fix: require only names also seen on a pull-request commit (e.g. the head commit of the last merged PR, or Actions runs whose `event` is `pull_request`); with no PR evidence, don't protect and say "open one PR first". Fake-gh test: a push-only `deploy` check on `main` is not required.
+- [x] P1 bin/lib/protect.js:156-165, :233 — every check run on the branch's latest commit becomes required, including checks that only run on push (deploy, release, pages, CodeQL-on-push, a Vercel production deploy). Such a check never reports on a PR, so every PR stays pending forever and auto-merge never fires — and `init` does it by default. — fix: require only names also seen on a pull-request commit (e.g. the head commit of the last merged PR, or Actions runs whose `event` is `pull_request`); with no PR evidence, don't protect and say "open one PR first". Fake-gh test: a push-only `deploy` check on `main` is not required.
 - Minor (not blocking): `required_signatures` not carried by the full PUT (believed untouched by it); a failed ruleset read is read as "no rulesets" (still additive only); no test for a protection read that errors in `ship` (code handles it).
 
 Held: additive POST when checks exist; full PUT only with no checks, every returned field translated; rulesets left alone; `init` prints each write and honours `--dry-run`/`--no-protect`/`protectBranches:false`; `upgrade` never protects; `ship` never arms on any read/PUT failure; 18/18 with request bodies asserted.
@@ -87,13 +98,18 @@ PATH; nothing reaches GitHub.
 1. Unprotected `main`, 3 check runs → one PUT with exactly those checks, strict
    false, no reviews, enforce_admins false; `--dry-run` sends nothing →
    `test/protect.test.js::protect requires exactly the 3 check runs of main's latest commit, strict false, no reviews`,
-   `test/protect.test.js::protect --dry-run sends nothing and prints the plan`
+   `test/protect.test.js::protect --dry-run sends nothing and prints the plan`;
+   only checks seen on a pull request (review round 1, P1) →
+   `::a push-only check on the branch is not required; the checks seen on a pull request are`,
+   `::only push checks on the branch: protect exits 2 and sends nothing`,
+   `::an existing protection gains only the checks seen on a pull request`
 2. Existing reviews + 1 check kept, missing added, second run sends nothing →
    `test/protect.test.js::an existing protection keeps its reviews and check, gains the missing ones, and a second run sends nothing`,
    `test/protect.test.js::a protection with no required checks is rebuilt keeping its reviews and restrictions`
 3. No admin / no gh / no check runs → exit 2 with reason and next command; init
    succeeds with the same reason →
-   `test/protect.test.js::no admin rights: protect exits 2 …`, `::no gh: …`, `::no check runs: …`
+   `test/protect.test.js::no admin rights: protect exits 2 …`, `::no gh: …`, `::no check runs: …`,
+   `::no pull request yet: …`
 4. init protects default branch and base; `--no-protect` / `protectBranches: false`
    send nothing → `test/protect.test.js::init in a GitHub repository with checks and admin rights protects the default branch and the base`,
    `::init --dry-run prints the protection plan and sends nothing`, `::init --no-protect sends nothing`,
@@ -101,7 +117,8 @@ PATH; nothing reaches GitHub.
 5. ship on a base it cannot protect → no auto-merge, says why; on one it can →
    protects first, then arms → `test/protect.test.js::ship --auto-merge on a base it cannot protect opens the PR without auto-merge and says why`,
    `::ship --auto-merge on a base it can protect protects it first, then arms auto-merge`,
-   `::ship --auto-merge on an already protected base arms auto-merge without writing`
+   `::ship --auto-merge on an already protected base arms auto-merge without writing`,
+   `::ship --auto-merge when the base's protection cannot be read does not arm auto-merge`
 6. doctor warns with the command → `test/protect.test.js::doctor warns with the command to run when autoMergeEpic is on and the base has no required checks`,
    `::doctor says nothing when GitHub cannot be read, or auto-merge is off`
 7. Real check on this repository → the `protect --dry-run` output under Result.
@@ -150,3 +167,24 @@ Verify (one run, on `4ef7b22`): FAILED on one test,
 commit (`protect` listed as a layer module; the layering test passes alone). The
 other ✖ in that run is the existing `todo` test in `weakened-tests.test.js`, not a
 failure. The fixed tree still needs its verify.
+
+Round 1 fix (P1): a check is required only when it is also seen on a
+pull-request commit. `planBranch` reads the head commits of the last 5 pull
+requests into the branch (`gh pr list --base <branch> --state all -L 5 --json
+headRefOid`) and their check runs, and intersects them with the branch's own;
+the rest is printed as "not required (never seen on a pull request)". No pull
+request yet → exit 2, "open one pull request first, so the checks that run on
+pull requests are known", nothing sent (`init` prints it and succeeds). The fake
+gh answers `pr list` from `state.pulls`; the tests above fail on the round-1
+code (4 of them) and pass now. Also tested: a protection read that errors makes
+`ship` leave auto-merge off.
+
+Real check after the fix, read-only (2026-11-25):
+
+```text
+$ ai-flow protect --dry-run --branch main --branch develop
+Branch protection (LandryPouth/coding-flow):
+  main: nothing to change — already requires test (ubuntu-latest, 18.x), test (ubuntu-latest, 20.x), test (ubuntu-latest, 22.x), test (macos-latest, 22.x), test (windows-latest, 22.x)
+  develop: nothing to change — already requires test (ubuntu-latest, 18.x), test (ubuntu-latest, 20.x), test (ubuntu-latest, 22.x), test (macos-latest, 22.x), test (windows-latest, 22.x)
+Dry run — nothing to change.
+```

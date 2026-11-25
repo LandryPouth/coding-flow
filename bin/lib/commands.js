@@ -134,7 +134,7 @@ Daily (you run these):
                Owner: human stories, deferred [~] criteria. Read-only.
   run          Verify a batch of stories (all, one --epic, or one --story) and emit one proof report.
   ship         Commit a dirty tree, push, and open/update one PR to the base (uses gh if available).
-  protect      GitHub: require the CI check runs on the default branch and the base, so auto-merge
+  protect      GitHub: require the CI checks seen on pull requests into the default branch and the base, so auto-merge
                waits for them. Only adds, never weakens; init runs it (--no-protect to skip).
   verify       Re-prove one story: run its declared validation commands and capture the result.
                --story also accepts a Spec Kit feature (specs/<name>); with no --story in a

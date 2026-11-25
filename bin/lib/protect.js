@@ -7,7 +7,11 @@
 //
 // What it does, through `gh api` (classic branch protection only):
 //   - required status checks = the check runs GitHub reports on the branch's
-//     latest commit (read, never guessed), `strict: false`;
+//     latest commit AND on the head commit of a recent pull request into it
+//     (read, never guessed), `strict: false`. A check that runs only on push
+//     (deploy, release, pages) never reports on a pull request: requiring it
+//     would leave every PR pending forever. No pull request yet means the
+//     pull-request checks are unknown, so nothing is protected;
 //   - no reviews, `enforce_admins: false`, no force pushes, no deletion — on a
 //     branch that has no protection yet;
 //   - on a branch that has one, it only ADDS the missing checks: reviews,
@@ -164,6 +168,24 @@ function checkRunNames(root, repo, sha) {
   return { names: [...new Set(data.check_runs.map((run) => run && run.name).filter(Boolean))].sort() };
 }
 
+// The checks GitHub saw on pull requests into this branch: the check runs of
+// the head commit of its most recent pull requests (open, merged or closed).
+// `{ prs: 0 }` when there is none yet.
+function pullRequestCheckNames(root, repo, branch) {
+  const list = gh(root, ["pr", "list", "-R", repo, "--base", branch, "--state", "all", "-L", "5", "--json", "headRefOid"]);
+  const prs = list.ok ? parse(list.stdout) : null;
+  if (!Array.isArray(prs)) return { error: firstLine(list.stderr) || "no answer" };
+
+  const shas = [...new Set(prs.map((pr) => pr && pr.headRefOid).filter(Boolean))];
+  const seen = new Set();
+  for (const sha of shas) {
+    const runs = checkRunNames(root, repo, sha);
+    if (runs.error) return { error: runs.error };
+    runs.names.forEach((name) => seen.add(name));
+  }
+  return { prs: shas.length, names: [...seen].sort() };
+}
+
 function freshProtection(checks) {
   return {
     required_status_checks: { strict: false, checks: checks.map((context) => ({ context })) },
@@ -230,22 +252,45 @@ function planBranch(root, repo, branch) {
   const runs = info.sha ? checkRunNames(root, repo, info.sha) : { names: [] };
   if (runs.error) return blocked(`could not read the check runs of "${branch}" (${runs.error})`, `check \`gh auth status\`, ${NEXT_RUN}`);
 
-  const missing = runs.names.filter((name) => !required.includes(name));
   const base = `repos/${repo}/branches/${encodeURIComponent(branch)}/protection`;
+  const unchanged = (pushOnly = []) => ({ branch, action: "unchanged", required, pushOnly, reason: `already requires ${required.join(", ")}` });
+  const notRequired = runs.names.filter((name) => !required.includes(name));
 
-  if (missing.length === 0 && required.length > 0) {
-    return { branch, action: "unchanged", required, reason: `already requires ${required.join(", ")}` };
-  }
+  if (notRequired.length === 0 && required.length > 0) return unchanged();
 
-  if (missing.length === 0) {
+  if (runs.names.length === 0) {
     return blocked(
       `no check runs on "${branch}"'s latest commit${info.sha ? ` (${info.sha.slice(0, 7)})` : ""} — the project needs CI first; a protection with no required check would not stop a merge`,
       `add CI (\`ai-flow ci init\`), push so it runs on "${branch}", ${NEXT_RUN}`,
     );
   }
 
+  // Only a check that also reports on pull requests can be required: one that
+  // runs on push alone would keep every pull request pending forever.
+  const onPrs = pullRequestCheckNames(root, repo, branch);
+  if (onPrs.error) return blocked(`could not read the pull requests into "${branch}" (${onPrs.error})`, `check \`gh auth status\`, ${NEXT_RUN}`);
+
+  const missing = notRequired.filter((name) => onPrs.names.includes(name));
+  const pushOnly = notRequired.filter((name) => !onPrs.names.includes(name));
+
+  if (missing.length === 0 && required.length > 0) return unchanged(pushOnly);
+
+  if (onPrs.prs === 0) {
+    return blocked(
+      `no pull request into "${branch}" yet — open one pull request first, so the checks that run on pull requests are known`,
+      `open a pull request into "${branch}" and let its checks run, ${NEXT_RUN}`,
+    );
+  }
+
+  if (missing.length === 0) {
+    return blocked(
+      `none of the checks on "${branch}"'s latest commit (${runs.names.join(", ")}) was seen on a pull request into it — requiring them would keep every pull request pending`,
+      `run CI on pull requests (\`on: pull_request\`), open one pull request into "${branch}", ${NEXT_RUN}`,
+    );
+  }
+
   if (!info.protection) {
-    return { branch, action: "protect", required: [], missing, request: { method: "PUT", path: base, body: freshProtection(missing) } };
+    return { branch, action: "protect", required: [], missing, pushOnly, request: { method: "PUT", path: base, body: freshProtection(missing) } };
   }
 
   if (info.protection.required_status_checks) {
@@ -254,11 +299,12 @@ function planBranch(root, repo, branch) {
       action: "add-checks",
       required,
       missing,
+      pushOnly,
       request: { method: "POST", path: `${base}/required_status_checks/contexts`, body: { contexts: missing } },
     };
   }
 
-  return { branch, action: "add-checks", required, missing, request: { method: "PUT", path: base, body: keepAndAddChecks(info.protection, missing) } };
+  return { branch, action: "add-checks", required, missing, pushOnly, request: { method: "PUT", path: base, body: keepAndAddChecks(info.protection, missing) } };
 }
 
 function targetBranches(root, repoInfo, explicit) {
@@ -316,13 +362,14 @@ function runProtect(root, { branches = [], dryRun = false } = {}) {
 
 function describeBranch(entry, dryRun) {
   const will = (text) => (dryRun ? `would ${text}` : text);
+  const left = entry.pushOnly && entry.pushOnly.length ? `; not required (never seen on a pull request): ${entry.pushOnly.join(", ")}` : "";
   if (entry.action === "protect") {
-    return `${entry.branch}: ${will(`${dryRun ? "protect" : "protected"} — requires ${entry.missing.join(", ")}`)} (strict: false, no reviews, enforce_admins: false, no force push, no deletion)`;
+    return `${entry.branch}: ${will(`${dryRun ? "protect" : "protected"} — requires ${entry.missing.join(", ")}`)} (strict: false, no reviews, enforce_admins: false, no force push, no deletion)${left}`;
   }
   if (entry.action === "add-checks") {
-    return `${entry.branch}: ${will(`${dryRun ? "add" : "added"} required check(s) ${entry.missing.join(", ")}`)}; kept ${entry.required.length ? entry.required.join(", ") : "no check"} and every other rule`;
+    return `${entry.branch}: ${will(`${dryRun ? "add" : "added"} required check(s) ${entry.missing.join(", ")}`)}; kept ${entry.required.length ? entry.required.join(", ") : "no check"} and every other rule${left}`;
   }
-  if (entry.action === "unchanged") return `${entry.branch}: nothing to change — ${entry.reason}`;
+  if (entry.action === "unchanged") return `${entry.branch}: nothing to change — ${entry.reason}${left}`;
   if (entry.action === "ruleset") return `${entry.branch}: ${entry.reason}`;
   return `${entry.branch}: not protected — ${entry.reason}`;
 }
