@@ -311,6 +311,30 @@ function defaultHarnessConfig() {
   };
 }
 
+// Story 26-08: the rules a fresh harness.json shows although every reader
+// resolves them without the file (`coverage.js` resolveCoverageFloor,
+// `coverage-gate.js` failsOnContrarySignals). Written only when the file is
+// created; the policy fingerprint leaves a key out while it holds exactly this
+// value, so writing them never makes a recorded proof stale, in any checkout.
+const SHOWN_HARNESS_DEFAULTS = Object.freeze({
+  coverageFloor: Object.freeze({ high: "auto", medium: "evidence", low: "not-required" }),
+  failOnContrarySignals: false,
+});
+
+// What a new harness.json holds: the defaults, with the shown keys placed
+// after `minPatchCoverage`, which they qualify.
+function initialHarnessConfig() {
+  const config = {};
+  for (const [key, value] of Object.entries(defaultHarnessConfig())) {
+    config[key] = value;
+    if (key === "minPatchCoverage") {
+      config.coverageFloor = { ...SHOWN_HARNESS_DEFAULTS.coverageFloor };
+      config.failOnContrarySignals = SHOWN_HARNESS_DEFAULTS.failOnContrarySignals;
+    }
+  }
+  return config;
+}
+
 // The modes `harness init --mode` accepts. Only "strict" tightens anything.
 const HARNESS_MODES = ["fast", "standard", "strict"];
 
@@ -322,9 +346,26 @@ function harnessMode(config) {
   return HARNESS_MODES.includes(mode) ? mode : "standard";
 }
 
+// readJson's fallback for a missing or unparsable file, told apart from a file
+// holding JSON `null`.
+const NOT_READ = Object.freeze({});
+
+// The file's settings: null when it is absent or unparsable; `{}` when it
+// parses to anything but an object (`null`, `[]`, a number) — such a file
+// exists, as `harness init` sees it, and holds no setting.
+function harnessFileSettings(root) {
+  const value = readJson(harnessConfigPath(root), NOT_READ);
+
+  if (value === NOT_READ) {
+    return null;
+  }
+
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
 function readHarnessConfig(root = cwd) {
   const defaults = defaultHarnessConfig();
-  const config = readJson(harnessConfigPath(root), null);
+  const config = harnessFileSettings(root);
 
   if (!config) {
     return { config: defaults, exists: false };
@@ -382,13 +423,59 @@ function readHarnessConfig(root = cwd) {
 // The harness.json defaults are defined here, not in rules-registry.js: the
 // guard loads this file before every tool call and its module graph is a
 // budget (test/guard.test.js). The registry reads them from here (story 26-06).
+// harness.json as a user's file (story 26-08, review round 2): absent; a
+// symbolic link, dangling or not (the user chose to link it); something that is
+// not a regular file (a directory); a file that does not parse; or one that
+// parses (`config` is null when it is not an object). Never mistaken for a
+// missing file, so nothing here is overwritten without the user asking.
+function harnessFileState(file = harnessConfigPath()) {
+  let stat;
+  try {
+    stat = fs.lstatSync(file);
+  } catch {
+    return { kind: "absent" };
+  }
+
+  if (stat.isSymbolicLink()) {
+    return { kind: "symlink", dangling: !fs.existsSync(file) };
+  }
+
+  if (!stat.isFile()) {
+    return { kind: "not-a-file" };
+  }
+
+  try {
+    const value = JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+    return { kind: "parsed", config: value && typeof value === "object" && !Array.isArray(value) ? value : null };
+  } catch (error) {
+    return { kind: "unparsable", error: error.message };
+  }
+}
+
+// What `init` and `upgrade` say about a harness.json they keep but cannot use.
+function harnessFileWarning(shown, state = harnessFileState()) {
+  if (state.kind === "unparsable") {
+    return `${shown} cannot be read (${state.error}); it was kept. Fix it, or run \`ai-flow harness init --force\` to replace it with the defaults.`;
+  }
+
+  if (state.kind === "symlink" && state.dangling) {
+    return `${shown} is a symbolic link to a missing file; it was kept. Fix the link or the file it points to.`;
+  }
+
+  if (state.kind === "not-a-file") {
+    return `${shown} is not a regular file; it was kept. Move it aside, then run \`ai-flow harness init\`.`;
+  }
+
+  return null;
+}
+
 function ensureHarnessConfig({ dryRun = false } = {}) {
-  if (fs.existsSync(harnessConfigPath())) {
+  if (harnessFileState().kind !== "absent") {
     return false;
   }
 
   if (!dryRun) {
-    writeJson(harnessConfigPath(), defaultHarnessConfig());
+    writeJson(harnessConfigPath(), initialHarnessConfig());
     fs.mkdirSync(harnessRunsDir(), { recursive: true });
   }
 
@@ -408,7 +495,11 @@ module.exports = {
   defaultNonBehaviorGlobs,
   defaultPolicyGlobs,
   defaultHarnessConfig,
+  initialHarnessConfig,
+  SHOWN_HARNESS_DEFAULTS,
   EVIDENCE_BLOCKED_PATHS,
   readHarnessConfig,
   ensureHarnessConfig,
+  harnessFileState,
+  harnessFileWarning,
 };

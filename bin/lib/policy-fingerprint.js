@@ -8,7 +8,7 @@
 const crypto = require("crypto");
 
 const { readConfig } = require("./config");
-const { readHarnessConfig } = require("./harness-config");
+const { readHarnessConfig, SHOWN_HARNESS_DEFAULTS } = require("./harness-config");
 const packageJson = require("../../package.json");
 
 // Key order and whitespace must not matter: serialise with sorted keys.
@@ -33,10 +33,24 @@ function majorMinor(version) {
   return String(version || "").split(".").slice(0, 2).join(".");
 }
 
+// Story 26-08: a key a fresh harness.json shows only to make a default visible
+// (`coverageFloor`, `failOnContrarySignals`) is not policy while it holds that
+// default: the readers resolve the same value without it. Leaving it out keeps
+// every proof recorded before the file showed it valid, in every checkout.
+function withoutShownDefaults(harness) {
+  const policy = { ...harness };
+  for (const [key, value] of Object.entries(SHOWN_HARNESS_DEFAULTS)) {
+    if (canonicalJson(policy[key]) === canonicalJson(value)) {
+      delete policy[key];
+    }
+  }
+  return policy;
+}
+
 function policyFingerprint(root, version = packageJson.version) {
   const config = readConfig(root);
   const policy = {
-    harness: readHarnessConfig(root).config,
+    harness: withoutShownDefaults(readHarnessConfig(root).config),
     validation: config.validation || null,
     baseBranch: config.baseBranch || null,
     version: majorMinor(version),

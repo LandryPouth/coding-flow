@@ -144,7 +144,7 @@ test('the land lock and the command runner read the one timeout default', (t) =>
 });
 
 // Story 26-08 (moved from 26-06's criterion 5).
-test('harness init writes coverageFloor and failOnContrarySignals with their defaults', { todo: 'story 26-08: init does not write these keys yet (moved out of 26-06)' }, (t) => {
+test('harness init writes coverageFloor and failOnContrarySignals with their defaults', (t) => {
   const dir = project(t);
   fs.rmSync(path.join(dir, '.coding-flow'), { recursive: true, force: true });
   const res = cli(dir, ['harness', 'init']);
@@ -299,7 +299,7 @@ test('harness init --force on an existing file keeps every proof valid and write
 });
 
 // Story 26-08 (moved from 26-06's criterion 5), with the literal values and the real `init`.
-test('init writes coverageFloor and failOnContrarySignals with the spec values', { todo: 'story 26-08: init does not write these keys yet (moved out of 26-06)' }, (t) => {
+test('init writes coverageFloor and failOnContrarySignals with the spec values', (t) => {
   for (const args of [['init', '--minimal'], ['harness', 'init']]) {
     const dir = project(t);
     fs.rmSync(path.join(dir, '.coding-flow'), { recursive: true, force: true });
@@ -361,7 +361,9 @@ test('init on a project that already has proofs writes no key that would make th
   const res = cli(dir, ['init', '--minimal']);
   assert.equal(res.code, 0, res.out);
   const written = JSON.parse(fs.readFileSync(path.join(dir, '.coding-flow', 'harness.json'), 'utf8'));
-  assert.equal(written.coverageFloor, undefined);
+  // Story 26-08: the keys are written; the fingerprint leaves them out while
+  // they hold their defaults, so the proofs stay valid.
+  assert.deepEqual(written.coverageFloor, { high: 'auto', medium: 'evidence', low: 'not-required' });
   assert.equal(policyFingerprint(dir), before, 'existing proofs stay valid');
 });
 
@@ -460,10 +462,15 @@ test('init in a linked worktree sees the proofs recorded in the primary checkout
   fs.writeFileSync(path.join(primary, '.coding-flow', 'runs', '2026-11-01T00-00-00-000Z-verify.json'), '{}');
   const linked = linkedWorktree(t, primary);
 
+  const { policyFingerprint } = require('../bin/lib/policy-fingerprint');
+  const before = policyFingerprint(linked);
   const res = cli(linked, ['harness', 'init']);
   assert.equal(res.code, 0, res.out);
   const written = JSON.parse(fs.readFileSync(path.join(linked, '.coding-flow', 'harness.json'), 'utf8'));
-  assert.equal(written.coverageFloor, undefined, 'the plain defaults keep the recorded proofs valid');
+  // Story 26-08: the keys are written, and the primary's recorded proofs keep
+  // their fingerprint (test/init-rules-fingerprint.test.js merges the file back).
+  assert.equal(written.failOnContrarySignals, false);
+  assert.equal(policyFingerprint(linked), before, 'the recorded proofs stay valid');
 });
 
 // Review round 4: what the gates read at the diff base is part of the value in
