@@ -968,7 +968,7 @@ process.exit(result.status === null ? 1 : result.status);
     fs.symlinkSync(fake, path.join(bin, 'git'));
   }
   process.env.PATH = `${bin}${path.delimiter}${saved.PATH}`;
-  t.after(() => {
+  const restore = () => {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) {
         delete process.env[key];
@@ -976,8 +976,33 @@ process.exit(result.status === null ? 1 : result.status);
         process.env[key] = value;
       }
     }
-  });
+  };
+  t.after(restore);
+  // The preload must not outlive the call that needs it: any node this process
+  // starts meanwhile would load the fake.
+  return { stopPreload: () => {
+    process.env.NODE_OPTIONS = saved.NODE_OPTIONS;
+    if (saved.NODE_OPTIONS === undefined) delete process.env.NODE_OPTIONS;
+  } };
 }
+
+// 29-05 round 1: a `find` start written from `~` is the same directory as a `rm` operand
+// written from `~`; it was resolved as a literal `~` directory and let through.
+test('find START -delete reaches the policy file through ~, as rm does', (t) => {
+  const dir = repo(t);
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = path.dirname(dir);
+  process.env.USERPROFILE = path.dirname(dir);
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const fromHome = `~/${path.basename(dir)}`;
+  expectAll(dir, 'deny', [`rm ${fromHome}/.coding-flow/harness.json`, `find ${fromHome}/.coding-flow -delete`, `find ${fromHome} -name harness.json -delete`]);
+  expectAll(dir, 'allow', [`find ${fromHome}/src -name harness.json -delete`]);
+});
 
 test('S3-1: git missing from the guard PATH makes a git check unchecked, never allowed', (t) => {
   const dir = repo(t, { worktrees: { primaryLocked: true } });
@@ -995,11 +1020,13 @@ test('S3-1: git missing from the guard PATH makes a git check unchecked, never a
 
 test('S3-2: after one git timeout, the other git lookups of the same decision are skipped', (t) => {
   const dir = repo(t);
-  fakeGit(t, 'config --get');
+  const fake = fakeGit(t, 'config --get');
   const started = Date.now();
   const result = run(dir, 'git aa; git bb; git cc; git dd');
   const took = Date.now() - started;
+  fake.stopPreload();
   assert.equal(result.decision, 'unchecked');
+  assert.match(result.reason, /did not answer in time/);
   assert.ok(took < 4500, `one timeout, not four: ${took} ms`);
   // The budget is per decision: with a git that answers, the next one looks up again.
   process.env.PATH = process.env.PATH.split(path.delimiter).slice(1).join(path.delimiter);

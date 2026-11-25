@@ -44,8 +44,7 @@ const FAILING_FIXER = node('process.exit(4)');
 
 function project(t, validation, { gitRepo = true } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-fixers-')));
-  // Windows releases a killed process's files a moment after it dies (EBUSY).
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 }));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   run(dir, ['init']);
   fs.mkdirSync(path.join(dir, 'src'));
   fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'const x=1\n');
@@ -277,11 +276,20 @@ test('outside git the fixer still runs first, and the changed files are unknown,
 });
 
 test('a fixer with its own time limit is killed at it, like any declared command', (t) => {
-  const dir = project(t, { fix: [{ command: node('setTimeout(()=>{},5000)'), timeoutMs: 300 }], commands: [node('0')] });
+  // The fixer writes a marker 2 s in and lives 20 s. Where the whole tree is
+  // killed (Windows, story 29-05), the marker never appears and the project
+  // directory is free at once: the cleanup above has no retries.
+  const late = node("setTimeout(()=>require('fs').writeFileSync('late.txt','x'),2000);setTimeout(()=>{},20000)");
+  const dir = project(t, { fix: [{ command: late, timeoutMs: 300 }], commands: [node('0')] });
+  const started = Date.now();
   const evidence = JSON.parse(verify(dir).output);
   const fixer = evidence.results.find((r) => r.kind === 'fix');
   assert.equal(fixer.timedOut, true);
   assert.equal(evidence.ok, false);
+  if (process.platform === 'win32') {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, started + 3500 - Date.now()));
+    assert.equal(fs.existsSync(path.join(dir, 'late.txt')), false, 'the fixer outlived its time limit');
+  }
 });
 
 test('--dry-run lists the fixers and runs none', (t) => {

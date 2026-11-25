@@ -317,19 +317,57 @@ function isUnattended() {
 // On POSIX the shell's children outlive it too, reparented: reaching them needs
 // the command in its own process group, which would also keep a Ctrl-C from
 // reaching them — that trade is story 19-04's (`--detach`, process groups).
-const KILL_DESCENDANTS =
-  "function K($p){Get-CimInstance Win32_Process -Filter \"ParentProcessId=$p\" | ForEach-Object {K $_.ProcessId; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}}; K ";
+//
+// Windows never updates a process's parent id and reuses ids, so "names it as
+// parent" alone could kill an unrelated orphan whose dead parent once had that
+// id. A descendant must therefore have been created after the command started
+// and after its own parent, and before any live process now holding the
+// command's id; every id is visited once, so a reused-id cycle ends.
+const LIST_PROCESSES =
+  "Get-CimInstance Win32_Process | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } }";
 
-function killTree(pid, platform = process.platform, run = spawnSync) {
+function parseProcessList(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/).map(Number))
+    .filter((fields) => fields.length === 3 && fields.every(Number.isFinite))
+    .map(([pid, parentPid, created]) => ({ pid, parentPid, created }));
+}
+
+function descendantsOf(processes, rootPid, started) {
+  const impostor = processes.find((entry) => entry.pid === rootPid);
+  const found = [];
+  const seen = new Set([rootPid]);
+  const queue = [{ pid: rootPid, created: started, before: impostor ? impostor.created : Infinity }];
+  while (queue.length > 0) {
+    const parent = queue.shift();
+    for (const entry of processes) {
+      const ownChild = entry.parentPid === parent.pid && entry.created >= started && entry.created >= parent.created && entry.created < parent.before;
+      if (ownChild && !seen.has(entry.pid)) {
+        seen.add(entry.pid);
+        found.push(entry.pid);
+        queue.push({ pid: entry.pid, created: entry.created, before: Infinity });
+      }
+    }
+  }
+  return found;
+}
+
+function killTree(pid, started, platform = process.platform, run = spawnSync) {
   if (platform !== "win32" || !Number.isInteger(pid) || pid <= 0) {
-    return false;
+    return [];
   }
   try {
-    run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `${KILL_DESCENDANTS}${pid}`], { stdio: "ignore", windowsHide: true, timeout: 15000 });
+    const listed = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", LIST_PROCESSES], { encoding: "utf8", windowsHide: true, timeout: 15000, maxBuffer: 16 * 1024 * 1024 });
+    const pids = descendantsOf(parseProcessList(listed && listed.stdout), pid, started);
+    if (pids.length > 0) {
+      run("taskkill", ["/F", ...pids.flatMap((each) => ["/PID", String(each)])], { stdio: "ignore", windowsHide: true, timeout: 15000 });
+    }
+    return pids;
   } catch {
     // No PowerShell: the timeout is still reported; the leftovers are not killed.
+    return [];
   }
-  return true;
 }
 
 function runValidationCommand(
@@ -349,10 +387,10 @@ function runValidationCommand(
 
   const cap = 4000;
   const timedOut = Boolean(result.error && result.error.code === "ETIMEDOUT");
-  if (timedOut) {
-    killTree(result.pid);
-  }
   const overflowed = Boolean(result.error && result.error.code === "ENOBUFS");
+  if (timedOut || overflowed) {
+    killTree(result.pid, started);
+  }
   const exitCode = result.status != null ? result.status : timedOut ? 124 : result.error ? 127 : 1;
 
   // `toolError` says "the harness could not observe this command", which is not
@@ -557,6 +595,8 @@ function captureEnvironment() {
 module.exports = {
   resolveStoryDir,
   killTree,
+  descendantsOf,
+  parseProcessList,
   parseTestsCommands,
   resolveValidationCommands,
   resolveCheckCommands,

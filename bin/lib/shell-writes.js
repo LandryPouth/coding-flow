@@ -77,12 +77,12 @@ function classify(token) {
   return "path";
 }
 
-function expandHome(target, home) {
+function expandHome(target, home, platform = process.platform) {
   if (target === "~" || target.startsWith("~/")) {
     return path.join(home, target.slice(1));
   }
   const match = HOME_PREFIX.exec(target);
-  return match ? path.join(home, target.slice(match[0].length)) : nativeShellPath(target);
+  return match ? path.join(home, target.slice(match[0].length)) : nativeShellPath(target, platform);
 }
 
 // The path a shell word names, in the platform's own form. On Windows the agent's
@@ -264,7 +264,7 @@ function reader(startCwd, host, options = {}) {
   return { host, startCwd, start, cwd: start, found: [], seen: new Set(), stack: [], trees: Boolean(options.trees), segments: options.after || 0, acted: options.after || 0, substitutes: Boolean(options.substitutes), platform: options.platform || process.platform };
 }
 
-const homeOf = (r, target) => expandHome(target, r.host.home());
+const homeOf = (r, target) => expandHome(target, r.host.home(), r.platform);
 
 function add(r, word, kind, extra = {}) {
   const token = reduceWord(word);
