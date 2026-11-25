@@ -87,23 +87,25 @@ function classifyLine(line, state) {
     return { kind: "code", info: state.fence.info };
   }
 
-  const opener = fenceOpener(line);
-  if (opener) {
-    state.fence = opener;
-    state.prevBlank = false;
-    return { kind: "fence" };
-  }
-
   if (line.trim() === "") {
     state.prevBlank = true;
     return { kind: "prose" };
   }
 
+  // Indented code first: a ``` inside it is text, not a fence (outside a list).
   const indent = leadingWidth(line);
   if (!state.inList && indent >= 4 && (state.prevBlank || state.prevIndented)) {
     state.prevIndented = true;
     state.prevBlank = false;
     return { kind: "code", info: "" };
+  }
+
+  const opener = fenceOpener(line);
+  if (opener) {
+    state.fence = opener;
+    state.prevBlank = false;
+    state.prevIndented = false;
+    return { kind: "fence" };
   }
 
   state.prevIndented = false;

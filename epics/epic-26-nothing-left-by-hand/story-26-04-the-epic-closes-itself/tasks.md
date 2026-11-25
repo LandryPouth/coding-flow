@@ -3,6 +3,11 @@
 - [ ] Closer role, allowed paths, closure commit.
 - [ ] Base queue for every epic land; park on red.
 - [ ] Cleanup: worktrees, branches, servers, registry.
+- [ ] Note from 26-03 (review round 1): `ai-flow docs check` exits 0 clean,
+      1 on findings, 2 when it cannot run as asked; `--changed <base>` reads a
+      doc only when it names a changed path, so a changed doc whose new link
+      points nowhere is skipped — run it without `--changed` at closure, or
+      pass the changed docs as paths.
 - [ ] Run `npm test`, then `ai-flow verify --story <this story>`, the review
       the mode requires, and add a CHANGELOG entry.
 

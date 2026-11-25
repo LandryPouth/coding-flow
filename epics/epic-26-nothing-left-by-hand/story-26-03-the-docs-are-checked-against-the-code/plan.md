@@ -35,15 +35,21 @@
   checkable at all.
 - **D4 — Generated output is not stale.** A missing path git ignores (asked in
   one `git check-ignore --stdin` call after the scan, as a file and as a
-  folder) or that the project's own non-Markdown files name (code, config,
-  tests: it writes, reads or installs it — matched as a whole path, not inside
-  a longer name) is skipped. Limit, accepted: a test string that still names an
-  old path hides it.
-- **D5 — Suggestions are evidence first.** A rename git recorded (staged, then
-  history, followed to a file that exists) wins; then a moved file whose base
-  name is unique in the repository; then an edit distance of one in seven
-  characters (a typo). On this repository no finding gets a suggestion, and
-  none is wrong. `doctor` asks for no suggestion (count only).
+  folder) is skipped, and so is one the project's **tracked code or config**
+  names as a whole path (an allowlist of code and config extensions plus
+  `Dockerfile`, `Makefile`…): it writes, reads or installs it. Never
+  `.coding-flow/**` (every verify record lists changed and deleted files),
+  notes, changelogs or untracked files — review round 1 found run records
+  hiding 68 of 200 deleted paths on bethl. Limit, accepted: a code or test
+  string that still names an old path hides it.
+- **D5 — Suggestions are evidence first.** One `git log -M --diff-filter=RD`
+  (after `git diff HEAD` for uncommitted changes) gives each path's latest
+  event: a rename is followed to a path that exists; a deletion gives
+  `deleted in <sha>` and **no** look-alike. Otherwise the one same-named file
+  elsewhere (a move), else an edit distance of one in seven characters among
+  the folder's entries and the path's namesakes (an index by base name and by
+  folder, not the whole tree: 900 findings over 30 000 files in 4.7 s under a
+  load of ~20). `doctor` asks for no suggestion (count only).
 - **D6 — One Markdown reader, linear.** `bin/lib/docs-markdown.js`: fences
   open at any indent (inside list items too) on three or more `` ` `` or `~`;
   indented code only outside a list and after a blank line; HTML comments
@@ -53,8 +59,10 @@
   Story 26-02's `todo.js` has its own scanner and had not landed when this
   story started: two readers of one concept, unified at the third (rule of
   three), noted for that story.
-- **D7 — Exit 1 when anything is reported**, so 26-04's closure and CI can use
-  it; `doctor` only warns (`docs_stale`), never fails.
+- **D7 — Exit 0 clean, 1 findings, 2 when it cannot run as asked** (usage, an
+  unreadable base, no doc under the paths given, a read error), so 26-04's
+  closure and CI can tell "stale" from "broken"; noted in 26-04's tasks.
+  `doctor` only warns (`docs_stale`), never fails.
 - **D8 — `--changed <base>`**: the docs that name a path (a judged or skipped
   path span, or a link target) changed since base — committed, staged,
   unstaged or new (`git diff --name-only --no-renames <base>` plus untracked).
@@ -63,6 +71,20 @@
   `ignorePaths`, story 26-06's registry), and `ai-flow rules` prints them
   through `docsCheckSettings`, the reader the command uses. An empty or invalid
   list reads as unset.
+
+- **D10 — A script call is checked in the package it runs in.** `-w` /
+  `--workspace` (before or after `run`, for npm; pnpm hands flags after the
+  name to the script) by package name or path, `--filter`, `--prefix` / `-C`
+  / `--dir`, and a `cd <dir>` earlier on the line or in the same code block
+  (read from the root; reset at each block). A `cd` out of the repository or
+  to a variable, or a call on every package (`-r`, `--workspaces`), is not
+  judged.
+- **D11 — Placeholders are upper-case words only** (`N`, `NN`, `X`, `YYYY`,
+  `MM`, `DD` between `/ . - _`): `epic-NN-name` is a pattern, `src/x-name.js`
+  and `lib/slug.ts` are files. `path#anchor` / `path#L10` and a trailing `/`
+  on a file are read as the path. Inside an indented code block (outside a
+  list) a ``` is text, not a fence.
+
 
 ## Test Plan
 
@@ -78,3 +100,14 @@ placeholders and URLs; `--changed`.
 ```bash
 npm test
 ```
+
+## Review round 1 (FAIL, 1 P1)
+
+- P1 the code corpus counted `.coding-flow/runs/*.json` and any non-Markdown
+  file → D4 (tracked code and config only); test "a stale path named only in
+  a run record or a notes file is still reported".
+- P2s fixed with a failing test first: script location (D10), `#fragment`,
+  placeholder words and the trailing slash (D11), deleted paths and the
+  suggestion index (D5), exit codes (D7), an indented ``` (D11). The
+  `--changed` gap (a changed doc whose new link points nowhere) is kept as
+  specified and noted in 26-04's tasks and in docs/rules-and-limits.md.

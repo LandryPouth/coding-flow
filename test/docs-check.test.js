@@ -330,3 +330,118 @@ test('a 10 KB adversarial line is read in linear time', (t) => {
   assert.ok(res.code === 0 || res.code === 1, res.out);
   assert.ok(elapsed < 5000, `took ${elapsed} ms`);
 });
+
+// Review round 1, P1: only the project's tracked code and config hide a path —
+// never a run record (every verify lists changed and deleted files) nor a notes file.
+test('a stale path named only in a run record or a notes file is still reported', (t) => {
+  const dir = repo(t, {
+    'src/old.js': 'module.exports = 1;\n',
+    'docs/guide.md': 'See `src/old.js`.\n',
+  });
+  git(dir, ['mv', 'src/old.js', 'src/new.js']);
+  git(dir, ['commit', '-q', '-m', 'rename']);
+  write(dir, {
+    'CHANGES.txt': 'renamed src/old.js\n',
+    'NEWS': 'src/old.js moved\n',
+    '.coding-flow/runs/v-verify.json': '{"changedFiles":["src/old.js","src/new.js"]}\n',
+    '.coding-flow/config.json': '{"note":"src/old.js"}\n',
+  });
+  git(dir, ['add', 'CHANGES.txt', 'NEWS', '.coding-flow/config.json']);
+  git(dir, ['commit', '-q', '-m', 'notes']);
+  write(dir, { 'src/draft.js': '// src/old.js\n' });
+  assert.deepEqual(brief(check(dir).findings), ['docs/guide.md:1 path src/old.js -> src/new.js']);
+});
+
+// Review round 1, P2: where a script call runs.
+test('a script call resolves against the package it runs in: cd, -w and --workspace', (t) => {
+  const dir = repo(t, {
+    'package.json': JSON.stringify({ name: 'root', scripts: { test: 'x' } }),
+    'apps/web/package.json': JSON.stringify({ name: 'web', scripts: { dev: 'x' } }),
+    'packages/ui/package.json': JSON.stringify({ name: '@x/ui', scripts: { build: 'x' } }),
+    'docs/run.md': [
+      '```bash',
+      'cd apps/web && npm run dev',
+      'npm run build',
+      '```',
+      '',
+      '```bash',
+      'cd apps/web',
+      'npm run dev',
+      '```',
+      '',
+      '```bash',
+      'npm run dev',
+      'npm run build --workspace=@x/ui',
+      'npm run build -w packages/ui',
+      'npm run lint -w @x/ui',
+      'cd ../elsewhere && npm run anything',
+      'npm run anything --workspaces',
+      '```',
+      '',
+    ].join('\n'),
+  });
+  assert.deepEqual(brief(check(dir).findings), [
+    'docs/run.md:3 script build',
+    'docs/run.md:12 script dev',
+    'docs/run.md:15 script @x/ui: lint',
+  ]);
+});
+
+// Review round 1, P2: `path#anchor` and `path#L10` are the path; real names
+// holding a placeholder word are judged; a trailing slash on a file is the file.
+test('a path with #fragment is judged by its path; real names with placeholder words are judged', (t) => {
+  const dir = repo(t, {
+    'src/a.js': '\n',
+    'lib/keep.ts': '\n',
+    'epics/.keep': '',
+    'docs/guide.md': [
+      '`docs/gone.md#setup`, `src/gone.js#L10`, `src/a.js#L1`, `src/a.js/`,',
+      '`src/x-name.js`, `lib/slug.ts`, `epics/epic-NN-name/spec.md`, `src/YYYY-MM-DD.log`.',
+      '',
+    ].join('\n'),
+  });
+  assert.deepEqual(brief(check(dir).findings), [
+    'docs/guide.md:1 path docs/gone.md',
+    'docs/guide.md:1 path src/gone.js',
+    'docs/guide.md:2 path src/x-name.js',
+    'docs/guide.md:2 path lib/slug.ts',
+  ]);
+});
+
+// Review round 1, P2: a deleted file gets no look-alike, it gets its deletion.
+test('a path deleted in history is reported as deleted, with no suggestion', (t) => {
+  const dir = repo(t, {
+    'src/dead.js': 'module.exports = 1;\n',
+    'src/deal.js': 'module.exports = 2;\n',
+    'docs/a.md': 'See `src/dead.js`.\n',
+  });
+  git(dir, ['rm', '-q', 'src/dead.js']);
+  git(dir, ['commit', '-q', '-m', 'drop dead']);
+  const sha = git(dir, ['rev-parse', '--short', 'HEAD']).trim();
+  const result = check(dir);
+  assert.deepEqual(brief(result.findings), ['docs/a.md:1 path src/dead.js']);
+  assert.equal(result.findings[0].deleted, sha);
+  assert.match(cli(dir, ['docs', 'check']).out, new RegExp(`deleted in ${sha}`));
+});
+
+// Review round 1, P2: 0 clean, 1 findings, 2 a usage or input error.
+test('exit codes: 0 clean, 1 findings, 2 for a usage error or an unreadable base', (t) => {
+  const dir = repo(t, { 'docs/a.md': 'Fine.\n' });
+  assert.equal(cli(dir, ['docs', 'check']).code, 0);
+  assert.equal(cli(dir, ['docs', 'check', '--jsn']).code, 2);
+  assert.equal(cli(dir, ['docs']).code, 2);
+  assert.equal(cli(dir, ['docs', 'check', '--changed']).code, 2);
+  assert.equal(cli(dir, ['docs', 'check', '--changed', 'no-such-ref']).code, 2);
+  assert.equal(cli(dir, ['docs', 'check', 'nowhere/']).code, 2);
+  write(dir, { 'docs/a.md': '`docs/b.md`\n' });
+  assert.equal(cli(dir, ['docs', 'check']).code, 1);
+});
+
+// Review round 1, P2: inside an indented code block, ``` is text, not a fence.
+test('a fence marker inside an indented code block does not open a fence', (t) => {
+  const dir = repo(t, {
+    'src/.keep': '',
+    'docs/a.md': 'Para.\n\n    ```\n    `src/in-code.js`\n\nThen `src/after.js`.\n',
+  });
+  assert.deepEqual(brief(check(dir).findings), ['docs/a.md:6 path src/after.js']);
+});

@@ -15,7 +15,7 @@ and the three `docs.check.*` keys in the rules registry (printed by `ai-flow rul
 Decisions D1–D9 in plan.md; skips and limits in the `ai-flow docs check` row of
 `docs/rules-and-limits.md`. No doc was changed by this story.
 
-### Run on this repository (36 docs, 31 findings, no suggestion offered)
+### Run on this repository (36 docs, 33 findings, no look-alike offered)
 
 Judged one by one. Before the skip rules D2–D5 the same run gave 94 findings,
 63 of them paths of the projects Coding Flow installs into (`.claude/skills/`,
@@ -31,13 +31,19 @@ Judged one by one. Before the skip rules D2–D5 the same run gave 94 findings,
   `:657` (`epics/archive/`, refused); `docs/plans/autonomous-factory.md:80`,
   `:158`, `:166`, `:253`, `docs/plans/orchestration.md:48`,
   `docs/plans/multi-agent-install.md:165`, `:207`, `:259`;
-  `docs/rules-and-limits.md:196`, `:292` (Part 2, planned).
+  `docs/rules-and-limits.md:197`, `:292` (Part 2, planned).
 - **Paths of an installed project (4)** — `README.md:139`
   (`.opencode/command/coding-flow/`, the pre-0.11 layout an upgrade moves),
   `README.md:241` (`docs/recovery/map.md`, written by `/flow-recover`), and the
   `flow:doctor` / `flow:verify` scripts `init` adds to a project's package.json
   (`README.md:384`, `docs/plans/brownfield-honesty.md:176`).
-- **Research notes (6)** — `docs/research/**`, quoting other projects.
+- **Quoted output (1)** — `docs/DOGFOODING.md:84` quotes an error naming a
+  test's throwaway path (`epics/epic-x/story-x-02-b`): judged since round 1
+  (lower-case placeholder words are names now).
+- **Research notes (7)** — `docs/research/**`, quoting other projects.
+
+Three findings now say `deleted in <sha>` (`README.md:90`, `DOGFOODING.md:99`,
+`multi-agent-install.md:207`); none gets a look-alike.
 
 Follow-up (not in this story): fix the 9 archived-epic references, and give
 this repository a `docs.check` config — `exclude: ["docs/research/**"]` and an
