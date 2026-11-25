@@ -1162,7 +1162,7 @@ const destructiveHost = {
   gitAlias: (cwd, name, { local = false } = {}) => {
     const { out, issue, status } = gitNow(cwd, ["config", ...(local ? ["--local"] : []), "--get", `alias.${name}`]);
     if (issue || (out === null && status !== 1)) {
-      return { issue: issue || "git did not answer for the alias" };
+      return { issue: issue || (fs.existsSync(cwd) ? "git did not answer for the alias" : "the directory git would run in does not exist") };
     }
     return { value: out === null ? null : out.replace(/\r?\n$/, "") };
   },
@@ -1591,11 +1591,7 @@ function strictestReading(command, ctx, issues) {
   if (judged.deny) {
     return { reading: frozen, destructive: judged }; // refused as 29-03 refused it: the new reader adds nothing
   }
-  const resolvedAliases = [];
-  const added = readDestructiveSafely("added", command, ctx, issues, { deadline: started + NEW_READER_BUDGET_MS, resolvedAliases });
-  if (ctx.scopes[0].policy.destructiveCommands !== "off") {
-    keepUnresolved(issues, aliases, resolvedAliases);
-  }
+  const added = readDestructiveSafely("added", command, ctx, issues, { deadline: started + NEW_READER_BUDGET_MS });
   const extra = judgeDestructive({ ...ctx, issues }, added, started + NEW_READER_BUDGET_MS);
   keepCauses(issues);
   return {
@@ -1605,21 +1601,9 @@ function strictestReading(command, ctx, issues) {
 }
 
 // 29-03's reader does not map a Git Bash drive path (`git -C /c/…/repo st`): it finds
-// no repository and calls the alias unresolved. That reason is kept unless the new
-// reader resolved the same command (`git st …`), one resolution per occurrence.
+// no repository and calls the alias unresolved. That reason is left to the new reader,
+// which maps the path and reports the same alias unresolved whenever it truly is.
 const FROZEN_ALIAS_UNREAD = "a git alias the guard could not resolve";
-
-function keepUnresolved(issues, aliases, resolved) {
-  const left = [...resolved];
-  for (const entry of aliases) {
-    const at = left.indexOf(entry.command);
-    if (at !== -1) {
-      left.splice(at, 1);
-    } else if (!issues.includes(entry.reason)) {
-      issues.push(entry.reason);
-    }
-  }
-}
 
 // The frozen reader words some unchecked reasons bare ("a git alias the guard could
 // not resolve") where the new one adds the host's cause ("…: git did not answer in

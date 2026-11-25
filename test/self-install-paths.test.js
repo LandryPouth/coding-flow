@@ -11,7 +11,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+// `module.register` exists from Node 18.19 / 20.6; an older Node skips the loader test, saying why.
 const { register } = require('node:module');
+const NO_REGISTER = typeof register !== 'function' && `module.register is missing from Node ${process.version} (it needs 18.19 or 20.6+)`;
 
 const ROOT = path.join(__dirname, '..');
 const { pluginSource } = require('../bin/lib/opencode');
@@ -52,7 +54,7 @@ test('the tracked plugin is exactly what this checkout would generate', () => {
 
 // The tracked copy itself, loaded as OpenCode loads it: it runs this checkout's
 // guard in-process and passes on the guard's own unchecked line, next step included.
-test('the tracked plugin tells the agent to ask the human about a command it could not prove', async (t) => {
+test('the tracked plugin tells the agent to ask the human about a command it could not prove', { skip: NO_REGISTER }, async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-selfinstall-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const init = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'ai-flow.js'), 'init'], { cwd: dir, encoding: 'utf8' });

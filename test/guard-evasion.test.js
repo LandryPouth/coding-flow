@@ -1223,3 +1223,25 @@ test('series 4 round 3: on Windows, a git alias in a repository named by a Git B
     expectAll(root, 'unchecked', ['git -C /c/Users/x/nowhere st', 'cd /c/Users/x/nowhere && git st']);
   });
 });
+
+// Series 4 round 4 (P1): with destructiveCommands off, an alias no reader resolves
+// is not the guard's business: nothing is reported unchecked for it.
+test('series 4 round 4: destructiveCommands off, an unresolved git alias is allowed (Linux)', (t) => {
+  const dir = repo(t, { destructiveCommands: 'off' });
+  expectAll(dir, 'allow', ['git -C "$D" st', 'git -C ./nowhere st', 'cd "$D" && git st']);
+});
+
+test('series 4 round 4: destructiveCommands off, an unresolved git alias on a Git Bash path is allowed (Windows)', { skip: process.platform === 'win32' && 'the /c/ mapping onto a throwaway directory is a POSIX test' }, (t) => {
+  const root = repo(t, { destructiveCommands: 'off' });
+  asOnWindows(() => {
+    expectAll(root, 'allow', ['git -C /c/Users/x/nowhere st', 'cd /c/Users/x/nowhere && git st']);
+  });
+});
+
+test('series 4 round 4: an alias in a directory that does not exist says so, not that git did not answer', (t) => {
+  const dir = repo(t);
+  const result = run(dir, 'git -C ./nowhere st');
+  assert.equal(result.decision, 'unchecked');
+  assert.match(result.reason, /the directory git would run in does not exist/);
+  assert.doesNotMatch(result.reason, /did not answer/);
+});
