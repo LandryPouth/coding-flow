@@ -347,10 +347,12 @@ ai-flow protect --branch develop   # require the CI checks develop and its pull 
 
 `protect` requires the check runs GitHub reports both on the branch's latest
 commit and on the head commit of every one of the last 5 pull requests into it
-that had checks (`strict: false`, no reviews, no force push, no deletion): a check
-that runs only on push (deploy, release, pages), or only on some pull requests (a
-`paths:` filter, forks only), would keep a pull request pending forever, so it is
-never required. No pull
+(`strict: false`, no reviews, no force push, no deletion): a check that runs only
+on push (deploy, release, pages), or only on some pull requests (forks only, a
+`paths:` filter on one workflow), would keep a pull request pending forever, so it
+is never required. When one of those pull requests ran no checks at all (a
+`paths:` filter on the whole CI), nothing is protected on that branch and it exits
+2: "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever". No pull
 request into the branch yet: nothing is sent — open one first. It only adds: an
 existing protection keeps its reviews, restrictions and checks, and a second run
 sends nothing. No CI yet, no pull request yet, no `gh`, or no admin rights: nothing is sent, the reason

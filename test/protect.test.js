@@ -194,6 +194,65 @@ test("a protection with no required checks is rebuilt keeping its reviews and re
   assert.equal(body.required_linear_history, true);
 });
 
+// Review round 3, P1: every rule of an existing protection with no required
+// checks survives the rebuild, each set to its non-default value.
+test("a protection with no required checks keeps every rule, each non-default, when the checks are added", { skip }, (t) => {
+  const who = (login, slug) => ({ users: [{ login }], teams: [{ slug }], apps: [{ slug: `${slug}-app` }] });
+  const sb = sandbox(t, unprotected({
+    branches: {
+      main: {
+        sha: "a".repeat(40),
+        checkRuns: THREE,
+        protection: {
+          required_pull_request_reviews: {
+            dismiss_stale_reviews: true,
+            require_code_owner_reviews: true,
+            required_approving_review_count: 4,
+            require_last_push_approval: true,
+            dismissal_restrictions: who("ana", "core"),
+            bypass_pull_request_allowances: who("cy", "release"),
+          },
+          restrictions: who("bo", "ops"),
+          enforce_admins: { enabled: true },
+          required_linear_history: { enabled: true },
+          allow_force_pushes: { enabled: true },
+          allow_deletions: { enabled: true },
+          block_creations: { enabled: true },
+          required_conversation_resolution: { enabled: true },
+          lock_branch: { enabled: true },
+          allow_fork_syncing: { enabled: true },
+        },
+      },
+    },
+  }));
+  const res = cli(sb, ["protect"]);
+
+  assert.equal(res.code, 0, res.out);
+  const writes = sb.writes();
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].args.slice(0, 4), ["api", "-X", "PUT", "repos/acme/app/branches/main/protection"]);
+  assert.deepEqual(writes[0].body, {
+    required_status_checks: { strict: false, checks: THREE.map((context) => ({ context })) },
+    enforce_admins: true,
+    required_pull_request_reviews: {
+      dismiss_stale_reviews: true,
+      require_code_owner_reviews: true,
+      required_approving_review_count: 4,
+      require_last_push_approval: true,
+      dismissal_restrictions: { users: ["ana"], teams: ["core"], apps: ["core-app"] },
+      bypass_pull_request_allowances: { users: ["cy"], teams: ["release"], apps: ["release-app"] },
+    },
+    restrictions: { users: ["bo"], teams: ["ops"], apps: ["ops-app"] },
+    required_linear_history: true,
+    allow_force_pushes: true,
+    allow_deletions: true,
+    block_creations: true,
+    required_conversation_resolution: true,
+    lock_branch: true,
+    allow_fork_syncing: true,
+  });
+});
+
 test("a ruleset-governed branch is reported and left alone", { skip }, (t) => {
   const sb = sandbox(t, unprotected({
     branches: { main: { sha: "c".repeat(40), checkRuns: THREE, protection: null, rules: [{ type: "deletion", ruleset_id: 1 }] } },
@@ -303,7 +362,6 @@ test("a check seen on only some recent pull requests is not required; one seen o
       { base: "main", headRefOid: "9".repeat(40), checkRuns: ["test"] },
       { base: "main", headRefOid: "8".repeat(40), checkRuns: ["api-tests", "test"] },
       { base: "main", headRefOid: "6".repeat(40), checkRuns: ["test"] },
-      { base: "main", headRefOid: "5".repeat(40), checkRuns: [] },
     ],
   }));
   const res = cli(sb, ["protect"]);
@@ -331,6 +389,34 @@ test("no check ran on every recent pull request: protect exits 2 and sends nothi
   assert.equal(res.code, 2, res.out);
   assert.match(res.out, /ran on every recent pull request into it/);
   assert.doesNotMatch(res.out, /nothing to change/);
+  assert.equal(sb.writes().length, 0);
+});
+
+// Review round 3, P1: a CI whose only workflow has a `paths:` filter runs no
+// check at all on a docs-only pull request; any required check would keep that
+// pull request pending forever. Safe side: nothing is protected on the branch.
+test("a recent pull request that ran no checks: protect protects nothing, exits 2, and says why", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({
+    branches: { main: { sha: "a".repeat(40), checkRuns: ["build", "test"], protection: null } },
+    pulls: [
+      { base: "main", headRefOid: "9".repeat(40), checkRuns: ["build", "test"] },
+      { base: "main", headRefOid: "8".repeat(40), checkRuns: [] },
+    ],
+  }));
+
+  for (const args of [["protect", "--dry-run"], ["protect"]]) {
+    const res = cli(sb, args);
+    assert.equal(res.code, 2, res.out);
+    assert.match(res.out, /main: not protected — a recent pull request ran no checks \(a `paths:` filter\?\) — requiring checks would block such pull requests forever/);
+    assert.match(res.out, /Next: /);
+    assert.doesNotMatch(res.out, /nothing to change/);
+  }
+  assert.equal(sb.writes().length, 0);
+  assert.equal(sb.state().branches.main.protection, null);
+
+  const init = cli(sb, ["init"]);
+  assert.equal(init.code, 0, init.out);
+  assert.match(init.out, /a recent pull request ran no checks/);
   assert.equal(sb.writes().length, 0);
 });
 
@@ -418,7 +504,7 @@ test("init with protectBranches false sends nothing", { skip }, (t) => {
 });
 
 // Criterion 5: a story branch whose epic is fully proven, with its PR open.
-function shipReady(t, state) {
+function shipReady(t, state, config = {}) {
   const sb = sandbox(t, { ...state, pr: true });
   const bare = path.join(sb.dir, "origin.git");
   execFileSync("git", ["init", "-q", "--bare", bare]);
@@ -432,7 +518,7 @@ function shipReady(t, state) {
   fs.mkdirSync(path.join(sb.repo, storyPath), { recursive: true });
   fs.writeFileSync(path.join(sb.repo, storyPath, "story.md"), "# Story 01-01\n\n## Status: done\n");
   fs.mkdirSync(path.join(sb.repo, ".coding-flow", "runs"), { recursive: true });
-  fs.writeFileSync(path.join(sb.repo, ".coding-flow", "config.json"), JSON.stringify({ storage: "local" }));
+  fs.writeFileSync(path.join(sb.repo, ".coding-flow", "config.json"), JSON.stringify({ storage: "local", ...config }));
   fs.writeFileSync(
     path.join(sb.repo, ".coding-flow", "runs", "2026-11-25T00-00-00-000Z-verify.json"),
     JSON.stringify({ generatedAt: "2026-11-25T00:00:00.000Z", story: storyPath, ok: true, commandsFound: 1, results: [] }),
@@ -516,6 +602,19 @@ test("ship --auto-merge on a repository with auto-merge disabled writes nothing 
   assert.match(res.out, /Allow auto-merge/);
 });
 
+// Review round 3, P1: `protectBranches: false` holds in `ship` too — the base
+// is not protected, and auto-merge is not armed on it.
+test("ship --auto-merge with protectBranches false on an unprotected base writes nothing and does not arm auto-merge", { skip }, (t) => {
+  const sb = shipReady(t, unprotected(), { protectBranches: false });
+  const res = cli(sb, ["ship", "--auto-merge", "--no-evidence", "--no-commit"]);
+
+  assert.equal(res.code, 0, res.out);
+  assert.equal(sb.writes().length, 0, "no protection written");
+  assert.equal(merges(sb).length, 0, "auto-merge is not armed");
+  assert.match(res.out, /Auto-merge: not armed — "main" has no required status checks, so GitHub would merge at once \(protectBranches is false in \.coding-flow\/config\.json\)/);
+  assert.match(res.out, /ai-flow protect --branch main/);
+});
+
 // Criterion 6.
 test("doctor warns with the command to run when autoMergeEpic is on and the base has no required checks", { skip }, (t) => {
   const sb = sandbox(t, unprotected());
@@ -557,6 +656,21 @@ test("doctor says nothing when GitHub cannot be read, or auto-merge is off", { s
   report = JSON.parse(cli(off, ["doctor", "--json"]).stdout);
   assert.equal(report.warnings.some((entry) => entry.code === "auto_merge_ungated"), false);
   assert.equal(off.calls().filter((call) => call.args[0] === "api").length, 0, "auto-merge off: GitHub is not read");
+});
+
+// Review round 3, P2: the repository is readable but the base's protection is
+// not (HTTP 500): doctor cannot tell, so it says nothing.
+test("doctor says nothing when the base's protection cannot be read", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({ protectionError: "gh: Server Error (HTTP 500)" }));
+  writeConfig(sb, { autoMergeEpic: true, install: "minimal" });
+  assert.equal(cli(sb, ["init", "--minimal", "--no-protect"]).code, 0);
+  sb.reset();
+
+  const report = JSON.parse(cli(sb, ["doctor", "--json"]).stdout);
+  assert.ok(sb.calls().some((call) => /branches\/main\/protection$/.test(call.args[1] || "")), "the protection was read");
+  assert.equal(report.warnings.some((entry) => entry.code === "auto_merge_ungated"), false, JSON.stringify(report.warnings));
+  assert.equal(report.warnings.some((entry) => entry.code === "auto_merge_plan_limit"), false);
+  assert.equal(sb.writes().length, 0, "doctor only reads");
 });
 
 test("a non-GitHub remote: protect says GitHub only, init stays quiet", { skip }, (t) => {

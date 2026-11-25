@@ -26,7 +26,10 @@ protection auto du projet dans lequel il est installé".
     (`paths:` filter, fork pull requests only) is missing from the others:
     requiring either would leave a PR pending forever, so they are listed as
     "not required (never seen on a pull request)" / "not required (not on every
-    pull request)" and left out;
+    pull request)" and left out. When one of those pull requests ran no checks
+    at all (a `paths:` filter on the whole CI), nothing is protected on that
+    branch, exit 2: "a recent pull request ran no checks (a `paths:` filter?) —
+    requiring checks would block such pull requests forever" (review round 3);
   - `enforce_admins: false`, no required reviews, no force pushes, no
     deletion.
   - **It never weakens an existing protection.** An existing rule keeps its
@@ -87,35 +90,35 @@ Held: coding-flow dry run clean (exit 0, nothing sent); bethl exit 2, nothing wr
 
 ### Round 3 — FAIL (criteria held and proved, by mutation)
 
-- [ ] P1 bin/lib/ship.js:649 — nothing proves `ship` honours `protectBranches: false` (hardcoding true survives 30/30) — fix: fake-gh test, `ship --auto-merge` with `protectBranches:false` on an unprotected base: 0 `-X` writes, auto-merge not armed, reason printed.
-- [ ] P1 test/protect.test.js:174 (criterion 2, never weakens) — mutants of `keepAndAddChecks` survive (code-owner reviews → false; approving count always 1); `require_last_push_approval`, `dismiss_stale_reviews`, bypass allowances, `block_creations`, `required_conversation_resolution`, `lock_branch` unchecked — fix: fixture with every field non-default, assert each carries through.
-- [ ] P1 README.md:352, docs/rules-and-limits.md:35, CHANGELOG.md:11 — claim a `paths:`-filtered check "is never required", but protect.js:196 skips PRs with no checks at all, so a repo whose only CI has `paths:` gets [build,test] required and docs-only PRs pend forever (fake-gh: PRs [build,test] and [] → requires build, test) — fix (orchestrator's choice: the safe side): when any of the recent PRs ran no checks, protect nothing for that branch, exit 2, say "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever"; docs say exactly that.
-- [ ] P2 doctor "says nothing when GitHub cannot be read" half proved (dropping `!info.error` in `ungatedBases` survives) — add the test.
+- [x] P1 bin/lib/ship.js:649 — nothing proves `ship` honours `protectBranches: false` (hardcoding true survives 30/30) — fix: fake-gh test, `ship --auto-merge` with `protectBranches:false` on an unprotected base: 0 `-X` writes, auto-merge not armed, reason printed.
+- [x] P1 test/protect.test.js:174 (criterion 2, never weakens) — mutants of `keepAndAddChecks` survive (code-owner reviews → false; approving count always 1); `require_last_push_approval`, `dismiss_stale_reviews`, bypass allowances, `block_creations`, `required_conversation_resolution`, `lock_branch` unchecked — fix: fixture with every field non-default, assert each carries through.
+- [x] P1 README.md:352, docs/rules-and-limits.md:35, CHANGELOG.md:11 — claim a `paths:`-filtered check "is never required", but protect.js:196 skips PRs with no checks at all, so a repo whose only CI has `paths:` gets [build,test] required and docs-only PRs pend forever (fake-gh: PRs [build,test] and [] → requires build, test) — fix (orchestrator's choice: the safe side): when any of the recent PRs ran no checks, protect nothing for that branch, exit 2, say "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever"; docs say exactly that.
+- [x] P2 doctor "says nothing when GitHub cannot be read" half proved (dropping `!info.error` in `ungatedBases` survives) — add the test.
 
 Held: round-1 push-only fixture not weakened; init consent and dry run hold (0 `-X`); messages match docs; criteria 1, 3, 4, 6, 7 may be ticked (real dry run: main nothing to change, exit 0).
 
 ## Acceptance Criteria
 
-- [ ] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
+- [x] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
       has 3 check runs, when `ai-flow protect` runs, then it sends one
       protection request requiring exactly those 3 checks, `strict: false`, no
       reviews, `enforce_admins: false`. Given `--dry-run`, it sends nothing and
       prints the plan.
-- [ ] Given an existing protection with required reviews and 1 required check,
+- [x] Given an existing protection with required reviews and 1 required check,
       then `protect` keeps the reviews and the check, adds the missing ones, and
       a second run sends nothing.
-- [ ] Given no admin rights, no `gh`, or no check runs, then `protect` exits 2
+- [x] Given no admin rights, no `gh`, or no check runs, then `protect` exits 2
       with the reason and the next command, and `init` still succeeds and prints
       the same reason.
-- [ ] Given `init` in a GitHub repository with checks and admin rights, then the
+- [x] Given `init` in a GitHub repository with checks and admin rights, then the
       default branch and the base are protected. Given `--no-protect` or
       `protectBranches: false`, then nothing is sent.
-- [ ] Given `ship --auto-merge` on an unprotected base it cannot protect, then
+- [x] Given `ship --auto-merge` on an unprotected base it cannot protect, then
       the PR opens without auto-merge, and the output says why. Given a base it
       can protect, then it protects the base first and arms auto-merge.
-- [ ] Given `autoMergeEpic: true` and an unprotected base, then `doctor` warns
+- [x] Given `autoMergeEpic: true` and an unprotected base, then `doctor` warns
       with the command to run.
-- [ ] Real check: on this repository (`main` and `develop` were protected by
+- [x] Real check: on this repository (`main` and `develop` were protected by
       hand on 2026-11-25), `ai-flow protect --dry-run` reports nothing to
       change.
 
@@ -140,10 +143,13 @@ PATH; nothing reaches GitHub.
    `::an existing protection gains only the checks seen on a pull request`;
    only checks seen on every recent pull request (review round 2, P1) →
    `::a check seen on only some recent pull requests is not required; one seen on every pull request is`,
-   `::no check ran on every recent pull request: protect exits 2 and sends nothing`
+   `::no check ran on every recent pull request: protect exits 2 and sends nothing`;
+   a recent pull request with no checks (review round 3, P1) →
+   `::a recent pull request that ran no checks: protect protects nothing, exits 2, and says why`
 2. Existing reviews + 1 check kept, missing added, second run sends nothing →
    `test/protect.test.js::an existing protection keeps its reviews and check, gains the missing ones, and a second run sends nothing`,
-   `test/protect.test.js::a protection with no required checks is rebuilt keeping its reviews and restrictions`
+   `test/protect.test.js::a protection with no required checks is rebuilt keeping its reviews and restrictions`,
+   `::a protection with no required checks keeps every rule, each non-default, when the checks are added` (review round 3)
 3. No admin / no gh / no check runs → exit 2 with reason and next command; init
    succeeds with the same reason →
    `test/protect.test.js::no admin rights: protect exits 2 …`, `::no gh: …`, `::no check runs: …`,
@@ -161,10 +167,13 @@ PATH; nothing reaches GitHub.
    `::a plan without branch protection: protect says so, gives a real next step, never 'nothing to change'`,
    `::a dry run with a blocked branch never prints 'nothing to change'`,
    `::ship --auto-merge on a plan without branch protection says so and does not arm auto-merge`,
-   `::ship --auto-merge on a repository with auto-merge disabled writes nothing and says so`
+   `::ship --auto-merge on a repository with auto-merge disabled writes nothing and says so`;
+   `protectBranches: false` in ship (review round 3) →
+   `::ship --auto-merge with protectBranches false on an unprotected base writes nothing and does not arm auto-merge`
 6. doctor warns with the command → `test/protect.test.js::doctor warns with the command to run when autoMergeEpic is on and the base has no required checks`,
    `::doctor says nothing when GitHub cannot be read, or auto-merge is off`,
-   `::doctor warns on a plan without branch protection`
+   `::doctor warns on a plan without branch protection`,
+   `::doctor says nothing when the base's protection cannot be read` (review round 3)
 7. Real check on this repository → the `protect --dry-run` output under Result.
 - Out of scope held: `::a ruleset-governed branch is reported and left alone`,
   `::a non-GitHub remote: protect says GitHub only, init stays quiet`.
@@ -282,3 +291,25 @@ Dry run — nothing sent.
 Next: merge each pull request by hand once its checks pass (auto-merge cannot wait for them here), or make the repository public or move it to a paid plan, then run `ai-flow protect`
 (exit 2)
 ```
+
+Round 3 fixes (fresh implementer):
+
+- P1 `paths:`: `pullRequestCheckNames` counts the recent pull requests that ran
+  no check at all; when there is one, `planBranch` protects nothing on that
+  branch and exits 2: "a recent pull request ran no checks (a `paths:` filter?)
+  — requiring checks would block such pull requests forever". README,
+  `docs/rules-and-limits.md` and CHANGELOG say exactly that. The round-2 test
+  "a check seen on only some recent pull requests…" had a fourth PR with no
+  checks, which the safe side now rightly refuses: that PR is dropped from its
+  fixture (its assertions are unchanged).
+- P1 `ship` + `protectBranches: false`: fake-gh test, 0 writes, not armed,
+  reason printed.
+- P1 never weakens: a fake-gh test whose protection sets every rule to its
+  non-default value asserts the whole PUT body.
+- P2 doctor: a test where the repository reads but the base's protection
+  answers HTTP 500 — no warning.
+- Mutants, each in a copy: `protectBranches` hardcoded true in `ship`;
+  code-owner reviews → false; approving count → 1; last-push approval → false;
+  `lock_branch` → false; the no-checks block disabled (exit 0, protected);
+  `!info.error` dropped in `ungatedBases` — each fails its new test; 34/34 pass
+  on the real code.

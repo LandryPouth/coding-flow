@@ -182,7 +182,9 @@ function checkRunNames(root, repo, sha) {
 // `names` are the checks seen on EVERY one of them that had checks: a check
 // that runs only on some paths (`paths:`) or only on fork pull requests would
 // keep the others pending forever once required. `partial` is the rest.
-// `{ prs: 0 }` when there is none yet.
+// `withoutChecks` counts the pull requests that ran no check at all (a CI with
+// a `paths:` filter skipped them): any required check would keep such a pull
+// request pending forever. `{ prs: 0 }` when there is none yet.
 function pullRequestCheckNames(root, repo, branch) {
   const list = gh(root, ["pr", "list", "-R", repo, "--base", branch, "--state", "all", "-L", "5", "--json", "headRefOid"]);
   const prs = list.ok ? parse(list.stdout) : null;
@@ -190,14 +192,16 @@ function pullRequestCheckNames(root, repo, branch) {
 
   const shas = [...new Set(prs.map((pr) => pr && pr.headRefOid).filter(Boolean))];
   const perPr = [];
+  let withoutChecks = 0;
   for (const sha of shas) {
     const runs = checkRunNames(root, repo, sha);
     if (runs.error) return { error: runs.error };
     if (runs.names.length > 0) perPr.push(runs.names);
+    else withoutChecks += 1;
   }
   const union = [...new Set(perPr.flat())].sort();
   const onEvery = union.filter((name) => perPr.every((list) => list.includes(name)));
-  return { prs: shas.length, names: onEvery, partial: union.filter((name) => !onEvery.includes(name)) };
+  return { prs: shas.length, withoutChecks, names: onEvery, partial: union.filter((name) => !onEvery.includes(name)) };
 }
 
 function freshProtection(checks) {
@@ -292,6 +296,14 @@ function planBranch(root, repo, branch) {
   // runs on push alone would keep every pull request pending forever.
   const onPrs = pullRequestCheckNames(root, repo, branch);
   if (onPrs.error) return blocked(`could not read the pull requests into "${branch}" (${onPrs.error})`, `check \`gh auth status\`, ${NEXT_RUN}`);
+  // Safe side: a pull request that ran no check at all would pend forever
+  // behind any required check, so nothing is required on this branch.
+  if (onPrs.withoutChecks > 0) {
+    return blocked(
+      "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever",
+      `run CI on every pull request into "${branch}" (\`on: pull_request\`, no \`paths:\` filter), ${NEXT_RUN}`,
+    );
+  }
 
   const missing = notRequired.filter((name) => onPrs.names.includes(name));
   const partial = notRequired.filter((name) => onPrs.partial.includes(name));
