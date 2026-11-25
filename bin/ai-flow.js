@@ -887,6 +887,8 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     }
   } else if (extra.length > 0) {
     fail(`unexpected argument "${extra[0]}" for "todo". Run "ai-flow todo --help".`);
+  } else if (flags.has("--dry-run")) {
+    fail('--dry-run only applies to "todo done": "ai-flow todo" writes nothing.');
   } else {
     todoCommand({ json: flags.has("--json") });
   }

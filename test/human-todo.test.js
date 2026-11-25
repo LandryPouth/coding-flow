@@ -476,3 +476,48 @@ test('a bare "in production" or "en prod" is not a to-do; an action in productio
   assert.ok(found.some((message) => /story-01-02-b.*Run the seed in production/.test(message)), found.join('\n'));
   assert.ok(found.some((message) => /story-01-03-c.*à lancer en prod/.test(message)), found.join('\n'));
 });
+
+// --- Review round 2 -------------------------------------------------------
+
+test('product behaviour "côté utilisateur" is not a to-do; "à faire côté utilisateur" is', (t) => {
+  const dir = repo(t);
+  // bethl story-26-05-share-and-seo, verbatim.
+  story(dir, STORY, { result: '- `navigator.share` rejeté si l\'utilisateur annule → échec/annulation côté utilisateur silencieux, la modale reste ouverte avec ses autres actions.' });
+  story(dir, 'epics/epic-01-shop/story-01-02-b', { result: 'Clé API à faire côté utilisateur dans le tableau de bord.' });
+
+  const found = doctorWarnings(dir, 'todo_uncaptured').map((warning) => warning.message);
+  assert.strictEqual(found.length, 1, found.join('\n'));
+  assert.match(found[0], /story-01-02-b.*à faire côté utilisateur/);
+});
+
+test('a file name in the sentence does not break an action "in production" / "en prod"', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, { result: 'Run `scripts/backfill.ts` in production after merge.' });
+  story(dir, 'epics/epic-01-shop/story-01-02-b', { result: 'Lancer `scripts/seed.ts` en prod.' });
+  story(dir, 'epics/epic-01-shop/story-01-03-c', { result: 'Run the tests. Logs are JSON in production.' });
+
+  const found = doctorWarnings(dir, 'todo_uncaptured').map((warning) => warning.message);
+  assert.strictEqual(found.length, 2, found.join('\n'));
+  assert.ok(found.some((message) => /story-01-01-backfill.*scripts\/backfill\.ts/.test(message)), found.join('\n'));
+  assert.ok(found.some((message) => /story-01-02-b.*scripts\/seed\.ts/.test(message)), found.join('\n'));
+});
+
+test('after the deploy, "à faire après le déploiement" and "the maintainer has to" are to-dos; a description after the deploy is not', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, { result: 'After the deploy, run the cache warm-up.' });
+  story(dir, 'epics/epic-01-shop/story-01-02-b', { result: 'À faire après le déploiement : vider le cache.' });
+  story(dir, 'epics/epic-01-shop/story-01-03-c', { result: 'The maintainer has to rotate the token.' });
+  story(dir, 'epics/epic-01-shop/story-01-04-d', { result: 'After the deploy the page loads in 1s.\nAprès le déploiement, la page charge en 1s.' });
+
+  const found = doctorWarnings(dir, 'todo_uncaptured').map((warning) => warning.message);
+  assert.strictEqual(found.length, 3, found.join('\n'));
+  assert.ok(!found.some((message) => /story-01-04-d/.test(message)), found.join('\n'));
+});
+
+test('todo --dry-run without done is refused: the flag only applies to todo done', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, { todo: '- [ ] (before: deploy) Run the backfill' });
+  const res = run(dir, ['todo', '--dry-run']);
+  assert.notStrictEqual(res.code, 0, res.output);
+  assert.match(res.output, /--dry-run only applies to "todo done"/);
+});

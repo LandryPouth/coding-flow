@@ -619,18 +619,27 @@ function printDeployTodos(entries, write = log) {
 // A bare "in production" / "en prod" describes the product ("JSON logs, one
 // line in production"); only an action done there is a to-do: a verb before
 // it ("run the seed in production", "à lancer en prod") or right after it ("In
-// production, set …").
+// production, set …"). Likewise "after the deploy" and "côté utilisateur" only
+// with an action ("After the deploy, run …", "à faire côté utilisateur"). The
+// gap between the verb and "in production" ends at a sentence end (a period
+// then a space or the end), so a file name (`scripts/seed.ts`) does not cut it.
+const SAME_SENTENCE = "(?:[^.]|\\.(?!\\s|$))*";
+const ACTION_EN = "(run|set|apply|execute|launch|trigger|enable|rotate|seed|migrate)";
+const ACTION_FR = "(lancer|exécuter|appliquer|activer|définir|configurer|vider)";
 const DEFAULT_UNCAPTURED_PATTERNS = [
-  "the maintainer must",
+  "the maintainer (must|has to|needs to)",
   "to do by the user",
   "before (the )?deploy",
-  "\\b(run|set|apply|execute|launch|trigger|enable|rotate|seed|migrate)\\b[^.]*\\bin prod(uction)?\\b",
-  "^\\W*in prod(uction)?\\b[\\s,:—–-]*(run|set|apply|execute|launch|trigger|enable|rotate|seed|migrate)\\b",
+  `\\b${ACTION_EN}\\b${SAME_SENTENCE}\\bin prod(uction)?\\b`,
+  `^\\W*in prod(uction)?\\b[\\s,:—–-]*${ACTION_EN}\\b`,
+  `^\\W*after (the )?deploy(ment)?\\b[\\s,:—–-]*${ACTION_EN}\\b`,
   "à faire par l'utilisateur",
-  "côté utilisateur",
+  "à faire côté utilisateur",
   "avant (le )?déploiement",
-  "(lancer|exécuter|appliquer|activer|définir|configurer|à faire)[^.]*\\ben prod(uction)?\\b",
-  "^\\W*en prod(uction)?\\b[\\s,:—–-]*(lancer|exécuter|appliquer|activer|définir|configurer)",
+  "à faire après (le )?déploiement",
+  `^\\W*après (le )?déploiement\\b[\\s,:—–-]*${ACTION_FR}`,
+  `(${ACTION_FR.slice(1, -1)}|à faire)${SAME_SENTENCE}\\ben prod(uction)?\\b`,
+  `^\\W*en prod(uction)?\\b[\\s,:—–-]*${ACTION_FR}`,
 ];
 
 // `todo.uncapturedPatterns`: each entry a case-insensitive regular expression.
