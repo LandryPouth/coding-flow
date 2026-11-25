@@ -220,9 +220,11 @@ function checkAutoMergeGate(warnings) {
   }
 }
 
+// Both reports run these together, so neither report function grows.
 function checkEvidenceAndRecovery(warnings, notes) {
   checkEvidenceBlocked(warnings);
   checkRecoveryExposure(warnings, notes);
+  checkAutoMergeGate(warnings);
 }
 
 const GENERATED_DIR_NAMES = new Set(["generated", "__generated__", "gen"]);
@@ -816,7 +818,6 @@ function collectMinimalReport({ strict = false } = {}) {
   }
 
   checkEvidenceAndRecovery(warnings, notes);
-  checkAutoMergeGate(warnings);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);
@@ -1052,7 +1053,6 @@ function collectDoctorReport({ strict = false } = {}) {
   checkOriginHead(warnings);
   checkReleaseTag(warnings);
   checkEvidenceAndRecovery(warnings, notes);
-  checkAutoMergeGate(warnings);
   checkGuardWiring(errors, warnings);
   checkGuardUnchecked(warnings);
   const codexProbe = checkCodexSandbox(errors, warnings);

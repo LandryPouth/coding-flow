@@ -188,3 +188,11 @@ Branch protection (LandryPouth/coding-flow):
   develop: nothing to change — already requires test (ubuntu-latest, 18.x), test (ubuntu-latest, 20.x), test (ubuntu-latest, 22.x), test (macos-latest, 22.x), test (windows-latest, 22.x)
 Dry run — nothing to change.
 ```
+
+Verify (one run, on `dd6e354`): NOT PROVEN — all 3 commands passed, but
+`functionSize.enforce` flagged `bin/lib/doctor.js` `collectDoctorReport` 221→222
+lines (the round-1 `checkAutoMergeGate` call; evidence
+`.coding-flow/runs/2026-11-25T18-19-39-965Z-verify.json`). Fixed in the next
+commit: the call moved into `checkEvidenceAndRecovery`, which both doctor reports
+already run, so neither grows (protect and doctor tests pass alone). The fixed
+tree still needs its verify.
