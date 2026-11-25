@@ -161,6 +161,13 @@ Held: changed tests keep/strengthen every assertion, nothing dropped; 11/17 muta
 Held: protect/init/ship help; `--branch=x`; protectBranches:false message; `ship --base develop` protects before arming; init on a non-GitHub remote silent; merged tree (both sides kept) 156/156, plugin check in sync.
 Series 2 round 4 is the last of the series.
 
+### Series 2 Round 4 — PASS (sign-off as a whole) — series closes at its cap; lands
+
+- [x] P2 traceability for criterion 6 named a test that does not exist and missed the base-missing ship test — fixed by the orchestrator.
+
+Held: protect 47/47; C1–C6 each backed by its test and a fake-gh probe; every argument form that could target an unnamed branch refused (exit 1, no write); 502 path true in ship/protect/init, 401 still to `gh auth login`; `auto_merge_base_missing`; merge 5a3c04f intact (ship-before-deploy 4/4, human-todo 30/30); real dry runs correct (coding-flow nothing to change; bethl plan limit, exit 2).
+Decision: two series (4 + 4 rounds); the last round clean on the whole story after the series-3 fixes, findings had narrowed to messages and traceability. Lands.
+
 ## Acceptance Criteria
 
 - [x] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
@@ -244,7 +251,7 @@ PATH; nothing reaches GitHub.
 6. doctor warns with the command → `test/protect.test.js::doctor warns with the command to run when autoMergeEpic is on and the base has no required checks`,
    `::doctor says nothing when GitHub cannot be read, or auto-merge is off`,
    `::doctor warns on a plan without branch protection`,
-   `::doctor says nothing when the base's protection cannot be read` (review round 3),
+   `::doctor does not call a base whose protection cannot be read ungated, and says it could not read it` (review round 3), `::ship --auto-merge on a base missing on GitHub does not arm auto-merge and says to push it` (series 2 round 3),
    `::doctor warns when baseBranch does not exist on GitHub` (series 2 round 3)
 7. Real check on this repository → the `protect --dry-run` output under Result.
 - Out of scope held: `::a ruleset-governed branch is reported and left alone`,
