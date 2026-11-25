@@ -257,6 +257,19 @@ function noPullRequestCheck(branch, runs, extra) {
   return { branch, action: "blocked", ...extra, reason, next: `run CI on every pull request (\`on: pull_request\`, no \`paths:\` filter), open one pull request into "${branch}", ${NEXT_RUN}` };
 }
 
+// A recent pull request ran no check: requiring any (more) would block such
+// pull requests forever. An existing protection is left as is, not weakened.
+function pullRequestWithoutChecks(branch, info, required) {
+  const next = `run CI on every pull request into "${branch}" (\`on: pull_request\`, no \`paths:\` filter), ${NEXT_RUN}`;
+  if (info.protection) {
+    const kept = required.length ? required.join(", ") : "no check";
+    const reason = `left as is (requires ${kept}) — a recent pull request ran no checks; requiring more would block such pull requests`;
+    return { branch, action: "blocked", leftAsIs: true, reason, next };
+  }
+  const reason = "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever";
+  return { branch, action: "blocked", reason, next };
+}
+
 // One branch: what would change, and the one request that changes it.
 function planBranch(root, repo, branch) {
   const info = inspectBranch(root, repo, branch);
@@ -298,12 +311,7 @@ function planBranch(root, repo, branch) {
   if (onPrs.error) return blocked(`could not read the pull requests into "${branch}" (${onPrs.error})`, `check \`gh auth status\`, ${NEXT_RUN}`);
   // Safe side: a pull request that ran no check at all would pend forever
   // behind any required check, so nothing is required on this branch.
-  if (onPrs.withoutChecks > 0) {
-    return blocked(
-      "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever",
-      `run CI on every pull request into "${branch}" (\`on: pull_request\`, no \`paths:\` filter), ${NEXT_RUN}`,
-    );
-  }
+  if (onPrs.withoutChecks > 0) return pullRequestWithoutChecks(branch, info, required);
 
   const missing = notRequired.filter((name) => onPrs.names.includes(name));
   const partial = notRequired.filter((name) => onPrs.partial.includes(name));
@@ -406,6 +414,7 @@ function describeBranch(entry, dryRun) {
   }
   if (entry.action === "unchanged") return `${entry.branch}: nothing to change — ${entry.reason}${left}`;
   if (entry.action === "ruleset") return `${entry.branch}: ${entry.reason}`;
+  if (entry.leftAsIs) return `${entry.branch}: ${entry.reason}`;
   return `${entry.branch}: not protected — ${entry.reason}`;
 }
 

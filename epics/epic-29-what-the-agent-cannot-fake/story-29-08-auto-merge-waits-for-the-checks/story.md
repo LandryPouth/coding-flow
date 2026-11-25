@@ -27,9 +27,10 @@ protection auto du projet dans lequel il est installé".
     requiring either would leave a PR pending forever, so they are listed as
     "not required (never seen on a pull request)" / "not required (not on every
     pull request)" and left out. When one of those pull requests ran no checks
-    at all (a `paths:` filter on the whole CI), nothing is protected on that
-    branch, exit 2: "a recent pull request ran no checks (a `paths:` filter?) —
-    requiring checks would block such pull requests forever" (review round 3);
+    at all (a `paths:` filter on the whole CI), nothing is sent, exit 2: an
+    unprotected branch says "a recent pull request ran no checks (a `paths:`
+    filter?) — requiring checks would block such pull requests forever" (review
+    round 3); a branch already protected is left as is, nothing sent: "left as is (requires …) — a recent pull request ran no checks; requiring more would block such pull requests" (review round 4);
   - `enforce_admins: false`, no required reviews, no force pushes, no
     deletion.
   - **It never weakens an existing protection.** An existing rule keeps its
@@ -54,7 +55,10 @@ protection auto du projet dans lequel il est installé".
     change".
   - **Limits.** Legacy commit statuses are not read (such a project is told it
     needs CI first); a required check that no longer runs is never flagged or
-    removed (additive only). Both are stated in `docs/rules-and-limits.md`.
+    removed (additive only); `doctor` checks only the default branch and
+    `baseBranch`, so a `ship --base` elsewhere is protected by `ship` but never
+    checked by `doctor` (review round 4). All stated in
+    `docs/rules-and-limits.md`.
 - **`init` protects automatically** when the project is a GitHub repository,
   `gh` is authenticated with admin rights, and CI checks exist: it prints what
   it protected. `init --no-protect` and the setting `protectBranches: false`
@@ -99,9 +103,9 @@ Held: round-1 push-only fixture not weakened; init consent and dry run hold (0 `
 
 ### Round 4 — FAIL (readiness to land, whole journey) — one message; series 1 ends at its cap, series 2 starts
 
-- [ ] P1 bin/lib/protect.js:302-305 with :409 — a branch already protected (requires `build`, not all checks) with a recent no-checks PR prints "main: not protected — … would block such pull requests forever": false, it is protected; effect correct (nothing sent, nothing weakened, ship arms, doctor quiet), message lies; docs "nothing is protected on that branch" hide it — fix: when `info.protection` exists say "main: left as is (requires build) — a recent pull request ran no checks; requiring more would block such pull requests"; docs say "left as is"; test asserts text and nothing sent.
-- [ ] P2 `ship --dry-run --auto-merge` (~ship.js:740) never says the real run may write a branch protection first — say it.
-- [ ] P2 `protect`/doctor target only the default branch plus `baseBranch`; `ship --base develop` without `baseBranch` leaves develop unchecked by doctor — state as a limit (or include the `--base` used).
+- [x] P1 bin/lib/protect.js:302-305 with :409 — a branch already protected (requires `build`, not all checks) with a recent no-checks PR prints "main: not protected — … would block such pull requests forever": false, it is protected; effect correct (nothing sent, nothing weakened, ship arms, doctor quiet), message lies; docs "nothing is protected on that branch" hide it — fix: when `info.protection` exists say "main: left as is (requires build) — a recent pull request ran no checks; requiring more would block such pull requests"; docs say "left as is"; test asserts text and nothing sent.
+- [x] P2 `ship --dry-run --auto-merge` (~ship.js:740) never says the real run may write a branch protection first — say it.
+- [x] P2 `protect`/doctor target only the default branch plus `baseBranch`; `ship --base develop` without `baseBranch` leaves develop unchecked by doctor — state as a limit (or include the `--base` used).
 
 Held: merge with develop clean, 142/142 + windows-paths 19/19 + layering 4/4, plugin check in sync; fake-gh journey truthful and idempotent; fixture edits kept assertions, moved cases have their own tests; real dry runs correct (coding-flow nothing to change; bethl plan limit, exit 2).
 
@@ -153,7 +157,8 @@ PATH; nothing reaches GitHub.
    `::a check seen on only some recent pull requests is not required; one seen on every pull request is`,
    `::no check ran on every recent pull request: protect exits 2 and sends nothing`;
    a recent pull request with no checks (review round 3, P1) →
-   `::a recent pull request that ran no checks: protect protects nothing, exits 2, and says why`
+   `::a recent pull request that ran no checks: protect protects nothing, exits 2, and says why`,
+   `::an already protected branch with a recent pull request that ran no checks is left as is, and says so` (review round 4)
 2. Existing reviews + 1 check kept, missing added, second run sends nothing →
    `test/protect.test.js::an existing protection keeps its reviews and check, gains the missing ones, and a second run sends nothing`,
    `test/protect.test.js::a protection with no required checks is rebuilt keeping its reviews and restrictions`,
@@ -177,7 +182,9 @@ PATH; nothing reaches GitHub.
    `::ship --auto-merge on a plan without branch protection says so and does not arm auto-merge`,
    `::ship --auto-merge on a repository with auto-merge disabled writes nothing and says so`;
    `protectBranches: false` in ship (review round 3) →
-   `::ship --auto-merge with protectBranches false on an unprotected base writes nothing and does not arm auto-merge`
+   `::ship --auto-merge with protectBranches false on an unprotected base writes nothing and does not arm auto-merge`;
+   dry run names the protection write (review round 4) →
+   `::ship --dry-run --auto-merge says the real run may write a branch protection first, and sends nothing`
 6. doctor warns with the command → `test/protect.test.js::doctor warns with the command to run when autoMergeEpic is on and the base has no required checks`,
    `::doctor says nothing when GitHub cannot be read, or auto-merge is off`,
    `::doctor warns on a plan without branch protection`,
@@ -321,3 +328,24 @@ Round 3 fixes (fresh implementer):
   `lock_branch` → false; the no-checks block disabled (exit 0, protected);
   `!info.error` dropped in `ungatedBases` — each fails its new test; 34/34 pass
   on the real code.
+
+Round 4 fixes (fresh implementer):
+
+- P1: a branch that already has a protection, with a recent pull request that
+  ran no checks, now prints "main: left as is (requires build) — a recent pull
+  request ran no checks; requiring more would block such pull requests" (still
+  exit 2, nothing sent); README, `docs/rules-and-limits.md`, CHANGELOG and
+  Design say "left as is". Fake-gh test asserts the text and zero `-X` calls.
+- P2: `ship --dry-run --auto-merge` prints "protect : the real run may first
+  write a branch protection on "<base>" (when it has no required checks)"
+  (fake-gh test, nothing sent); the `--base` without `baseBranch` gap is a
+  limit in `docs/rules-and-limits.md`.
+- Both new tests failed on `c2c0c82` (0/2) and pass now (36/36).
+
+Verify (one run, round 4 tree before the refactor): NOT PROVEN — all 3 commands
+passed, but `functionSize.enforce` flagged `protect.js` `planBranch` 0→88 and
+`ship.js` `ship` 168→171 (evidence
+`.coding-flow/runs/2026-11-25T20-08-40-297Z-verify.json`). Fixed in the same
+commit: the no-checks answer moved to `pullRequestWithoutChecks` (`planBranch`
+74 lines) and the dry-run merge lines to `logDryRunMerge` (`ship` 162); protect,
+ship and layering tests pass alone (76/76). The fixed tree still needs its verify.

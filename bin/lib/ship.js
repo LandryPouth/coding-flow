@@ -667,6 +667,19 @@ function maybeAutoMerge(root, config, branch, targetBase, { autoMerge, mergeMeth
   }
 }
 
+// Dry run: what the merge would do, and the protection the real run may write
+// first (story 29-08: auto-merge is armed only on a base with required checks).
+function logDryRunMerge(autoMergeEnabled, config, targetBase) {
+  if (!autoMergeEnabled) {
+    log("  merge  : auto-merge off");
+    return;
+  }
+  log("  merge  : auto-merge on — merged once the epic is fully done and the PR is conflict-free");
+  if (config.protectBranches !== false) {
+    log(`  protect : the real run may first write a branch protection on "${targetBase}" (when it has no required checks) — \`ai-flow protect --dry-run\` shows it`);
+  }
+}
+
 function ship({
   base = null,
   draft = false,
@@ -735,13 +748,7 @@ function ship({
     log(`  push   : git push -u origin ${branch}`);
     if (canPr) {
       log(`  PR     : ${draft ? "draft " : ""}${targetBase} <- ${branch} (created if absent, otherwise updated)`);
-      log(
-        `  merge  : ${
-          autoMergeEnabled
-            ? "auto-merge on — merged once the epic is fully done and the PR is conflict-free"
-            : "auto-merge off"
-        }`,
-      );
+      logDryRunMerge(autoMergeEnabled, config, targetBase);
     } else if (github) {
       log("  PR     : gh absent — the compare URL will be printed.");
     } else {

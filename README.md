@@ -351,8 +351,9 @@ commit and on the head commit of every one of the last 5 pull requests into it
 on push (deploy, release, pages), or only on some pull requests (forks only, a
 `paths:` filter on one workflow), would keep a pull request pending forever, so it
 is never required. When one of those pull requests ran no checks at all (a
-`paths:` filter on the whole CI), nothing is protected on that branch and it exits
-2: "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever". No pull
+`paths:` filter on the whole CI), it exits 2 and sends nothing: an unprotected
+branch stays unprotected ("a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever"),
+and a branch already protected is left as is, nothing sent: "left as is (requires …) — a recent pull request ran no checks; requiring more would block such pull requests". No pull
 request into the branch yet: nothing is sent — open one first. It only adds: an
 existing protection keeps its reviews, restrictions and checks, and a second run
 sends nothing. No CI yet, no pull request yet, no `gh`, or no admin rights: nothing is sent, the reason

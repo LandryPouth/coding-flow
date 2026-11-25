@@ -420,6 +420,28 @@ test("a recent pull request that ran no checks: protect protects nothing, exits 
   assert.equal(sb.writes().length, 0);
 });
 
+// Review round 4, P1: a branch already protected is not "not protected" when a
+// recent pull request ran no checks — it is left as is, and nothing is sent.
+test("an already protected branch with a recent pull request that ran no checks is left as is, and says so", { skip }, (t) => {
+  const protection = { required_status_checks: { strict: false, contexts: ["build"], checks: [{ context: "build" }] } };
+  const sb = sandbox(t, unprotected({
+    branches: { main: { sha: "a".repeat(40), checkRuns: ["build", "test"], protection } },
+    pulls: [
+      { base: "main", headRefOid: "9".repeat(40), checkRuns: ["build", "test"] },
+      { base: "main", headRefOid: "8".repeat(40), checkRuns: [] },
+    ],
+  }));
+
+  for (const args of [["protect", "--dry-run"], ["protect"]]) {
+    const res = cli(sb, args);
+    assert.match(res.out, /main: left as is \(requires build\) — a recent pull request ran no checks; requiring more would block such pull requests/);
+    assert.doesNotMatch(res.out, /not protected/);
+    assert.doesNotMatch(res.out, /nothing to change/);
+  }
+  assert.equal(sb.calls().filter((call) => call.args.includes("-X")).length, 0, "no -X call");
+  assert.deepEqual(sb.state().branches.main.protection, protection);
+});
+
 // Review round 2, P1: a private repository on GitHub Free has no branch
 // protection; GitHub answers 403 "Upgrade to GitHub Pro". A plan limit, not an
 // auth problem, and never "nothing to change".
@@ -539,6 +561,17 @@ test("ship --auto-merge on a base it cannot protect opens the PR without auto-me
   assert.equal(merges(sb).length, 0, "auto-merge is not armed");
   assert.match(res.out, /Auto-merge: not armed — "main" has no required status checks, so GitHub would merge at once/);
   assert.match(res.out, /no admin rights/);
+});
+
+// Review round 4, P2: the dry run says the real run may write a protection.
+test("ship --dry-run --auto-merge says the real run may write a branch protection first, and sends nothing", { skip }, (t) => {
+  const sb = shipReady(t, unprotected());
+  const res = cli(sb, ["ship", "--dry-run", "--auto-merge", "--no-evidence", "--no-commit"]);
+
+  assert.equal(res.code, 0, res.out);
+  assert.match(res.out, /protect : the real run may first write a branch protection on "main" \(when it has no required checks\) — `ai-flow protect --dry-run` shows it/);
+  assert.equal(sb.calls().filter((call) => call.args.includes("-X")).length, 0);
+  assert.equal(merges(sb).length, 0);
 });
 
 test("ship --auto-merge on a base it can protect protects it first, then arms auto-merge", { skip }, (t) => {
