@@ -362,7 +362,7 @@ repository on GitHub Free has no branch protection at all: `protect`, `init`, `s
 and `doctor` say so, and auto-merge stays off — merge each pull request once its
 checks pass. `ship` also leaves auto-merge off, and writes nothing, when the
 repository has "Allow auto-merge" disabled, and when it cannot read the base's
-protection ("could not read "main"'s protection (…), so auto-merge is not armed").
+protection ("Auto-merge: not armed — "main"'s protection could not be read (…)").
 GitHub only, classic branch protection; a branch governed by a ruleset is reported
 and left alone — when that ruleset has no required status checks rule, `protect`
 exits 2 and `protect`, `ship` and `doctor` say "add a required status checks rule

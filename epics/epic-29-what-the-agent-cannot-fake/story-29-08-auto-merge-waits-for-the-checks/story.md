@@ -133,12 +133,12 @@ Held: refactor changed no behaviour (only the two intended lines differ vs c2c0c
 
 ### Series 2 Round 2 — FAIL (changed tests and new states, by mutation) — tests only
 
-- [ ] P1 bin/lib/protect.js:369 — `&& result.action === "add-checks"` untested (`leftAsIs = !result.planLimit` survives 42/42; would print "left as is" on an unprotected refused branch) — fix: test `unprotected({ refuseWrites: true })` asserting "not protected — GitHub refused the protection" and doesNotMatch /left as is/.
-- [ ] P1 bin/lib/protect.js:517 (ship.js:679) — `wouldProtect: true` survives; the dry-run test only uses states that stop before runProtect — fix: unprotected base with `checkRuns: []` (no CI → no write): `ship --dry-run` must not print `protect : `.
-- [ ] P2 protect.js:494 redundant line — use `why: \`"${base}"'s protection could not be read (${cause})\`` → "Auto-merge: not armed — \"main\"'s protection could not be read (…). Next: …".
-- [ ] P2 `manual: true` (protect.js:485/489/520) untested — assert doesNotMatch(/Merge the PR once/) in the disabled and plan-limit ship tests.
-- [ ] P2 test/protect.test.js:797 stale comment "so it says nothing".
-- [ ] P2 missing-branch `push "<base>"` next step untested — add an assertion.
+- [x] P1 bin/lib/protect.js:369 — `&& result.action === "add-checks"` untested (`leftAsIs = !result.planLimit` survives 42/42; would print "left as is" on an unprotected refused branch) — fix: test `unprotected({ refuseWrites: true })` asserting "not protected — GitHub refused the protection" and doesNotMatch /left as is/.
+- [x] P1 bin/lib/protect.js:517 (ship.js:679) — `wouldProtect: true` survives; the dry-run test only uses states that stop before runProtect — fix: unprotected base with `checkRuns: []` (no CI → no write): `ship --dry-run` must not print `protect : `.
+- [x] P2 protect.js:494 redundant line — use `why: \`"${base}"'s protection could not be read (${cause})\`` → "Auto-merge: not armed — \"main\"'s protection could not be read (…). Next: …".
+- [x] P2 `manual: true` (protect.js:485/489/520) untested — assert doesNotMatch(/Merge the PR once/) in the disabled and plan-limit ship tests.
+- [x] P2 test/protect.test.js:797 stale comment "so it says nothing".
+- [x] P2 missing-branch `push "<base>"` next step untested — add an assertion.
 
 Held: changed tests keep/strengthen every assertion, nothing dropped; 11/17 mutants killed (the rest above); merge with develop clean, 169/169, plugin check in sync.
 
@@ -382,3 +382,14 @@ passed, but `functionSize.enforce` flagged `protect.js` `planBranch` 0→88 and
 commit: the no-checks answer moved to `pullRequestWithoutChecks` (`planBranch`
 74 lines) and the dry-run merge lines to `logDryRunMerge` (`ship` 162); protect,
 ship and layering tests pass alone (76/76). The fixed tree still needs its verify.
+
+Series 2 round 2 fixes (fresh implementer): an unread base now reads
+"Auto-merge: not armed — "main"'s protection could not be read (…). Next: …"
+(README, `docs/rules-and-limits.md`, CHANGELOG follow). New or strengthened
+fake-gh tests: refused write on an unprotected branch ("not protected", never
+"left as is"); dry run on an unprotected base with no CI prints no `protect : `;
+`manual` (no "Merge the PR once" when auto-merge is disabled or on a plan
+limit); a base missing on GitHub says `push "main", then ship again`. Mutants,
+each in a copy: `leftAsIs = !planLimit`, `wouldProtect: true`, the old wording,
+`manual: false`, the missing-branch next step — each fails a new assertion;
+44/44 pass on the real code.

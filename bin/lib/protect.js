@@ -491,7 +491,7 @@ function baseBlocker(root, repo, base) {
   if (info.error || info.missing) {
     const cause = info.missing ? `"${base}" does not exist on GitHub` : info.error;
     const next = info.missing ? `push "${base}", then ship again` : `run \`ai-flow protect --dry-run --branch ${base}\` to see what GitHub answers`;
-    return { why: `could not read "${base}"'s protection (${cause}), so auto-merge is not armed`, next };
+    return { why: `"${base}"'s protection could not be read (${cause})`, next };
   }
   if (isGated(info)) return { gated: true };
   if (info.rules.length > 0) return { why: `"${base}" is ${RULESET_UNGATED}`, next: rulesetNext(base) };

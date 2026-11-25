@@ -499,6 +499,18 @@ test("GitHub refusing the checks on an existing protection: left as is, exit 2, 
   assert.deepEqual(sb.state().branches.main.protection, protection);
 });
 
+// Series 2 round 2, P1: GitHub refusing the protection of an unprotected branch
+// is "not protected", never "left as is" — there was nothing to leave.
+test("GitHub refusing the protection of an unprotected branch: not protected, never left as is", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({ refuseWrites: true }));
+  const res = cli(sb, ["protect"]);
+
+  assert.equal(res.code, 2, res.out);
+  assert.match(res.stdout, /main: not protected — GitHub refused the protection \(gh: Resource not accessible \(HTTP 403\)\)/);
+  assert.doesNotMatch(res.stdout, /left as is/);
+  assert.equal(sb.state().branches.main.protection, null);
+});
+
 // Series 2 round 1, P2: a protection with no required check reads plainly.
 test("a protection with no required check: the plan and the left-as-is line say so plainly", { skip }, (t) => {
   const protection = { required_pull_request_reviews: { required_approving_review_count: 1 }, enforce_admins: { enabled: false } };
@@ -685,9 +697,11 @@ test("ship --auto-merge when the base's protection cannot be read does not arm a
   assert.equal(res.code, 0, res.out);
   assert.equal(merges(sb).length, 0, "auto-merge is not armed");
   assert.equal(sb.writes().length, 0);
-  assert.match(res.out, /Auto-merge: not armed — .*could not read "main"'s protection \(gh: Server Error \(HTTP 500\)\)/);
-  // Series 2 round 1, P1: unread is not unprotected.
-  assert.match(res.out, /Auto-merge: not armed — could not read "main"'s protection \(gh: Server Error \(HTTP 500\)\), so auto-merge is not armed\./);
+  assert.match(res.out, /Auto-merge: not armed — .*"main"'s protection could not be read \(gh: Server Error \(HTTP 500\)\)/);
+  // Series 2 round 1, P1: unread is not unprotected. Series 2 round 2, P2: said
+  // once — "not armed" is not repeated inside the reason.
+  assert.match(res.out, /Auto-merge: not armed — "main"'s protection could not be read \(gh: Server Error \(HTTP 500\)\)\. Next: run `ai-flow protect --dry-run --branch main`/);
+  assert.equal(res.out.match(/not armed/g).length, 1, res.out);
   assert.doesNotMatch(res.out, /has no required status checks|would merge at once/);
 });
 
@@ -700,6 +714,8 @@ test("ship --dry-run --auto-merge says nothing about a protection write the real
     rulesetOnly(),
     unprotected({ planLimit: true }),
     unprotected({ allowAutoMerge: false }),
+    // Series 2 round 2, P1: unprotected but no CI — runProtect plans no write.
+    unprotected({ branches: { main: { sha: "1".repeat(40), checkRuns: [], protection: null } } }),
   ];
   for (const state of states) {
     const sb = shipReady(t, state);
@@ -722,6 +738,20 @@ test("ship --auto-merge on a plan without branch protection says so and does not
   assert.match(res.out, /Next: merge each pull request by hand once its checks pass/);
   assert.doesNotMatch(res.out, /has no required status checks/);
   assert.doesNotMatch(res.out, /gh auth status/);
+  // Series 2 round 2, P2 (`manual`): the next step already says to merge by hand.
+  assert.doesNotMatch(res.out, /Merge the PR once/);
+});
+
+// Series 2 round 2, P2: a base missing on GitHub is not unprotected — the
+// next step is to push it.
+test("ship --auto-merge on a base missing on GitHub does not arm auto-merge and says to push it", { skip }, (t) => {
+  const sb = shipReady(t, unprotected({ branches: {} }));
+  const res = cli(sb, ["ship", "--auto-merge", "--no-evidence", "--no-commit"]);
+
+  assert.equal(res.code, 0, res.out);
+  assert.equal(merges(sb).length, 0, "auto-merge is not armed");
+  assert.equal(sb.writes().length, 0);
+  assert.match(res.out, /Auto-merge: not armed — "main"'s protection could not be read \("main" does not exist on GitHub\)\. Next: push "main", then ship again\./);
 });
 
 // Review round 2, P2: `--auto` is refused on a repository with auto-merge off;
@@ -735,6 +765,8 @@ test("ship --auto-merge on a repository with auto-merge disabled writes nothing 
   assert.equal(merges(sb).length, 0, "auto-merge is not armed");
   assert.match(res.out, /Auto-merge: not armed — the repository acme\/app has auto-merge disabled \(allow_auto_merge: false\)/);
   assert.match(res.out, /Allow auto-merge/);
+  // Series 2 round 2, P2 (`manual`): the next step already says to merge by hand.
+  assert.doesNotMatch(res.out, /Merge the PR once/);
 });
 
 // Review round 3, P1: `protectBranches: false` holds in `ship` too — the base
@@ -794,7 +826,8 @@ test("doctor says nothing when GitHub cannot be read, or auto-merge is off", { s
 });
 
 // Review round 3, P2: the repository is readable but the base's protection is
-// not (HTTP 500): doctor cannot tell, so it says nothing.
+// not (HTTP 500): doctor cannot tell whether the base is gated, so it never
+// calls it ungated — it warns that the protection could not be read.
 test("doctor does not call a base whose protection cannot be read ungated, and says it could not read it", { skip }, (t) => {
   const sb = sandbox(t, unprotected({ protectionError: "gh: Server Error (HTTP 500)" }));
   writeConfig(sb, { autoMergeEpic: true, install: "minimal" });
