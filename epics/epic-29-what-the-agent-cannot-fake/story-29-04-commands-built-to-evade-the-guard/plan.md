@@ -477,3 +477,14 @@ Fixes (series 3 round 1):
   aliases then `rm sub/*.txt`); "60 s never decides" is a deadline at most 30 s
   plus a slow-host test; "within noise" is a median at most 10 ms above develop's
   over 20 calls.
+
+### Series 3 Round 2 — FAIL (security: can the claimed forms still evade?)
+
+- [ ] P1 destructive.js:1444 — a written-then-run file executed inside a nested shell or interpreter string is allowed (`echo 'rm -rf build' > x.sh && bash -c ./x.sh`, `… && sh -c 'bash x.sh'`, `… && bash -c '. ./x.sh'`, heredoc then `bash -c 'bash x.sh'`, `node -e 'require("child_process").execSync("sh x.sh")'`, `bash x.s?`): each nested reading starts a fresh `written` map — fix: pass the outer `written` map into nested readings; a glob/expansion that can name a written file → unchecked.
+- [ ] P1 destructive.js:960/927 — backslash-escaped spaces bypass the alias and interpreter readers (`git config alias.x !rm\ -rf\ build`, `git config alias.x \!git\ reset\ --hard`, `python3 -c import\ os\;os.system\(\"rm\ -rf\ build\"\)`) — fix: read the unquoted word as the quoted forms are.
+- [ ] P1 — code, alias value or SQL given as an expansion is allowed (`C='…rm -rf build…'; python3 -c "$C"`, `python3 -c "$(echo …)"`, `A='!rm -rf build'; git config alias.x "$A"`, `Q='DROP TABLE x'; psql -c "$Q"`), while `bash -c "$C"` is already unchecked — fix: an expansion in the code/alias/SQL position → unchecked.
+- [ ] P2 `os.execvp('git',[…,'reset','--hard'])`, DROP INDEX/VIEW/FUNCTION, UPDATE without WHERE — not claimed; list them in rules-and-limits.md as not read.
+
+Held: literal forms of every ticked criterion; ~20 rm spellings, glued flags, env/absolute path prefixes, continuations, heredocs, cp/mv/ln of the written file, GIT_CONFIG_*, -f config, psql clusters; 30 everyday commands unchanged vs develop; frozen side byte-identical; the test's Module._load/platform override restored in finally and its digest test fails on a mutated frozen copy.
+
+Note (orchestrator): 3 series, 10 rounds. The spec promises classes over an open input space ("a piece names a destructive verb"); each round finds a new spelling. This round's three fixes are rules, not spellings (shared `written` map, unquoted words read, expansions unchecked). If the next round finds another spelling of the same classes, the remaining claim is narrowed to the listed forms and the rest stated as limits (the open-promise rule of story 31-03), not chased.
