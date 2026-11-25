@@ -327,8 +327,31 @@ function isUnattended() {
 // exited) and before any live process now holding the command's id. Deeper down
 // every parent is alive and listed, so its id is its own. Every id is visited
 // once, so a reused-id cycle ends.
+//
+// The two bounds on the shell's children compare two clocks: `Date.now()` and
+// the creation time Windows stamps, which advances once per timer tick (15.6 ms
+// by default) and is read rounded down. Each reading can lag the true time by up
+// to one tick, so a real child can look up to two ticks (~31 ms) older than
+// `started`, or younger than `ended`. CLOCK_TOLERANCE_MS widens both bounds by
+// 50 ms: two ticks with room for the rounding, and still small next to what
+// letting an impostor in takes (the shell dies, its id is handed out again, and
+// the new holder starts a process, all inside that 50 ms window, and exits
+// before the list is read; a holder still alive is caught by the bound above).
+// The selection is therefore bounded, not exact.
+//
+// The creation time is converted to UTC before it becomes a number. .NET keeps
+// the local time's ambiguous-DST flag through that conversion when the value
+// came from UTC; whether CIM's DateTime carries it is not verified. A misread
+// hour moves a child outside the window, which spares it rather than kills a
+// stranger.
+//
+// A live descendant can start a process between the listing and `taskkill`. So
+// the list is read a second time, and what the killed processes started before
+// they died (created no later than the kill, plus the tolerance) is killed too.
+// A process forking faster than two passes still escapes.
+const CLOCK_TOLERANCE_MS = 50;
 const LIST_PROCESSES =
-  "Get-CimInstance Win32_Process | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } }";
+  "Get-CimInstance Win32_Process | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate.ToUniversalTime()).ToUnixTimeMilliseconds() } }";
 
 function parseProcessList(text) {
   return String(text || "")
@@ -338,17 +361,29 @@ function parseProcessList(text) {
     .map(([pid, parentPid, created]) => ({ pid, parentPid, created }));
 }
 
-function descendantsOf(processes, rootPid, started, ended) {
-  const impostor = processes.find((entry) => entry.pid === rootPid);
+// `roots` are dead processes: `{ pid, created, until, self }`. Their children were
+// created between `created` and `until` (both widened by the tolerance) and
+// before any other process now listed under their id. `self` is the root's own
+// creation time when it is known from a listing, so a root that survived its
+// kill is not taken for an impostor of itself.
+function treeBelow(processes, roots, started) {
   const found = [];
-  const seen = new Set([rootPid]);
-  const queue = [{ pid: rootPid, created: started, until: ended, before: impostor ? impostor.created : Infinity }];
+  const seen = new Set(roots.map((root) => root.pid));
+  const queue = roots.map((root) => {
+    const impostor = processes.find((entry) => entry.pid === root.pid && entry.created !== root.self);
+    return {
+      pid: root.pid,
+      created: root.created - CLOCK_TOLERANCE_MS,
+      until: root.until + CLOCK_TOLERANCE_MS,
+      before: impostor ? impostor.created : Infinity,
+    };
+  });
   while (queue.length > 0) {
     const parent = queue.shift();
     for (const entry of processes) {
       const ownChild =
         entry.parentPid === parent.pid &&
-        entry.created >= started &&
+        entry.created >= started - CLOCK_TOLERANCE_MS &&
         entry.created >= parent.created &&
         entry.created <= parent.until &&
         entry.created < parent.before;
@@ -362,20 +397,41 @@ function descendantsOf(processes, rootPid, started, ended) {
   return found;
 }
 
+function descendantsOf(processes, rootPid, started, ended) {
+  return treeBelow(processes, [{ pid: rootPid, created: started, until: ended }], started);
+}
+
 function killTree(pid, started, ended, platform = process.platform, run = spawnSync) {
   if (platform !== "win32" || !Number.isInteger(pid) || pid <= 0) {
     return [];
   }
+  const list = () =>
+    parseProcessList(
+      run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", LIST_PROCESSES], { encoding: "utf8", windowsHide: true, timeout: 15000, maxBuffer: 16 * 1024 * 1024 }).stdout,
+    );
+  const kill = (pids) => run("taskkill", ["/F", ...pids.flatMap((each) => ["/PID", String(each)])], { stdio: "ignore", windowsHide: true, timeout: 15000 });
+  const killed = [];
   try {
-    const listed = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", LIST_PROCESSES], { encoding: "utf8", windowsHide: true, timeout: 15000, maxBuffer: 16 * 1024 * 1024 });
-    const pids = descendantsOf(parseProcessList(listed && listed.stdout), pid, started, ended);
-    if (pids.length > 0) {
-      run("taskkill", ["/F", ...pids.flatMap((each) => ["/PID", String(each)])], { stdio: "ignore", windowsHide: true, timeout: 15000 });
+    const first = list();
+    const pids = descendantsOf(first, pid, started, ended);
+    if (pids.length === 0) {
+      return killed;
     }
-    return pids;
+    kill(pids);
+    killed.push(...pids);
+    const killedAt = Date.now();
+    const roots = first
+      .filter((entry) => pids.includes(entry.pid))
+      .map((entry) => ({ pid: entry.pid, created: entry.created, until: killedAt, self: entry.created }));
+    const late = treeBelow(list(), roots, started).filter((each) => !killed.includes(each));
+    if (late.length > 0) {
+      kill(late);
+      killed.push(...late);
+    }
+    return killed;
   } catch {
     // No PowerShell: the timeout is still reported; the leftovers are not killed.
-    return [];
+    return killed;
   }
 }
 
@@ -608,6 +664,7 @@ module.exports = {
   resolveStoryDir,
   killTree,
   descendantsOf,
+  CLOCK_TOLERANCE_MS,
   parseProcessList,
   parseTestsCommands,
   resolveValidationCommands,

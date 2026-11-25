@@ -7,7 +7,7 @@ const assert = require('node:assert');
 const path = require('node:path');
 
 const { nativeShellPath } = require('../bin/lib/shell-writes');
-const { killTree, descendantsOf, parseProcessList, runValidationCommand } = require('../bin/lib/validation-run');
+const { killTree, descendantsOf, parseProcessList, runValidationCommand, CLOCK_TOLERANCE_MS } = require('../bin/lib/validation-run');
 
 test('a Git Bash path is read as the Windows path it names, on Windows only', () => {
   for (const [word, windows] of [
@@ -67,6 +67,31 @@ test('a process naming the dead shell as parent but created after the shell died
   assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200]);
 });
 
+// Windows stamps a creation time once per timer tick (15.6 ms), rounded down;
+// Date.now() is another clock. A real child can read a tick or two off.
+const TICK = 16;
+
+test('a shell child stamped a clock tick before the command started is still its child; one stamped beyond the tolerance is not', () => {
+  assert.ok(CLOCK_TOLERANCE_MS >= 2 * TICK && CLOCK_TOLERANCE_MS <= 100, 'the tolerance is tick-sized: tens of ms');
+  const processes = [
+    { pid: 200, parentPid: 100, created: STARTED - TICK }, // the shell's child, read a tick early
+    { pid: 201, parentPid: 200, created: STARTED - TICK }, // what it started in the same tick
+    { pid: 202, parentPid: 100, created: STARTED - CLOCK_TOLERANCE_MS }, // at the edge: still in
+    { pid: 300, parentPid: 100, created: STARTED - CLOCK_TOLERANCE_MS - 1 }, // beyond: an orphan of a former id 100
+  ];
+  assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200, 202, 201]);
+});
+
+test('a shell child stamped a clock tick after spawnSync returned is still its child; one stamped beyond the tolerance is not', () => {
+  const processes = [
+    { pid: 200, parentPid: 100, created: ENDED + TICK }, // `b` in `a && b`, read a tick late
+    { pid: 202, parentPid: 100, created: ENDED + CLOCK_TOLERANCE_MS }, // at the edge: still in
+    { pid: 900, parentPid: 100, created: ENDED + CLOCK_TOLERANCE_MS + 1 }, // beyond: a later holder's child
+    { pid: 901, parentPid: 900, created: ENDED + CLOCK_TOLERANCE_MS + 5 }, // and its child
+  ];
+  assert.deepEqual(descendantsOf(processes, 100, STARTED, ENDED), [200, 202]);
+});
+
 test('a live descendant may still start processes after the shell died: they are in the tree', () => {
   const processes = [
     { pid: 200, parentPid: 100, created: STARTED + 5 },
@@ -102,6 +127,7 @@ test('on Windows the selected processes are killed by pid; elsewhere nothing run
   assert.deepEqual(killTree(100, STARTED, ENDED, 'win32', record), [200]);
   assert.equal(calls[0][0], 'powershell.exe');
   assert.match(calls[0].at(-1), /Win32_Process/);
+  assert.match(calls[0].at(-1), /ToUniversalTime\(\)/, 'creation times are read in UTC');
   assert.deepEqual(calls[1], ['taskkill', '/F', '/PID', '200']);
 
   calls.length = 0;
@@ -109,6 +135,40 @@ test('on Windows the selected processes are killed by pid; elsewhere nothing run
   assert.deepEqual(killTree(undefined, STARTED, ENDED, 'win32', record), []);
   assert.deepEqual(killTree(0, STARTED, ENDED, 'win32', record), []);
   assert.deepEqual(calls, []);
+});
+
+test('what a killed process started between the listing and the kill is killed by a second pass', () => {
+  const calls = [];
+  const listings = [
+    `200 100 ${STARTED + 5}\n`, // the first listing: the shell's child
+    // The second: 200 is gone, but started 202 before it died, and 202 started
+    // 210. 203 names 200 yet predates it: an orphan of a former id 200.
+    `202 200 ${STARTED + 400}\n203 200 ${STARTED - 60000}\n210 202 ${STARTED + 410}\n`,
+  ];
+  const record = (command, args) => {
+    calls.push([command, ...args]);
+    return command === 'powershell.exe' ? { stdout: listings.shift() } : {};
+  };
+  assert.deepEqual(killTree(100, STARTED, ENDED, 'win32', record), [200, 202, 210]);
+  assert.deepEqual(calls.map((call) => call[0]), ['powershell.exe', 'taskkill', 'powershell.exe', 'taskkill']);
+  assert.deepEqual(calls[1], ['taskkill', '/F', '/PID', '200']);
+  assert.deepEqual(calls[3], ['taskkill', '/F', '/PID', '202', '/PID', '210']);
+});
+
+test('the second pass spares a process that took a killed pid and what it started', () => {
+  const calls = [];
+  const killedAt = Date.now();
+  const listings = [
+    `200 100 ${STARTED + 5}\n`,
+    // 200 was killed; a new process now holds id 200 and started 220.
+    `200 7 ${killedAt + 1000}\n220 200 ${killedAt + 1100}\n`,
+  ];
+  const record = (command, args) => {
+    calls.push([command, ...args]);
+    return command === 'powershell.exe' ? { stdout: listings.shift() } : {};
+  };
+  assert.deepEqual(killTree(100, STARTED, ENDED, 'win32', record), [200]);
+  assert.deepEqual(calls.map((call) => call[0]), ['powershell.exe', 'taskkill', 'powershell.exe']);
 });
 
 test('a failing kill never throws: the timeout is still reported', () => {
