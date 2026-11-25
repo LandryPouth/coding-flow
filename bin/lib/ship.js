@@ -652,7 +652,7 @@ function maybeAutoMerge(root, config, branch, targetBase, { autoMerge, mergeMeth
   }
   if (!gate.gated) {
     const why = gate.why || `"${targetBase}" has no required status checks, so GitHub would merge at once (${gate.reason})`;
-    log(`Auto-merge: not armed — ${why}.${gate.next ? ` Next: ${gate.next}.` : ""}${gate.why ? "" : " Merge the PR once its checks pass."}`);
+    log(`Auto-merge: not armed — ${why}.${gate.next ? ` Next: ${gate.next}.` : ""}${gate.manual ? "" : " Merge the PR once its checks pass."}`);
     return;
   }
 
@@ -669,13 +669,14 @@ function maybeAutoMerge(root, config, branch, targetBase, { autoMerge, mergeMeth
 
 // Dry run: what the merge would do, and the protection the real run may write
 // first (story 29-08: auto-merge is armed only on a base with required checks).
-function logDryRunMerge(autoMergeEnabled, config, targetBase) {
+// Said only when the real run would write one: GitHub is read, nothing sent.
+function logDryRunMerge(root, autoMergeEnabled, config, targetBase) {
   if (!autoMergeEnabled) {
     log("  merge  : auto-merge off");
     return;
   }
   log("  merge  : auto-merge on — merged once the epic is fully done and the PR is conflict-free");
-  if (config.protectBranches !== false) {
+  if (config.protectBranches !== false && ensureBaseGated(root, targetBase, { dryRun: true }).wouldProtect) {
     log(`  protect : the real run may first write a branch protection on "${targetBase}" (when it has no required checks) — \`ai-flow protect --dry-run\` shows it`);
   }
 }
@@ -748,7 +749,7 @@ function ship({
     log(`  push   : git push -u origin ${branch}`);
     if (canPr) {
       log(`  PR     : ${draft ? "draft " : ""}${targetBase} <- ${branch} (created if absent, otherwise updated)`);
-      logDryRunMerge(autoMergeEnabled, config, targetBase);
+      logDryRunMerge(root, autoMergeEnabled, config, targetBase);
     } else if (github) {
       log("  PR     : gh absent — the compare URL will be printed.");
     } else {

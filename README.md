@@ -353,7 +353,7 @@ on push (deploy, release, pages), or only on some pull requests (forks only, a
 is never required. When one of those pull requests ran no checks at all (a
 `paths:` filter on the whole CI), it exits 2 and sends nothing: an unprotected
 branch stays unprotected ("a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever"),
-and a branch already protected is left as is, nothing sent: "left as is (requires …) — a recent pull request ran no checks; requiring more would block such pull requests". No pull
+and a branch already protected is left as is, nothing sent: "left as is (requires …) — a recent pull request ran no checks; requiring more would block such pull requests" (with no required check: "left as is (no required check; its other rules kept) — …"); GitHub refusing the added checks on an existing protection says "left as is — GitHub refused adding required check(s) …". No pull
 request into the branch yet: nothing is sent — open one first. It only adds: an
 existing protection keeps its reviews, restrictions and checks, and a second run
 sends nothing. No CI yet, no pull request yet, no `gh`, or no admin rights: nothing is sent, the reason
@@ -361,8 +361,12 @@ and the next command are printed (exit 2), and `init` still succeeds. A private
 repository on GitHub Free has no branch protection at all: `protect`, `init`, `ship`
 and `doctor` say so, and auto-merge stays off — merge each pull request once its
 checks pass. `ship` also leaves auto-merge off, and writes nothing, when the
-repository has "Allow auto-merge" disabled. GitHub only,
-classic branch protection; a branch governed by a ruleset is reported and left alone.
+repository has "Allow auto-merge" disabled, and when it cannot read the base's
+protection ("could not read "main"'s protection (…), so auto-merge is not armed").
+GitHub only, classic branch protection; a branch governed by a ruleset is reported
+and left alone — when that ruleset has no required status checks rule, `protect`
+exits 2 and `protect`, `ship` and `doctor` say "add a required status checks rule
+to the ruleset protecting <branch>".
 
 ## Context & Story Files
 

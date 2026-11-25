@@ -254,14 +254,55 @@ test("a protection with no required checks keeps every rule, each non-default, w
 });
 
 test("a ruleset-governed branch is reported and left alone", { skip }, (t) => {
+  const rules = [{ type: "deletion", ruleset_id: 1 }, { type: "required_status_checks", ruleset_id: 1 }];
   const sb = sandbox(t, unprotected({
-    branches: { main: { sha: "c".repeat(40), checkRuns: THREE, protection: null, rules: [{ type: "deletion", ruleset_id: 1 }] } },
+    branches: { main: { sha: "c".repeat(40), checkRuns: THREE, protection: null, rules } },
   }));
   const res = cli(sb, ["protect"]);
 
   assert.equal(res.code, 0, res.out);
   assert.equal(sb.writes().length, 0);
   assert.match(res.stdout, /main: governed by a repository ruleset — left alone/);
+});
+
+// Series 2 round 1, P1: a ruleset with no required status checks rule lets
+// auto-merge merge at once. Not settled: protect, doctor and ship name the fix,
+// which is in the ruleset, and protect exits 2 — never "nothing to change".
+const RULESET_LINE = /main: governed by a repository ruleset with no required status checks rule, so GitHub would merge at once — left alone \(classic branch protection only\)/;
+const RULESET_NEXT = /add a required status checks rule to the ruleset protecting "main"/;
+const rulesetOnly = () => unprotected({
+  branches: { main: { sha: "c".repeat(40), checkRuns: THREE, protection: null, rules: [{ type: "deletion", ruleset_id: 1 }] } },
+});
+
+test("a ruleset with no required status checks rule: protect exits 2, sends nothing, and names the rule to add", { skip }, (t) => {
+  const sb = sandbox(t, rulesetOnly());
+  for (const args of [["protect", "--dry-run"], ["protect"]]) {
+    const res = cli(sb, args);
+    assert.equal(res.code, 2, res.out);
+    assert.match(res.stdout, RULESET_LINE);
+    assert.match(res.stdout, /Next: add a required status checks rule to the ruleset protecting "main" \(Settings → Rules → Rulesets\)/);
+    assert.doesNotMatch(res.stdout, /nothing to change/);
+    assert.doesNotMatch(res.stdout, /not protected/);
+  }
+  assert.equal(sb.writes().length, 0);
+});
+
+test("a ruleset with no required status checks rule: doctor and ship name the rule to add", { skip }, (t) => {
+  const sb = sandbox(t, rulesetOnly());
+  writeConfig(sb, { autoMergeEpic: true, install: "minimal" });
+  assert.equal(cli(sb, ["init", "--minimal", "--no-protect"]).code, 0);
+  const report = JSON.parse(cli(sb, ["doctor", "--json"]).stdout);
+  const warning = report.warnings.find((entry) => entry.code === "auto_merge_ungated");
+  assert.ok(warning, JSON.stringify(report.warnings));
+  assert.match(warning.message, RULESET_NEXT);
+  assert.doesNotMatch(warning.message, /ai-flow protect/);
+
+  const ship = shipReady(t, rulesetOnly());
+  const res = cli(ship, ["ship", "--auto-merge", "--no-evidence", "--no-commit"]);
+  assert.equal(res.code, 0, res.out);
+  assert.equal(merges(ship).length, 0, "auto-merge is not armed");
+  assert.equal(ship.writes().length, 0);
+  assert.match(res.out, /Auto-merge: not armed — "main" is governed by a repository ruleset with no required status checks rule, so GitHub would merge at once\. Next: add a required status checks rule to the ruleset protecting "main"/);
 });
 
 // Criterion 3: protect exits 2 with the reason and the next command; init still
@@ -442,6 +483,44 @@ test("an already protected branch with a recent pull request that ran no checks 
   assert.deepEqual(sb.state().branches.main.protection, protection);
 });
 
+// Series 2 round 1, P1: GitHub refuses adding checks to an existing protection
+// — the branch keeps it, so it is "left as is", never "not protected".
+test("GitHub refusing the checks on an existing protection: left as is, exit 2, protection unchanged", { skip }, (t) => {
+  const protection = { required_pull_request_reviews: { required_approving_review_count: 1 }, enforce_admins: { enabled: false } };
+  const sb = sandbox(t, unprotected({
+    branches: { main: { sha: "a".repeat(40), checkRuns: THREE, protection } },
+    refuseWrites: true,
+  }));
+  const res = cli(sb, ["protect"]);
+
+  assert.equal(res.code, 2, res.out);
+  assert.match(res.stdout, /main: left as is — GitHub refused adding required check\(s\) build, lint, test \(gh: Resource not accessible \(HTTP 403\)\)/);
+  assert.doesNotMatch(res.stdout, /not protected/);
+  assert.deepEqual(sb.state().branches.main.protection, protection);
+});
+
+// Series 2 round 1, P2: a protection with no required check reads plainly.
+test("a protection with no required check: the plan and the left-as-is line say so plainly", { skip }, (t) => {
+  const protection = { required_pull_request_reviews: { required_approving_review_count: 1 }, enforce_admins: { enabled: false } };
+  const sb = sandbox(t, unprotected({ branches: { main: { sha: "a".repeat(40), checkRuns: THREE, protection } } }));
+  const dry = cli(sb, ["protect", "--dry-run"]);
+  assert.match(dry.stdout, /main: would add required check\(s\) build, lint, test; kept every other rule\n/);
+  assert.doesNotMatch(dry.stdout, /no check/);
+
+  const blocked = sandbox(t, unprotected({
+    branches: { main: { sha: "a".repeat(40), checkRuns: THREE, protection } },
+    pulls: [
+      { base: "main", headRefOid: "9".repeat(40), checkRuns: THREE },
+      { base: "main", headRefOid: "8".repeat(40), checkRuns: [] },
+    ],
+  }));
+  const res = cli(blocked, ["protect"]);
+  assert.equal(res.code, 2, res.out);
+  assert.match(res.stdout, /main: left as is \(no required check; its other rules kept\) — a recent pull request ran no checks; requiring a check would block such pull requests/);
+  assert.doesNotMatch(res.stdout, /requires no check|requiring more/);
+  assert.equal(blocked.writes().length, 0);
+});
+
 // Review round 2, P1: a private repository on GitHub Free has no branch
 // protection; GitHub answers 403 "Upgrade to GitHub Pro". A plan limit, not an
 // auth problem, and never "nothing to change".
@@ -607,6 +686,29 @@ test("ship --auto-merge when the base's protection cannot be read does not arm a
   assert.equal(merges(sb).length, 0, "auto-merge is not armed");
   assert.equal(sb.writes().length, 0);
   assert.match(res.out, /Auto-merge: not armed — .*could not read "main"'s protection \(gh: Server Error \(HTTP 500\)\)/);
+  // Series 2 round 1, P1: unread is not unprotected.
+  assert.match(res.out, /Auto-merge: not armed — could not read "main"'s protection \(gh: Server Error \(HTTP 500\)\), so auto-merge is not armed\./);
+  assert.doesNotMatch(res.out, /has no required status checks|would merge at once/);
+});
+
+// Series 2 round 1, P2: the dry run names the protection write only when the
+// real run would make one — not on a gated, ruleset or plan-limited base.
+test("ship --dry-run --auto-merge says nothing about a protection write the real run would not make", { skip }, (t) => {
+  const gated = { required_status_checks: { strict: false, contexts: ["build"], checks: [{ context: "build" }] } };
+  const states = [
+    unprotected({ branches: { main: { sha: "1".repeat(40), checkRuns: THREE, protection: gated } } }),
+    rulesetOnly(),
+    unprotected({ planLimit: true }),
+    unprotected({ allowAutoMerge: false }),
+  ];
+  for (const state of states) {
+    const sb = shipReady(t, state);
+    const res = cli(sb, ["ship", "--dry-run", "--auto-merge", "--no-evidence", "--no-commit"]);
+    assert.equal(res.code, 0, res.out);
+    assert.match(res.out, /merge {2}: auto-merge on/);
+    assert.doesNotMatch(res.out, /protect : /, JSON.stringify(state));
+    assert.equal(sb.calls().filter((call) => call.args.includes("-X")).length, 0);
+  }
 });
 
 test("ship --auto-merge on a plan without branch protection says so and does not arm auto-merge", { skip }, (t) => {
@@ -693,7 +795,7 @@ test("doctor says nothing when GitHub cannot be read, or auto-merge is off", { s
 
 // Review round 3, P2: the repository is readable but the base's protection is
 // not (HTTP 500): doctor cannot tell, so it says nothing.
-test("doctor says nothing when the base's protection cannot be read", { skip }, (t) => {
+test("doctor does not call a base whose protection cannot be read ungated, and says it could not read it", { skip }, (t) => {
   const sb = sandbox(t, unprotected({ protectionError: "gh: Server Error (HTTP 500)" }));
   writeConfig(sb, { autoMergeEpic: true, install: "minimal" });
   assert.equal(cli(sb, ["init", "--minimal", "--no-protect"]).code, 0);
@@ -704,6 +806,25 @@ test("doctor says nothing when the base's protection cannot be read", { skip }, 
   assert.equal(report.warnings.some((entry) => entry.code === "auto_merge_ungated"), false, JSON.stringify(report.warnings));
   assert.equal(report.warnings.some((entry) => entry.code === "auto_merge_plan_limit"), false);
   assert.equal(sb.writes().length, 0, "doctor only reads");
+  // Series 2 round 1, P2: the real blocker is named, not hidden.
+  const unread = report.warnings.find((entry) => entry.code === "auto_merge_unread");
+  assert.ok(unread, JSON.stringify(report.warnings));
+  assert.match(unread.message, /"main"'s protection could not be read \(gh: Server Error \(HTTP 500\)\)/);
+  assert.match(unread.message, /ai-flow protect --dry-run --branch main/);
+});
+
+// Series 2 round 1, P2: with "Allow auto-merge" off, protecting is not the fix.
+test("doctor names a repository with auto-merge disabled, not 'run protect'", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({ allowAutoMerge: false }));
+  writeConfig(sb, { autoMergeEpic: true, install: "minimal" });
+  assert.equal(cli(sb, ["init", "--minimal", "--no-protect"]).code, 0);
+
+  const report = JSON.parse(cli(sb, ["doctor", "--json"]).stdout);
+  const warning = report.warnings.find((entry) => entry.code === "auto_merge_disabled");
+  assert.ok(warning, JSON.stringify(report.warnings));
+  assert.match(warning.message, /acme\/app has auto-merge disabled \(allow_auto_merge: false\)/);
+  assert.match(warning.message, /turn on "Allow auto-merge" in the repository's Settings → General/);
+  assert.equal(report.warnings.some((entry) => entry.code === "auto_merge_ungated"), false);
 });
 
 test("a non-GitHub remote: protect says GitHub only, init stays quiet", { skip }, (t) => {

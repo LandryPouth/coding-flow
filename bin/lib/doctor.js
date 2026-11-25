@@ -206,24 +206,35 @@ function checkRecoveryExposure(warnings, notes) {
 
 // Story 29-08: auto-merge on a base with no required status checks merges at
 // once, CI or not. Read from GitHub only when `gh` is there and auto-merge is on;
-// a network failure says nothing.
+// a repository it cannot read says nothing. Each warning names the real
+// blocker and the step that clears it.
+function autoMergeGateWarning({ branch, kind, repo, error }) {
+  const { PLAN_LIMIT, PLAN_NEXT, RULESET_UNGATED, rulesetNext } = require("./protect");
+  const on = "autoMergeEpic is on but";
+  const warnings = {
+    disabled: {
+      code: "auto_merge_disabled",
+      message: `${on} the repository ${repo} has auto-merge disabled (allow_auto_merge: false), so GitHub refuses it — turn on "Allow auto-merge" in the repository's Settings → General`,
+    },
+    plan: { code: "auto_merge_plan_limit", message: `${on} "${branch}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once; ${PLAN_NEXT}` },
+    ruleset: { code: "auto_merge_ungated", message: `${on} "${branch}" is ${RULESET_UNGATED} — ${rulesetNext(branch)}` },
+    unread: {
+      code: "auto_merge_unread",
+      message: `${on} "${branch}"'s protection could not be read (${error}), so whether auto-merge waits for the checks is unknown — run \`ai-flow protect --dry-run --branch ${branch}\` to see what GitHub answers`,
+    },
+    ungated: {
+      code: "auto_merge_ungated",
+      message: `${on} "${branch}" has no required status checks, so GitHub would merge at once — run \`ai-flow protect --branch ${branch}\``,
+    },
+  };
+  return warnings[kind];
+}
+
 function checkAutoMergeGate(warnings) {
   if (!readConfig(cwd).autoMergeEpic || !isCommandAvailable("gh")) return;
 
-  const { ungatedBases, PLAN_LIMIT, PLAN_NEXT } = require("./protect");
-  for (const { branch, planLimit } of ungatedBases(cwd)) {
-    warnings.push(planLimit
-      ? {
-          code: "auto_merge_plan_limit",
-          message: `autoMergeEpic is on but "${branch}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once; ${PLAN_NEXT}`,
-        }
-      : {
-          code: "auto_merge_ungated",
-          message:
-            `autoMergeEpic is on but "${branch}" has no required status checks, so GitHub would merge at once — ` +
-            `run \`ai-flow protect --branch ${branch}\``,
-        });
-  }
+  const { ungatedBases } = require("./protect");
+  for (const problem of ungatedBases(cwd)) warnings.push(autoMergeGateWarning(problem));
 }
 
 // Both reports run these together, so neither report function grows.

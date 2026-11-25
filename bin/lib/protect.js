@@ -17,7 +17,9 @@
 //   - on a branch that has one, it only ADDS the missing checks: reviews,
 //     restrictions and the checks already required are kept. A second run sends
 //     nothing.
-//   - a branch governed by a repository ruleset is reported and left alone.
+//   - a branch governed by a repository ruleset is reported and left alone;
+//     one whose ruleset has no required status checks rule is pending (exit 2):
+//     auto-merge would merge into it at once, and the fix is in the ruleset.
 //
 // It never protects a branch with an empty check list: no check runs means the
 // project needs CI first. Every blocker (no `gh`, no admin rights, not GitHub,
@@ -87,6 +89,9 @@ const PLAN_LIMIT = "branch protection is not available on this plan (private rep
 const PLAN_NEXT =
   "merge each pull request by hand once its checks pass (auto-merge cannot wait for them here), " +
   "or make the repository public or move it to a paid plan, then run `ai-flow protect`";
+// A ruleset branch is fixed in the ruleset, never by classic protection.
+const rulesetNext = (branch) => `add a required status checks rule to the ruleset protecting "${branch}" (Settings → Rules → Rulesets)`;
+const RULESET_UNGATED = "governed by a repository ruleset with no required status checks rule, so GitHub would merge at once";
 const isPlanLimit = (text) => /Upgrade to GitHub Pro|make this repository public to enable this feature/i.test(String(text || ""));
 
 // The repository as `gh` sees it, or the reason it cannot be read.
@@ -262,12 +267,23 @@ function noPullRequestCheck(branch, runs, extra) {
 function pullRequestWithoutChecks(branch, info, required) {
   const next = `run CI on every pull request into "${branch}" (\`on: pull_request\`, no \`paths:\` filter), ${NEXT_RUN}`;
   if (info.protection) {
-    const kept = required.length ? required.join(", ") : "no check";
-    const reason = `left as is (requires ${kept}) — a recent pull request ran no checks; requiring more would block such pull requests`;
+    const reason = required.length
+      ? `left as is (requires ${required.join(", ")}) — a recent pull request ran no checks; requiring more would block such pull requests`
+      : "left as is (no required check; its other rules kept) — a recent pull request ran no checks; requiring a check would block such pull requests";
     return { branch, action: "blocked", leftAsIs: true, reason, next };
   }
   const reason = "a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever";
   return { branch, action: "blocked", reason, next };
+}
+
+// A ruleset branch is left alone. Without a required status checks rule it
+// is pending, not settled: auto-merge would merge into it at once.
+function rulesetBranch(branch, info) {
+  if (isGated(info)) {
+    return { branch, action: "ruleset", gated: true, reason: "governed by a repository ruleset — left alone (classic branch protection only)" };
+  }
+  const reason = `${RULESET_UNGATED} — left alone (classic branch protection only)`;
+  return { branch, action: "blocked", ruleset: true, leftAsIs: true, gated: false, reason, next: rulesetNext(branch) };
 }
 
 // One branch: what would change, and the one request that changes it.
@@ -279,14 +295,7 @@ function planBranch(root, repo, branch) {
   if (info.planLimit) return { ...blocked(PLAN_LIMIT, PLAN_NEXT), planLimit: true };
   if (info.error) return blocked(`GitHub did not answer for "${branch}" (${info.error})`, `check \`gh auth status\`, ${NEXT_RUN}`);
 
-  if (info.rules.length > 0) {
-    return {
-      branch,
-      action: "ruleset",
-      gated: isGated(info),
-      reason: "governed by a repository ruleset — left alone (classic branch protection only)",
-    };
-  }
+  if (info.rules.length > 0) return rulesetBranch(branch, info);
 
   const required = requiredChecksOf(info.protection);
   const runs = info.sha ? checkRunNames(root, repo, info.sha) : { names: [] };
@@ -352,6 +361,21 @@ function targetBranches(root, repoInfo, explicit) {
   return [...new Set([repoInfo.defaultBranch, typeof configured === "string" && configured ? configured : null].filter(Boolean))];
 }
 
+// GitHub refused the write. A branch that already had a protection keeps it
+// untouched: it is "left as is", never "not protected".
+function refused(result, stderr) {
+  const error = firstLine(stderr) || "unknown error";
+  result.planLimit = isPlanLimit(stderr);
+  result.leftAsIs = !result.planLimit && result.action === "add-checks";
+  result.reason = result.planLimit
+    ? PLAN_LIMIT
+    : result.leftAsIs
+      ? `left as is — GitHub refused adding required check(s) ${result.missing.join(", ")} (${error})`
+      : `GitHub refused the protection (${error})`;
+  result.next = result.planLimit ? PLAN_NEXT : `check your admin rights with \`gh auth status\`, ${NEXT_RUN}`;
+  result.action = "blocked";
+}
+
 // The whole run. `exitCode` 2 when anything was blocked, 0 otherwise.
 function runProtect(root, { branches = [], dryRun = false } = {}) {
   const repoInfo = resolveRepo(root);
@@ -379,12 +403,7 @@ function runProtect(root, { branches = [], dryRun = false } = {}) {
       const { method, path: apiPath, body } = result.request;
       const sent = gh(root, ["api", "-X", method, apiPath, "--input", "-"], body);
       result.applied = sent.ok;
-      if (!sent.ok) {
-        result.action = "blocked";
-        result.planLimit = isPlanLimit(sent.stderr);
-        result.reason = result.planLimit ? PLAN_LIMIT : `GitHub refused the protection (${firstLine(sent.stderr) || "unknown error"})`;
-        result.next = result.planLimit ? PLAN_NEXT : `check your admin rights with \`gh auth status\`, ${NEXT_RUN}`;
-      }
+      if (!sent.ok) refused(result, sent.stderr);
     }
   }
 
@@ -410,7 +429,8 @@ function describeBranch(entry, dryRun) {
     return `${entry.branch}: ${will(`${dryRun ? "protect" : "protected"} — requires ${entry.missing.join(", ")}`)} (strict: false, no reviews, enforce_admins: false, no force push, no deletion)${left}`;
   }
   if (entry.action === "add-checks") {
-    return `${entry.branch}: ${will(`${dryRun ? "add" : "added"} required check(s) ${entry.missing.join(", ")}`)}; kept ${entry.required.length ? entry.required.join(", ") : "no check"} and every other rule${left}`;
+    const kept = entry.required.length ? `kept ${entry.required.join(", ")} and every other rule` : "kept every other rule";
+    return `${entry.branch}: ${will(`${dryRun ? "add" : "added"} required check(s) ${entry.missing.join(", ")}`)}; ${kept}${left}`;
   }
   if (entry.action === "unchanged") return `${entry.branch}: nothing to change — ${entry.reason}${left}`;
   if (entry.action === "ruleset") return `${entry.branch}: ${entry.reason}`;
@@ -453,55 +473,77 @@ function autoMergeAllowed(root, repo) {
   return data && typeof data.allow_auto_merge === "boolean" ? data.allow_auto_merge : null;
 }
 
+// Why `ship` cannot arm auto-merge on this base before any write, or null.
+// `manual`: the next step already says to merge by hand.
+function baseBlocker(root, repo, base) {
+  // Checked before any write: protecting the base is pointless when GitHub
+  // would refuse `--auto` anyway.
+  if (autoMergeAllowed(root, repo) === false) {
+    return {
+      why: `the repository ${repo} has auto-merge disabled (allow_auto_merge: false), so GitHub would refuse it`,
+      next: "turn on \"Allow auto-merge\" in the repository's Settings → General, then ship again — or merge the PR once its checks pass",
+      manual: true,
+    };
+  }
+  const info = inspectBranch(root, repo, base);
+  if (info.planLimit) return { why: `"${base}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once`, next: PLAN_NEXT, manual: true };
+  // Unread is not unprotected: it cannot say GitHub would merge at once.
+  if (info.error || info.missing) {
+    const cause = info.missing ? `"${base}" does not exist on GitHub` : info.error;
+    const next = info.missing ? `push "${base}", then ship again` : `run \`ai-flow protect --dry-run --branch ${base}\` to see what GitHub answers`;
+    return { why: `could not read "${base}"'s protection (${cause}), so auto-merge is not armed`, next };
+  }
+  if (isGated(info)) return { gated: true };
+  if (info.rules.length > 0) return { why: `"${base}" is ${RULESET_UNGATED}`, next: rulesetNext(base) };
+  return null;
+}
+
 // `ship`: may auto-merge be armed on this base? Protects it first when it can.
-// `why`, when set, replaces "the base has no required status checks".
-function ensureBaseGated(root, base, { protectBranches = true } = {}) {
+// `why`, when set, replaces "the base has no required status checks". With
+// `dryRun`, nothing is written: `wouldProtect` is set when the real run would.
+function ensureBaseGated(root, base, { protectBranches = true, dryRun = false } = {}) {
   const repoInfo = resolveRepo(root);
   if (repoInfo.blocked) return { gated: false, reason: repoInfo.blocked, next: repoInfo.next };
 
-  // Checked before any write: protecting the base is pointless when GitHub
-  // would refuse `--auto` anyway.
-  if (autoMergeAllowed(root, repoInfo.repo) === false) {
-    return {
-      gated: false,
-      why: `the repository ${repoInfo.repo} has auto-merge disabled (allow_auto_merge: false), so GitHub would refuse it`,
-      next: "turn on \"Allow auto-merge\" in the repository's Settings → General, then ship again — or merge the PR once its checks pass",
-    };
-  }
-
-  const info = inspectBranch(root, repoInfo.repo, base);
-  if (info.planLimit) {
-    return { gated: false, why: `"${base}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once`, next: PLAN_NEXT };
-  }
-  if (info.error || info.missing) {
-    return { gated: false, reason: info.missing ? `"${base}" does not exist on GitHub` : `could not read "${base}"'s protection (${info.error})`, next: NEXT_RUN.replace(/^then /, "") };
-  }
-  if (isGated(info)) return { gated: true };
+  const blocker = baseBlocker(root, repoInfo.repo, base);
+  if (blocker) return { gated: false, ...blocker };
 
   if (!protectBranches) {
     return { gated: false, reason: "protectBranches is false in .coding-flow/config.json", next: `protect "${base}" with required checks, or run \`ai-flow protect --branch ${base}\`` };
   }
 
-  const report = runProtect(root, { branches: [base] });
+  const report = runProtect(root, { branches: [base], dryRun });
   const entry = report.branches[0];
+  if (dryRun) return { gated: false, wouldProtect: Boolean(entry && entry.request) };
   if (entry && entry.applied) return { gated: true, protected: describeBranch(entry, false) };
   if (entry && entry.planLimit) {
-    return { gated: false, why: `"${base}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once`, next: PLAN_NEXT };
+    return { gated: false, why: `"${base}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once`, next: PLAN_NEXT, manual: true };
   }
   return { gated: false, reason: entry ? entry.reason : report.reason, next: entry ? entry.next : report.next };
 }
 
-// `doctor`: the bases auto-merge would merge into with no required check, as
-// `{ branch, planLimit }` (planLimit: the plan has no branch protection at
-// all). Silent (empty) on anything else it cannot read.
+// What `doctor` reports about one base, or null when auto-merge waits there.
+function baseProblem(root, repo, branch) {
+  const info = inspectBranch(root, repo, branch);
+  if (info.planLimit) return { branch, kind: "plan" };
+  if (info.missing) return null;
+  if (info.error) return { branch, kind: "unread", error: info.error };
+  if (isGated(info)) return null;
+  return { branch, kind: info.rules.length > 0 ? "ruleset" : "ungated" };
+}
+
+// `doctor`: why auto-merge would not wait for the checks, as `{ branch, kind }`
+// — "disabled" (the repository refuses auto-merge; branch null), "plan" (no
+// branch protection on this plan), "ruleset" (a ruleset with no required
+// status checks rule), "unread" (the protection could not be read: `error`),
+// "ungated" (no required check). Silent (empty) when the repository itself
+// cannot be read.
 function ungatedBases(root) {
   if (!isGitHubOrigin(root)) return [];
   const repoInfo = resolveRepo(root);
   if (repoInfo.blocked) return [];
-  return targetBranches(root, repoInfo, [])
-    .map((branch) => ({ branch, info: inspectBranch(root, repoInfo.repo, branch) }))
-    .filter(({ info }) => info.planLimit || (!info.error && !info.missing && !isGated(info)))
-    .map(({ branch, info }) => ({ branch, planLimit: Boolean(info.planLimit) }));
+  if (autoMergeAllowed(root, repoInfo.repo) === false) return [{ branch: null, kind: "disabled", repo: repoInfo.repo }];
+  return targetBranches(root, repoInfo, []).map((branch) => baseProblem(root, repoInfo.repo, branch)).filter(Boolean);
 }
 
 function protectCommand({ args, flags, cwd }) {
@@ -533,4 +575,6 @@ module.exports = {
   requiredChecksOf,
   PLAN_LIMIT,
   PLAN_NEXT,
+  RULESET_UNGATED,
+  rulesetNext,
 };

@@ -30,7 +30,7 @@ protection auto du projet dans lequel il est installé".
     at all (a `paths:` filter on the whole CI), nothing is sent, exit 2: an
     unprotected branch says "a recent pull request ran no checks (a `paths:`
     filter?) — requiring checks would block such pull requests forever" (review
-    round 3); a branch already protected is left as is, nothing sent: "left as is (requires …) — a recent pull request ran no checks; requiring more would block such pull requests" (review round 4);
+    round 3); a branch already protected is left as is, nothing sent: "left as is (requires …) — a recent pull request ran no checks; requiring more would block such pull requests" (review round 4; with no required check: "left as is (no required check; its other rules kept) — …"). GitHub refusing the checks added to an existing protection: "left as is — GitHub refused adding required check(s) …" (series 2 round 1);
   - `enforce_admins: false`, no required reviews, no force pushes, no
     deletion.
   - **It never weakens an existing protection.** An existing rule keeps its
@@ -53,6 +53,11 @@ protection auto du projet dans lequel il est installé".
     checks pass, or make the repository public / move to a paid plan) — never
     `gh auth status`. A dry run that blocked anything never says "nothing to
     change".
+  - **Rulesets.** A branch governed by a ruleset is left alone. When the
+    ruleset has no required status checks rule, auto-merge would merge at once:
+    `protect` reports it as pending (exit 2, never "nothing to change"), and
+    `protect`, `ship` and `doctor` say "add a required status checks rule to the
+    ruleset protecting <branch>" (series 2 round 1).
   - **Limits.** Legacy commit statuses are not read (such a project is told it
     needs CI first); a required check that no longer runs is never flagged or
     removed (additive only); `doctor` checks only the default branch and
@@ -67,11 +72,17 @@ protection auto du projet dans lequel il est installé".
   reads the repository's `allow_auto_merge` (off → nothing written, says so),
   then checks that the base has required status checks. If not, it runs `protect`
   for the base when it can (same conditions). Otherwise it opens the PR without
-  auto-merge and says why ("GitHub would merge at once").
+  auto-merge and says why ("GitHub would merge at once"). A base whose
+  protection cannot be read is not called unprotected: "could not read
+  "<base>"'s protection (…), so auto-merge is not armed". `ship --dry-run` says
+  the real run may first write a branch protection only when it would.
 - **`doctor`** warns when auto-merge is enabled (`autoMergeEpic`) and the base
-  has no required checks (`auto_merge_ungated`), or the plan has no branch
-  protection (`auto_merge_plan_limit`). It reads GitHub only when `gh` is available, and a
-  network failure says nothing.
+  has no required checks (`auto_merge_ungated`; a ruleset without a required
+  status checks rule names the rule to add), the plan has no branch
+  protection (`auto_merge_plan_limit`), the repository has "Allow auto-merge"
+  off (`auto_merge_disabled`), or the base's protection cannot be read
+  (`auto_merge_unread`). It reads GitHub only when `gh` is available, and a
+  repository it cannot read at all says nothing.
 
 ## Review findings
 
@@ -111,12 +122,12 @@ Held: merge with develop clean, 142/142 + windows-paths 19/19 + layering 4/4, pl
 
 ### Series 2 Round 1 — FAIL (every message a newcomer reads)
 
-- [ ] P1 bin/lib/protect.js:385 + :418 — existing protection (reviews only) + GitHub refuses the PUT → "main: not protected — GitHub refused the protection": false — fix: when `info.protection` exists, "left as is — GitHub refused adding required check(s) …".
-- [ ] P1 bin/lib/protect.js:477 → ship.js:654 — protection read fails (HTTP 500) → ship says "\"main\" has no required status checks, so GitHub would merge at once (could not read …)": it cannot know — fix: for error/missing, `why` = "could not read \"main\"'s protection (…), so auto-merge is not armed".
-- [ ] P1 doctor.js:223 + protect.js:287 — ruleset branch without a required-checks rule: doctor says run `ai-flow protect --branch main`; protect says "left alone", exit 0, dry run "nothing to change" while auto-merge would merge at once — dead end (ship: no Next) — fix: doctor, protect and ship say "add a required status checks rule to the ruleset protecting <branch>"; protect reports it as pending (exit 2), never "nothing to change".
-- [ ] P2 "left as is (requires no check) … requiring more" / "kept no check and every other rule" read oddly when nothing is required — word for the empty case.
-- [ ] P2 `ship --dry-run` "may first write a branch protection" also prints on an already gated, ruleset, or plan-limited base — print it only when the real run would write.
-- [ ] P2 doctor silent on HTTP 500; on `allow_auto_merge: false` it says only "run protect" — name the real blocker (enable auto-merge in the repository settings).
+- [x] P1 bin/lib/protect.js:385 + :418 — existing protection (reviews only) + GitHub refuses the PUT → "main: not protected — GitHub refused the protection": false — fix: when `info.protection` exists, "left as is — GitHub refused adding required check(s) …".
+- [x] P1 bin/lib/protect.js:477 → ship.js:654 — protection read fails (HTTP 500) → ship says "\"main\" has no required status checks, so GitHub would merge at once (could not read …)": it cannot know — fix: for error/missing, `why` = "could not read \"main\"'s protection (…), so auto-merge is not armed".
+- [x] P1 doctor.js:223 + protect.js:287 — ruleset branch without a required-checks rule: doctor says run `ai-flow protect --branch main`; protect says "left alone", exit 0, dry run "nothing to change" while auto-merge would merge at once — dead end (ship: no Next) — fix: doctor, protect and ship say "add a required status checks rule to the ruleset protecting <branch>"; protect reports it as pending (exit 2), never "nothing to change".
+- [x] P2 "left as is (requires no check) … requiring more" / "kept no check and every other rule" read oddly when nothing is required — word for the empty case.
+- [x] P2 `ship --dry-run` "may first write a branch protection" also prints on an already gated, ruleset, or plan-limited base — print it only when the real run would write.
+- [x] P2 doctor silent on HTTP 500; on `allow_auto_merge: false` it says only "run protect" — name the real blocker (enable auto-merge in the repository settings).
 
 Held: refactor changed no behaviour (only the two intended lines differ vs c2c0c82); plan limit, no PRs, push-only, no-checks PR, partial/full protection, auto-merge disabled, no admin, no CI: true, named, actionable; `--dry-run` 0 writes everywhere.
 
