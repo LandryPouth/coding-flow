@@ -28,16 +28,16 @@ found the trap in four shapes, over four review rounds:
 
 ## Acceptance Criteria
 
-- [ ] Given `init` (and `harness init`) on a fresh project, then
+- [x] Given `init` (and `harness init`) on a fresh project, then
       `harness.json` contains `coverageFloor: { high: "auto", medium:
       "evidence", low: "not-required" }` and `failOnContrarySignals: false`.
-      (`test/rules-registry.test.js`: the two tests marked `todo` for this
+      (`test/rules-registry.test.js`: the two tests that were `todo` for this
       story.)
-- [ ] Given a project with a recorded verify proof in any of its checkouts,
+- [x] Given a project with a recorded verify proof in any of its checkouts,
       including a project in a subdirectory of the repository, when `init`
       or `harness init [--force]` runs, then the policy fingerprint is
       unchanged.
-- [ ] Given `init` then `ai-flow rules`, then no rule says
+- [x] Given `init` then `ai-flow rules`, then no rule says
       `(project value ignored)`.
 
 ## Commands
@@ -47,3 +47,20 @@ npm test
 ```
 
 ## Result
+
+The keys are written when `init` or `harness init` creates `harness.json`; the
+policy fingerprint leaves each out while it holds that default (plan.md D1), so
+a file written in one checkout and merged into another, or for a project in a
+subdirectory, changes no recorded proof's fingerprint. An existing file is not
+rewritten. Rollback: revert the story's commits; nothing is stored or migrated,
+and fingerprints computed meanwhile equal the old ones for every project whose
+file holds the defaults.
+
+## Acceptance Traceability
+
+1. test/rules-registry.test.js::init writes coverageFloor and failOnContrarySignals with the spec values
+2. test/init-rules-fingerprint.test.js::a harness.json written in a linked worktree keeps the primary's fingerprint (project in a subdirectory)
+3. test/init-rules-fingerprint.test.js::after init, no rule says its project value is ignored
+
+## Status: done
+

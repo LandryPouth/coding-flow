@@ -166,7 +166,13 @@ function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.${require("crypto").randomBytes(6).toString("hex")}.tmp`;
   fs.writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`);
-  fs.renameSync(tmpPath, filePath);
+  try {
+    fs.renameSync(tmpPath, filePath);
+  } catch (error) {
+    // A failed rename (the target is a directory) must not leave the staging file.
+    fs.rmSync(tmpPath, { force: true });
+    throw error;
+  }
 }
 
 // Shared by every evidence writer (`writeVerifyEvidence`, `writeReviewEvidence`,
