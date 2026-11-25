@@ -23,7 +23,7 @@ const { execFileSync } = require("child_process");
 const { getStorage } = require("./storage");
 const { withFileLock } = require("./placement-store");
 const { storyPartPath, FINISHED_STATUSES } = require("./story");
-const { log, normalizePortable } = require("./util");
+const { log, normalizePortable, relativePath } = require("./util");
 const { readHarnessConfig } = require("./harness-config");
 const { getSecretPatterns, findSecretsInContent } = require("./security-policy");
 
@@ -588,7 +588,9 @@ function collectNeedsYou(root) {
 // Open `before: deploy` items of the given stories (story dirs, as storage names
 // their `path`). What `ship`, `land` and `autoland` say out loud.
 function openDeployTodos(root, storyPaths) {
-  const relative = (entry) => (path.isAbsolute(entry) ? path.relative(root, entry) : entry);
+  // Canonical on both sides, like chainStoryPaths: a symlinked spelling of the
+  // checkout (macOS /var -> /private/var) still names a story inside it.
+  const relative = (entry) => (path.isAbsolute(entry) ? relativePath(root, entry) : entry);
   const wanted = new Set(storyPaths.map((entry) => normalizePortable(relative(entry)).replace(/^\.\//, "").replace(/\/+$/, "")));
 
   return collectNeedsYou(root).filter(
