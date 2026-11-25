@@ -105,3 +105,13 @@ against); that test and `weakened-tests.test.js` pass since (70 pass, the
 known 19-08 TODO). Not re-verified: the npm-test criterion stays open until the
 next verify. Adding the path changes this repository's policy fingerprint, so
 its earlier proofs read "policy changed".
+
+## Review findings
+
+### Round 1 — FAIL (staleness and correctness of the memo)
+
+- [ ] P1 story.md — `.coding-flow/harness.json` gains `bin/lib/read-memo.js` in `highRiskPaths` (policy-changed signal) without a `## Policy Change` section (what coverage-gate.js:905 reads; 29-04 did it in bb6e8cb) — fix: add the section: read-memo.js joins highRiskPaths because identity/audit require it (test/security-core-risk); earlier proofs now read "policy changed".
+- [ ] P1 (orchestrator, from the verify at 26a12d1: `.coding-flow/runs/2026-11-25T22-08-55-735Z-verify.json`) — NOT PROVEN, functionSize.enforce: `bin/lib/next.js:165 readQueue` 0→89 lines, `bin/lib/status.js:255 readStatusModel` 0→91 lines — fix: split each under 80 lines, no behaviour change (byte-identical outputs still).
+- [ ] P2 `test/next-spawns.test.js` builds repos with no linked worktree and no review evidence: a new per-story spawn on the worktree path (`next.js:170` proofOf with story.worktree) or the review path would pass — add both to the generated repo.
+
+Held: only next, status and archive.plan open the memo, none writes inside it; no long-lived loop; finally drops it on throw; nested reuse correct; keys path.resolve(root) (+ version for the fingerprint); byte-identical on a fresh bethl clone, a clone with a linked worktree + verify + dirty/untracked files from the primary and from the worktree (2–3 s vs 43–154 s); spawn test fails on the old code.
