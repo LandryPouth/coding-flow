@@ -19,7 +19,7 @@ pieces, `git config alias.x` values, files the line writes then runs, psql's
 uncommitted changes. A git alias under `HOME=`/`GIT_CONFIG_GLOBAL=`/`GIT_DIR=`
 is unchecked. What it still does not read is one table in
 `docs/rules-and-limits.md`, each form with its cover. Latency on 29-03's
-everyday list: unchanged within noise (plan.md D9). Round 1 (2 P1, P2s) fixed: heredoc-written and copied scripts read, glued interpreter flags, escapes and argument lists, more SQL and `psql -f`, staged-only `rm` allowed, `rm` answered from `.git/index` without a spawn (plan.md, Review round 1).
+everyday list: unchanged within noise (plan.md D9). Round 1 (2 P1, P2s) fixed: heredoc-written and copied scripts read, glued interpreter flags, escapes and argument lists, more SQL and `psql -f`, staged-only `rm` allowed, `rm` answered from `.git/index` without a spawn (plan.md, Review round 1). Round 2 (3 P1) fixed: a linear literal scanner (the list regex could hold the hook past its timeout), psql flag clusters, `\!`/`\i` read in every SQL source, SQL literals blanked, `DELETE` without `WHERE` per statement (plan.md, Review round 2).
 
 ## Acceptance Traceability
 

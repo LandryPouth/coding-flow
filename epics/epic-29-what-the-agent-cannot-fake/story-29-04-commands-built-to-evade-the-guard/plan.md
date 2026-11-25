@@ -128,6 +128,55 @@
   per command over 3 rounds. Assumption, as git's: a file rewritten to the
   same size with its old mtime restored passes as clean.
 
+### Review round 2 (fresh reviewer, security lens: FAIL, 3 P1) — each fix has a test that failed before it
+
+- **R2-P1-1 — ReDoS, the guard failed open.** The literal-list regex had
+  overlapping `\s*` inside a repeated group: 16 items took 7.5 s, 22 never
+  finished, past the hook's 60 s the call runs. Interpreter code is now read
+  by `codeTokens`, one pass over the characters (quoted literals and other
+  marks); literals and argument lists come from the tokens, no regex. Code
+  over 64 KB is unchecked, unread. Audit of every regex this story added or
+  changed: `BUILDS` had `\s*(?:\+|\.)?\s*` (two `\s*` around an optional,
+  quadratic on a run of spaces) → `\s*(?:[+.]\s*)?`; SQL comment and literal
+  stripping is now a one-pass scanner (`sqlCode`), the `DELETE` test two
+  plain regexes per statement; the psql cluster, glued interpreter flags,
+  redirect, env and heredoc regexes have no nested or overlapping
+  quantifier. A test decides 16 hostile 10 KB inputs (one per reader), each
+  in a child process killed at 20 s, bound 1 s; measured worst 141 ms at
+  load ~2 (the old list regex: never finishes).
+- **R2-P1-2 — psql flag clusters.** `-tAc SQL`, `-Atc`, `-qc'…'`, `-tAf
+  FILE`: a cluster of psql's no-value switches ending in `c` or `f`, with the
+  value glued or next.
+- **R2-P1-3 — `\!` outside `-c`.** psql's meta-commands are read in every
+  SQL source: `-c`, `-f` files, `<` files, heredocs, echoed stdin. `\!` is
+  read as a script (unproven → unchecked when destructive); `\i`, `\ir`,
+  `\include`, `\o` into a pipe, `\copy … program` are unchecked.
+- **R2-P2 fixed.** `(echo …) > f`: the redirect after a closing group is
+  recorded, its text unknown → running `f` is unchecked (as `{ …; } > f`).
+  `DELETE FROM` is destructive when its statement has no `WHERE` anywhere
+  (alias, `AS`, `USING`, `RETURNING`). SQL string literals (`'…'`,
+  `$$…$$`) and comments are blanked before matching: `SELECT 'drop table x'`
+  is allowed. `tokenize` now keeps a backslash inside double quotes before
+  anything but `$`, a backtick, `"`, `\` and a newline, as bash does — it
+  had turned `"\! rm -rf build"` into `! rm -rf build` (shared with the
+  shell-write guard, where it only stops treating `".e\nv"` as `.env`, which
+  bash does not write either).
+- **R2-P2 listed.** `rm *.txt`, a submodule, a symlinked directory, a
+  case-insensitive file system; a word with escaped spaces
+  (`psql -qcDROP\ TABLE\ t`: `commandOf` splits it, 29-03's tokenizer);
+  psql `\i`/`\o`; `node -e 'console.log("rm -rf is dangerous")'` is
+  unchecked — accepted noise, since reading only the literals a call runs
+  would miss `cmd = "rm -rf x"; system(cmd)`.
+- **D9 restated (latency, 2026-11-25, load 12–17).** In-process `decide()`
+  over 29-03's everyday list plus 9 (36 commands; config, alias, psql,
+  heredoc, `rm`), 7 rounds, base `3c90919` vs HEAD back to back: base cold
+  2.05 / 3.42 ms, warm median 1.13 / 1.13 ms per command; HEAD cold 3.07 /
+  2.20 ms, warm median 0.93 / 0.89 ms. The hook as a process (`ai-flow
+  guard`, 35 calls): base median 126 / 110 ms, HEAD 115 / 198 ms — node
+  start-up and load dominate, no difference the noise lets through. The
+  reviewer's 5.1–6.0 vs 3.2–3.5 ms was measured on round 1, before `rm` read
+  the index.
+
 ## Test Plan
 
 `decide()` on throwaway repos for each criterion; the 29-03 Lens B list
