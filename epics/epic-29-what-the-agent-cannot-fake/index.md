@@ -130,7 +130,7 @@ needed). 29-02 after 19-01, before the first driven run (20-01).
 
 ## Maintainer cleanup on delivery
 
-- Remove the proof gate from the `epic-run` workflow and skill
+- [ ] Remove the proof gate from the `epic-run` workflow and skill
   (`~/.claude/workflows/epic-run.js` "Proof gate", `~/.claude/skills/epic-run/SKILL.md`
   step 2, `~/.claude/docs/skills/epic-run.md` section "Porte de preuve") and
   `~/.claude/workflows/lib/proof-scan.mjs` once 29-01, 29-02 and 18-06 ship;
