@@ -39,6 +39,15 @@ protection auto du projet dans lequel il est installé".
   has no required checks. It reads GitHub only when `gh` is available, and a
   network failure says nothing.
 
+## Review findings
+
+### Round 1 — FAIL (safety of a tool that writes someone's GitHub settings)
+
+- [ ] P1 bin/lib/protect.js:156-165, :233 — every check run on the branch's latest commit becomes required, including checks that only run on push (deploy, release, pages, CodeQL-on-push, a Vercel production deploy). Such a check never reports on a PR, so every PR stays pending forever and auto-merge never fires — and `init` does it by default. — fix: require only names also seen on a pull-request commit (e.g. the head commit of the last merged PR, or Actions runs whose `event` is `pull_request`); with no PR evidence, don't protect and say "open one PR first". Fake-gh test: a push-only `deploy` check on `main` is not required.
+- Minor (not blocking): `required_signatures` not carried by the full PUT (believed untouched by it); a failed ruleset read is read as "no rulesets" (still additive only); no test for a protection read that errors in `ship` (code handles it).
+
+Held: additive POST when checks exist; full PUT only with no checks, every returned field translated; rulesets left alone; `init` prints each write and honours `--dry-run`/`--no-protect`/`protectBranches:false`; `upgrade` never protects; `ship` never arms on any read/PUT failure; 18/18 with request bodies asserted.
+
 ## Acceptance Criteria
 
 - [ ] Given a stubbed `gh` reporting an unprotected `main` whose latest commit
