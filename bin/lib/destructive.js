@@ -433,17 +433,27 @@ function readPrisma(out, args, cwd) {
   }
 }
 
-// SQL that destroys data, read after comments and string literals are blanked
-// (`DROP/**/TABLE`; `SELECT 'drop table x'` is text): `DROP DATABASE`, `SCHEMA`,
-// `TABLE`, `OWNED`, `COLUMN`, `TRUNCATE`, and a `DELETE FROM` statement with no
-// `WHERE` anywhere in it (an alias, `USING`, `RETURNING` change nothing).
+// SQL that destroys data. Monotonic (plan.md R3): 29-03's check reads the raw text,
+// exactly as it did, so a scanner mistake can only add a refusal, never remove one —
+// `SELECT 'drop database x'` stays refused (accepted noise). The checks this story
+// added read the text with comments and literals blanked: `DROP SCHEMA`, `TABLE`,
+// `OWNED`, `COLUMN` (and `ALTER TABLE … DROP c`), `TRUNCATE`, and a `DELETE FROM`
+// statement with no `WHERE` anywhere in it.
+const RAW_SQL = /\bdrop\s+database\b/i;
 const DESTRUCTIVE_SQL = /\b(drop\s+(?:database|schema|table|owned|column)|truncate)\b/i;
+const ALTER_DROP = /\bdrop\s+(?!constraint\b|default\b|not\b|identity\b|expression\b|index\b)\w/i;
 
 function destructiveSql(text) {
+  if (RAW_SQL.test(text)) {
+    return "DROP DATABASE";
+  }
   for (const statement of sqlCode(text).split(";")) {
     const sql = DESTRUCTIVE_SQL.exec(statement);
     if (sql) {
       return sql[1].replace(/\s+/g, " ").toUpperCase();
+    }
+    if (/\balter\s+table\b/i.test(statement) && ALTER_DROP.test(statement)) {
+      return "DROP COLUMN";
     }
     if (/\bdelete\s+from\b/i.test(statement) && !/\bwhere\b/i.test(statement)) {
       return "DELETE FROM without WHERE";
@@ -452,38 +462,55 @@ function destructiveSql(text) {
   return null;
 }
 
-// SQL with its comments and its literals ('…', $tag$…$tag$) blanked, in one pass.
+// SQL with its comments and string literals blanked, in one pass: `-- …`, `/* … */`,
+// `'…'` (`''` inside; a backslash escapes in `E'…'`), `$tag$…$tag$` (only where a
+// dollar quote can start: not after a letter, digit, `_` or `$`). A `"…"` identifier
+// is opaque (`""` inside): nothing in it opens a comment or a literal.
 function sqlCode(text) {
   let code = "";
   for (let i = 0; i < text.length; i += 1) {
-    const two = text.slice(i, i + 2);
-    const dollar = text[i] === "$" ? /^\$\w*\$/.exec(text.slice(i, i + 64)) : null;
-    let end = -1;
-    if (two === "--") {
-      end = text.indexOf("\n", i);
-    } else if (two === "/*") {
-      end = text.indexOf("*/", i + 2) + 1;
-    } else if (text[i] === "'") {
-      end = i + 1;
-      while (end < text.length && (text[end] !== "'" || text[end + 1] === "'")) {
-        end += text[end] === "'" ? 2 : 1;
-      }
-    } else if (dollar) {
-      const close = text.indexOf(dollar[0], i + dollar[0].length);
-      end = close === -1 ? -1 : close + dollar[0].length - 1;
-    } else {
+    const end = sqlSkip(text, i);
+    if (end === null) {
       code += text[i];
       continue;
     }
-    code += " ";
+    code += text[i] === '"' ? '"_"' : " ";
     i = end <= i ? text.length : end;
   }
   return code;
 }
 
+// Where the comment, literal or identifier starting at `i` ends (its last index;
+// -1 when it does not close), or null when none starts there.
+function sqlSkip(text, i) {
+  const ch = text[i];
+  const two = text.slice(i, i + 2);
+  if (two === "--") {
+    return text.indexOf("\n", i);
+  }
+  if (two === "/*") {
+    const close = text.indexOf("*/", i + 2);
+    return close === -1 ? -1 : close + 1;
+  }
+  if (ch === "'" || ch === '"') {
+    const escapes = ch === "'" && /[eE]/.test(text[i - 1] || "") && !/[\w$]/.test(text[i - 2] || "");
+    let end = i + 1;
+    while (end < text.length && (text[end] !== ch || text[end + 1] === ch)) {
+      end += (escapes && text[end] === "\\") || text[end] === ch ? 2 : 1;
+    }
+    return end < text.length ? end : -1;
+  }
+  const dollar = ch === "$" && !/[\w$]/.test(text[i - 1] || "") ? /^\$(?:[A-Za-z_]\w*)?\$/.exec(text.slice(i, i + 64)) : null;
+  if (dollar) {
+    const close = text.indexOf(dollar[0], i + dollar[0].length);
+    return close === -1 ? -1 : close + dollar[0].length - 1;
+  }
+  return null;
+}
+
 // `-c SQL`, `--command SQL`, `--command=SQL`, `-cSQL`, and a cluster ending in `c`
 // (`-tAc SQL`, `-qcSQL`); `-f FILE` likewise, as `files`.
-const PSQL_CLUSTER = /^-([aAbeEnqsStxXwWlz01]*)([cf])(.*)$/s;
+const PSQL_CLUSTER = /^-([aAbeEHnqsStxXwWlz01]*)([cf])(.*)$/s;
 
 function psqlPrograms(args) {
   const programs = [];
@@ -539,13 +566,14 @@ function psqlMeta(out, text, cwd, ctx, shown) {
 // null when it cannot, undefined when psql reads none (interactive, or a terminal).
 function psqlStdin({ args }, cwd, ctx, segments, index) {
   const segment = segments && segments[index];
-  const from = args.find((arg) => /^<(?![<(])/.test(arg));
+  const from = args.find((arg) => /^\d*<(?![<(])/.test(arg));
   const heredoc = segment && segment.heredocs && segment.heredocs[0];
   if (heredoc) {
     return heredoc.literal || !EXPANDS.test(heredoc.body) ? heredoc.body : null;
   }
   if (from !== undefined) {
-    return sqlFile(from === "<" ? args[args.indexOf(from) + 1] : from.slice(1), cwd, ctx);
+    const word = from.replace(/^\d*</, "");
+    return sqlFile(word === "" ? args[args.indexOf(from) + 1] : word, cwd, ctx);
   }
   if (segment && segment.text.includes("<<<")) {
     return null;
@@ -677,6 +705,7 @@ const BUILDS = /(['"\x60])\s*(?:[+.]\s*)?['"\x60]|%\s*[(\w]|\.format\(|\bf['"]|\
 const VERB_PIECE = /^\s*(?:rm|unlink|shred|git|dropdb|psql|prisma|docker|mv)(?:\s|$)/;
 const POLICY_PIECE = /harness|coding-flow/i;
 const MAX_LITERAL = 4096;
+const RAW_VERB = /\b(?:rm\s+-\w*[rRf]|git\s+(?:reset\s+--hard|clean\s+-\w*f|push\s+(?:-f|--force)|checkout\s+--|branch\s+-D)|drop\s+(?:database|schema|table)|truncate\s+\w|dropdb\b)/i;
 const MAX_CODE = 65536; // longer code is not read: unchecked
 const QUOTES = new Set(["'", '"', "\x60"]);
 
@@ -751,6 +780,11 @@ function readInterpreterCode(out, programs, cwd, ctx, command) {
       if (/\s/.test(text)) {
         readUnproven(out, text, cwd, ctx, INTERPRETER_CODE, command, false);
       }
+    }
+    // A comment (`# don't`) or a quote the scan pairs wrongly can hide a literal:
+    // a destructive verb in the raw code that no literal holds is unchecked.
+    if (RAW_VERB.test(code) && !pieces.some((piece) => RAW_VERB.test(piece))) {
+      out.unchecked.push({ reason: INTERPRETER_CODE, command });
     }
     const built = pieces.length > 1 && BUILDS.test(code);
     if (POLICY_TEXT.test(pieces.join("")) || (built && pieces.some((piece) => POLICY_PIECE.test(piece) || VERB_PIECE.test(piece)))) {
@@ -909,6 +943,20 @@ function readWrittenRun(out, command, raw, cwd, ctx) {
   } else {
     readUnproven(out, text, cwd, ctx, WRITTEN_SCRIPT, shown);
   }
+}
+
+// `<in.sql psql app`, `>out.txt git reset --hard`: a redirection may come before the
+// command; the command is the first word after them (the redirections stay as args).
+function pastRedirects(command) {
+  const words = [command.raw || command.name, ...command.args]; // `2>/dev/null` is named `null`
+  let at = 0;
+  while (at < words.length && /^\d*(?:<|>>?|>\||&>)/.test(words[at] || "") && !/^<<|^<\(|^>\(/.test(words[at])) {
+    at += /^\d*(?:<|>>?|>\||&>)$/.test(words[at]) ? 2 : 1;
+  }
+  if (at === 0 || at >= words.length) {
+    return command;
+  }
+  return { ...command, name: path.basename(words[at]), raw: words[at], args: [...words.slice(at + 1), ...words.slice(0, at)] };
 }
 
 const fileKey = (cwd, word, home) => resolveIn(cwd, word, home) || `?${word}`;
@@ -1239,7 +1287,7 @@ function readLine(line, start, ctx) {
       // for the command may be run by it, so its value is read as handed text.
       const assignments = tokens.slice(0, verbAt(tokens)).filter((token) => /^[A-Za-z_]\w*=/.test(token));
       const segmentCtx = assignments.length ? { ...ctx, env: assignments } : ctx;
-      readCommand(out, { ...command, raw, args: wholeLastWord(command.args, segment, segments[index + 1]) }, cwd, segmentCtx, segments, index);
+      readCommand(out, pastRedirects({ ...command, raw, args: wholeLastWord(command.args, segment, segments[index + 1]) }), cwd, segmentCtx, segments, index);
       readHandedText(out, command, cwd, ctx);
       readWrittenRun(out, command, raw, cwd, ctx);
       recordWrites(command, tokens, cwd, ctx);

@@ -421,6 +421,190 @@ test('round 2: a group redirected into a file, then run, is not read as clean', 
   ]);
 });
 
+// --- review round 3 ------------------------------------------------------------------
+
+// Monotonic: a scanner may only add refusals. Every SQL and interpreter case of this
+// file, plus the forms round 3 found, with the decision 3c90919 (29-03, before this
+// story) recorded for it on the fixture below. HEAD must be at least as strict:
+// deny > unchecked > allow.
+const AT_29_03 = [
+  ["psql -c 'select 1 as \"a--b\"; DROP DATABASE prod'", "deny"],
+  ["psql -c 'select \"/*\"; DROP DATABASE prod; select \"*/\"'", "deny"],
+  ["psql -c 'select 1 as x$a$; DROP DATABASE prod; select 1 as y$a$'", "deny"],
+  ["psql -c \"select E'\\\\'' ; DROP DATABASE prod; select 'x'\"", "deny"],
+  ["psql -c 'select \"/*\"; DROP TABLE prod; select \"*/\"'", "allow"],
+  ["psql -c 'select 1 as x$a$; TRUNCATE prod; select 1 as y$a$'", "allow"],
+  ["psql -c \"SELECT 'drop database x'\"", "deny"],
+  ["psql -c 'DROP DATABASE x'", "deny"],
+  ["psql --command='DROP DATABASE x'", "deny"],
+  ["psql -cDROP\\ DATABASE\\ x", "allow"],
+  ["psql -c 'DROP SCHEMA app CASCADE'", "allow"],
+  ["psql -c 'drop table users'", "allow"],
+  ["psql --command='TRUNCATE users'", "allow"],
+  ["psql -d app -c 'TRUNCATE TABLE users, orders'", "allow"],
+  ["echo \"DROP DATABASE x\" | psql", "allow"],
+  ["printf 'drop table users;' | psql -d app", "allow"],
+  ["psql < dump.sql", "allow"],
+  ["cat cleanup.sql | psql", "allow"],
+  ["psql -c '\\! rm -rf build'", "unchecked"],
+  ["psql -c 'select count(*) from users'", "allow"],
+  ["echo \"select 1\" | psql", "allow"],
+  ["psql -c 'create table drops (id int)'", "allow"],
+  ["psql -d app", "allow"],
+  ["psql -c 'DROP/**/TABLE users'", "allow"],
+  ["psql -c 'delete from users'", "allow"],
+  ["psql -c 'DELETE FROM users;'", "allow"],
+  ["psql -c 'DROP OWNED BY app'", "allow"],
+  ["psql -c 'alter table users drop column email'", "allow"],
+  ["psql -c 'drop -- note\n table users'", "allow"],
+  ["psql -f wipe.sql", "allow"],
+  ["psql -fwipe.sql", "allow"],
+  ["psql --file=missing.sql", "allow"],
+  ["psql < wipe.sql", "allow"],
+  ["psql <<'SQL'\ndrop table users;\nSQL", "allow"],
+  ["psql -c 'delete from users where id = 1'", "allow"],
+  ["psql -f seed.sql", "allow"],
+  ["psql < seed.sql", "allow"],
+  ["psql <<'SQL'\nselect 1;\nSQL", "allow"],
+  ["psql -tAc 'DROP DATABASE x'", "allow"],
+  ["psql -Atc 'TRUNCATE t'", "allow"],
+  ["psql -qc 'DROP TABLE t'", "allow"],
+  ["psql -qc'DROP TABLE t'", "allow"],
+  ["psql -tAf drop.sql", "allow"],
+  ["psql -qfdrop.sql", "allow"],
+  ["psql -tAc 'select 1'", "allow"],
+  ["psql -tA -d app", "allow"],
+  ["psql <<'EOF'\n\\! rm -rf build\nEOF", "allow"],
+  ["psql -f shell.sql", "allow"],
+  ["psql < shell.sql", "allow"],
+  ["echo '\\! rm -rf build' | psql", "allow"],
+  ["psql -c '\\i other.sql'", "allow"],
+  ["psql -c \"\\i other.sql\"", "allow"],
+  ["psql -c \"\\! rm -rf build\"", "unchecked"],
+  ["psql <<'EOF'\n\\ir more.sql\nEOF", "allow"],
+  ["psql -f ok.sql", "allow"],
+  ["psql -c 'delete from t u'", "allow"],
+  ["psql -c 'DELETE FROM t AS u'", "allow"],
+  ["psql -c 'delete from t returning *'", "allow"],
+  ["psql -c 'delete from t using x'", "allow"],
+  ["psql -c 'select 1; delete from t'", "allow"],
+  ["psql -c \"SELECT 'drop table x'\"", "allow"],
+  ["psql -c \"insert into notes values ('truncate the log')\"", "allow"],
+  ["psql -c 'select $$drop table x$$'", "allow"],
+  ["psql -c 'delete from t u using x where u.id = x.id'", "allow"],
+  ["psql -c 'alter table t drop c'", "allow"],
+  ["psql -tAHc 'drop table t'", "allow"],
+  ["<drop.sql psql app", "allow"],
+  ["psql app 0< drop.sql", "allow"],
+  ["python3 -c 'import os; os.system(\"rm -rf build\")'", "allow"],
+  ["python -c \"import subprocess; subprocess.run('git reset --hard', shell=True)\"", "allow"],
+  ["node -e 'require(\"child_process\").execSync(\"git clean -fdx\")'", "allow"],
+  ["node --eval='require(\"child_process\").execSync(\"rm -rf build\")'", "allow"],
+  ["perl -e 'system(\"git push --force origin main\")'", "allow"],
+  ["ruby -e 'system(\"rm -rf build\")'", "allow"],
+  ["php -r 'shell_exec(\"rm -rf build\");'", "allow"],
+  ["python3 -c 'print(1)'", "allow"],
+  ["python3 -c 'import sys; print(sys.version)'", "allow"],
+  ["node -e 'console.log(require(\"./package.json\").version)'", "allow"],
+  ["perl -e 'print \"rm is a command\\n\"'", "allow"],
+  ["python3 -c 'import os; os.remove(\"harness\" + \".json\")'", "allow"],
+  ["python3 -c 'import os; os.remove(\".coding\" + \"-flow/harness.json\")'", "unchecked"],
+  ["python3 -c 'import os; os.system(\"rm\" + \" -rf build\")'", "allow"],
+  ["python3 -c 'print(\"a\" + \"b\")'", "allow"],
+  ["python3 -c\"import os; os.system('rm -rf build')\"", "allow"],
+  ["python3 -c'import os; os.system(\"rm -rf build\")'", "allow"],
+  ["python3 -Bc'import os; os.system(\"rm -rf build\")'", "allow"],
+  ["perl -e'system(\"rm -rf build\")'", "allow"],
+  ["ruby -e'system(\"rm -rf build\")'", "allow"],
+  ["php -r'shell_exec(\"rm -rf build\");'", "allow"],
+  ["python3 -c'print(1)'", "allow"],
+  ["perl -Mstrict -e'print 1'", "allow"],
+  ["python3 -c 'import os; os.system(\"echo hi\\nrm -rf build\")'", "allow"],
+  ["python3 -c 'import os; os.system(\"rm\\x20-rf build\")'", "allow"],
+  ["node -e 'require(\"child_process\").spawnSync(\"rm\", [\"-rf\", \"build\"])'", "allow"],
+  ["node -e \"require('child_process').execFileSync('git', ['reset', '--hard'])\"", "allow"],
+  ["python3 -c 'import subprocess; subprocess.run([\"git\", \"clean\", \"-fdx\"])'", "allow"],
+  ["python3 -c 'import os; os.system(\"rm a.txt\")'", "allow"],
+  ["node -e 'require(\"child_process\").spawnSync(\"ls\", [\"-la\"])'", "allow"],
+  ["python3 -c 'import os; os.system(\"rm b.txt\")'", "allow"],
+  ["python3 -c \"# don't\nimport os; os.system('rm -rf build')\"", "allow"],
+  ["node -e '// it\"s\nrequire(\"child_process\").execSync(\"git reset --hard\")'", "allow"],
+  ["echo 'import os; os.system(\"rm -rf build\")' > x.py && python3 x.py", "allow"],
+  ["echo 'print(1)' > x.py && python3 x.py", "allow"],
+  ["cat <<EOF > t.py\nprint('hi')\nEOF\npython3 t.py", "allow"],
+  ["cat <<EOF > t.py\nimport os; os.system('rm -rf build')\nEOF\npython3 t.py", "allow"],
+];
+
+function corpusRepo(t) {
+  const dir = repo(t);
+  const files = {
+    'seed.sql': 'insert into users values (1);\n',
+    'wipe.sql': 'delete from users;\n',
+    'drop.sql': 'drop table users;\n',
+    'shell.sql': 'select 1;\n\\! rm -rf build\n',
+    'ok.sql': 'select 1;\n\\! echo done\n',
+  };
+  for (const [file, text] of Object.entries(files)) {
+    fs.writeFileSync(path.join(dir, file), text);
+  }
+  return dir;
+}
+
+test('round 3: no SQL or interpreter case is decided less strictly than 29-03 decided it', (t) => {
+  const dir = corpusRepo(t);
+  const rank = { allow: 0, unchecked: 1, deny: 2 };
+  for (const [command, before] of AT_29_03) {
+    const now = run(dir, command).decision;
+    assert.ok(rank[now] >= rank[before], `${command}: ${now}, 29-03 said ${before}`);
+  }
+  // The four forms round 2's scanner let through: refused, as at 29-03.
+  for (const [command] of AT_29_03.slice(0, 4)) {
+    assert.equal(run(dir, command).decision, 'deny', command);
+  }
+});
+
+test('round 3: the SQL scanner keeps identifiers opaque, dollar quotes where they can start, E-string escapes', (t) => {
+  const dir = corpusRepo(t);
+  expectAll(dir, 'deny', [
+    `psql -c 'select "/*"; DROP TABLE prod; select "*/"'`,
+    `psql -c 'select 1 as x$a$; TRUNCATE prod; select 1 as y$a$'`,
+    `psql -c 'select 1 as "a--b"; drop schema app'`,
+    `psql -c "select E'\\\\\\\\', 'x'; drop table t"`,
+    `psql -c 'alter table t drop c'`,
+    `psql -tAHc 'drop table t'`,
+  ]);
+  expectAll(dir, 'allow', [
+    `psql -c 'select $$drop table x$$'`,
+    `psql -c 'alter table t drop constraint k'`,
+    `psql -c 'select "drop table"'`,
+  ]);
+  // Accepted noise, kept from 29-03: DROP DATABASE is matched on the raw text.
+  expectAll(dir, 'deny', [`psql -c "SELECT 'drop database x'"`]);
+});
+
+test('round 3: a redirection before the command is read past', (t) => {
+  const dir = corpusRepo(t);
+  expectAll(dir, 'unchecked', ['<drop.sql psql app', 'psql app 0< drop.sql', '0<drop.sql psql']);
+  expectAll(dir, 'allow', ['<seed.sql psql app']);
+  expectAll(dir, 'deny', ['>out.txt git reset --hard', '2>/dev/null git reset --hard']);
+});
+
+test('round 3: a comment that throws off the quote pairing does not hide a destructive verb', (t) => {
+  const dir = corpusRepo(t);
+  expectAll(dir, 'unchecked', [
+    `python3 -c "# don't\nimport os; os.system('rm -rf build')"`,
+    `node -e '// it"s\nrequire("child_process").execSync("git reset --hard")'`,
+  ]);
+  expectAll(dir, 'allow', [`python3 -c "# don't\nprint(1)"`]);
+});
+
+test('round 3: inside double quotes a backslash before an ordinary character stays, as in bash', (t) => {
+  const dir = corpusRepo(t);
+  // `"\.env"` names a file called `\.env`, not `.env`.
+  expectAll(dir, 'allow', [`echo x > "\\.env"`]);
+  expectAll(dir, 'deny', ['echo x > .env', `echo x > ".env"`]);
+});
+
 // --- criterion 5: one table of what the guard does not read ------------------------------
 
 // 29-03's plan.md, D9 and D9 (extended): the forms it said it does not read.
