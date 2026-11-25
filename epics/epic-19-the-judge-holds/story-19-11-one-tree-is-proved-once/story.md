@@ -61,6 +61,12 @@ user gets it.
 - [ ] Given `--reverify`, then the re-verify runs even on a fast-forward.
 - [ ] Given a policy change (`harness.json`) between the story verify and
       land, then the verify is stale and land refuses, as today.
+- [ ] Given this repository's `pre-push` hook (`.githooks/pre-push`) and a
+      pushed commit whose tree has a fresh green verify (same tree token and
+      policy fingerprint), when the branch is pushed, then the hook says
+      "already proved" and does not rerun `npm test`; on any other tree it
+      runs the suite as today. (One PR per story, 2026-11-25, pushes right
+      after the story's verify: without this every story runs its suite twice.)
 - [ ] The `flow-run` skill template carries the paragraph above.
       `plugin sync` is run, and its eval case covers "runs the test command
       right before verify" as a miss.
