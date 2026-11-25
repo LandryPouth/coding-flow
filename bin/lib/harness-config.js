@@ -350,18 +350,25 @@ function harnessMode(config) {
 // holding JSON `null`.
 const NOT_READ = Object.freeze({});
 
-function readHarnessConfig(root = cwd) {
-  const defaults = defaultHarnessConfig();
-  const config = readJson(harnessConfigPath(root), NOT_READ);
+// The file's settings: null when it is absent or unparsable; `{}` when it
+// parses to anything but an object (`null`, `[]`, a number) — such a file
+// exists, as `harness init` sees it, and holds no setting.
+function harnessFileSettings(root) {
+  const value = readJson(harnessConfigPath(root), NOT_READ);
 
-  if (config === NOT_READ) {
-    return { config: defaults, exists: false };
+  if (value === NOT_READ) {
+    return null;
   }
 
-  // A file that parses to anything but an object (`null`, `[]`, a number)
-  // exists, as `harness init` sees it, and holds no setting: the defaults apply.
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    return { config: defaults, exists: true };
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function readHarnessConfig(root = cwd) {
+  const defaults = defaultHarnessConfig();
+  const config = harnessFileSettings(root);
+
+  if (!config) {
+    return { config: defaults, exists: false };
   }
 
   return {
