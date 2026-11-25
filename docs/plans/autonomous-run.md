@@ -44,8 +44,8 @@ stand-in for epic 20:
 
 ## Rules
 
-- At most 2 agents at once since 2026-11-25 (the maintainer works on bethl on
-  the same machine; was 4 from 2026-11-24), implementers and reviewers together; two stories run in
+- At most 4 agents at once since 2026-11-25 evening (the maintainer: the
+  machine is free again; was 2 earlier that day), implementers and reviewers together; two stories run in
   parallel only when their files are disjoint.
 - TMPDIR under the session scratchpad, never inside a repository.
 - Every review brief says: experiments only in a throwaway repo, as
@@ -125,7 +125,9 @@ Lane B: 19-05 fixers before the checks → 26-02 `ai-flow todo` (reader half) �
 - [ ] 34-02 `next` answers in seconds (bethl: >110 s) — in parallel with 34-01 (disjoint files)
 - [ ] 19-11 one tree is proved once (from this run, 2026-11-25: land skips its re-verify on a fast-forward; flow-run stops running the suite before verify) — next free agent slot
 - [ ] 29-01 `ai-flow scan`
-- [ ] 29-04 commands built to evade the guard (after 29-03; from its reviews)
+- [x] 29-04 commands built to evade the guard (after 29-03; from its reviews) — 5 series; claim narrowed in series 5 (pieces joined only when they are the code's only literals); PR auto-merge
+- [ ] 29-08 auto-merge waits for the checks — the tool protects the base (maintainer, 2026-11-25); STRICT, in series 2
+- [ ] 29-09 each story ships itself — `ship` setting, `"ship": "story"` here (after 29-08)
 
 ### Wave 2a — the run spends its tokens on work (epic 31) · FIRST after wave 2, before 2b (maintainer, 2026-11-25) · *release 0.17.0* (epic 30 moves to 0.18.0)
 
