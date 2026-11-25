@@ -536,3 +536,101 @@ test('pnpm --filter naming no package of the workspace is reported', (t) => {
   });
   assert.deepEqual(brief(check(dir).findings), ['docs/a.md:2 script apii: seed -> api']);
 });
+
+// Review round 3, P1: `cd apps/web/` (a tab-completed trailing slash) is apps/web.
+test('a cd with a trailing slash runs the script in that package', (t) => {
+  const dir = repo(t, {
+    'package.json': JSON.stringify({ name: 'root', scripts: { test: 'x' } }),
+    'apps/web/package.json': JSON.stringify({ name: 'web', scripts: { dev: 'x' } }),
+    'docs/a.md': '```bash\ncd apps/web/ && npm run dev\n```\n\n```bash\ncd apps/web/ && npm run nothing\n```\n',
+  });
+  assert.deepEqual(brief(check(dir).findings), ['docs/a.md:6 script nothing']);
+});
+
+// Review round 3, P1: pnpm reads `--filter openapi-client` as `@scope/openapi-client`
+// when one package has that name; two packages sharing it make the call unjudged.
+test('pnpm --filter without the scope picks the one package with that name; two namesakes are not judged', (t) => {
+  const dir = repo(t, {
+    'pnpm-workspace.yaml': 'packages:\n  - packages/*\n  - other/*\n',
+    'package.json': JSON.stringify({ name: 'root' }),
+    'packages/client/package.json': JSON.stringify({ name: '@workspace/openapi-client', scripts: { generate: 'x' } }),
+    'packages/ui/package.json': JSON.stringify({ name: '@a/ui', scripts: { build: 'x' } }),
+    'other/ui/package.json': JSON.stringify({ name: '@b/ui', scripts: { build: 'x' } }),
+    'docs/a.md': [
+      '```bash',
+      'pnpm --filter openapi-client run generate',
+      'pnpm --filter openapi-client run nothing',
+      'pnpm --filter ui run nothing',
+      '```',
+      '',
+    ].join('\n'),
+  });
+  assert.deepEqual(brief(check(dir).findings), ['docs/a.md:3 script openapi-client: nothing']);
+});
+
+// Review round 3, P1: a top-level folder git recorded moved or deleted is judged
+// even though its first segment no longer exists.
+test('a top-level folder git recorded moved or deleted is judged', (t) => {
+  const dir = repo(t, {
+    'lib/a.js': 'a\n',
+    'lib/b.js': 'b\n',
+    'api/src/main.ts': 'm\n',
+    'docs/a.md': 'See `lib/`, `lib/b.js` and `api/src/main.ts`; `web/x.ts` is another project.\n',
+  });
+  fs.mkdirSync(path.join(dir, 'src'));
+  git(dir, ['mv', 'lib', 'src/core']);
+  git(dir, ['rm', '-q', '-r', 'api']);
+  git(dir, ['commit', '-q', '-m', 'move']);
+  const result = check(dir);
+  assert.deepEqual(brief(result.findings), [
+    'docs/a.md:1 path lib/ -> src/core',
+    'docs/a.md:1 path lib/b.js -> src/core/b.js',
+    'docs/a.md:1 path api/src/main.ts',
+  ]);
+  assert.ok(result.findings[2].deleted);
+});
+
+// Review round 3, P2: a lowercase x/y/n after a dash is a placeholder; a leading one is a name.
+test('a lowercase x, y or n word after a dash is a placeholder; a leading one is a name', (t) => {
+  const dir = repo(t, {
+    'src/a.js': '\n',
+    'epics/README.md': '\n',
+    'docs/a.md': 'See `epics/epic-x/story-x-02-b`, `epics/epic-n/story.md` and `src/x-name.js`.\n',
+  });
+  assert.deepEqual(brief(check(dir).findings), ['docs/a.md:1 path src/x-name.js']);
+});
+
+// Review round 3, P2: `cd my-app` after a scaffold is a folder this repo does not have.
+test('scripts after a cd into a folder the repository does not have are not judged', (t) => {
+  const dir = repo(t, {
+    'package.json': JSON.stringify({ name: 'root', scripts: { test: 'x' } }),
+    'docs/a.md': '```bash\nnpx create-next-app my-app\ncd my-app\nnpm run dev\n```\n\n```bash\nnpm run dev\n```\n',
+  });
+  assert.deepEqual(brief(check(dir).findings), ['docs/a.md:8 script dev']);
+});
+
+// Review round 3, P2: a folder name with one namesake far away is not a move.
+test('a lone namesake folder in another context is not suggested; a lone namesake file is', (t) => {
+  const dir = repo(t, {
+    'apps/web/app/[locale]/admin/page.tsx': 'p\n',
+    'src/lib/format.ts': 'f\n',
+    'docs/a.md': 'See `apps/admin` and `src/utils/format.ts`.\n',
+  });
+  assert.deepEqual(brief(check(dir).findings), ['docs/a.md:1 path apps/admin', 'docs/a.md:1 path src/utils/format.ts -> src/lib/format.ts']);
+});
+
+// Review round 3, P2: outside git the walk is breadth-first, docs/ first, and says when it stopped.
+test('outside git the walk reads docs/ before a big folder and says when it hit its limit', (t) => {
+  const plain = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-docs-walk-')));
+  t.after(() => fs.rmSync(plain, { recursive: true, force: true }));
+  write(plain, { 'src/a.js': '\n', 'docs/guide/a.md': 'See `src/other.js`.\n' });
+  for (const name of ['aa', 'zz']) {
+    const big = path.join(plain, name, 'deep');
+    fs.mkdirSync(big, { recursive: true });
+    for (let i = 0; i < 10001; i += 1) fs.writeFileSync(path.join(big, `f${i}.txt`), '');
+  }
+  const res = cli(plain, ['docs', 'check', '--json']);
+  assert.equal(res.code, 1, res.out);
+  assert.deepEqual(brief(JSON.parse(res.stdout).findings), ['docs/guide/a.md:1 path src/other.js']);
+  assert.match(res.out, /20000 files/);
+});

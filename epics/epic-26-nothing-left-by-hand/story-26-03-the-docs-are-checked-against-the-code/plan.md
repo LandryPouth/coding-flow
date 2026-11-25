@@ -141,3 +141,38 @@ npm test
   pushd / popd / comments and a filter naming no package (D13). The walk
   limit outside git (D13) has no automated test: a test cannot run at `/`.
   The pnpm short form is noted in 26-04's tasks as out of scope.
+
+## Review round 3 (FAIL, 3 P1, on real docs)
+
+- P1 `cd apps/web/` kept its trailing `/` and fell back to the root package
+  → `movedTo` strips it (D13); test "a cd with a trailing slash runs the
+  script in that package".
+- P1 pnpm `--filter openapi-client` for `@workspace/openapi-client` → D10: on
+  an exact miss, the one `@scope/<name>`; two sharing it → not judged; test
+  "pnpm --filter without the scope …".
+- P1 a moved or deleted top-level folder was never judged (D2 gate) → D2
+  amended: a path whose first segment is gone is judged when git recorded an
+  event for it (gated by a set of recorded first segments, then
+  `recordedEvent`). Accepted cost: prose naming a folder "that no longer
+  exists" is reported; written in docs/rules-and-limits.md. Not for `./` /
+  `../` paths that leave the repository. Test "a top-level folder git recorded
+  moved or deleted is judged".
+- P2s, each with a failing test first: a lowercase `x`/`y`/`n` after a dash
+  is a placeholder (D11; `x-name.js` still judged — a real `foo-x.js` is now
+  skipped, accepted); scripts after a `cd` into a folder the repository does
+  not have are not judged (D10); the walk outside git is breadth-first with
+  `docs/` first and warns on stderr at the limit (D13); a lone same-named
+  folder is suggested only under a parent of the same name, a lone same-named
+  file still is (D5).
+
+## Review findings
+
+### Round 3 — FAIL (real docs: bethl, tradescript, tse-binam)
+
+- [x] P1 docs-check.js:317-322 movedTo — `cd apps/web/ && npm run dev` (trailing slash) keeps the `/`, misses the package, falls back to root → false `script dev`. Fix: strip trailing `/`; test.
+- [x] P1 docs-check.js:394-397 packageFor / :411-416 scriptFindings — pnpm `--filter openapi-client` with package `@workspace/openapi-client` reported as a missing package (pnpm: scope optional). Fix: on an exact miss, match the name after `/`; skip when two packages share it; then judge the script in that package. Test both.
+- [x] P1 docs-check.js:126-133 pathPlaces gate (D2) — a renamed/deleted top-level folder is never judged (`lib/` moved to `src/core/`; bethl `api/src/main.ts`). Fix: also judge a path whose first segment is absent when git history records an event for it. Trade-off noted in docs/rules-and-limits.md. Test.
+- [x] P2 a lowercase `x` placeholder segment like `epics/epic-x/story-x-02-b` is judged (DOGFOODING.md:84) — only if `src/x-name.js` stays judged.
+- [x] P2 `cd my-app` (folder absent from the repo) → don't judge scripts after a cd into an absent folder.
+- [x] P2 the walk outside git is depth-first with a 20,000-file cap and can exhaust it before docs/ → breadth-first, `docs/` first; say on stderr when the cap was hit.
+- [x] P2 a namesake-only suggestion (bethl `apps/admin` → `apps/web/app/[locale]/admin`) is weak → only suggest when the basename and parent context match.

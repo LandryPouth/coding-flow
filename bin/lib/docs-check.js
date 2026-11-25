@@ -55,27 +55,32 @@ function listFiles(root) {
 const WALK_LIMIT = 20000;
 
 // Outside git: the files under the folder the check runs in, never from the
-// filesystem root, and at most WALK_LIMIT of them (a home folder is not a project).
+// filesystem root, and at most WALK_LIMIT of them (a home folder is not a
+// project). Breadth-first, `docs/` first, so a big folder cannot use the
+// limit up before the docs; `capped` says the limit was hit.
 function walk(root) {
-  if (path.resolve(root) === path.parse(path.resolve(root)).root) return [];
   const out = [];
+  if (path.resolve(root) === path.parse(path.resolve(root)).root) return out;
   const pending = [""];
-  while (pending.length > 0 && out.length < WALK_LIMIT) {
-    const rel = pending.pop();
+  for (let next = 0; next < pending.length && !out.capped; next += 1) {
+    const rel = pending[next];
     let entries;
     try {
       entries = fs.readdirSync(path.join(root, rel || "."), { withFileTypes: true });
     } catch {
       continue;
     }
+    entries.sort((a, b) => (b.name === "docs") - (a.name === "docs") || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       if (entry.name === ".git" || entry.name === "node_modules") continue;
       const child = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) pending.push(child);
       else if (out.length < WALK_LIMIT) out.push(child);
+      else out.capped = true;
     }
   }
-  return out.sort();
+  const capped = Boolean(out.capped);
+  return Object.defineProperty(out.sort(), "capped", { value: capped });
 }
 
 function selectDocs(files, settings, explicit) {
@@ -105,6 +110,7 @@ function pathCandidate(span) {
   const plain = withoutRouteSegments(value);
   if (plain.includes("...")) return null;
   if (plain.split(/[/.\-_]/).some((word) => PLACEHOLDER_WORDS.has(word))) return null;
+  if (LOWER_PLACEHOLDER.test(plain)) return null;
   return value;
 }
 
@@ -117,6 +123,9 @@ const isPattern = (value) => /[[\]()]/.test(withoutRouteSegments(value));
 
 // Upper case only: `epic-NN-name` is a pattern, `src/x-name.js` or `lib/slug.ts` a file.
 const PLACEHOLDER_WORDS = new Set(["N", "NN", "NNN", "X", "XX", "XXX", "YYYY", "MM", "DD"]);
+// A lone lowercase `x`, `y` or `n` after a dash (`epic-x`, `story-x-02`) is a
+// placeholder too; a leading one (`x-name.js`) is a name.
+const LOWER_PLACEHOLDER = /-[xyn](?=$|[-._/])/;
 
 // Where a named path may live, and whether it is judged at all. A `./` or
 // `../` path is read from the doc's folder and from the root, and judged only
@@ -213,7 +222,7 @@ function suggestPath(missing, context) {
   }
   const { byBase, byDir } = context.index();
   const namesakes = (byBase.get(path.posix.basename(missing)) || []).filter((name) => name !== missing);
-  if (namesakes.length === 1) return { suggestion: namesakes[0] };
+  if (namesakes.length === 1 && sameContext(missing, namesakes[0])) return { suggestion: namesakes[0] };
   // A typo in the name, among the folder's entries; else in the folder, among namesakes.
   const dir = path.posix.dirname(missing);
   const join = (folder, name) => (folder === "." ? name : `${folder}/${name}`);
@@ -221,6 +230,14 @@ function suggestPath(missing, context) {
   if (name) return { suggestion: join(dir, name) };
   const folder = closest(dir, namesakes.map((entry) => path.posix.dirname(entry)));
   return { suggestion: folder ? join(folder, path.posix.basename(missing)) : null };
+}
+
+// A lone namesake is a move when it names a file (`format.ts`), or a folder
+// under a folder of the same name: `apps/admin` is not `app/[locale]/admin`.
+function sameContext(missing, namesake) {
+  if (path.posix.basename(missing).includes(".")) return true;
+  const parent = (p) => path.posix.basename(path.posix.dirname(p));
+  return parent(missing) === parent(namesake);
 }
 
 // The latest event git recorded for a path, or for a folder through the files
@@ -290,8 +307,9 @@ const UNREADABLE = /[$<>{}*`]/;
 // before any, null once one left the repository or cannot be read. A `cd`
 // inside `( … )` ends at the parenthesis; `popd` returns; a `#` starts a
 // comment. A call that runs in every package or names its script through a
-// variable or a placeholder is not judged.
-function scriptCalls(text, place = {}) {
+// variable or a placeholder, or after a `cd` to a folder `exists` says the
+// repository does not have (`cd my-app` after a scaffold), is not judged.
+function scriptCalls(text, place = {}, exists = null) {
   const tokens = text.split(/[ \t]+/).filter(Boolean);
   const comment = tokens.findIndex((token) => token.startsWith("#"));
   if (comment !== -1) tokens.length = comment;
@@ -300,9 +318,9 @@ function scriptCalls(text, place = {}) {
   tokens.forEach((raw, index) => {
     const tool = raw.startsWith("(") ? raw.slice(1) : raw;
     if (raw.startsWith("(")) subshells.push(place.cwd);
-    if (tool === "cd") place.cwd = movedTo(place.cwd, tokens[index + 1]);
+    if (tool === "cd") place.cwd = movedTo(place.cwd, tokens[index + 1], exists);
     if (tool === "pushd") (place.stack = place.stack || []).push(place.cwd);
-    if (tool === "pushd") place.cwd = movedTo(place.cwd, tokens[index + 1]);
+    if (tool === "pushd") place.cwd = movedTo(place.cwd, tokens[index + 1], exists);
     if (tool === "popd" && place.stack && place.stack.length > 0) place.cwd = place.stack.pop();
     if (tool === "npm" || tool === "pnpm") {
       const call = readCall(tokens, index + 1, tool, place.cwd);
@@ -313,12 +331,15 @@ function scriptCalls(text, place = {}) {
   return calls;
 }
 
-// The folder `cd <dir>` moves to from `from` (commands are read from the root).
-function movedTo(from, dir) {
+// The folder `cd <dir>` moves to from `from` (commands are read from the
+// root), without a trailing `/`; null out of the repository or to a folder
+// it does not have.
+function movedTo(from, dir, exists) {
   const target = trimQuotes(dir || "", "\"';)");
   if (from === null || !target || "/~$-".includes(target[0]) || UNREADABLE.test(target)) return null;
-  const moved = normalizePortable(path.posix.normalize(path.posix.join(from === undefined ? "." : from, target)));
-  return insideRoot(moved) ? moved : null;
+  const moved = normalizePortable(path.posix.normalize(path.posix.join(from === undefined ? "." : from, target))).replace(/(.)\/+$/, "$1");
+  if (!insideRoot(moved) || (exists && !exists(moved))) return null;
+  return moved;
 }
 
 function readCall(tokens, from, tool, cwd) {
@@ -390,10 +411,22 @@ function readPackages(files, root) {
   return { byDir, byName, workspace };
 }
 
-// The package a call's script is looked up in, or null when it cannot be told.
+// pnpm's `--filter <name>` matches `@scope/<name>` too when one package has
+// that name; two packages sharing it are AMBIGUOUS (not judged).
+const AMBIGUOUS = Symbol("ambiguous");
+function byFilterName(name, packages) {
+  if (packages.byName.has(name)) return packages.byName.get(name);
+  if (name.startsWith("@")) return null;
+  const found = [...packages.byName].filter(([full]) => full.startsWith("@") && full.slice(full.indexOf("/") + 1) === name);
+  if (found.length > 1) return AMBIGUOUS;
+  return found.length === 1 ? found[0][1] : null;
+}
+
+// The package a call's script is looked up in, null when there is none, or
+// AMBIGUOUS when it cannot be told.
 function packageFor(call, docDir, packages) {
   const byPath = (dir) => packages.byDir.get(normalizePortable(path.posix.normalize(dir)).replace(/\/+$/, "")) || null;
-  if (call.filter) return call.filter.startsWith("./") || call.filter.startsWith("../") ? byPath(call.filter) : packages.byName.get(call.filter) || null;
+  if (call.filter) return call.filter.startsWith("./") || call.filter.startsWith("../") ? byPath(call.filter) : byFilterName(call.filter, packages);
   if (call.workspace) return packages.byName.get(call.workspace) || byPath(call.workspace);
   if (call.cwd === null) return null;
   const start = call.cwd === undefined ? docDir : call.cwd;
@@ -404,12 +437,13 @@ function packageFor(call, docDir, packages) {
   }
 }
 
-function scriptFindings(text, docDir, packages, place) {
+function scriptFindings(text, docDir, packages, place, exists) {
   const out = [];
-  for (const call of scriptCalls(text, place)) {
+  for (const call of scriptCalls(text, place, exists)) {
     const scope = call.filter || call.workspace;
     const target = scope ? `${scope}: ${call.name}` : call.name;
     const pkg = packageFor(call, docDir, packages);
+    if (pkg === AMBIGUOUS) continue;
     if (!pkg) {
       // A workspace that has no such package: the call fails before any script runs.
       const named = scope && packages.workspace && !scope.startsWith(".");
@@ -432,18 +466,19 @@ function scanDoc(doc, context) {
   const findings = [];
   const mentions = new Set();
   const add = (line, found) => found.forEach((f) => findings.push({ file: doc, line, ...f }));
+  const exists = (dir) => fs.existsSync(path.join(context.root, dir));
 
   lines.forEach((line, index) => {
     const kind = kinds[index];
     if (kind.kind !== "prose") {
       if (state.comment && line.includes("-->")) state.comment = false;
       if (kind.kind !== "code") Object.keys(block).forEach((key) => delete block[key]);
-      else if (SHELL_INFOS.has(kind.info)) add(index + 1, scriptFindings(line, docDir, context.packages, block));
+      else if (SHELL_INFOS.has(kind.info)) add(index + 1, scriptFindings(line, docDir, context.packages, block, exists));
       return;
     }
     const { spans, prose } = inlineParts(line, state);
     for (const span of spans) {
-      add(index + 1, scriptFindings(span.text, docDir, context.packages, {}));
+      add(index + 1, scriptFindings(span.text, docDir, context.packages, {}, exists));
       add(index + 1, pathFindings(span.text, doc, context, mentions));
     }
     for (const target of linkTargets(prose)) add(index + 1, linkFindings(target, doc, context, mentions));
@@ -458,11 +493,14 @@ function pathFindings(span, doc, context, mentions) {
   const { judged, places } = pathPlaces(value, path.posix.dirname(doc), context.root);
   const inside = places.filter(insideRoot).map((place) => place.replace(/\/+$/, ""));
   inside.forEach((place) => mentions.add(place));
-  if (!judged || inside.length === 0 || inside.some((place) => fs.existsSync(path.join(context.root, place)))) return [];
+  if (inside.length === 0 || inside.some((place) => fs.existsSync(path.join(context.root, place)))) return [];
+  const relative = value.startsWith("./") || value.startsWith("../");
+  // What git recorded (a rename, a deletion) beats a comment that still names
+  // it, and a first segment that is gone: a moved or deleted top-level folder.
+  const recorded = (judged || !relative) && inside.find((place) => context.historyRoots().has(place.split("/")[0]) && recordedEvent(place, context));
+  if (!judged && !recorded) return [];
   if (isPattern(value) || context.suffixes().has(path.posix.normalize(value).replace(/^\.\//, "").replace(/\/+$/, ""))) return [];
   if (inside.some((place) => context.ignoredByConfig(place))) return [];
-  // What git recorded (a rename, a deletion) beats a comment that still names it.
-  const recorded = inside.find((place) => recordedEvent(place, context));
   if (!recorded && context.namedByCode(value)) return [];
   return [{ kind: "path", target: value, places: inside, ...suggestPath(recorded || inside[0], context) }];
 }
@@ -499,6 +537,7 @@ function scanContext(root, settings, suggest) {
   const anchorCache = new Map();
   const inGit = git(["rev-parse", "--is-inside-work-tree"], root) !== null;
   let history = null;
+  let historyRoots = null;
   let suffixes = null;
   let corpus = null;
   let index = null;
@@ -518,6 +557,12 @@ function scanContext(root, settings, suggest) {
       if (!history) history = inGit ? pathHistory(root) : new Map();
       return history;
     },
+    // The first segments git recorded an event under: a cheap gate before
+    // recordedEvent's scan of the whole history.
+    historyRoots() {
+      if (!historyRoots) historyRoots = new Set([...this.history().keys()].map((from) => from.split("/")[0]));
+      return historyRoots;
+    },
     index() {
       if (!index) index = entryIndex(files);
       return index;
@@ -525,6 +570,7 @@ function scanContext(root, settings, suggest) {
     suggest,
     root,
     files,
+    capped: Boolean(files.capped),
     packages: readPackages(files, root),
     anchors(file) {
       if (!anchorCache.has(file)) anchorCache.set(file, anchorsOf(fs.readFileSync(path.join(root, file), "utf8")));
@@ -617,6 +663,7 @@ function scanDocs({ root = cwd, explicit = [], changed = null, suggest = true } 
   const ignored = ignoredPlaces(root, findings.flatMap((f) => f.places || []));
   const generated = (f) => (f.places || []).some((p) => ignored.has(p.replace(/\/+$/, "")));
   const result = { docs: kept.length, findings: findings.filter((f) => !generated(f)).map(({ places, ...f }) => f) };
+  Object.defineProperty(result, "capped", { value: context.capped });
   return Object.defineProperty(result, "selected", { value: docs.length });
 }
 
@@ -649,6 +696,7 @@ function docsCheckCommand({ commandArgs, flags, getFlagValue }) {
   } catch (error) {
     refuse(`docs check could not read the docs: ${error.message}`);
   }
+  if (result.capped) process.stderr.write(`Warning: outside git, docs check read the first ${WALK_LIMIT} files only (docs/ first); run it in a git repository to read them all.\n`);
   if (explicit.length > 0 && result.selected === 0) refuse(`no Markdown doc under ${explicit.join(", ")}.`);
   if (flags.has("--json")) log(JSON.stringify(result, null, 2));
   else printReport(result);
