@@ -249,6 +249,27 @@
   efede92: a project inside `e2e/`/`cypress/` names committed files from the
   top, all matching a test glob — a follow-up in epic 19's index, not fixed.
 
+- **Series 2, round 4 (PASS, STRICT done).** P2s fixed before close: an
+  untracked test file over 1 MB or holding a NUL byte is not read and never
+  strengthens; deleted test files are tokenized once; the regex-literal limit
+  (a quote, `//` or `#` inside `/…/` — prettier on this repository's own tests
+  strengthens 2 files this way) is listed and the formatter claim says what
+  was measured; the `closingQuote` comment says "escaped". Note only: copying
+  a test file earns the rung (documented, and no looser than before).
+
+## Review History
+
+- Series 1 (4 rounds, the cap): P1 in every round (an unstaged mv earning
+  the rung and missing markers; the rule inverted; real formatter output,
+  comments, title renames; weakening markers read through the lexer on
+  diff fragments — looser). Then re-scoped: only the strengthen side may
+  narrow; weakening is efede92's code path.
+- Series 2 (4 rounds, STRICT): P1 per round 1, 1, 0, 0 — round 1 (three
+  diffs and the unstaged-mv deletion kept from series 1), round 2 (a
+  project inside e2e/ naming files from the top; the invariant made
+  structural), rounds 3 and 4 PASS (222 differential scenarios efede92 vs
+  HEAD, never looser; an agent-gaming lens). Their P2s fixed before close.
+
 ## Test Plan
 
 Throwaway repos with a high-risk path, a neutral, an added-assertion and a
