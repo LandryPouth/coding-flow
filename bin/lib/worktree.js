@@ -1094,14 +1094,18 @@ function worktreeLand(name, { cwd, story, dryRun = false }) {
         }
 
         landCleanup(root, match, branch, found);
-        log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
-        sayDeployTodos(root, found);
+        announceLanded(root, branch, found);
       },
       { waitTimeoutMs, staleMs },
     );
   } catch (err) {
     fail(err.message);
   }
+}
+
+function announceLanded(root, branch, found) {
+  log(`Landed: "${branch}" merged. Worktree removed and branch deleted.`);
+  sayDeployTodos(root, found);
 }
 
 // story-26-07: the landed story's open `before: deploy` items, said out loud

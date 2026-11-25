@@ -409,6 +409,21 @@ function syncDeployIntoPr(root, branch, block) {
   return next === body || gh(["pr", "edit", branch, "--body", next], root).code === 0;
 }
 
+// Attaches/refreshes the verify proof in the PR body (idempotent), then the
+// Before you deploy section — which never blocks: a to-do is not a failure, it
+// only must not pass unseen.
+function attachToPr(root, branch, { includeEvidence, evidence, deployTodos }) {
+  if (includeEvidence && !evidence) {
+    log("Note: no verify evidence — run `ai-flow verify --story <dir>` before you ship to attach the proof.");
+  } else if (includeEvidence && syncEvidenceIntoPr(root, branch, buildEvidenceBlock(evidence))) {
+    log(`Verify evidence (${evidence.ok ? "passed" : "FAILED"}) attached to the PR body.`);
+  }
+
+  if (syncDeployIntoPr(root, branch, buildDeployBlock(deployTodos)) && deployTodos.length > 0) {
+    log(`Before you deploy: ${deployTodos.length} item(s) listed in the PR body.`);
+  }
+}
+
 // Refreshes the evidence section in the PR body (gh required).
 function syncEvidenceIntoPr(root, branch, block) {
   const view = gh(["pr", "view", branch, "--json", "body"], root);
@@ -867,27 +882,6 @@ function ship({
     return;
   }
 
-  // Attaches/refreshes the verify proof in the PR body (idempotent).
-  function attachEvidence() {
-    if (!includeEvidence) {
-      return;
-    }
-    if (!evidence) {
-      log("Note: no verify evidence — run `ai-flow verify --story <dir>` before you ship to attach the proof.");
-      return;
-    }
-    if (syncEvidenceIntoPr(root, branch, buildEvidenceBlock(evidence))) {
-      log(`Verify evidence (${evidence.ok ? "passed" : "FAILED"}) attached to the PR body.`);
-    }
-  }
-
-  // Never blocks: a to-do is not a failure, it only must not pass unseen.
-  function attachDeployTodos() {
-    if (syncDeployIntoPr(root, branch, buildDeployBlock(deployTodos)) && deployTodos.length > 0) {
-      log(`Before you deploy: ${deployTodos.length} item(s) listed in the PR body.`);
-    }
-  }
-
   // gh present: existing PR? (idempotent — the push already updated it)
   const existing = gh(["pr", "view", branch, "--json", "url,state"], root);
   if (existing.code === 0) {
@@ -898,8 +892,7 @@ function ship({
       url = "";
     }
     log(`PR already open (updated by the push)${url ? `: ${url}` : "."}`);
-    attachEvidence();
-    attachDeployTodos();
+    attachToPr(root, branch, { includeEvidence, evidence, deployTodos });
     maybeAutoMerge(root, config, branch, targetBase, { autoMerge: autoMergeEnabled, mergeMethod });
     if (web && url) {
       gh(["pr", "view", branch, "--web"], root);
@@ -923,8 +916,7 @@ function ship({
   }
   const url = created.stdout.trim().split(/\s+/).find((token) => token.startsWith("http")) || created.stdout.trim();
   log(`PR ${draft ? "(draft) " : ""}created: ${url}`);
-  attachEvidence();
-  attachDeployTodos();
+  attachToPr(root, branch, { includeEvidence, evidence, deployTodos });
   if (!draft) {
     maybeAutoMerge(root, config, branch, targetBase, { autoMerge: autoMergeEnabled, mergeMethod });
   }
