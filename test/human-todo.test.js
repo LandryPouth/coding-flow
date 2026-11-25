@@ -341,3 +341,138 @@ test('after a land, the landed story\'s open before-deploy items are printed; ot
   assert.strictEqual(say(`./${STORY}/`), out, 'a ./ prefix or a trailing slash names the same story');
   assert.strictEqual(say('epics/epic-01-shop/story-01-09-none'), '');
 });
+
+// --- Review round 1 -------------------------------------------------------
+
+// Key-shaped strings are built at run time: no literal key is ever written.
+const stripeKey = () => 'sk_' + 'live_' + 'abcdefghijklmnop0123';
+const awsKey = () => 'AKIA' + 'QRSTUVWXYZ234567';
+
+function doctorWarnings(dir, code) {
+  const doctor = run(dir, ['doctor', '--json']);
+  return JSON.parse(doctor.output.slice(doctor.output.indexOf('{'))).warnings.filter((warning) => warning.code === code);
+}
+
+test('the uncaptured warning masks a secret of the Result line, in verify and in doctor', (t) => {
+  const dir = repo(t);
+  const key = stripeKey();
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'config.json'), JSON.stringify({ storage: 'local', validation: { commands: ['node -e "process.exit(0)"'] } }));
+  story(dir, STORY, { result: `In production set STRIPE_KEY=${key} on the web service.` });
+  sh(dir, 'git', ['add', '-A']);
+  sh(dir, 'git', ['commit', '-qm', 'init']);
+
+  const verify = run(dir, ['verify', '--story', STORY]);
+  assert.match(verify.output, /Warning — todo\.uncaptured: 1 line\(s\)/);
+  assert.match(verify.output, /In production set STRIPE_KEY=\[masked\]/);
+  assert.ok(!verify.output.includes(key), verify.output);
+
+  const doctor = run(dir, ['doctor', '--json']);
+  assert.ok(!doctor.output.includes(key), doctor.output);
+  const found = doctorWarnings(dir, 'todo_uncaptured');
+  assert.strictEqual(found.length, 1);
+  assert.match(found[0].message, /\[masked\]/);
+});
+
+test('the options of a Needs you question are masked in todo and todo --json', (t) => {
+  const dir = repo(t);
+  const key = awsKey();
+  story(dir, STORY, { extra: `\n## Needs you\n\n- Which access key?\n  - keep ${key}\n  - rotate it\n` });
+
+  for (const args of [['todo'], ['todo', '--json'], ['next'], ['next', '--json']]) {
+    const res = run(dir, args);
+    assert.ok(!res.output.includes(key), `${args.join(' ')} printed the secret:\n${res.output}`);
+  }
+  assert.match(run(dir, ['todo']).output, /- keep \[masked\]/);
+  assert.match(run(dir, ['todo']).output, /- rotate it/);
+});
+
+test('todo done refuses when the line changed between the read and the lock', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, { todo: '- [ ] (before: deploy) Run the backfill' });
+  const file = path.join(dir, STORY, 'story.md');
+  const id = needsYou(dir)[0].id;
+  const lib = path.join(__dirname, '..', 'bin', 'lib');
+  // Another writer edits the line while `todo done` waits for the lock.
+  const script = `
+    const fs = require('fs');
+    const store = require(${JSON.stringify(path.join(lib, 'placement-store.js'))});
+    const real = store.withFileLock;
+    store.withFileLock = (lock, fn, opts) => {
+      const file = process.argv[2];
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('Run the backfill', 'Drop the table'));
+      return real(lock, fn, opts);
+    };
+    const todo = require(${JSON.stringify(path.join(lib, 'todo.js'))});
+    try { todo.todoDone(process.cwd(), process.argv[1]); console.log('ticked'); } catch (e) { console.log('refused: ' + e.message); }
+  `;
+  const out = execFileSync(process.execPath, ['-e', script, id, file], { cwd: dir, encoding: 'utf8' });
+  assert.match(out, /^refused: .*changed/m);
+  assert.match(fs.readFileSync(file, 'utf8'), /- \[ \] \(before: deploy\) Drop the table/);
+});
+
+test('todo done --dry-run prints the line it would tick and writes nothing', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, { todo: '- [ ] (before: deploy) Run the backfill' });
+  const file = path.join(dir, STORY, 'story.md');
+  const before = fs.readFileSync(file, 'utf8');
+  const id = needsYou(dir)[0].id;
+
+  const res = run(dir, ['todo', 'done', id, '--dry-run']);
+  assert.strictEqual(res.code, 0, res.output);
+  assert.match(res.output, /Would tick epics\/epic-01-shop\/story-01-01-backfill\/story\.md:\d+/);
+  assert.match(res.output, /- \[x\] \(before: deploy\) Run the backfill/);
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), before);
+  assert.strictEqual(needsYou(dir).length, 1);
+});
+
+test('verify with no --story warns for the story it resolved itself (a Spec Kit feature)', (t) => {
+  const dir = repo(t);
+  fs.writeFileSync(path.join(dir, '.coding-flow', 'config.json'), JSON.stringify({ storage: 'local', validation: { commands: ['node -e "process.exit(0)"'] } }));
+  fs.mkdirSync(path.join(dir, '.specify'), { recursive: true });
+  write(dir, 'specs/001-backfill/spec.md', '# Feature\n\n## Result\n\nRun the backfill before the deploy.\n');
+  sh(dir, 'git', ['add', '-A']);
+  sh(dir, 'git', ['commit', '-qm', 'init']);
+
+  const verify = run(dir, ['verify']);
+  assert.match(verify.output, /Harness verify passed/);
+  assert.match(verify.output, /Warning — todo\.uncaptured: 1 line\(s\)/);
+  assert.match(verify.output, /specs\/001-backfill\/spec\.md:\d+: Run the backfill before the deploy/);
+});
+
+test('autoland announces the before-deploy items of every story of the landed chain, an absolute path included', (t) => {
+  const dir = repo(t);
+  write(dir, 'epics/epic-01-shop/index.md', '# Epic\n\n## Stories\n\n1. [story-01-01-backfill](story-01-01-backfill/story.md)\n2. [story-01-02-seed](story-01-02-seed/story.md)\n');
+  story(dir, STORY, { status: 'done', todo: '- [ ] (before: deploy) Run the backfill' });
+  story(dir, 'epics/epic-01-shop/story-01-02-seed', { status: 'done', todo: '- [ ] (before: deploy) Seed the plans' });
+  const lib = path.join(__dirname, '..', 'bin', 'lib');
+
+  const paths = JSON.parse(
+    execFileSync(
+      process.execPath,
+      ['-e', `console.log(JSON.stringify(require(${JSON.stringify(path.join(lib, 'worktree-plan.js'))}).chainStoryPaths(process.cwd(), process.argv[1], process.argv[2])))`, path.join(dir, 'epics/epic-01-shop'), path.join(dir, 'epics/epic-01-shop/story-01-02-seed')],
+      { cwd: dir, encoding: 'utf8' },
+    ),
+  );
+  assert.deepStrictEqual(paths, [STORY, 'epics/epic-01-shop/story-01-02-seed']);
+
+  const out = execFileSync(
+    process.execPath,
+    ['-e', `require(${JSON.stringify(path.join(lib, 'worktree.js'))}).sayDeployTodos(process.cwd(), { stories: process.argv.slice(1) })`, path.join(dir, STORY), 'epics/epic-01-shop/story-01-02-seed'],
+    { cwd: dir, encoding: 'utf8' },
+  );
+  assert.match(out, /^Before you deploy \(2\):/);
+  assert.match(out, /Run the backfill/);
+  assert.match(out, /Seed the plans/);
+});
+
+test('a bare "in production" or "en prod" is not a to-do; an action in production is; Rollback sub-blocks are skipped', (t) => {
+  const dir = repo(t);
+  story(dir, STORY, { result: 'Logs are JSON, one line in production.\nLes logs JSON une ligne en production.\n\n### Rollback Notes\n\nRevert, then redeploy before the deploy window.\n' });
+  story(dir, 'epics/epic-01-shop/story-01-02-b', { result: 'Run the seed in production once.' });
+  story(dir, 'epics/epic-01-shop/story-01-03-c', { result: 'Script à lancer en prod après la fusion.' });
+
+  const found = doctorWarnings(dir, 'todo_uncaptured').map((warning) => warning.message);
+  assert.strictEqual(found.length, 2, found.join('\n'));
+  assert.ok(found.some((message) => /story-01-02-b.*Run the seed in production/.test(message)), found.join('\n'));
+  assert.ok(found.some((message) => /story-01-03-c.*à lancer en prod/.test(message)), found.join('\n'));
+});

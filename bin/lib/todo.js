@@ -17,6 +17,7 @@ const path = require("path");
 
 const { cwd } = require("./context");
 const { readConfig } = require("./config");
+const { currentBranch } = require("./policy");
 const { execFileSync } = require("child_process");
 
 const { getStorage } = require("./storage");
@@ -513,8 +514,9 @@ function finishItem(entry, epic, patterns) {
   const { _epic, ...item } = entry;
   const masked = maskSecrets(item.text, patterns);
   const id = todoId(epic, item.story, item.text);
+  const options = item.options ? { options: item.options.map((option) => maskSecrets(option, patterns).text) } : {};
 
-  return { id, ...item, text: masked.text, ...(masked.secret ? { secret: masked.secret } : {}) };
+  return { id, ...item, ...options, text: masked.text, ...(masked.secret ? { secret: masked.secret } : {}) };
 }
 
 const KIND_LABELS = {
@@ -586,7 +588,8 @@ function collectNeedsYou(root) {
 // Open `before: deploy` items of the given stories (story dirs, as storage names
 // their `path`). What `ship`, `land` and `autoland` say out loud.
 function openDeployTodos(root, storyPaths) {
-  const wanted = new Set(storyPaths.map((entry) => normalizePortable(entry).replace(/^\.\//, "").replace(/\/+$/, "")));
+  const relative = (entry) => (path.isAbsolute(entry) ? path.relative(root, entry) : entry);
+  const wanted = new Set(storyPaths.map((entry) => normalizePortable(relative(entry)).replace(/^\.\//, "").replace(/\/+$/, "")));
 
   return collectNeedsYou(root).filter(
     (entry) => entry.kind === "human-todo" && entry.when === "deploy" && [...wanted].some((dir) => entry.source.startsWith(`${dir}/`)),
@@ -613,15 +616,21 @@ function printDeployTodos(entries, write = log) {
 // `verify` and `doctor`, never a failure: the phrase list is a heuristic.
 // ---------------------------------------------------------------------------
 
+// A bare "in production" / "en prod" describes the product ("JSON logs, one
+// line in production"); only an action done there is a to-do: a verb before
+// it ("run the seed in production", "à lancer en prod") or right after it ("In
+// production, set …").
 const DEFAULT_UNCAPTURED_PATTERNS = [
   "the maintainer must",
   "to do by the user",
   "before (the )?deploy",
-  "in production",
+  "\\b(run|set|apply|execute|launch|trigger|enable|rotate|seed|migrate)\\b[^.]*\\bin prod(uction)?\\b",
+  "^\\W*in prod(uction)?\\b[\\s,:—–-]*(run|set|apply|execute|launch|trigger|enable|rotate|seed|migrate)\\b",
   "à faire par l'utilisateur",
   "côté utilisateur",
   "avant (le )?déploiement",
-  "en prod(uction)?\\b",
+  "(lancer|exécuter|appliquer|activer|définir|configurer|à faire)[^.]*\\ben prod(uction)?\\b",
+  "^\\W*en prod(uction)?\\b[\\s,:—–-]*(lancer|exécuter|appliquer|activer|définir|configurer)",
 ];
 
 // `todo.uncapturedPatterns`: each entry a case-insensitive regular expression.
@@ -660,15 +669,19 @@ function uncapturedTodoLines(root, storyDir, config) {
   }
 
   const patterns = uncapturedPatterns(config);
+  const secrets = secretPatternsOf(root);
   const found = [];
 
   for (const entry of scanned) {
     const source = normalizePortable(path.relative(root, entry.file));
-    const result = entry.scan.blocks.filter((block) => underAny(block, ["Result"]));
+    // A `### Rollback` sub-block says what to do if it goes wrong, not a step
+    // of the delivery.
+    const result = entry.scan.blocks.filter((block) => underAny(block, ["Result"]) && !underAny(block, ["Rollback"]));
 
     for (const { text, line } of result.flatMap(blockLines)) {
       if (patterns.some((pattern) => pattern.test(text))) {
-        found.push({ source, line, text });
+        // Masked here, so verify and doctor can only print the masked line.
+        found.push({ source, line, text: maskSecrets(text, secrets).text });
       }
     }
   }
@@ -678,14 +691,21 @@ function uncapturedTodoLines(root, storyDir, config) {
 
 // Printed by `verify --story` after its verdict, from the command layer (the
 // verify core does not read story to-dos): a warning, never part of the proof.
-function printUncapturedTodos(root, storyPath) {
-  if (!storyPath) {
-    return;
-  }
+// With no `--story`, the story verify resolved itself (the active Spec Kit
+// feature) is read, as verify scoped to it.
+function implicitStory(root) {
+  const feature = require("./speckit").detectFeature(root, { branch: currentBranch(root) });
+  return feature ? feature.dir : null;
+}
 
+function printUncapturedTodos(root, storyPath) {
   let lines = [];
   try {
-    lines = uncapturedTodoLines(root, path.resolve(root, storyPath), readConfig(root));
+    const story = storyPath || implicitStory(root);
+    if (!story) {
+      return;
+    }
+    lines = uncapturedTodoLines(root, path.resolve(root, story), readConfig(root));
   } catch {
     return; // best effort: a read error never changes a verify.
   }
@@ -723,7 +743,7 @@ function todoLockPath(root) {
 
 function findTodo(root, id) {
   const matches = collectTodos(root, { headings: todoHeadings(readConfig(root)) }).epics.flatMap((epic) =>
-    epic.items.filter((item) => item.id === id),
+    epic.items.filter((item) => item.id === id).map((item) => ({ ...item, epic: epic.epic })),
   );
 
   if (matches.length === 0) {
@@ -741,30 +761,53 @@ function findTodo(root, id) {
   return matches[0];
 }
 
-function todoDone(root, id) {
+// The id of the open checkbox that starts on the item's line now (the same
+// hash `todo` lists, a wrapped item read whole), or null when that line no
+// longer starts an open checkbox.
+function currentTodoId(content, item) {
+  const block = scanMarkdown(content).blocks.find((entry) => entry.type === "item" && entry.line === item.line);
+
+  if (!block || block.box !== " ") {
+    return null;
+  }
+
+  return todoId(item.epic, item.story, item.kind === "human-todo" ? parseWhen(block.text).text : block.text);
+}
+
+// `dryRun`: says which line would be ticked, and writes nothing.
+function todoDone(root, id, { dryRun = false } = {}) {
   const item = findTodo(root, id);
   const file = path.join(root, item.source);
 
-  return withFileLock(todoLockPath(root), () => {
+  const tick = () => {
     const content = fs.readFileSync(file, "utf8");
     const eol = content.includes("\r\n") ? "\r\n" : "\n";
     const lines = content.split(/\r?\n/);
     const index = item.line - 1;
 
-    // Re-read under the lock: the line must still be that open checkbox.
-    if (!UNCHECKED_BOX.test(lines[index] || "")) {
+    // Re-read under the lock: the line must still be that open checkbox, with
+    // the same text (another writer may have edited it since the read).
+    const now = UNCHECKED_BOX.test(lines[index] || "") ? currentTodoId(content, item) : null;
+    if (now === null) {
       throw new Error(`${item.source}:${item.line} is no longer an open checkbox; nothing was changed.`);
+    }
+    if (now !== id) {
+      throw new Error(`${item.source}:${item.line} changed since it was read (it no longer holds "${id}"); nothing was changed. Run "ai-flow todo" again.`);
     }
 
     lines[index] = lines[index].replace(UNCHECKED_BOX, "$1[x]");
-    fs.writeFileSync(file, lines.join(eol));
-    return { ...item, ticked: maskSecrets(lines[index].trim(), secretPatternsOf(root)).text };
-  });
+    if (!dryRun) {
+      fs.writeFileSync(file, lines.join(eol));
+    }
+    return { ...item, dryRun, ticked: maskSecrets(lines[index].trim(), secretPatternsOf(root)).text };
+  };
+
+  return dryRun ? tick() : withFileLock(todoLockPath(root), tick);
 }
 
-function todoDoneCommand(id) {
-  const result = todoDone(cwd, id);
-  log(`Ticked ${result.source}:${result.line}`);
+function todoDoneCommand(id, { dryRun = false } = {}) {
+  const result = todoDone(cwd, id, { dryRun });
+  log(`${dryRun ? "Would tick" : "Ticked"} ${result.source}:${result.line}${dryRun ? " (dry run: nothing written)" : ""}`);
   log(`  ${result.ticked}`);
 }
 

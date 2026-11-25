@@ -112,3 +112,16 @@ Assert `next` text and `--json`, `todo done` diff (one line), `ship` PR body
 ```bash
 npm test
 ```
+
+## Review findings
+
+### Round 1 — FAIL (secrets, real projects)
+
+- [x] P1 todo.js uncapturedTodoLines/printUncapturedTodos + doctor todo_uncaptured — the uncaptured-prose warning printed the raw `## Result` line unmasked (a live Stripe key in full in `verify --story` and `doctor`). Fix: mask with the project's secret patterns in uncapturedTodoLines; test with a key built at run time. Fixed: `uncapturedTodoLines` masks each line with `secretPatternsOf(root)`; test "the uncaptured warning masks a secret of the Result line, in verify and in doctor".
+- [x] P2 `## Needs you` option sub-items were never masked (an AWS key showed in `todo` and `todo --json` options) — mask options in finishItem; test. Fixed in `finishItem`; test "the options of a Needs you question are masked in todo and todo --json".
+- [x] P2 `todo done` re-checked only "some open checkbox" under the lock — compare the parsed text under the lock; refuse if it changed; test. Fixed: under the lock the item starting on that line is re-scanned and its id recomputed; a different id is refused ("changed since it was read"); test "todo done refuses when the line changed between the read and the lock".
+- [x] P2 `todo done` had no `--dry-run` (hard rule: every write has one) — add it, printing the line it would tick and writing nothing; test. Fixed: `todo done <id> --dry-run` prints "Would tick …" and the ticked line, writes nothing; test.
+- [x] P2 verify warned only with `--story`; use the story verify resolved implicitly too. Fixed: with no `--story`, `printUncapturedTodos` reads the active Spec Kit feature (the only implicit scope verify has, `speckit.detectFeature`); test.
+- [x] P2 autoland → sayDeployTodos only announced the `--story` passed and an absolute path matched nothing — announce every story of the landed chain, paths made relative. Fixed: `chainStoryPaths` (worktree-plan.js) lists the chain's stories relative to the root; `openDeployTodos` makes an absolute path relative; test.
+- [x] P2 noise: on a bethl copy doctor raised 63 todo_uncaptured warnings in 45 files, at least half from bare `in production`/`en prod(uction)?` and Rollback Notes sub-blocks — drop the bare defaults (keep phrases with an action verb), skip `### Rollback` sub-headings; test both. Fixed: bare phrases replaced by verb + `in production`/`en prod` patterns, `### Rollback…` sub-blocks skipped; test. This repository: still 0 warnings.
+- [~] P2 default secret patterns miss `postgres://user:pass@` and JWTs — not done: the defaults are the guard's own (`harness-config.js`), so a change alters what the guard refuses on every write of every project; not low-risk inside this story. Added under epic 26's `## Follow-ups`.

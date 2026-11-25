@@ -20,7 +20,7 @@ const { execFileSync } = require("child_process");
 
 const { parseBackbone, labelForDir, dirForLabel } = require("./backbone");
 const { worktreeAdd, requireRepo } = require("./worktree");
-const { samePath } = require("./util");
+const { samePath, normalizePortable } = require("./util");
 const {
   gitCommonDir,
   placementStatePath,
@@ -505,7 +505,19 @@ function autoLandIfChainFinished({ cwd, epicPath, storyPath }) {
   return { landed: true, chainId, worktreeName };
 }
 
+// Every story of the chain `storyPath` belongs to, as paths relative to `cwd`
+// (what autoland names when it says the landed chain's before-deploy items).
+function chainStoryPaths(cwd, epicPath, storyPath) {
+  const epicDir = path.relative(cwd, path.resolve(cwd, epicPath));
+  const { storyDirs, chainIdOf, chainId } = resolveStoryChain(cwd, epicDir, storyPath);
+
+  return storyDirs
+    .filter((_, index) => chainIdOf.get(`s${index + 1}`) === chainId)
+    .map((dir) => normalizePortable(path.join(epicDir, dir)));
+}
+
 module.exports = {
+  chainStoryPaths,
   gitCommonDir,
   placementStatePath,
   readPlacementState,

@@ -128,7 +128,7 @@ function refuseVerifyAwayFromStoryWork(story) {
       `  cd ${elsewhere.relative} && ai-flow verify --story ${story}`,
   );
 }
-const { decidePlacement, autoLandIfChainFinished } = require("./lib/worktree-plan");
+const { decidePlacement, autoLandIfChainFinished, chainStoryPaths } = require("./lib/worktree-plan");
 const { shipCommand } = require("./lib/ship");
 const { runCommand } = require("./lib/run");
 const { hookCommand } = require("./lib/hook");
@@ -881,7 +881,7 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     }
 
     try {
-      todoDoneCommand(extra[1]);
+      todoDoneCommand(extra[1], { dryRun: flags.has("--dry-run") });
     } catch (error) {
       fail(error.message);
     }
@@ -1016,7 +1016,13 @@ if (flags.has("--global") && ["init", "upgrade", "uninstall"].includes(command))
     log(JSON.stringify(result, null, 2));
   } else if (result.landed) {
     log(`Landed: chain ${result.chainId} ("${result.worktreeName}") merged and its worktree removed.`);
-    sayDeployTodos(cwd, { story: { path: story } });
+    let stories = [story];
+    try {
+      stories = chainStoryPaths(cwd, epic, story);
+    } catch {
+      // best effort: the landed story alone is still said.
+    }
+    sayDeployTodos(cwd, { stories });
   } else if (result.reason === "chain-not-finished") {
     log(`Chain ${result.chainId} is not finished yet — nothing to land.`);
   } else if (reviewGateMessages[result.reason]) {

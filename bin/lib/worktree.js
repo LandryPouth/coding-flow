@@ -1108,12 +1108,15 @@ function announceLanded(root, branch, found) {
   sayDeployTodos(root, found);
 }
 
-// story-26-07: the landed story's open `before: deploy` items, said out loud
-// after the land. Never blocks, never fails the land: a read error says nothing.
+// story-26-07: the landed stories' open `before: deploy` items, said out loud
+// after the land — `found.story` for a land, `found.stories` (every story of
+// the chain) for an autoland. Never blocks, never fails the land: a read error
+// says nothing.
 function sayDeployTodos(root, found) {
   try {
     const { openDeployTodos, printDeployTodos } = require("./todo");
-    printDeployTodos(openDeployTodos(root, found && found.story ? [found.story.path] : []));
+    const stories = found && found.stories ? found.stories : found && found.story ? [found.story.path] : [];
+    printDeployTodos(openDeployTodos(root, stories));
   } catch {
     // best effort only
   }

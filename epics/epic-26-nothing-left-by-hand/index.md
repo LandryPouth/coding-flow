@@ -145,3 +145,7 @@ ship early too, and bethl uses them at once. s1, s2 and s5 follow epic 20; s4 fo
 ## Readiness
 
 `ready`.
+
+## Follow-ups
+
+- (from 26-07 review round 1) The default `secretPatterns` (`bin/lib/harness-config.js`, shared with the guard) miss a credentialed URL (`postgres://user:pass@host`) and a JWT. Extending them changes what the guard refuses on every write, for every project (docs examples, test fixtures), so it was not done inside a to-do story: decide it as a guard change, with its own false-positive measurement.
