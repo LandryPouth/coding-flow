@@ -82,7 +82,24 @@ function expandHome(target, home) {
     return path.join(home, target.slice(1));
   }
   const match = HOME_PREFIX.exec(target);
-  return match ? path.join(home, target.slice(match[0].length)) : target;
+  return match ? path.join(home, target.slice(match[0].length)) : nativeShellPath(target);
+}
+
+// The path a shell word names, in the platform's own form. On Windows the agent's
+// shell is Git Bash (MSYS), which hands a native program `/c/Users/x` as
+// `C:/Users/x` (and `/cygdrive/c/…` likewise): read here as `/c/Users/x`, it would
+// resolve to `<current drive>:\c\Users\x` — a directory that does not exist — and
+// a write or a branch switch aimed at the checkout would be judged elsewhere.
+// Anywhere else a word is a path as written.
+const MSYS_DRIVE = /^\/(?:cygdrive\/)?([A-Za-z])(?=\/|$)/;
+
+function nativeShellPath(word, platform = process.platform) {
+  if (platform !== "win32" || typeof word !== "string") {
+    return word;
+  }
+  const match = MSYS_DRIVE.exec(word);
+  // `/c` alone is the drive's root, not `C:` (the current directory on drive C).
+  return match ? `${match[1].toUpperCase()}:${word.slice(match[0].length) || "/"}` : word;
 }
 
 // util's `normalizePortable`, repeated so this module needs no other.
@@ -1527,4 +1544,4 @@ function shellWrites(command, startCwd, host, options = {}) {
   return r.found;
 }
 
-module.exports = { heredocWord, isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };
+module.exports = { heredocWord, isRemote, shellWrites, commandOf, verbAt, splitSegments, tokenize, expandHome, nativeShellPath, isShellLimit, SHELLS, ARCHIVE, UNREAD_TREE };

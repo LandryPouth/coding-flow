@@ -19,7 +19,7 @@
 // depended on but could not read (an expansion where a flag may sit).
 
 const path = require("path");
-const { splitSegments, commandOf, verbAt, tokenize, heredocWord, SHELLS } = require("./shell-writes");
+const { splitSegments, commandOf, verbAt, tokenize, heredocWord, nativeShellPath, SHELLS } = require("./shell-writes");
 
 const EXPANDS = /[$`]/;
 const ASK = "stop and ask the human";
@@ -78,7 +78,7 @@ const resolveIn = (cwd, word, home) => {
   if (EXPANDS.test(word) || /^~[^/]/.test(word)) {
     return null;
   }
-  const expanded = word === "~" ? home : word.startsWith("~/") ? path.join(home, word.slice(2)) : word;
+  const expanded = word === "~" ? home : word.startsWith("~/") ? path.join(home, word.slice(2)) : nativeShellPath(word);
   if (path.isAbsolute(expanded)) {
     return path.resolve(expanded);
   }

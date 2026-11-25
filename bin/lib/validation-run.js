@@ -309,6 +309,29 @@ function isUnattended() {
   return !(process.stdin.isTTY && process.stdout.isTTY);
 }
 
+// A timed-out command is killed with what it started. `spawnSync` kills the shell
+// only: on Windows `cmd.exe` dies and the program it started keeps running,
+// holding the directory and its files (a temp dir that cannot be removed, a port
+// still bound). The shell is already gone by then, so `taskkill /T` cannot walk
+// from it; its children still name it as their parent, and are found that way.
+// On POSIX the shell's children outlive it too, reparented: reaching them needs
+// the command in its own process group, which would also keep a Ctrl-C from
+// reaching them — that trade is story 19-04's (`--detach`, process groups).
+const KILL_DESCENDANTS =
+  "function K($p){Get-CimInstance Win32_Process -Filter \"ParentProcessId=$p\" | ForEach-Object {K $_.ProcessId; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}}; K ";
+
+function killTree(pid, platform = process.platform, run = spawnSync) {
+  if (platform !== "win32" || !Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `${KILL_DESCENDANTS}${pid}`], { stdio: "ignore", windowsHide: true, timeout: 15000 });
+  } catch {
+    // No PowerShell: the timeout is still reported; the leftovers are not killed.
+  }
+  return true;
+}
+
 function runValidationCommand(
   command,
   { timeoutMs = commandTimeoutDefault(), env, cwd: runCwd = cwd, keepOutput = false } = {},
@@ -326,6 +349,9 @@ function runValidationCommand(
 
   const cap = 4000;
   const timedOut = Boolean(result.error && result.error.code === "ETIMEDOUT");
+  if (timedOut) {
+    killTree(result.pid);
+  }
   const overflowed = Boolean(result.error && result.error.code === "ENOBUFS");
   const exitCode = result.status != null ? result.status : timedOut ? 124 : result.error ? 127 : 1;
 
@@ -530,6 +556,7 @@ function captureEnvironment() {
 
 module.exports = {
   resolveStoryDir,
+  killTree,
   parseTestsCommands,
   resolveValidationCommands,
   resolveCheckCommands,

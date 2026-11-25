@@ -444,14 +444,14 @@ test('from a linked worktree, primaryLocked follows the primary checkout as the 
     const primary = committed(t, text);
     const linked = linkedWorktree(t, primary);
     const locked = rulesJson(linked).rules.find((r) => r.key === 'worktrees.primaryLocked');
-    assert.equal(switchDenied(linked, `git -C ${primary} switch main`), true, text);
+    assert.equal(switchDenied(linked, `git -C '${primary}' switch main`), true, text);
     assert.deepEqual([locked.value, locked.source], [true, source], text);
   }
 
   const open = committed(t);
   const linked = linkedWorktree(t, open);
   assert.equal(rulesJson(linked).rules.find((r) => r.key === 'worktrees.primaryLocked').value, false);
-  assert.equal(switchDenied(linked, `git -C ${open} switch main`), false);
+  assert.equal(switchDenied(linked, `git -C '${open}' switch main`), false);
 });
 
 test('init in a linked worktree sees the proofs recorded in the primary checkout', (t) => {

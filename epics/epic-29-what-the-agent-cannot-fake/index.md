@@ -93,6 +93,7 @@ The three stories are independent (disjoint files: `scan.js`,
 2. [story-29-02-a-changed-test-runs-and-a-removed-test-is-declared](story-29-02-a-changed-test-runs-and-a-removed-test-is-declared/spec.md) — collected tests, removed test ids, exit code never trusted alone *(STANDARD)*
 3. [story-29-03-destructive-commands-wait-for-the-human](story-29-03-destructive-commands-wait-for-the-human/spec.md) — guard refuses destructive commands and names the safe one *(STRICT — guard)*
 4. [story-29-04-commands-built-to-evade-the-guard](story-29-04-commands-built-to-evade-the-guard/spec.md) — interpreter strings, git alias values, written-then-run scripts; the unread forms stated with their cover *(STRICT — added 2026-11-24 from 29-03's four reviews)*
+5. [story-29-05-the-guard-holds-on-windows](story-29-05-the-guard-holds-on-windows/story.md) — the Windows CI job green: Git Bash `/c/…` paths read as drive paths, a timed-out command's tree killed, three tests that pasted unquoted backslash paths into bash *(STRICT — guard; added 2026-11-25 from PR #61's red Windows job)*
 
 ## Decisions
 

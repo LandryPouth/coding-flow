@@ -22,7 +22,8 @@ function git(dir, ...args) {
 
 function tmp(t, prefix = 'destructive') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `coding-flow-${prefix}-`)));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // Windows releases a killed process's files a moment after it dies (EBUSY).
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 }));
   return dir;
 }
 
@@ -44,6 +45,10 @@ function repo(t, harness = null) {
   }
   return dir;
 }
+
+// A path as the agent's shell writes it: on Windows Git Bash spells `C:\x\y` as
+// `/c/x/y`; elsewhere a path is already in shell form. Unquoted on purpose.
+const bashPath = (file) => (process.platform === 'win32' ? file.replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`).replace(/\\/g, '/') : file);
 
 const run = (dir, command, cwd = dir) => decide({ tool_name: 'Bash', cwd, tool_input: { command } }, dir);
 
@@ -252,8 +257,11 @@ test('git switch in the primary checkout is refused when primaryLocked; the same
 
   expectAll(dir, 'deny', ['git switch develop', 'git switch -c new', 'git checkout -b new', 'git checkout main', 'git rebase main', 'git merge side', 'git checkout --detach HEAD', 'cd build && git switch main']);
   expectAll(dir, 'allow', ['git switch develop', 'git checkout -b new', 'git rebase main', 'git merge main'], linked);
-  expectAll(dir, 'allow', ['git rebase --abort', 'git merge --abort', 'git rebase --continue', 'git -C ' + linked + ' switch main']);
-  assert.equal(run(dir, 'git -C ' + dir + ' switch main', linked).decision, 'deny', 'git -C names the primary checkout');
+  expectAll(dir, 'allow', ['git rebase --abort', 'git merge --abort', 'git rebase --continue', `git -C '${linked}' switch main`]);
+  assert.equal(run(dir, `git -C '${dir}' switch main`, linked).decision, 'deny', 'git -C names the primary checkout');
+  // Written as Git Bash writes it on Windows (`/c/Users/…`); the same path elsewhere.
+  assert.equal(run(dir, `git -C ${bashPath(dir)} switch main`, linked).decision, 'deny', 'git -C names the primary checkout, shell form');
+  assert.equal(run(dir, `cd ${bashPath(dir)} && git switch main`, linked).decision, 'deny', 'cd into the primary checkout, shell form');
   assert.match(run(dir, 'git switch develop').reason, /ai-flow worktree add --story/);
 
   // Not locked: the primary checkout is the user's to switch.
@@ -667,7 +675,8 @@ test('R2 P2: branch -f / -M move a branch; a broken policy file keeps the primar
 
   const linked = path.join(tmp(t, 'destructive-wt'), 'wt');
   git(dir, 'worktree', 'add', '-q', '-b', 'side2', linked);
-  assert.equal(run(dir, `rm ${dir}/.coding-flow/harness.json`, linked).decision, 'deny', 'the primary checkout policy file from a linked worktree');
+  assert.equal(run(dir, `rm '${dir}/.coding-flow/harness.json'`, linked).decision, 'deny', 'the primary checkout policy file from a linked worktree');
+  assert.equal(run(dir, `rm ${bashPath(dir)}/.coding-flow/harness.json`, linked).decision, 'deny', 'the same, shell form');
 
   fs.writeFileSync(path.join(dir, '.coding-flow', 'harness.json'), '{ broken');
   assert.equal(run(dir, 'git switch side').decision, 'deny', 'an unreadable policy file keeps the primary checkout locked');
@@ -910,15 +919,62 @@ test('S2-3: an allowDestructive entry that is a bare * or a verb and * is ignore
 
 // Series round 3 (P2s).
 
-// A PATH whose `git` is `script` (a shell body), then the real one.
-function fakeGit(t, script) {
-  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+// The real git, found on the PATH as the guard finds it.
+function realGit() {
+  const names = process.platform === 'win32' ? ['git.exe'] : ['git'];
+  for (const dir of (process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+    for (const name of names) {
+      if (fs.existsSync(path.join(dir, name))) {
+        return path.join(dir, name);
+      }
+    }
+  }
+  throw new Error('no git on the PATH');
+}
+
+// A PATH whose `git` hangs on any call naming `slow` (past the guard's 2 s git
+// limit), and hands every other call to the real git. The fake is one Node file.
+// POSIX runs it as `git` through its shebang. Windows spawns only a `.com` or
+// `.exe` without a shell (a `git.cmd` is never found), so there `git.exe` is a
+// copy of node.exe that loads the fake with `NODE_OPTIONS=--require` before its
+// "script": node reads `git -C <dir> <sub> …` as `--conditions <dir>` and the
+// script `<sub>`, and the fake puts the git command line back together.
+function fakeGit(t, slow) {
+  const real = realGit();
   const bin = tmp(t, 'destructive-git');
-  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\n${script.replace(/REAL_GIT/g, real)}\n`, { mode: 0o755 });
-  const saved = process.env.PATH;
-  process.env.PATH = `${bin}${path.delimiter}${saved}`;
+  const fake = path.join(bin, 'fake-git.js');
+  fs.writeFileSync(fake, `#!/usr/bin/env node
+const { spawnSync } = require('child_process');
+const path = require('path');
+const args = process.env.FAKE_GIT_PRELOAD === '1'
+  ? [...process.execArgv.filter((arg) => !arg.startsWith('--require')), path.basename(process.argv[1]), ...process.argv.slice(2)]
+  : process.argv.slice(2);
+if (args.join(' ').includes(${JSON.stringify(slow)})) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+  process.exit(1);
+}
+const env = { ...process.env };
+delete env.NODE_OPTIONS;
+const result = spawnSync(${JSON.stringify(real)}, args, { stdio: 'inherit', env });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+  const saved = { PATH: process.env.PATH, NODE_OPTIONS: process.env.NODE_OPTIONS, FAKE_GIT_PRELOAD: process.env.FAKE_GIT_PRELOAD };
+  if (process.platform === 'win32') {
+    fs.copyFileSync(process.execPath, path.join(bin, 'git.exe'));
+    process.env.NODE_OPTIONS = `--require "${fake.replace(/\\/g, '/')}"`;
+    process.env.FAKE_GIT_PRELOAD = '1';
+  } else {
+    fs.symlinkSync(fake, path.join(bin, 'git'));
+  }
+  process.env.PATH = `${bin}${path.delimiter}${saved.PATH}`;
   t.after(() => {
-    process.env.PATH = saved;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   });
 }
 
@@ -938,7 +994,7 @@ test('S3-1: git missing from the guard PATH makes a git check unchecked, never a
 
 test('S3-2: after one git timeout, the other git lookups of the same decision are skipped', (t) => {
   const dir = repo(t);
-  fakeGit(t, 'case "$*" in *"config --get"*) exec sleep 5;; esac\nexec REAL_GIT "$@"');
+  fakeGit(t, 'config --get');
   const started = Date.now();
   const result = run(dir, 'git aa; git bb; git cc; git dd');
   const took = Date.now() - started;

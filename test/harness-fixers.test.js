@@ -44,7 +44,8 @@ const FAILING_FIXER = node('process.exit(4)');
 
 function project(t, validation, { gitRepo = true } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-fixers-')));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // Windows releases a killed process's files a moment after it dies (EBUSY).
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 }));
   run(dir, ['init']);
   fs.mkdirSync(path.join(dir, 'src'));
   fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'const x=1\n');
@@ -905,7 +906,10 @@ test('a run file re-indented by a formatter is not a second ledger entry', (t) =
 // A guard log past the guard's size bound, as the guard leaves it: it keeps its
 // last 200 lines, then appends (guard.js).
 function bigGuardLogProject(t, keep) {
-  const fixer = node(`const fs=require('fs');const f='.coding-flow/denials.jsonl';const k=fs.readFileSync(f,'utf8').split('\\\\n').filter(Boolean).slice(-${keep});fs.writeFileSync(f,k.join('\\\\n')+'\\\\n'+'{\\"tool\\":\\"new\\"}\\\\n')`);
+  // The newline is built, not escaped: `\n` reaches node as a newline through sh's
+  // double quotes but as a backslash and an n through cmd.exe's, where the split
+  // then found one line and the "trim" kept the whole file.
+  const fixer = node(`const fs=require('fs');const f='.coding-flow/denials.jsonl';const n=String.fromCharCode(10);const k=fs.readFileSync(f,'utf8').split(n).filter(Boolean).slice(-${keep});fs.writeFileSync(f,k.join(n)+n+'{\\"tool\\":\\"new\\"}'+n)`);
   const dir = ignoredRunsProject(t, fixer);
   const line = `{"tool":"${'x'.repeat(120)}"}`;
   fs.writeFileSync(path.join(dir, '.coding-flow', 'denials.jsonl'), `${Array.from({ length: 2500 }, (_, i) => `${line.slice(0, -2)}${i}"}`).join('\n')}\n`);
