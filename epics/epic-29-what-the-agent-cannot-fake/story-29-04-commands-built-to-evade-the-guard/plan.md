@@ -177,6 +177,38 @@
   reviewer's 5.1–6.0 vs 3.2–3.5 ms was measured on round 1, before `rm` read
   the index.
 
+### Review round 3 (fresh reviewer, tests/spec/scanners lens: FAIL, 1 P1 — a regression)
+
+- **R3-P1 — the SQL scanner blanked code Postgres runs.** `select 1 as
+  "a--b"; DROP DATABASE prod`, `select "/*"; …; select "*/"`, `x$a$ … y$a$`,
+  `E'\\''`: refused at 3c90919, allowed after round 2. **Structural rule —
+  monotonic:** a scanner may only add refusals. `DROP DATABASE`, 29-03's
+  check, reads the raw text again, exactly as 3c90919 did (so `SELECT 'drop
+  database x'` is refused again: accepted noise, in the table; the CHANGELOG
+  no longer claims otherwise). The checks this story added (`DROP SCHEMA`,
+  `TABLE`, `OWNED`, `COLUMN`, `ALTER TABLE … DROP c`, `TRUNCATE`, `DELETE`
+  with no `WHERE`) read the blanked text, from a fixed scanner: a `"…"`
+  identifier is opaque (`""` inside), a dollar quote opens only where it can
+  (not after `[\w$]`, tag `[A-Za-z_]\w*` or empty), a backslash escapes inside
+  `E'…'`. Interpreter code: 3c90919 refused nothing there (its backstops on
+  the raw words still run unchanged), and a destructive verb in the raw code
+  that no literal holds is now unchecked — so a comment that throws the quote
+  pairing off (`# don't`) cannot hide one.
+- **The class cannot come back silently:** a differential test holds 105
+  cases (every SQL and interpreter case of the file, plus round 3's four),
+  each with the decision 3c90919 gave on the same fixture, recorded by
+  running 3c90919 and hard-coded. HEAD must be at least as strict on every
+  one (deny > unchecked > allow).
+- **R3-P2 fixed.** `-H` in psql clusters. `ALTER TABLE t DROP c` (no
+  `COLUMN`; `DROP CONSTRAINT`, `DEFAULT`, `NOT NULL`, `IDENTITY`,
+  `EXPRESSION` are not data). A redirection before the command
+  (`<drop.sql psql app`, `>out.txt git reset --hard`, `2>/dev/null git …`)
+  is read past — these were unchecked at 3c90919, now read; `psql app 0<
+  drop.sql` reads the file like `<`. The round-2 `tokenize` change has its
+  CHANGELOG line and its own test (`> "\.env"` allowed, `> .env` refused).
+- **R3-P2 listed.** Octal escapes, `printf`/`%` formats, Perl
+  `qx{}`/`q{}`/`qw()`; psql `\gexec`, `\set`/`:var`.
+
 ## Test Plan
 
 `decide()` on throwaway repos for each criterion; the 29-03 Lens B list

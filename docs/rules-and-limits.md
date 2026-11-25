@@ -121,6 +121,9 @@ means to get past it, the cover is the sandbox and the permissions
 | a word with escaped spaces (`psql -qcDROP\ TABLE\ t`) | split at the spaces, so the SQL is not read | the sandbox; review |
 | `\i file`, `\ir`, `\o` into a pipe, `\copy … program` in psql's input | unchecked: what the file holds or the program does is not read | a dev database; the sandbox |
 | a destructive command named as text inside code (`node -e 'console.log("rm -rf is dangerous")'`) | unchecked: every literal is read as a possible command, so `strict` refuses it. Accepted noise: reading only the literals a call runs would miss `cmd = "rm -rf x"; system(cmd)` | allowed and logged in `standard` |
+| `DROP DATABASE` inside an SQL string or identifier (`SELECT 'drop database x'`) | refused: 29-03's check reads the raw text, and the reading this story added may only add refusals (accepted noise) | the human allows it once (`allowDestructive`) |
+| code that spells a command with octal escapes (`"\162\155"`), a `printf`/`%` format, Perl `qx{…}`, `q{…}`, `qw(…)`, or another quote form the scan does not know | not read as a literal; a destructive verb in the raw code that no literal holds makes the call unchecked | the sandbox |
+| psql `\gexec` (runs the rows of a query as SQL), `\set` and `:var` substitution | not read: the SQL is computed when psql runs | a dev database and its backups |
 | `git rm -rf` of committed files only | allowed: the files come back from the commit (`git rm -f` of a file with uncommitted changes is refused since 29-04) | git history |
 | a file run that this line did not write: `python script.py`, `node x.js`, `bash script.sh`, or one named through an expansion (`bash "$PWD/x.sh"`) | not read | review of the file; the sandbox |
 | a file downloaded, or copied from a file larger than 64 KB or not on disk, then run on the same line; a heredoc body that expands (`<<EOF` with `$X`) | unchecked: the content is not read | the sandbox |
