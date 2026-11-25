@@ -93,11 +93,13 @@ const EXCLUDE_PATHSPECS = [...OUTSIDE_TOKEN].map((dir) => `:(exclude)${dir}`);
 // A throwaway copy of the index that keeps the real one's mtime. Git re-reads
 // an entry whose file is as new as the index ("racily clean"); a copy stamped
 // later would trust a same-size rewrite made within that second (story 19-10).
-// Date precision rounds down, which only makes more entries re-read.
+// The copy gets the whole second, never later than the real index: passing the
+// stat Date would round .9995 s and above up into the next second. Earlier is
+// safe — it only makes more entries re-read.
 function copyIndex(realIndex, tempIndex) {
   fs.copyFileSync(realIndex, tempIndex);
-  const { atime, mtime } = fs.statSync(realIndex);
-  fs.utimesSync(tempIndex, atime, mtime);
+  const { atimeMs, mtimeMs } = fs.statSync(realIndex);
+  fs.utimesSync(tempIndex, Math.floor(atimeMs / 1000), Math.floor(mtimeMs / 1000));
 }
 
 // The tree of the working tree's tracked content, or null. `stash create` comes

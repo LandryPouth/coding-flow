@@ -175,6 +175,30 @@ test('the tree token moves on a same-size edit made within the second of the ind
   assert.notEqual(currentTreeToken(dir), before);
 });
 
+// A stat Date handed back to utimes rounds .9995 s and above up into the next
+// second: the copy would be later than the real index and the window reopens.
+test('the tree token moves when the index was written in the last half-millisecond of the second', (t) => {
+  const { currentTreeToken } = require('../bin/lib/identity');
+  const T = 1700000000;
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-race-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'a.md');
+  fs.writeFileSync(file, '- [ ] done\n');
+  fs.utimesSync(file, T, T);
+  git(dir, ['init', '-q']);
+  git(dir, ['config', 'core.trustctime', 'false']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  fs.writeFileSync(path.join(dir, 'new.txt'), 'untracked\n');
+  fs.utimesSync(path.join(dir, '.git', 'index'), T + 0.9997, T + 0.9997);
+  const before = currentTreeToken(dir);
+  fs.writeFileSync(file, '- [x] done\n');
+  fs.utimesSync(file, T, T);
+  assert.notEqual(currentTreeToken(dir), before);
+  // Git itself sees the edit (read last: status refreshes the real index).
+  assert.match(git(dir, ['status', '--porcelain']), /a\.md/);
+});
+
 test('a path that starts with a space is listed whole', (t) => {
   const dir = project(t, { fix: [node("require('fs').writeFileSync(' lead.js','x')")], commands: [node('0')] });
   const evidence = JSON.parse(verify(dir).output);

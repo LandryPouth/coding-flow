@@ -38,10 +38,12 @@ the proof's tree token unchanged (a stale proof read as current).
 
 ## Fix
 
-`copyIndex` copies the index and gives the copy the real index's mtime, so
-git applies the same racy-clean re-read it applies to the real index. Both
-throwaway-index paths use it. Date precision rounds down, which only makes
-more entries re-read.
+`copyIndex` copies the index and gives the copy the real index's mtime in
+whole seconds, floored, so git applies at least the racy-clean re-reads it
+applies to the real index. Both throwaway-index paths use it. Passing the stat
+`Date` instead (round 1) rounded .9995 s and above up into the next second,
+which reopened the window (found by the round-1 review); flooring can only
+make the copy earlier, which only makes more entries re-read.
 
 ## Acceptance Criteria
 
@@ -49,13 +51,16 @@ more entries re-read.
   second of the commit, is listed in `fixedFiles`.
 - [x] The tree token moves on a same-size edit made within the second of the
   index (the throwaway-index path, with an untracked file around).
+- [x] The copy is never later than the real index, even when the index's
+  mtime is in the last half-millisecond of a second.
 - [x] No test was weakened: the flaky tests keep their assertions.
 
 ## Acceptance Traceability
 
 1. test/harness-fixers.test.js::a story file a fixer rewrites within the second of the commit is still listed
 2. test/harness-fixers.test.js::the tree token moves on a same-size edit made within the second of the index
-3. test/harness-fixers.test.js::a tracked story file a fixer edits is listed, with no untracked file around
+3. test/harness-fixers.test.js::the tree token moves when the index was written in the last half-millisecond of the second
+4. test/harness-fixers.test.js::a tracked story file a fixer edits is listed, with no untracked file around
 
 ## Result
 

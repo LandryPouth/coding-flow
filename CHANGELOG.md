@@ -25,7 +25,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
-- **A same-size edit made within a second is no longer unseen.** The snapshot verify takes around the fixers, and the proof's tree token, read the work tree through a throwaway copy of the git index; the copy carried a later mtime, so git trusted an entry rewritten at the same size within the second of the index. A formatter ticking a box in a story file right after a commit escaped the story-file check, and such an edit could leave a proof looking current. The copy now keeps the real index's mtime.
+- **A same-size edit made within a second is no longer unseen.** The snapshot verify takes around the fixers, and the proof's tree token, read the work tree through a throwaway copy of the git index; the copy carried a later mtime, so git trusted an entry rewritten at the same size within the second of the index. A formatter ticking a box in a story file right after a commit escaped the story-file check, and such an edit could leave a proof looking current. The copy now takes the real index's mtime in whole seconds, never later than the real index, so git re-reads every entry it would re-read itself.
 
 ## [0.15.0] - 2026-11-22
 
