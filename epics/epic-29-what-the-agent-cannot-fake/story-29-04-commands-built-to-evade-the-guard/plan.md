@@ -550,3 +550,10 @@ Fixed (round 4 implementer): P1 — `strictestReading` holds back the frozen rea
 - [x] P2 `module.register` in test/self-install-paths.test.js unproved on Node 18 (CI matrix has 18.x) — guard it or use a loader that works on 18; run under 18 via `npx -y node@18` if possible. **Fixed:** the test skips with an explicit reason when `module.register` is missing (< 18.19 / 20.6); `npx -y node@18` (v18.20.8): 7/7 pass, loader test ran.
 
 Held: no deny dropped; mixed lines unchecked in both orders; `rh` → reset --hard denied; M5 killed; tracked plugin = generator; loader hook scoped, stderr restored; plugin check OK; develop merge clean, 161/161; frozen files unchanged since 8ac8fee; all 8 criteria hold.
+
+### Series 5 Round 1 — PASS (sign-off as a whole, fresh eyes)
+
+- [x] P2 under `destructiveCommands: "warn"` a destructive command read inside code is unchecked, not warned (stricter than warn promises) — stated as a limit row in docs/rules-and-limits.md (orchestrator), per the open-promise rule.
+- [x] P2 `git commit -am '…rm -rf…'` unchecked (pre-existing on develop) — stated as a limit row.
+
+Held: all 8 criteria, 132/132, a decide probe per criterion; 34 own probes match the docs; develop merge clean, 168/168, plugin check in sync; frozen 29-03 side unchanged since 8ac8fee.

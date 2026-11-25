@@ -126,6 +126,8 @@ means to get past it, the cover is the sandbox and the permissions
 | `find -delete` (outside the policy file) | allowed | `trash`; the sandbox |
 | a heredoc fed to `psql`, SQL from a file (`psql < f.sql`, `psql -f f.sql`), SQL piped from anything but `echo`/`printf` (`cat f.sql` piped into `psql`), `docker exec db psql` fed by a pipe | read since 29-04 when the guard sees the SQL (a quoted heredoc, a file of at most 64 KB): destructive SQL is unchecked. SQL it cannot see is unchecked. A container's psql is not read | a dev database and its backups; the human runs SQL on shared data |
 | `npm run <script>`, `make <target>`, any script named in a file | not read: the script lives in `package.json` or the Makefile | review of the file that defines it; the sandbox |
+| a destructive command read inside code (interpreter string, git alias, a script written then run) under `destructiveCommands: "warn"` | unchecked, not warned: `standard` allows and logs it, `strict` refuses it, while the plain `rm -rf build` under `warn` is allowed with a warning (stricter than `warn` promises; series 5 review of 29-04) | `deny` or `off` behave as documented |
+| a destructive verb inside a commit message given with `-am '…'` (`git commit -am 'rm -rf build is gone'`) | unchecked (the combined short flag is not read as `-m`); `-m "…"` is allowed. Noise in `strict`, which refuses it | write `-a -m '…'` |
 | `mysql -e`, `sqlite3 db 'DROP …'`, any client but `psql` | not read | database backups; the human |
 | `docker compose down -v` | not read: the volumes go | volume backups; the human |
 | PowerShell (`Remove-Item -Recurse`) | not read | the sandbox; permissions |
