@@ -651,10 +651,8 @@ function maybeAutoMerge(root, config, branch, targetBase, { autoMerge, mergeMeth
     log(`Branch protection: ${gate.protected}`);
   }
   if (!gate.gated) {
-    log(
-      `Auto-merge: not armed — "${targetBase}" has no required status checks, so GitHub would merge at once ` +
-        `(${gate.reason}).${gate.next ? ` Next: ${gate.next}.` : ""} Merge the PR once its checks pass.`,
-    );
+    const why = gate.why || `"${targetBase}" has no required status checks, so GitHub would merge at once (${gate.reason})`;
+    log(`Auto-merge: not armed — ${why}.${gate.next ? ` Next: ${gate.next}.` : ""}${gate.why ? "" : " Merge the PR once its checks pass."}`);
     return;
   }
 

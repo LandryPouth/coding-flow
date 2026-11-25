@@ -80,6 +80,15 @@ function isGitHubOrigin(root) {
 
 const NEXT_RUN = "then run `ai-flow protect`";
 
+// A private repository on GitHub Free has no branch protection at all: GitHub
+// answers 403 "Upgrade to GitHub Pro or make this repository public". That is
+// a plan limit, not an auth problem, and no `gh auth` fixes it.
+const PLAN_LIMIT = "branch protection is not available on this plan (private repository on GitHub Free)";
+const PLAN_NEXT =
+  "merge each pull request by hand once its checks pass (auto-merge cannot wait for them here), " +
+  "or make the repository public or move it to a paid plan, then run `ai-flow protect`";
+const isPlanLimit = (text) => /Upgrade to GitHub Pro|make this repository public to enable this feature/i.test(String(text || ""));
+
 // The repository as `gh` sees it, or the reason it cannot be read.
 function resolveRepo(root) {
   const url = originUrl(root);
@@ -135,7 +144,7 @@ function inspectBranch(root, repo, branch) {
   const prot = gh(root, ["api", `repos/${repo}/branches/${ref}/protection`]);
 
   if (!prot.ok && !notFound(prot)) {
-    return { branch, sha, rules, error: firstLine(prot.stderr) || "gh api failed" };
+    return { branch, sha, rules, error: firstLine(prot.stderr) || "gh api failed", planLimit: isPlanLimit(prot.stderr) };
   }
 
   return { branch, sha, rules, protection: prot.ok ? parse(prot.stdout) : null };
@@ -170,6 +179,9 @@ function checkRunNames(root, repo, sha) {
 
 // The checks GitHub saw on pull requests into this branch: the check runs of
 // the head commit of its most recent pull requests (open, merged or closed).
+// `names` are the checks seen on EVERY one of them that had checks: a check
+// that runs only on some paths (`paths:`) or only on fork pull requests would
+// keep the others pending forever once required. `partial` is the rest.
 // `{ prs: 0 }` when there is none yet.
 function pullRequestCheckNames(root, repo, branch) {
   const list = gh(root, ["pr", "list", "-R", repo, "--base", branch, "--state", "all", "-L", "5", "--json", "headRefOid"]);
@@ -177,13 +189,15 @@ function pullRequestCheckNames(root, repo, branch) {
   if (!Array.isArray(prs)) return { error: firstLine(list.stderr) || "no answer" };
 
   const shas = [...new Set(prs.map((pr) => pr && pr.headRefOid).filter(Boolean))];
-  const seen = new Set();
+  const perPr = [];
   for (const sha of shas) {
     const runs = checkRunNames(root, repo, sha);
     if (runs.error) return { error: runs.error };
-    runs.names.forEach((name) => seen.add(name));
+    if (runs.names.length > 0) perPr.push(runs.names);
   }
-  return { prs: shas.length, names: [...seen].sort() };
+  const union = [...new Set(perPr.flat())].sort();
+  const onEvery = union.filter((name) => perPr.every((list) => list.includes(name)));
+  return { prs: shas.length, names: onEvery, partial: union.filter((name) => !onEvery.includes(name)) };
 }
 
 function freshProtection(checks) {
@@ -231,12 +245,21 @@ function keepAndAddChecks(existing, checks) {
   };
 }
 
+// No check of the branch ran on every recent pull request into it.
+function noPullRequestCheck(branch, runs, extra) {
+  const reason = extra.partial.length > 0
+    ? `none of the checks on "${branch}"'s latest commit (${runs.names.join(", ")}) ran on every recent pull request into it — requiring one would keep the pull requests that skip it pending`
+    : `none of the checks on "${branch}"'s latest commit (${runs.names.join(", ")}) was seen on a pull request into it — requiring them would keep every pull request pending`;
+  return { branch, action: "blocked", ...extra, reason, next: `run CI on every pull request (\`on: pull_request\`, no \`paths:\` filter), open one pull request into "${branch}", ${NEXT_RUN}` };
+}
+
 // One branch: what would change, and the one request that changes it.
 function planBranch(root, repo, branch) {
   const info = inspectBranch(root, repo, branch);
   const blocked = (reason, next) => ({ branch, action: "blocked", reason, next });
 
   if (info.missing) return blocked(`branch "${branch}" does not exist on GitHub`, `push it, ${NEXT_RUN}`);
+  if (info.planLimit) return { ...blocked(PLAN_LIMIT, PLAN_NEXT), planLimit: true };
   if (info.error) return blocked(`GitHub did not answer for "${branch}" (${info.error})`, `check \`gh auth status\`, ${NEXT_RUN}`);
 
   if (info.rules.length > 0) {
@@ -253,7 +276,7 @@ function planBranch(root, repo, branch) {
   if (runs.error) return blocked(`could not read the check runs of "${branch}" (${runs.error})`, `check \`gh auth status\`, ${NEXT_RUN}`);
 
   const base = `repos/${repo}/branches/${encodeURIComponent(branch)}/protection`;
-  const unchanged = (pushOnly = []) => ({ branch, action: "unchanged", required, pushOnly, reason: `already requires ${required.join(", ")}` });
+  const unchanged = (extra = {}) => ({ branch, action: "unchanged", required, ...extra, reason: `already requires ${required.join(", ")}` });
   const notRequired = runs.names.filter((name) => !required.includes(name));
 
   if (notRequired.length === 0 && required.length > 0) return unchanged();
@@ -271,9 +294,10 @@ function planBranch(root, repo, branch) {
   if (onPrs.error) return blocked(`could not read the pull requests into "${branch}" (${onPrs.error})`, `check \`gh auth status\`, ${NEXT_RUN}`);
 
   const missing = notRequired.filter((name) => onPrs.names.includes(name));
-  const pushOnly = notRequired.filter((name) => !onPrs.names.includes(name));
+  const partial = notRequired.filter((name) => onPrs.partial.includes(name));
+  const extra = { pushOnly: notRequired.filter((name) => !missing.includes(name) && !partial.includes(name)), partial };
 
-  if (missing.length === 0 && required.length > 0) return unchanged(pushOnly);
+  if (missing.length === 0 && required.length > 0) return unchanged(extra);
 
   if (onPrs.prs === 0) {
     return blocked(
@@ -282,15 +306,10 @@ function planBranch(root, repo, branch) {
     );
   }
 
-  if (missing.length === 0) {
-    return blocked(
-      `none of the checks on "${branch}"'s latest commit (${runs.names.join(", ")}) was seen on a pull request into it — requiring them would keep every pull request pending`,
-      `run CI on pull requests (\`on: pull_request\`), open one pull request into "${branch}", ${NEXT_RUN}`,
-    );
-  }
+  if (missing.length === 0) return noPullRequestCheck(branch, runs, extra);
 
   if (!info.protection) {
-    return { branch, action: "protect", required: [], missing, pushOnly, request: { method: "PUT", path: base, body: freshProtection(missing) } };
+    return { branch, action: "protect", required: [], missing, ...extra, request: { method: "PUT", path: base, body: freshProtection(missing) } };
   }
 
   if (info.protection.required_status_checks) {
@@ -299,12 +318,12 @@ function planBranch(root, repo, branch) {
       action: "add-checks",
       required,
       missing,
-      pushOnly,
+      ...extra,
       request: { method: "POST", path: `${base}/required_status_checks/contexts`, body: { contexts: missing } },
     };
   }
 
-  return { branch, action: "add-checks", required, missing, pushOnly, request: { method: "PUT", path: base, body: keepAndAddChecks(info.protection, missing) } };
+  return { branch, action: "add-checks", required, missing, ...extra, request: { method: "PUT", path: base, body: keepAndAddChecks(info.protection, missing) } };
 }
 
 function targetBranches(root, repoInfo, explicit) {
@@ -342,8 +361,9 @@ function runProtect(root, { branches = [], dryRun = false } = {}) {
       result.applied = sent.ok;
       if (!sent.ok) {
         result.action = "blocked";
-        result.reason = `GitHub refused the protection (${firstLine(sent.stderr) || "unknown error"})`;
-        result.next = `check your admin rights with \`gh auth status\`, ${NEXT_RUN}`;
+        result.planLimit = isPlanLimit(sent.stderr);
+        result.reason = result.planLimit ? PLAN_LIMIT : `GitHub refused the protection (${firstLine(sent.stderr) || "unknown error"})`;
+        result.next = result.planLimit ? PLAN_NEXT : `check your admin rights with \`gh auth status\`, ${NEXT_RUN}`;
       }
     }
   }
@@ -362,7 +382,10 @@ function runProtect(root, { branches = [], dryRun = false } = {}) {
 
 function describeBranch(entry, dryRun) {
   const will = (text) => (dryRun ? `would ${text}` : text);
-  const left = entry.pushOnly && entry.pushOnly.length ? `; not required (never seen on a pull request): ${entry.pushOnly.join(", ")}` : "";
+  const left = [
+    entry.partial && entry.partial.length ? `not required (not on every pull request): ${entry.partial.join(", ")}` : null,
+    entry.pushOnly && entry.pushOnly.length ? `not required (never seen on a pull request): ${entry.pushOnly.join(", ")}` : null,
+  ].filter(Boolean).map((text) => `; ${text}`).join("");
   if (entry.action === "protect") {
     return `${entry.branch}: ${will(`${dryRun ? "protect" : "protected"} — requires ${entry.missing.join(", ")}`)} (strict: false, no reviews, enforce_admins: false, no force push, no deletion)${left}`;
   }
@@ -380,9 +403,11 @@ function formatReport(report) {
   }
 
   const lines = [`Branch protection (${report.repo}):`, ...report.branches.map((entry) => `  ${describeBranch(entry, report.dryRun)}`)];
-  const changes = report.branches.filter((entry) => entry.request).length;
+  // "Nothing to change" only when every branch is settled: a blocked branch
+  // is something left to do, not a branch already right.
+  const pending = report.branches.filter((entry) => entry.request || entry.action === "blocked").length;
 
-  if (report.dryRun) lines.push(changes > 0 ? "Dry run — nothing sent." : "Dry run — nothing to change.");
+  if (report.dryRun) lines.push(pending > 0 ? "Dry run — nothing sent." : "Dry run — nothing to change.");
   if (report.next) lines.push(`Next: ${report.next}`);
   return lines;
 }
@@ -399,12 +424,34 @@ function protectOnInit(root, { dryRun = false, skip = null } = {}) {
   }
 }
 
+// The repository's "Allow auto-merge" setting: false when it is off, null when
+// GitHub does not say (then `gh pr merge --auto` answers for itself).
+function autoMergeAllowed(root, repo) {
+  const res = gh(root, ["api", `repos/${repo}`]);
+  const data = res.ok ? parse(res.stdout) : null;
+  return data && typeof data.allow_auto_merge === "boolean" ? data.allow_auto_merge : null;
+}
+
 // `ship`: may auto-merge be armed on this base? Protects it first when it can.
+// `why`, when set, replaces "the base has no required status checks".
 function ensureBaseGated(root, base, { protectBranches = true } = {}) {
   const repoInfo = resolveRepo(root);
   if (repoInfo.blocked) return { gated: false, reason: repoInfo.blocked, next: repoInfo.next };
 
+  // Checked before any write: protecting the base is pointless when GitHub
+  // would refuse `--auto` anyway.
+  if (autoMergeAllowed(root, repoInfo.repo) === false) {
+    return {
+      gated: false,
+      why: `the repository ${repoInfo.repo} has auto-merge disabled (allow_auto_merge: false), so GitHub would refuse it`,
+      next: "turn on \"Allow auto-merge\" in the repository's Settings → General, then ship again — or merge the PR once its checks pass",
+    };
+  }
+
   const info = inspectBranch(root, repoInfo.repo, base);
+  if (info.planLimit) {
+    return { gated: false, why: `"${base}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once`, next: PLAN_NEXT };
+  }
   if (info.error || info.missing) {
     return { gated: false, reason: info.missing ? `"${base}" does not exist on GitHub` : `could not read "${base}"'s protection (${info.error})`, next: NEXT_RUN.replace(/^then /, "") };
   }
@@ -417,19 +464,23 @@ function ensureBaseGated(root, base, { protectBranches = true } = {}) {
   const report = runProtect(root, { branches: [base] });
   const entry = report.branches[0];
   if (entry && entry.applied) return { gated: true, protected: describeBranch(entry, false) };
+  if (entry && entry.planLimit) {
+    return { gated: false, why: `"${base}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once`, next: PLAN_NEXT };
+  }
   return { gated: false, reason: entry ? entry.reason : report.reason, next: entry ? entry.next : report.next };
 }
 
-// `doctor`: the bases auto-merge would merge into with no required check.
-// Silent (empty) on anything it cannot read.
+// `doctor`: the bases auto-merge would merge into with no required check, as
+// `{ branch, planLimit }` (planLimit: the plan has no branch protection at
+// all). Silent (empty) on anything else it cannot read.
 function ungatedBases(root) {
   if (!isGitHubOrigin(root)) return [];
   const repoInfo = resolveRepo(root);
   if (repoInfo.blocked) return [];
-  return targetBranches(root, repoInfo, []).filter((branch) => {
-    const info = inspectBranch(root, repoInfo.repo, branch);
-    return !info.error && !info.missing && !isGated(info);
-  });
+  return targetBranches(root, repoInfo, [])
+    .map((branch) => ({ branch, info: inspectBranch(root, repoInfo.repo, branch) }))
+    .filter(({ info }) => info.planLimit || (!info.error && !info.missing && !isGated(info)))
+    .map(({ branch, info }) => ({ branch, planLimit: Boolean(info.planLimit) }));
 }
 
 function protectCommand({ args, flags, cwd }) {
@@ -459,4 +510,6 @@ module.exports = {
   keepAndAddChecks,
   freshProtection,
   requiredChecksOf,
+  PLAN_LIMIT,
+  PLAN_NEXT,
 };

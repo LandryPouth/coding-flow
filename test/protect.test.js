@@ -239,8 +239,8 @@ test("a push-only check on the branch is not required; the checks seen on a pull
   const sb = sandbox(t, unprotected({
     branches: { main: { sha: "a".repeat(40), checkRuns: [...THREE, "deploy"], protection: null } },
     pulls: [
-      { base: "main", headRefOid: "9".repeat(40), checkRuns: ["build", "lint"] },
-      { base: "main", headRefOid: "8".repeat(40), checkRuns: ["test"] },
+      { base: "main", headRefOid: "9".repeat(40), checkRuns: THREE },
+      { base: "main", headRefOid: "8".repeat(40), checkRuns: [...THREE, "preview"] },
       { base: "develop", headRefOid: "7".repeat(40), checkRuns: ["deploy"] },
     ],
   }));
@@ -292,6 +292,79 @@ test("an existing protection gains only the checks seen on a pull request", { sk
   assert.equal(again.code, 0, again.out);
   assert.equal(sb.writes().length, 0, "deploy is never added");
   assert.match(again.stdout, /main: nothing to change — already requires .*; not required \(never seen on a pull request\): deploy/);
+});
+
+// Review round 2, P1: a check that runs only on some pull requests (a `paths:`
+// filter, fork pull requests only) would keep the others pending once required.
+test("a check seen on only some recent pull requests is not required; one seen on every pull request is", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({
+    branches: { main: { sha: "a".repeat(40), checkRuns: ["api-tests", "test"], protection: null } },
+    pulls: [
+      { base: "main", headRefOid: "9".repeat(40), checkRuns: ["test"] },
+      { base: "main", headRefOid: "8".repeat(40), checkRuns: ["api-tests", "test"] },
+      { base: "main", headRefOid: "6".repeat(40), checkRuns: ["test"] },
+      { base: "main", headRefOid: "5".repeat(40), checkRuns: [] },
+    ],
+  }));
+  const res = cli(sb, ["protect"]);
+
+  assert.equal(res.code, 0, res.out);
+  const writes = sb.writes();
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].body.required_status_checks.checks.map((check) => check.context), ["test"]);
+  assert.match(res.stdout, /not required \(not on every pull request\): api-tests/);
+});
+
+// The reviewer's repro: [test], [test], [api-tests] — requiring either check
+// would keep one of those pull requests pending.
+test("no check ran on every recent pull request: protect exits 2 and sends nothing", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({
+    branches: { main: { sha: "a".repeat(40), checkRuns: ["api-tests", "test"], protection: null } },
+    pulls: [
+      { base: "main", headRefOid: "9".repeat(40), checkRuns: ["test"] },
+      { base: "main", headRefOid: "8".repeat(40), checkRuns: ["test"] },
+      { base: "main", headRefOid: "6".repeat(40), checkRuns: ["api-tests"] },
+    ],
+  }));
+  const res = cli(sb, ["protect", "--dry-run"]);
+
+  assert.equal(res.code, 2, res.out);
+  assert.match(res.out, /ran on every recent pull request into it/);
+  assert.doesNotMatch(res.out, /nothing to change/);
+  assert.equal(sb.writes().length, 0);
+});
+
+// Review round 2, P1: a private repository on GitHub Free has no branch
+// protection; GitHub answers 403 "Upgrade to GitHub Pro". A plan limit, not an
+// auth problem, and never "nothing to change".
+const PLAN_LINE = /branch protection is not available on this plan \(private repository on GitHub Free\)/;
+
+test("a plan without branch protection: protect says so, gives a real next step, never 'nothing to change'", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({ planLimit: true }));
+
+  for (const args of [["protect", "--dry-run"], ["protect"]]) {
+    const res = cli(sb, args);
+    assert.equal(res.code, 2, res.out);
+    assert.match(res.out, PLAN_LINE);
+    assert.match(res.out, /Next: merge each pull request by hand once its checks pass/);
+    assert.doesNotMatch(res.out, /nothing to change/);
+    assert.doesNotMatch(res.out, /gh auth status/);
+  }
+  assert.equal(sb.writes().length, 0);
+
+  const init = cli(sb, ["init"]);
+  assert.equal(init.code, 0, init.out);
+  assert.match(init.out, PLAN_LINE);
+  assert.equal(sb.writes().length, 0);
+});
+
+test("a dry run with a blocked branch never prints 'nothing to change'", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({ repo: { ...ADMIN, defaultBranchRef: { name: "main" } }, pulls: [] }));
+  const res = cli(sb, ["protect", "--dry-run"]);
+
+  assert.equal(res.code, 2, res.out);
+  assert.match(res.out, /Dry run — nothing sent\./);
+  assert.doesNotMatch(res.out, /nothing to change/);
 });
 
 // Criterion 4.
@@ -417,6 +490,32 @@ test("ship --auto-merge when the base's protection cannot be read does not arm a
   assert.match(res.out, /Auto-merge: not armed — .*could not read "main"'s protection \(gh: Server Error \(HTTP 500\)\)/);
 });
 
+test("ship --auto-merge on a plan without branch protection says so and does not arm auto-merge", { skip }, (t) => {
+  const sb = shipReady(t, unprotected({ planLimit: true }));
+  const res = cli(sb, ["ship", "--auto-merge", "--no-evidence", "--no-commit"]);
+
+  assert.equal(res.code, 0, res.out);
+  assert.equal(merges(sb).length, 0, "auto-merge is not armed");
+  assert.equal(sb.writes().length, 0);
+  assert.match(res.out, /Auto-merge: not armed — "main" cannot be protected — branch protection is not available on this plan/);
+  assert.match(res.out, /Next: merge each pull request by hand once its checks pass/);
+  assert.doesNotMatch(res.out, /has no required status checks/);
+  assert.doesNotMatch(res.out, /gh auth status/);
+});
+
+// Review round 2, P2: `--auto` is refused on a repository with auto-merge off;
+// the protection is not written for nothing.
+test("ship --auto-merge on a repository with auto-merge disabled writes nothing and says so", { skip }, (t) => {
+  const sb = shipReady(t, unprotected({ allowAutoMerge: false }));
+  const res = cli(sb, ["ship", "--auto-merge", "--no-evidence", "--no-commit"]);
+
+  assert.equal(res.code, 0, res.out);
+  assert.equal(sb.writes().length, 0, "no protection written");
+  assert.equal(merges(sb).length, 0, "auto-merge is not armed");
+  assert.match(res.out, /Auto-merge: not armed — the repository acme\/app has auto-merge disabled \(allow_auto_merge: false\)/);
+  assert.match(res.out, /Allow auto-merge/);
+});
+
 // Criterion 6.
 test("doctor warns with the command to run when autoMergeEpic is on and the base has no required checks", { skip }, (t) => {
   const sb = sandbox(t, unprotected());
@@ -428,6 +527,19 @@ test("doctor warns with the command to run when autoMergeEpic is on and the base
   assert.ok(warning, JSON.stringify(report.warnings));
   assert.match(warning.message, /"main" has no required status checks/);
   assert.match(warning.message, /ai-flow protect --branch main/);
+  assert.equal(sb.writes().length, 0, "doctor only reads");
+});
+
+test("doctor warns on a plan without branch protection", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({ planLimit: true }));
+  writeConfig(sb, { autoMergeEpic: true, install: "minimal" });
+  assert.equal(cli(sb, ["init", "--minimal", "--no-protect"]).code, 0);
+
+  const report = JSON.parse(cli(sb, ["doctor", "--json"]).stdout);
+  const warning = report.warnings.find((entry) => entry.code === "auto_merge_plan_limit");
+  assert.ok(warning, JSON.stringify(report.warnings));
+  assert.match(warning.message, PLAN_LINE);
+  assert.match(warning.message, /merge each pull request by hand/);
   assert.equal(sb.writes().length, 0, "doctor only reads");
 });
 

@@ -8,6 +8,9 @@
 // body to FAKE_GH_LOG (one JSON line each). It never reaches the network.
 // `state.pulls` lists the pull requests ({ base, headRefOid, checkRuns }): the
 // check runs of a PR's head commit are the checks GitHub saw on pull requests.
+// `state.planLimit` answers every protection call as GitHub does for a private
+// repository on GitHub Free; `state.allowAutoMerge: false` is a repository with
+// "Allow auto-merge" off.
 
 const fs = require("fs");
 
@@ -58,6 +61,14 @@ if (args[0] === "api") {
   const target = args.slice(1).find((arg, index) => !arg.startsWith("-") && args[index] !== "-X" && args[index] !== "--input");
   const rest = target.split("?")[0].replace(/^repos\/[^/]+\/[^/]+\//, "");
   let match;
+
+  if (/^repos\/[^/]+\/[^/]+$/.test(rest)) {
+    out({ full_name: state.repo.nameWithOwner, allow_auto_merge: state.allowAutoMerge !== false });
+  }
+
+  if (/\/protection(\/|$)/.test(rest) && state.planLimit) {
+    fail("gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)");
+  }
 
   if ((match = rest.match(/^rules\/branches\/([^/]+)$/))) {
     const branch = state.branches[decodeURIComponent(match[1])];

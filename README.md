@@ -346,13 +346,19 @@ ai-flow protect --branch develop   # require the CI checks develop and its pull 
 ```
 
 `protect` requires the check runs GitHub reports both on the branch's latest
-commit and on the head commit of a recent pull request into it (`strict: false`,
-no reviews, no force push, no deletion): a check that runs only on push (deploy,
-release, pages) never reports on a pull request, so it is never required. No pull
+commit and on the head commit of every one of the last 5 pull requests into it
+that had checks (`strict: false`, no reviews, no force push, no deletion): a check
+that runs only on push (deploy, release, pages), or only on some pull requests (a
+`paths:` filter, forks only), would keep a pull request pending forever, so it is
+never required. No pull
 request into the branch yet: nothing is sent — open one first. It only adds: an
 existing protection keeps its reviews, restrictions and checks, and a second run
 sends nothing. No CI yet, no pull request yet, no `gh`, or no admin rights: nothing is sent, the reason
-and the next command are printed (exit 2), and `init` still succeeds. GitHub only,
+and the next command are printed (exit 2), and `init` still succeeds. A private
+repository on GitHub Free has no branch protection at all: `protect`, `init`, `ship`
+and `doctor` say so, and auto-merge stays off — merge each pull request once its
+checks pass. `ship` also leaves auto-merge off, and writes nothing, when the
+repository has "Allow auto-merge" disabled. GitHub only,
 classic branch protection; a branch governed by a ruleset is reported and left alone.
 
 ## Context & Story Files

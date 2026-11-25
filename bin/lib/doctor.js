@@ -210,13 +210,19 @@ function checkRecoveryExposure(warnings, notes) {
 function checkAutoMergeGate(warnings) {
   if (!readConfig(cwd).autoMergeEpic || !isCommandAvailable("gh")) return;
 
-  for (const branch of require("./protect").ungatedBases(cwd)) {
-    warnings.push({
-      code: "auto_merge_ungated",
-      message:
-        `autoMergeEpic is on but "${branch}" has no required status checks, so GitHub would merge at once — ` +
-        `run \`ai-flow protect --branch ${branch}\``,
-    });
+  const { ungatedBases, PLAN_LIMIT, PLAN_NEXT } = require("./protect");
+  for (const { branch, planLimit } of ungatedBases(cwd)) {
+    warnings.push(planLimit
+      ? {
+          code: "auto_merge_plan_limit",
+          message: `autoMergeEpic is on but "${branch}" cannot be protected — ${PLAN_LIMIT} — so GitHub would merge at once; ${PLAN_NEXT}`,
+        }
+      : {
+          code: "auto_merge_ungated",
+          message:
+            `autoMergeEpic is on but "${branch}" has no required status checks, so GitHub would merge at once — ` +
+            `run \`ai-flow protect --branch ${branch}\``,
+        });
   }
 }
 

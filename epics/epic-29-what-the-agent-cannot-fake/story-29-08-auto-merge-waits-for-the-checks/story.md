@@ -17,13 +17,16 @@ protection auto du projet dans lequel il est installé".
   default branch and the configured base (both when they differ) on GitHub
   through `gh api`:
   - required status checks = the check runs seen on the branch's latest
-    commit **that are also seen on a pull-request commit**: the head commit of
-    the most recent pull requests into that branch (`gh pr list --base <branch>
-    --state all -L 5 --json headRefOid`, then `commits/<sha>/check-runs`).
-    Names are read from GitHub, never guessed; `strict: false`. A check that
-    runs only on push (deploy, release, pages) never reports on a pull request:
-    requiring it would leave every PR pending forever, so it is listed as "not
-    required" and left out;
+    commit **that are also seen on every recent pull-request commit that had
+    checks**: the head commits of the most recent pull requests into that branch
+    (`gh pr list --base <branch> --state all -L 5 --json headRefOid`, then
+    `commits/<sha>/check-runs`), intersected. Names are read from GitHub, never
+    guessed; `strict: false`. A check that runs only on push (deploy, release,
+    pages) never reports on a pull request, and one that runs only on some
+    (`paths:` filter, fork pull requests only) is missing from the others:
+    requiring either would leave a PR pending forever, so they are listed as
+    "not required (never seen on a pull request)" / "not required (not on every
+    pull request)" and left out;
   - `enforce_admins: false`, no required reviews, no force pushes, no
     deletion.
   - **It never weakens an existing protection.** An existing rule keeps its
@@ -38,16 +41,29 @@ protection auto du projet dans lequel il est installé".
     checks that run on pull requests are known", and exits 2 (`init` prints it
     and succeeds). A branch whose checks are already all required is left
     unchanged without that lookup.
+  - **Plan limit.** A private repository on GitHub Free has no branch
+    protection (GitHub answers 403 "Upgrade to GitHub Pro or make this
+    repository public"). `protect`, `init`, `ship` and `doctor` say "branch
+    protection is not available on this plan (private repository on GitHub
+    Free)" and give the real next step (merge each pull request by hand once its
+    checks pass, or make the repository public / move to a paid plan) — never
+    `gh auth status`. A dry run that blocked anything never says "nothing to
+    change".
+  - **Limits.** Legacy commit statuses are not read (such a project is told it
+    needs CI first); a required check that no longer runs is never flagged or
+    removed (additive only). Both are stated in `docs/rules-and-limits.md`.
 - **`init` protects automatically** when the project is a GitHub repository,
   `gh` is authenticated with admin rights, and CI checks exist: it prints what
   it protected. `init --no-protect` and the setting `protectBranches: false`
   skip it. `init --dry-run` prints the plan only.
 - **`ship` never arms auto-merge on an unprotected base.** Before `--auto`, it
-  checks that the base has required status checks. If not, it runs `protect`
+  reads the repository's `allow_auto_merge` (off → nothing written, says so),
+  then checks that the base has required status checks. If not, it runs `protect`
   for the base when it can (same conditions). Otherwise it opens the PR without
   auto-merge and says why ("GitHub would merge at once").
 - **`doctor`** warns when auto-merge is enabled (`autoMergeEpic`) and the base
-  has no required checks. It reads GitHub only when `gh` is available, and a
+  has no required checks (`auto_merge_ungated`), or the plan has no branch
+  protection (`auto_merge_plan_limit`). It reads GitHub only when `gh` is available, and a
   network failure says nothing.
 
 ## Review findings
@@ -61,11 +77,11 @@ Held: additive POST when checks exist; full PUT only with no checks, every retur
 
 ### Round 2 — FAIL (real-world repositories and their failure answers)
 
-- [ ] P1 protect.js:179-186, :273 — the union of checks over the last 5 PRs is required: a check that runs only on some paths (`paths:` filter) or only on fork PRs gets required after one PR ran it, then blocks every PR that doesn't run it (fake-gh repro: PRs show [test], [test], [api-tests] → requires api-tests, test) — fix: require only checks seen on EVERY recent PR that had checks (intersection); list the rest as "not required (not on every pull request)"; fake-gh test.
-- [ ] P1 protect.js:240, :409, ship.js:654 — a plan limit (bethl: private repo on GitHub Free, 403 "Upgrade to GitHub Pro or make this repository public") is reported as an auth problem ("Next: check `gh auth status`", "has no required status checks … Next: run `ai-flow protect`") and the dry run still prints "nothing to change" — fix: on that 403 say "branch protection is not available on this plan (private repository on GitHub Free)" and give a real next step (merge on green by hand, or 29-09's watch-and-merge); never print "nothing to change" when something was blocked.
-- [ ] P2 doctor `checkAutoMergeGate` / protect.js:431 stays silent on the plan limit — warn.
-- [ ] P2 ship.js:649 may write the protection before `gh pr merge --auto` even when the repository has auto-merge disabled (`allow_auto_merge: false`) — check it first and say so.
-- [ ] P2 legacy commit statuses are not read ("needs CI first" for such repos); required checks that no longer run are never flagged — state both as limits.
+- [x] P1 protect.js:179-186, :273 — the union of checks over the last 5 PRs is required: a check that runs only on some paths (`paths:` filter) or only on fork PRs gets required after one PR ran it, then blocks every PR that doesn't run it (fake-gh repro: PRs show [test], [test], [api-tests] → requires api-tests, test) — fix: require only checks seen on EVERY recent PR that had checks (intersection); list the rest as "not required (not on every pull request)"; fake-gh test.
+- [x] P1 protect.js:240, :409, ship.js:654 — a plan limit (bethl: private repo on GitHub Free, 403 "Upgrade to GitHub Pro or make this repository public") is reported as an auth problem ("Next: check `gh auth status`", "has no required status checks … Next: run `ai-flow protect`") and the dry run still prints "nothing to change" — fix: on that 403 say "branch protection is not available on this plan (private repository on GitHub Free)" and give a real next step (merge on green by hand, or 29-09's watch-and-merge); never print "nothing to change" when something was blocked.
+- [x] P2 doctor `checkAutoMergeGate` / protect.js:431 stays silent on the plan limit — warn.
+- [x] P2 ship.js:649 may write the protection before `gh pr merge --auto` even when the repository has auto-merge disabled (`allow_auto_merge: false`) — check it first and say so.
+- [x] P2 legacy commit statuses are not read ("needs CI first" for such repos); required checks that no longer run are never flagged — state both as limits.
 
 Held: coding-flow dry run clean (exit 0, nothing sent); bethl exit 2, nothing written; `ship` never arms on a failed read/PUT; push-only checks excluded; no-PR and no-checks cases blocked clearly; mutation of the round-1 fix fails 3/23.
 
@@ -112,7 +128,10 @@ PATH; nothing reaches GitHub.
    only checks seen on a pull request (review round 1, P1) →
    `::a push-only check on the branch is not required; the checks seen on a pull request are`,
    `::only push checks on the branch: protect exits 2 and sends nothing`,
-   `::an existing protection gains only the checks seen on a pull request`
+   `::an existing protection gains only the checks seen on a pull request`;
+   only checks seen on every recent pull request (review round 2, P1) →
+   `::a check seen on only some recent pull requests is not required; one seen on every pull request is`,
+   `::no check ran on every recent pull request: protect exits 2 and sends nothing`
 2. Existing reviews + 1 check kept, missing added, second run sends nothing →
    `test/protect.test.js::an existing protection keeps its reviews and check, gains the missing ones, and a second run sends nothing`,
    `test/protect.test.js::a protection with no required checks is rebuilt keeping its reviews and restrictions`
@@ -128,9 +147,15 @@ PATH; nothing reaches GitHub.
    protects first, then arms → `test/protect.test.js::ship --auto-merge on a base it cannot protect opens the PR without auto-merge and says why`,
    `::ship --auto-merge on a base it can protect protects it first, then arms auto-merge`,
    `::ship --auto-merge on an already protected base arms auto-merge without writing`,
-   `::ship --auto-merge when the base's protection cannot be read does not arm auto-merge`
+   `::ship --auto-merge when the base's protection cannot be read does not arm auto-merge`;
+   plan limit and auto-merge off (review round 2) →
+   `::a plan without branch protection: protect says so, gives a real next step, never 'nothing to change'`,
+   `::a dry run with a blocked branch never prints 'nothing to change'`,
+   `::ship --auto-merge on a plan without branch protection says so and does not arm auto-merge`,
+   `::ship --auto-merge on a repository with auto-merge disabled writes nothing and says so`
 6. doctor warns with the command → `test/protect.test.js::doctor warns with the command to run when autoMergeEpic is on and the base has no required checks`,
-   `::doctor says nothing when GitHub cannot be read, or auto-merge is off`
+   `::doctor says nothing when GitHub cannot be read, or auto-merge is off`,
+   `::doctor warns on a plan without branch protection`
 7. Real check on this repository → the `protect --dry-run` output under Result.
 - Out of scope held: `::a ruleset-governed branch is reported and left alone`,
   `::a non-GitHub remote: protect says GitHub only, init stays quiet`.
@@ -206,3 +231,45 @@ lines (the round-1 `checkAutoMergeGate` call; evidence
 commit: the call moved into `checkEvidenceAndRecovery`, which both doctor reports
 already run, so neither grows (protect and doctor tests pass alone). The fixed
 tree still needs its verify.
+
+Round 2 fixes (fresh implementer):
+
+- P1 intersection: `pullRequestCheckNames` keeps only the checks seen on every
+  recent pull request that had checks; the rest are printed "not required (not
+  on every pull request)". With none common (the reviewer's repro [test],
+  [test], [api-tests]) nothing is sent, exit 2. The round-1 test "a push-only
+  check on the branch is not required…" split the three checks across two PRs,
+  which the intersection rightly refuses: its fixture now has both PRs report
+  the three checks (its assertions are unchanged).
+- P1 plan limit: the 403 "Upgrade to GitHub Pro…" on the protection read or
+  write is `planLimit` — one line "branch protection is not available on this
+  plan (private repository on GitHub Free)", next step "merge each pull request
+  by hand once its checks pass …, or make the repository public or move it to a
+  paid plan". Same in `init` (through `protect`), `ship` (no "has no required
+  status checks", no `gh auth status`) and `doctor`. A dry run with a blocked
+  branch prints "Dry run — nothing sent.", never "nothing to change". Story
+  29-09's watch-and-merge is not built yet, so it is not offered as a command.
+- P2: `doctor` warns `auto_merge_plan_limit`; `ship` reads `allow_auto_merge`
+  before writing protection and, when it is off, writes nothing and says so;
+  legacy commit statuses and stale required checks are stated as limits in
+  `docs/rules-and-limits.md`.
+- The 7 new fake-gh tests fail on the round-2 code (`bin/lib` stashed: 7/30
+  fail) and pass now (30/30).
+
+Real checks after the fix, read-only (2026-11-25):
+
+```text
+$ ai-flow protect --dry-run --branch main --branch develop    # coding-flow
+Branch protection (LandryPouth/coding-flow):
+  main: nothing to change — already requires test (ubuntu-latest, 18.x), test (ubuntu-latest, 20.x), test (ubuntu-latest, 22.x), test (macos-latest, 22.x), test (windows-latest, 22.x)
+  develop: nothing to change — already requires test (ubuntu-latest, 18.x), test (ubuntu-latest, 20.x), test (ubuntu-latest, 22.x), test (macos-latest, 22.x), test (windows-latest, 22.x)
+Dry run — nothing to change.
+(exit 0)
+
+$ ai-flow protect --dry-run                                     # bethl
+Branch protection (LandryPouth/BeThl):
+  develop: not protected — branch protection is not available on this plan (private repository on GitHub Free)
+Dry run — nothing sent.
+Next: merge each pull request by hand once its checks pass (auto-merge cannot wait for them here), or make the repository public or move it to a paid plan, then run `ai-flow protect`
+(exit 2)
+```
