@@ -117,9 +117,12 @@ function resolveRepo(root) {
   const view = gh(root, ["repo", "view", "--json", "nameWithOwner,defaultBranchRef,viewerPermission"]);
   const data = view.ok ? parse(view.stdout) : null;
   if (!data || !data.nameWithOwner) {
+    // A 5xx is GitHub not answering, not a login problem.
+    const transient = /HTTP 5\d\d/.test(view.stderr || "");
     return {
       blocked: `\`gh\` cannot read this repository (${firstLine(view.stderr) || "no answer"})`,
-      next: `run \`gh auth login\`, ${NEXT_RUN}`,
+      next: transient ? `try again once GitHub answers, ${NEXT_RUN}` : `run \`gh auth login\`, ${NEXT_RUN}`,
+      transient,
     };
   }
 
@@ -503,7 +506,11 @@ function baseBlocker(root, repo, base) {
 // `dryRun`, nothing is written: `wouldProtect` is set when the real run would.
 function ensureBaseGated(root, base, { protectBranches = true, dryRun = false } = {}) {
   const repoInfo = resolveRepo(root);
-  if (repoInfo.blocked) return { gated: false, reason: repoInfo.blocked, next: repoInfo.next };
+  // Unread is not unprotected: the base's protection was never looked at.
+  if (repoInfo.blocked) {
+    const next = repoInfo.transient ? "ship again once GitHub answers" : repoInfo.next;
+    return { gated: false, why: `${repoInfo.blocked}, so "${base}"'s protection could not be checked`, next };
+  }
 
   const blocker = baseBlocker(root, repoInfo.repo, base);
   if (blocker) return { gated: false, ...blocker };
@@ -526,7 +533,7 @@ function ensureBaseGated(root, base, { protectBranches = true, dryRun = false } 
 function baseProblem(root, repo, branch) {
   const info = inspectBranch(root, repo, branch);
   if (info.planLimit) return { branch, kind: "plan" };
-  if (info.missing) return null;
+  if (info.missing) return { branch, kind: "missing" };
   if (info.error) return { branch, kind: "unread", error: info.error };
   if (isGated(info)) return null;
   return { branch, kind: info.rules.length > 0 ? "ruleset" : "ungated" };
@@ -536,7 +543,7 @@ function baseProblem(root, repo, branch) {
 // — "disabled" (the repository refuses auto-merge; branch null), "plan" (no
 // branch protection on this plan), "ruleset" (a ruleset with no required
 // status checks rule), "unread" (the protection could not be read: `error`),
-// "ungated" (no required check). Silent (empty) when the repository itself
+// "ungated" (no required check), "missing" (the branch is not on GitHub). Silent (empty) when the repository itself
 // cannot be read.
 function ungatedBases(root) {
   if (!isGitHubOrigin(root)) return [];
@@ -546,11 +553,34 @@ function ungatedBases(root) {
   return targetBranches(root, repoInfo, []).map((branch) => baseProblem(root, repoInfo.repo, branch)).filter(Boolean);
 }
 
-function protectCommand({ args, flags, cwd }) {
+// The branches named on the command line, or the one-line error that refuses
+// the run: a branch the user did not name is never written to.
+function parseBranchArgs(args) {
   const branches = [];
   for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === "--branch" && args[index + 1] && !args[index + 1].startsWith("-")) branches.push(args[index + 1]);
-    else if (args[index].startsWith("--branch=")) branches.push(args[index].slice("--branch=".length));
+    const arg = args[index];
+    if (arg === "--branch") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("-")) return { error: "--branch needs a name" };
+      branches.push(value);
+      index += 1;
+    } else if (arg.startsWith("--branch=")) {
+      const value = arg.slice("--branch=".length);
+      if (!value) return { error: "--branch needs a name" };
+      branches.push(value);
+    } else if (!arg.startsWith("-")) {
+      return { error: `unexpected argument "${arg}" — did you mean --branch ${arg}?` };
+    }
+  }
+  return { branches };
+}
+
+function protectCommand({ args, flags, cwd }) {
+  const { branches, error } = parseBranchArgs(args);
+  if (error) {
+    process.stderr.write(`Error: ${error}\n`);
+    process.exitCode = 1;
+    return;
   }
 
   const report = runProtect(cwd, { branches, dryRun: flags.has("--dry-run") });

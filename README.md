@@ -350,8 +350,10 @@ commit and on the head commit of every one of the last 5 pull requests into it
 (`strict: false`, no reviews, no force push, no deletion): a check that runs only
 on push (deploy, release, pages), or only on some pull requests (forks only, a
 `paths:` filter on one workflow), would keep a pull request pending forever, so it
-is never required. When one of those pull requests ran no checks at all (a
-`paths:` filter on the whole CI), it exits 2 and sends nothing: an unprotected
+is never required. When checks would be added and one of those pull requests ran
+no checks at all (a `paths:` filter on the whole CI), it exits 2 and sends nothing
+(a branch that already requires every check is left alone, exit 0, without
+reading the pull requests): an unprotected
 branch stays unprotected ("a recent pull request ran no checks (a `paths:` filter?) — requiring checks would block such pull requests forever"),
 and a branch already protected is left as is, nothing sent: "left as is (requires …) — a recent pull request ran no checks; requiring more would block such pull requests" (with no required check: "left as is (no required check; its other rules kept) — …"); GitHub refusing the added checks on an existing protection says "left as is — GitHub refused adding required check(s) …". No pull
 request into the branch yet: nothing is sent — open one first. It only adds: an
@@ -362,7 +364,12 @@ repository on GitHub Free has no branch protection at all: `protect`, `init`, `s
 and `doctor` say so, and auto-merge stays off — merge each pull request once its
 checks pass. `ship` also leaves auto-merge off, and writes nothing, when the
 repository has "Allow auto-merge" disabled, and when it cannot read the base's
-protection ("Auto-merge: not armed — "main"'s protection could not be read (…)").
+protection ("Auto-merge: not armed — "main"'s protection could not be read (…)")
+or the repository itself ("… `gh` cannot read this repository (…), so "main"'s
+protection could not be checked") — never that the base has no required checks.
+`protect` writes only to a branch it was given: `--branch` with no name, or a bare
+name (`ai-flow protect develop`), is refused (exit 1). `doctor` warns
+`auto_merge_base_missing` when `baseBranch` is not on GitHub.
 GitHub only, classic branch protection; a branch governed by a ruleset is reported
 and left alone — when that ruleset has no required status checks rule, `protect`
 exits 2 and `protect`, `ship` and `doctor` say "add a required status checks rule

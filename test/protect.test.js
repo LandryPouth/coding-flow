@@ -705,6 +705,20 @@ test("ship --auto-merge when the base's protection cannot be read does not arm a
   assert.doesNotMatch(res.out, /has no required status checks|would merge at once/);
 });
 
+// Series 2 round 3, P1: a repository gh cannot read (GitHub answering 5xx) is
+// not a base without required checks, and not a login problem.
+test("ship --auto-merge when GitHub cannot read the repository does not call the base unprotected", { skip }, (t) => {
+  const sb = shipReady(t, unprotected({ repoError: "gh: Server Error (HTTP 502)" }));
+  const res = cli(sb, ["ship", "--auto-merge", "--no-evidence", "--no-commit"]);
+
+  assert.equal(res.code, 0, res.out);
+  assert.equal(merges(sb).length, 0, "auto-merge is not armed");
+  assert.equal(sb.writes().length, 0);
+  assert.match(res.out, /Auto-merge: not armed — `gh` cannot read this repository \(gh: Server Error \(HTTP 502\)\), so "main"'s protection could not be checked\. Next: ship again once GitHub answers/);
+  assert.doesNotMatch(res.out, /no required status checks|would merge at once/);
+  assert.doesNotMatch(res.out, /gh auth login/);
+});
+
 // Series 2 round 1, P2: the dry run names the protection write only when the
 // real run would make one — not on a gated, ruleset or plan-limited base.
 test("ship --dry-run --auto-merge says nothing about a protection write the real run would not make", { skip }, (t) => {
@@ -846,6 +860,22 @@ test("doctor does not call a base whose protection cannot be read ungated, and s
   assert.match(unread.message, /ai-flow protect --dry-run --branch main/);
 });
 
+// Series 2 round 3, P2: a `baseBranch` not on GitHub was skipped in silence.
+test("doctor warns when baseBranch does not exist on GitHub", { skip }, (t) => {
+  const gated = { required_status_checks: { strict: false, contexts: ["build"], checks: [{ context: "build" }] } };
+  const sb = sandbox(t, unprotected({ branches: { main: { sha: "a".repeat(40), checkRuns: THREE, protection: gated } } }));
+  writeConfig(sb, { autoMergeEpic: true, baseBranch: "develop", install: "minimal" });
+  assert.equal(cli(sb, ["init", "--minimal", "--no-protect"]).code, 0);
+
+  const report = JSON.parse(cli(sb, ["doctor", "--json"]).stdout);
+  const warning = report.warnings.find((entry) => entry.code === "auto_merge_base_missing");
+  assert.ok(warning, JSON.stringify(report.warnings));
+  assert.match(warning.message, /"develop" does not exist on GitHub/);
+  assert.match(warning.message, /push it, then run `ai-flow protect --branch develop`/);
+  assert.equal(report.warnings.filter((entry) => /^auto_merge_/.test(entry.code)).length, 1, "main is gated: one warning");
+  assert.equal(sb.writes().length, 0, "doctor only reads");
+});
+
 // Series 2 round 1, P2: with "Allow auto-merge" off, protecting is not the fix.
 test("doctor names a repository with auto-merge disabled, not 'run protect'", { skip }, (t) => {
   const sb = sandbox(t, unprotected({ allowAutoMerge: false }));
@@ -858,6 +888,32 @@ test("doctor names a repository with auto-merge disabled, not 'run protect'", { 
   assert.match(warning.message, /acme\/app has auto-merge disabled \(allow_auto_merge: false\)/);
   assert.match(warning.message, /turn on "Allow auto-merge" in the repository's Settings → General/);
   assert.equal(report.warnings.some((entry) => entry.code === "auto_merge_ungated"), false);
+});
+
+// Series 2 round 3, P1: a write goes only to a branch the user named — a
+// `--branch` with no value, or a bare name, is refused, never read as "the
+// default branch".
+test("protect refuses --branch with no name and a bare branch name, and sends nothing", { skip }, (t) => {
+  const sb = sandbox(t, unprotected({ branches: { main: { sha: "a".repeat(40), checkRuns: THREE, protection: null }, develop: { sha: "d".repeat(40), checkRuns: THREE, protection: null } } }));
+  const cases = [
+    [["protect", "--branch"], /Error: --branch needs a name/],
+    [["protect", "--branch", "--dry-run"], /Error: --branch needs a name/],
+    [["protect", "--branch="], /Error: --branch needs a name/],
+    [["protect", "develop"], /Error: unexpected argument "develop" — did you mean --branch develop\?/],
+  ];
+  for (const [args, message] of cases) {
+    const res = cli(sb, args);
+    assert.equal(res.code, 1, `${args.join(" ")}: ${res.out}`);
+    assert.match(res.out, message);
+    assert.equal(res.out.trim().split("\n").length, 1, res.out);
+  }
+  assert.equal(sb.calls().length, 0, "gh is never called");
+  assert.equal(sb.state().branches.main.protection, null);
+
+  const named = cli(sb, ["protect", "--branch", "develop", "--dry-run"]);
+  assert.equal(named.code, 0, named.out);
+  assert.match(named.stdout, /develop: would protect/);
+  assert.doesNotMatch(named.stdout, /main:/);
 });
 
 test("a non-GitHub remote: protect says GitHub only, init stays quiet", { skip }, (t) => {

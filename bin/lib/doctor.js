@@ -222,6 +222,10 @@ function autoMergeGateWarning({ branch, kind, repo, error }) {
       code: "auto_merge_unread",
       message: `${on} "${branch}"'s protection could not be read (${error}), so whether auto-merge waits for the checks is unknown — run \`ai-flow protect --dry-run --branch ${branch}\` to see what GitHub answers`,
     },
+    missing: {
+      code: "auto_merge_base_missing",
+      message: `${on} "${branch}" does not exist on GitHub, so its protection cannot be checked — push it, then run \`ai-flow protect --branch ${branch}\``,
+    },
     ungated: {
       code: "auto_merge_ungated",
       message: `${on} "${branch}" has no required status checks, so GitHub would merge at once — run \`ai-flow protect --branch ${branch}\``,

@@ -26,8 +26,8 @@ protection auto du projet dans lequel il est installé".
     (`paths:` filter, fork pull requests only) is missing from the others:
     requiring either would leave a PR pending forever, so they are listed as
     "not required (never seen on a pull request)" / "not required (not on every
-    pull request)" and left out. When one of those pull requests ran no checks
-    at all (a `paths:` filter on the whole CI), nothing is sent, exit 2: an
+    pull request)" and left out. When checks would be added and one of those
+    pull requests ran no checks at all (a `paths:` filter on the whole CI), nothing is sent, exit 2: an
     unprotected branch says "a recent pull request ran no checks (a `paths:`
     filter?) — requiring checks would block such pull requests forever" (review
     round 3); a branch already protected is left as is, nothing sent: "left as is (requires …) — a recent pull request ran no checks; requiring more would block such pull requests" (review round 4; with no required check: "left as is (no required check; its other rules kept) — …"). GitHub refusing the checks added to an existing protection: "left as is — GitHub refused adding required check(s) …" (series 2 round 1);
@@ -62,7 +62,8 @@ protection auto du projet dans lequel il est installé".
     needs CI first); a required check that no longer runs is never flagged or
     removed (additive only); `doctor` checks only the default branch and
     `baseBranch`, so a `ship --base` elsewhere is protected by `ship` but never
-    checked by `doctor` (review round 4). All stated in
+    checked by `doctor` (review round 4); a `baseBranch` missing on GitHub is
+    warned (`auto_merge_base_missing`, series 2 round 3). All stated in
     `docs/rules-and-limits.md`.
 - **`init` protects automatically** when the project is a GitHub repository,
   `gh` is authenticated with admin rights, and CI checks exist: it prints what
@@ -74,8 +75,12 @@ protection auto du projet dans lequel il est installé".
   for the base when it can (same conditions). Otherwise it opens the PR without
   auto-merge and says why ("GitHub would merge at once"). A base whose
   protection cannot be read is not called unprotected: "could not read
-  "<base>"'s protection (…), so auto-merge is not armed". `ship --dry-run` says
+  "<base>"'s protection (…), so auto-merge is not armed"; nor is a repository
+  `gh` cannot read: "`gh` cannot read this repository (…), so "<base>"'s
+  protection could not be checked" (series 2 round 3). `ship --dry-run` says
   the real run may first write a branch protection only when it would.
+- **`protect` writes only to a branch it was given**: `--branch` with no name
+  and a bare name (`protect develop`) are refused, exit 1 (series 2 round 3).
 - **`doctor`** warns when auto-merge is enabled (`autoMergeEpic`) and the base
   has no required checks (`auto_merge_ungated`; a ruleset without a required
   status checks rule names the rule to add), the plan has no branch
@@ -144,14 +149,14 @@ Held: changed tests keep/strengthen every assertion, nothing dropped; 11/17 muta
 
 ### Series 2 Round 3 — FAIL (the docs a user reads, against the code)
 
-- [ ] P1 bin/lib/protect.js:506 (ship.js:654) — `gh repo view` fails (HTTP 502) → ship prints "\"main\" has no required status checks, so GitHub would merge at once (…)" and "Next: run `gh auth login`", contradicting CHANGELOG.md:11 and README — fix: when `repoInfo.blocked`, `why: "<repo> could not be read (…)"`, no auth next step for a 5xx; fake-gh test asserting doesNotMatch /no required status checks/.
-- [ ] P1 (orchestrator, raised from P2: a write to a branch the user did not name) — `protect --branch` with no value and `protect develop` (bare name) silently target the default branch, and without `--dry-run` write to main — fix: refuse both with exit 1 and one line (`--branch needs a name`; `unexpected argument "develop" — did you mean --branch develop?`); tests.
-- [ ] P2 merge with develop conflicts (CHANGELOG.md, ship.js `todo` require from 26-07) — merge develop into the story branch keeping both sides.
-- [ ] P2 CHANGELOG says a non-GitHub remote prints "the next command"; no `Next:` is printed — align.
-- [ ] P2 docs "a recent PR ran no checks → exit 2": a branch already requiring every check exits 0 without reading PRs — say "when checks would be added".
-- [ ] P2 rules-and-limits `protectBranches` row says init and ship protect default + baseBranch; ship protects only the base it ships to; the limits row contradicts itself — fix the row.
-- [ ] P2 doctor silent when `baseBranch` is missing on GitHub — state as a limit (or warn).
-- [ ] P2 `ship --help` doesn't say `--auto-merge` may write a branch protection — add it.
+- [x] P1 bin/lib/protect.js:506 (ship.js:654) — `gh repo view` fails (HTTP 502) → ship prints "\"main\" has no required status checks, so GitHub would merge at once (…)" and "Next: run `gh auth login`", contradicting CHANGELOG.md:11 and README — fix: when `repoInfo.blocked`, `why: "<repo> could not be read (…)"`, no auth next step for a 5xx; fake-gh test asserting doesNotMatch /no required status checks/.
+- [x] P1 (orchestrator, raised from P2: a write to a branch the user did not name) — `protect --branch` with no value and `protect develop` (bare name) silently target the default branch, and without `--dry-run` write to main — fix: refuse both with exit 1 and one line (`--branch needs a name`; `unexpected argument "develop" — did you mean --branch develop?`); tests.
+- [x] P2 merge with develop conflicts (CHANGELOG.md, ship.js `todo` require from 26-07) — merge develop into the story branch keeping both sides.
+- [x] P2 CHANGELOG says a non-GitHub remote prints "the next command"; no `Next:` is printed — align.
+- [x] P2 docs "a recent PR ran no checks → exit 2": a branch already requiring every check exits 0 without reading PRs — say "when checks would be added".
+- [x] P2 rules-and-limits `protectBranches` row says init and ship protect default + baseBranch; ship protects only the base it ships to; the limits row contradicts itself — fix the row.
+- [x] P2 doctor silent when `baseBranch` is missing on GitHub — state as a limit (or warn).
+- [x] P2 `ship --help` doesn't say `--auto-merge` may write a branch protection — add it.
 
 Held: protect/init/ship help; `--branch=x`; protectBranches:false message; `ship --base develop` protects before arming; init on a non-GitHub remote silent; merged tree (both sides kept) 156/156, plugin check in sync.
 Series 2 round 4 is the last of the series.
@@ -231,11 +236,16 @@ PATH; nothing reaches GitHub.
    `protectBranches: false` in ship (review round 3) →
    `::ship --auto-merge with protectBranches false on an unprotected base writes nothing and does not arm auto-merge`;
    dry run names the protection write (review round 4) →
-   `::ship --dry-run --auto-merge says the real run may write a branch protection first, and sends nothing`
+   `::ship --dry-run --auto-merge says the real run may write a branch protection first, and sends nothing`;
+   a repository gh cannot read (series 2 round 3) →
+   `::ship --auto-merge when GitHub cannot read the repository does not call the base unprotected`;
+   only a named branch is written (series 2 round 3) →
+   `::protect refuses --branch with no name and a bare branch name, and sends nothing`
 6. doctor warns with the command → `test/protect.test.js::doctor warns with the command to run when autoMergeEpic is on and the base has no required checks`,
    `::doctor says nothing when GitHub cannot be read, or auto-merge is off`,
    `::doctor warns on a plan without branch protection`,
-   `::doctor says nothing when the base's protection cannot be read` (review round 3)
+   `::doctor says nothing when the base's protection cannot be read` (review round 3),
+   `::doctor warns when baseBranch does not exist on GitHub` (series 2 round 3)
 7. Real check on this repository → the `protect --dry-run` output under Result.
 - Out of scope held: `::a ruleset-governed branch is reported and left alone`,
   `::a non-GitHub remote: protect says GitHub only, init stays quiet`.

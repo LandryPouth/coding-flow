@@ -42,6 +42,7 @@ const USAGE = `  ai-flow init [--target claude|codex|gemini|opencode|antigravity
   ai-flow worktree autoland --epic <path> --story <path> [--json]
   ai-flow ship [--base ref] [--title text] [--draft] [--web] [--no-evidence] [--no-commit] [--all]
                [--auto-merge|--no-auto-merge] [--merge-method merge|squash|rebase] [--dry-run]
+               (--auto-merge on GitHub may first protect the base: its CI checks required, nothing weakened)
   ai-flow protect [--branch name]... [--dry-run] [--json]   (GitHub: require the CI checks on the default branch and the base)
   ai-flow hook install|uninstall|status [--dry-run] [--json]
   ai-flow commands [--json]
