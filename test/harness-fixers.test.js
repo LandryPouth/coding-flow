@@ -125,6 +125,81 @@ test('a tracked story file a fixer edits is listed, with an untracked file aroun
   assert.deepEqual(evidence.fixedFiles, ['epics/e/s/spec.md', 'src/a.js']);
 });
 
+// Story 19-10: the same race, made certain. Git trusts an index entry whose
+// size and mtime match, unless the file is as new as the index itself (the
+// "racily clean" case it re-reads). Here the story file, its index entry and
+// the index all carry one timestamp, and the fixer rewrites the file at the same
+// size and the same mtime — what happens for real when the commit and the
+// fixer land within one second. Git itself sees the change; so must the
+// snapshot, whatever second its throwaway copy of the index is taken in.
+test('a story file a fixer rewrites within the second of the commit is still listed', (t) => {
+  const T = 1700000000;
+  const ticker = node(
+    "const fs=require('fs');" +
+    "fs.writeFileSync('epics/e/s/spec.md','- [x] done\\n');" +
+    `fs.utimesSync('epics/e/s/spec.md',${T},${T})`,
+  );
+  const dir = project(t, { fix: [ticker], commands: [node('0')] }, { gitRepo: false });
+  const spec = path.join(dir, 'epics', 'e', 's', 'spec.md');
+  fs.mkdirSync(path.dirname(spec), { recursive: true });
+  fs.writeFileSync(spec, '- [ ] done\n');
+  fs.utimesSync(spec, T, T);
+  git(dir, ['init', '-q']);
+  // A rewrite changes the ctime; only the mtime race is under test here.
+  git(dir, ['config', 'core.trustctime', 'false']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  fs.utimesSync(path.join(dir, '.git', 'index'), T, T);
+  const evidence = JSON.parse(verify(dir).output);
+  assert.deepEqual(evidence.fixedFiles, ['epics/e/s/spec.md']);
+});
+
+// The proof's tree token takes the same throwaway index when new files are
+// around: a same-second, same-size edit after a verify must still make it move.
+test('the tree token moves on a same-size edit made within the second of the index', (t) => {
+  const { currentTreeToken } = require('../bin/lib/identity');
+  const T = 1700000000;
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-race-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'a.md');
+  fs.writeFileSync(file, '- [ ] done\n');
+  fs.utimesSync(file, T, T);
+  git(dir, ['init', '-q']);
+  git(dir, ['config', 'core.trustctime', 'false']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  fs.writeFileSync(path.join(dir, 'new.txt'), 'untracked\n');
+  fs.utimesSync(path.join(dir, '.git', 'index'), T, T);
+  const before = currentTreeToken(dir);
+  fs.writeFileSync(file, '- [x] done\n');
+  fs.utimesSync(file, T, T);
+  assert.notEqual(currentTreeToken(dir), before);
+});
+
+// A stat Date handed back to utimes rounds .9995 s and above up into the next
+// second: the copy would be later than the real index and the window reopens.
+test('the tree token moves when the index was written in the last half-millisecond of the second', (t) => {
+  const { currentTreeToken } = require('../bin/lib/identity');
+  const T = 1700000000;
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'coding-flow-race-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'a.md');
+  fs.writeFileSync(file, '- [ ] done\n');
+  fs.utimesSync(file, T, T);
+  git(dir, ['init', '-q']);
+  git(dir, ['config', 'core.trustctime', 'false']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'add', '-A']);
+  git(dir, ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+  fs.writeFileSync(path.join(dir, 'new.txt'), 'untracked\n');
+  fs.utimesSync(path.join(dir, '.git', 'index'), T + 0.9997, T + 0.9997);
+  const before = currentTreeToken(dir);
+  fs.writeFileSync(file, '- [x] done\n');
+  fs.utimesSync(file, T, T);
+  assert.notEqual(currentTreeToken(dir), before);
+  // Git itself sees the edit (read last: status refreshes the real index).
+  assert.match(git(dir, ['status', '--porcelain']), /a\.md/);
+});
+
 test('a path that starts with a space is listed whole', (t) => {
   const dir = project(t, { fix: [node("require('fs').writeFileSync(' lead.js','x')")], commands: [node('0')] });
   const evidence = JSON.parse(verify(dir).output);

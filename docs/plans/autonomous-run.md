@@ -275,3 +275,6 @@ Lane B (the run's own friction first): 18-02 proof survives the land →
 - 2026-11-25 — the flaky `harness-fixers` test was a real bug (index copy newer than
   the index, so git skipped its racy re-read): story 19-10, in review. land.sh: the
   slot wrapper's wait lines must not count toward the output it keeps.
+- 2026-11-25 — `worktree land` needs the story's directory on the base branch: a story
+  created inside its own branch (19-10, 29-05) cannot land until its story file is
+  copied to develop first. Tool gap — follow-up for epic 20 (the epic runs itself).
