@@ -490,3 +490,15 @@ Fixed (series 3 round 3 implementer): one `written` map for the line and every n
 Held: literal forms of every ticked criterion; ~20 rm spellings, glued flags, env/absolute path prefixes, continuations, heredocs, cp/mv/ln of the written file, GIT_CONFIG_*, -f config, psql clusters; 30 everyday commands unchanged vs develop; frozen side byte-identical; the test's Module._load/platform override restored in finally and its digest test fails on a mutated frozen copy.
 
 Note (orchestrator): 3 series, 10 rounds. The spec promises classes over an open input space ("a piece names a destructive verb"); each round finds a new spelling. This round's three fixes are rules, not spellings (shared `written` map, unquoted words read, expansions unchecked). If the next round finds another spelling of the same classes, the remaining claim is narrowed to the listed forms and the rest stated as limits (the open-promise rule of story 31-03), not chased.
+
+### Series 3 Round 3 — FAIL (cost and honesty of the new rules: false denials)
+
+- [ ] P1 destructive.js `interpreterView` ~975 — any expansion anywhere in double-quoted interpreter code is unchecked: `python3 -c "print('$HOME')"`, `python3 -c "print(\"$HOME\")"` (allowed on develop); docs show only `-c "$C"` — fix: unchecked only when the code is (or starts with) an expansion, contains a command substitution `$(…)`/backticks, or uses a variable assigned on the same line; a plain env var inside a literal stays read as today. State the remaining gap (a variable set by an earlier call) as a limit.
+- [ ] P1 destructive.js `readPsql` ~536 — `psql -c "SELECT * FROM users WHERE id = $ID"` unchecked (allowed on develop) — same narrowing.
+- [ ] P1 destructive.js `readWrittenRun` ~1188 — a glob in the run word is unchecked after ANY write on the line (`echo hi > out.txt && bash scripts/*.sh`, `mkdir -p out && echo ok > out/a && bash ./scripts/ci-*.sh`, `npm run build > build.log && bash "$DEPLOY_SCRIPT"`) — fix: match a glob against the `written` keys; an expansion stays unchecked only if a script-like file was written on the line.
+- [ ] P2 reason texts: add a reason for "an expansion the guard cannot see" instead of "reads as a destructive command" / "runs a file it wrote".
+- [ ] P2 pin the costs: allowed tests for each everyday case above.
+- [ ] P2 cosmetic: `psql -c $'DROP TABLE x'` prints `'$DROP TABLE x'`.
+
+Held: every new rule is pinned by a failing-on-removal test; 44/44; frozen side untouched; exec/timeout/nohup/sudo/bash --/-e/$(echo x.sh)/written x.py, `!sh -c`, `!$(printf …)`, `psql -c "$(printf …)"` all unchecked or refused; 78/86 everyday commands same as develop.
+Round 4 is the last of series 3.
