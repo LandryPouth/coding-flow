@@ -5,9 +5,11 @@
 // surface it (e.g. status), they don't block a repo that legitimately commits on
 // main. Same spirit as the ship guardrail.
 
+const path = require("path");
 const { execFileSync } = require("child_process");
 
 const { readConfig } = require("./config");
+const { remember } = require("./read-memo");
 
 function gitOut(cwd, args) {
   try {
@@ -22,7 +24,7 @@ function gitOut(cwd, args) {
 }
 
 function currentBranch(cwd) {
-  const branch = gitOut(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const branch = remember("branch", path.resolve(cwd), () => gitOut(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]));
   return branch && branch !== "HEAD" ? branch : null;
 }
 

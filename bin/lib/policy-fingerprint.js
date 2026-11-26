@@ -6,9 +6,11 @@
 // says "the policy changed", and `status` / `audit` report them differently.
 
 const crypto = require("crypto");
+const path = require("path");
 
 const { readConfig } = require("./config");
 const { readHarnessConfig, SHOWN_HARNESS_DEFAULTS } = require("./harness-config");
+const { remember } = require("./read-memo");
 const packageJson = require("../../package.json");
 
 // Key order and whitespace must not matter: serialise with sorted keys.
@@ -47,7 +49,12 @@ function withoutShownDefaults(harness) {
   return policy;
 }
 
+// Read once per checkout while a read-only report is built (read-memo.js).
 function policyFingerprint(root, version = packageJson.version) {
+  return remember("policyFingerprint", `${path.resolve(root)}\0${version}`, () => computePolicyFingerprint(root, version));
+}
+
+function computePolicyFingerprint(root, version) {
   const config = readConfig(root);
   const policy = {
     harness: withoutShownDefaults(readHarnessConfig(root).config),

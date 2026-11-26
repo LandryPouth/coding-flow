@@ -35,6 +35,7 @@ const { defaultOf } = require("./rules-registry");
 const { defaultBranch, currentBranch } = require("./policy");
 const { resolveDiffBase } = require("./diff-base");
 const { collectNeedsYou } = require("./todo");
+const { withReadMemo } = require("./read-memo");
 
 const TIER_LABELS = {
   1: "blocked",
@@ -156,7 +157,12 @@ function recoveryItems(model) {
   return items;
 }
 
+// Read-only: shares one memo with the status model it builds (story 34-02).
 function buildQueue() {
+  return withReadMemo(readQueue);
+}
+
+function readQueue() {
   const config = readConfig(cwd);
   const model = buildStatusModel(config);
   // Proof is read where the story's work is: a story with a linked worktree
@@ -176,74 +182,80 @@ function buildQueue() {
 
   for (const epic of model.epics) {
     for (const story of epic.stories) {
-      const claimsDone = story.status === "done" || story.status === "verified";
-      const proof = proofOf(story);
-
-      if (story.status === "blocked") {
-        items.push({
-          tier: 1,
-          epic: epic.name,
-          story: story.name,
-          message: `"${story.name}" is blocked`,
-          command: null,
-        });
-      } else if (claimsDone && proof !== "green") {
-        items.push({
-          tier: 3,
-          epic: epic.name,
-          story: story.name,
-          message:
-            proof === "red"
-              ? `"${story.name}" is marked ${story.status} but its last captured verify failed`
-              : proof === "stale"
-                ? `"${story.name}" is marked ${story.status} but the code moved since its last green verify`
-                : `"${story.name}" is marked ${story.status} but has no captured verify — a written status is not proof`,
-          command: there(story, `ai-flow verify --story ${story.path}`),
-        });
-      } else if (story.status === "stale") {
-        items.push({
-          tier: 4,
-          epic: epic.name,
-          story: story.name,
-          message: `"${story.name}" verify is stale — the code moved since the last green run`,
-          command: there(story, `ai-flow verify --story ${story.path}`),
-        });
-      } else if (claimsDone) {
-        const location = storyLocation(story);
-        const reviewGap = location ? strictReviewGap(location, story) : null;
-
-        if (reviewGap) {
-          items.push({
-            tier: 5,
-            epic: epic.name,
-            story: story.name,
-            message: `"${story.name}" is STRICT-tier and ${reviewGap} — run /flow-review before landing/shipping`,
-            command: null,
-          });
-        } else if (hasUnshippedWork(location, base, story.path)) {
-          const here = location === cwd;
-          items.push({
-            tier: 6,
-            epic: epic.name,
-            story: story.name,
-            message: `"${story.name}" is proven and has unshipped work`,
-            command: here ? "ai-flow ship" : `cd ${story.worktree} && ai-flow ship`,
-          });
-        }
-      } else if (story.status === "planned" && !story.worktree) {
-        items.push({
-          tier: 7,
-          epic: epic.name,
-          story: story.name,
-          message: `"${story.name}" is planned and has no worktree yet`,
-          command: `ai-flow worktree place --epic ${epic.path} --story ${story.path}`,
-        });
-      }
+      const item = storyItem(epic, story, { proof: proofOf(story), there, base });
+      if (item) items.push(item);
     }
   }
 
   items.sort((a, b) => a.tier - b.tier);
   return items;
+}
+
+// The one queue item a story earns, if any — the tiers in order of precedence.
+function storyItem(epic, story, { proof, there, base }) {
+  const claimsDone = story.status === "done" || story.status === "verified";
+
+  if (story.status === "blocked") {
+    return {
+      tier: 1,
+      epic: epic.name,
+      story: story.name,
+      message: `"${story.name}" is blocked`,
+      command: null,
+    };
+  } else if (claimsDone && proof !== "green") {
+    return {
+      tier: 3,
+      epic: epic.name,
+      story: story.name,
+      message:
+        proof === "red"
+          ? `"${story.name}" is marked ${story.status} but its last captured verify failed`
+          : proof === "stale"
+            ? `"${story.name}" is marked ${story.status} but the code moved since its last green verify`
+            : `"${story.name}" is marked ${story.status} but has no captured verify — a written status is not proof`,
+      command: there(story, `ai-flow verify --story ${story.path}`),
+    };
+  } else if (story.status === "stale") {
+    return {
+      tier: 4,
+      epic: epic.name,
+      story: story.name,
+      message: `"${story.name}" verify is stale — the code moved since the last green run`,
+      command: there(story, `ai-flow verify --story ${story.path}`),
+    };
+  } else if (claimsDone) {
+    const location = storyLocation(story);
+    const reviewGap = location ? strictReviewGap(location, story) : null;
+
+    if (reviewGap) {
+      return {
+        tier: 5,
+        epic: epic.name,
+        story: story.name,
+        message: `"${story.name}" is STRICT-tier and ${reviewGap} — run /flow-review before landing/shipping`,
+        command: null,
+      };
+    } else if (hasUnshippedWork(location, base, story.path)) {
+      const here = location === cwd;
+      return {
+        tier: 6,
+        epic: epic.name,
+        story: story.name,
+        message: `"${story.name}" is proven and has unshipped work`,
+        command: here ? "ai-flow ship" : `cd ${story.worktree} && ai-flow ship`,
+      };
+    }
+  } else if (story.status === "planned" && !story.worktree) {
+    return {
+      tier: 7,
+      epic: epic.name,
+      story: story.name,
+      message: `"${story.name}" is planned and has no worktree yet`,
+      command: `ai-flow worktree place --epic ${epic.path} --story ${story.path}`,
+    };
+  }
+  return null;
 }
 
 function printItem(item, index) {
@@ -299,8 +311,8 @@ function printNeedsYouLines(entries) {
 }
 
 function next({ all = false, json = false } = {}) {
-  const items = buildQueue();
-  const needsYou = collectNeedsYou(cwd);
+  // One memo for both reads: the to-do scan lists the same epics again.
+  const { items, needsYou } = withReadMemo(() => ({ items: buildQueue(), needsYou: collectNeedsYou(cwd) }));
 
   if (json) {
     log(JSON.stringify({ items: all ? items : items.slice(0, 1), needsYou }, null, 2));

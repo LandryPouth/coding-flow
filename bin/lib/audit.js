@@ -17,6 +17,7 @@ const { currentTreeToken } = require("./identity");
 const { policyFingerprint, policyChanged } = require("./policy-fingerprint");
 const { coverageTier } = require("./coverage");
 const { isArchived } = require("./epic-index");
+const { remember } = require("./read-memo");
 
 function runsDir(root) {
   return path.join(root, ".coding-flow", "runs");
@@ -362,6 +363,10 @@ function gate(entries, { currentToken = null, currentPolicy = null } = {}) {
 // file-path `--story` (e.g. `.../spec.md`) down to its directory so the key
 // matches the story dir that `status`/`listEpics` iterate. Read-only.
 function latestVerifyByStoryDir(root) {
+  return remember("verifyByStoryDir", path.resolve(root), () => readLatestVerifyByStoryDir(root));
+}
+
+function readLatestVerifyByStoryDir(root) {
   const byDir = new Map(); // dirPath -> { ok, generatedAt }
 
   for (const entry of collectAll(root)) {
@@ -398,6 +403,10 @@ function latestVerifyByStoryDir(root) {
 // `latestVerifyByStoryDir`'s callers key on, so no `.md`-suffix normalization
 // is needed here the way the verify reader needs it.
 function latestReviewByStoryDir(root) {
+  return remember("reviewByStoryDir", path.resolve(root), () => readLatestReviewByStoryDir(root));
+}
+
+function readLatestReviewByStoryDir(root) {
   const byDir = new Map();
 
   for (const [story, history] of reviewHistoryByStoryDir(root)) {

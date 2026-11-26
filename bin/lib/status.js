@@ -28,6 +28,7 @@ const {
 } = require("./harness");
 const { collectRecovery } = require("./recover");
 const { epicNumbers } = require("./epic-numbers");
+const { withReadMemo } = require("./read-memo");
 
 // Indexes the worktrees by branch name. The worktree<->story mapping is
 // stateless: `worktree add --story` names the branch after the story directory,
@@ -245,87 +246,29 @@ function looseWorktreeList(entries, mappedBranches) {
 // The read model behind `status` — epics/stories enriched with their linked
 // worktree, loose worktrees, and the branch policy. Extracted so other reporting
 // commands (`next`) can read the exact same state without re-deriving it.
+// Read-only: the checkout's facts (tree token, run files) are read once, not
+// once per story (story 34-02, read-memo.js).
 function buildStatusModel(config) {
+  return withReadMemo(() => readStatusModel(config));
+}
+
+function readStatusModel(config) {
   const storage = getStorage(cwd, config);
   const wt = buildWorktreeIndex();
   const mappedBranches = new Set();
-  // Shared across every story in this one model build — see `diffRiskForRoot`.
-  const diffRiskCache = new Map();
-  // One scan of the run files per worktree root, not one per story.
-  const scopeByRoot = new Map();
-  const verifyByRoot = new Map();
+  const shared = {
+    wt,
+    mappedBranches,
+    // Shared across every story in this one model build — see `diffRiskForRoot`.
+    diffRiskCache: new Map(),
+    // One scan of the run files per worktree root, not one per story.
+    scopeByRoot: new Map(),
+    verifyByRoot: new Map(),
+  };
 
   const epics = storage.listEpics().map((epic) => ({
     ...epic,
-    stories: epic.stories.map((listed) => {
-      const wtEntry = wt.byBranch.get(listed.name) || null;
-      const inWorktree = wtEntry && !samePath(wtEntry.fullPath, cwd) ? statusInWorktree(config, wtEntry.fullPath, listed, verifyByRoot) : null;
-      const story = inWorktree && inWorktree !== listed.status ? { ...listed, status: inWorktree, statusFrom: "worktree" } : listed;
-
-      if (wtEntry) {
-        mappedBranches.add(story.name);
-      }
-
-      const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
-      const storyRoot = wtEntry ? wtEntry.fullPath : cwd;
-      const reviewEntry = latestReviewByStoryDir(storyRoot).get(story.path);
-      if (!scopeByRoot.has(storyRoot)) {
-        scopeByRoot.set(storyRoot, latestVerifyScopeByStoryDir(storyRoot));
-      }
-      const proof = scopeByRoot.get(storyRoot).get(story.path);
-      // Only a scope other than "story" is worth a word: it is the one that
-      // makes a coverage verdict mean something different.
-      const scope = proof && proof.scope && proof.scope !== "story" ? proof.scope : null;
-      // Only computed for a story claiming to be finished — the same subset
-      // `chainIsFinished`/`next`'s tier-4 check actually gate on; a
-      // planned/in-progress/blocked story can't be landed regardless, so
-      // there is nothing for this field to usefully say yet.
-      // Why a green proof went stale: the rules moved ("policy changed") or the code did.
-      let staleWhy = null;
-      if (story.status === "stale") {
-        if (!verifyByRoot.has(storyRoot)) {
-          verifyByRoot.set(storyRoot, latestVerifyByStoryDir(storyRoot));
-        }
-        staleWhy = staleReason(
-          verifyByRoot.get(storyRoot).get(story.path) || {},
-          currentTreeToken(storyRoot),
-          policyFingerprint(storyRoot),
-        );
-      }
-      const claimsDone = story.status === "done" || story.status === "verified";
-      // A written `done` stays the author's word, but status must not repeat it
-      // silently over a proof that says otherwise.
-      let contradicted = null;
-      if (story.status === "done") {
-        if (!verifyByRoot.has(storyRoot)) {
-          verifyByRoot.set(storyRoot, latestVerifyByStoryDir(storyRoot));
-        }
-        const entry = verifyByRoot.get(storyRoot).get(story.path);
-        if (entry && !entry.ok) {
-          contradicted = "written; last verify failed";
-        } else if (entry && isStale(entry, currentTreeToken(storyRoot), policyFingerprint(storyRoot))) {
-          contradicted = "written; proof is stale";
-        } else if (!entry) {
-          contradicted = "written; no verify captured";
-        }
-      }
-      const reviewRequired = claimsDone ? computeReviewRequired(storyRoot, story, diffRiskCache) : undefined;
-      const review = computeReviewStatus(storyRoot, story.path, { strict: reviewRequired === true });
-
-      return {
-        ...story,
-        worktree: wtEntry ? wtEntry.path : null,
-        ...(wtEntry ? { landReady } : {}),
-        review,
-        ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
-        ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
-        ...(staleWhy ? { staleReason: staleWhy } : {}),
-        ...(contradicted ? { contradicted } : {}),
-        ...(review !== "none" && reviewEntry ? reviewFields(reviewEntry) : {}),
-        ...(scope ? { scope, coverage: proof.tier } : {}),
-        ...(claimsDone ? { reviewRequired } : {}),
-      };
-    }),
+    stories: epic.stories.map((listed) => storyModel(config, listed, shared)),
   }));
 
   const looseWorktrees = looseWorktreeList(wt.entries, mappedBranches);
@@ -335,6 +278,81 @@ function buildStatusModel(config) {
   const recovery = collectRecovery(cwd);
 
   return { epics, looseWorktrees, worktreesActive: wt.isRepo, policy, untrackedPlans, recovery };
+}
+
+// One story of the status model: its listed state enriched with its worktree,
+// proof, review and land readiness.
+function storyModel(config, listed, { wt, mappedBranches, diffRiskCache, scopeByRoot, verifyByRoot }) {
+  const wtEntry = wt.byBranch.get(listed.name) || null;
+  const inWorktree = wtEntry && !samePath(wtEntry.fullPath, cwd) ? statusInWorktree(config, wtEntry.fullPath, listed, verifyByRoot) : null;
+  const story = inWorktree && inWorktree !== listed.status ? { ...listed, status: inWorktree, statusFrom: "worktree" } : listed;
+
+  if (wtEntry) {
+    mappedBranches.add(story.name);
+  }
+
+  const landReady = wtEntry ? computeLandReady(wtEntry.fullPath, story.path) : undefined;
+  const storyRoot = wtEntry ? wtEntry.fullPath : cwd;
+  const reviewEntry = latestReviewByStoryDir(storyRoot).get(story.path);
+  if (!scopeByRoot.has(storyRoot)) {
+    scopeByRoot.set(storyRoot, latestVerifyScopeByStoryDir(storyRoot));
+  }
+  const proof = scopeByRoot.get(storyRoot).get(story.path);
+  // Only a scope other than "story" is worth a word: it is the one that
+  // makes a coverage verdict mean something different.
+  const scope = proof && proof.scope && proof.scope !== "story" ? proof.scope : null;
+  const { staleWhy, contradicted } = proofVerdicts(story, storyRoot, verifyByRoot);
+  // Only computed for a story claiming to be finished — the same subset
+  // `chainIsFinished`/`next`'s tier-4 check actually gate on; a
+  // planned/in-progress/blocked story can't be landed regardless, so
+  // there is nothing for this field to usefully say yet.
+  const claimsDone = story.status === "done" || story.status === "verified";
+  const reviewRequired = claimsDone ? computeReviewRequired(storyRoot, story, diffRiskCache) : undefined;
+  const review = computeReviewStatus(storyRoot, story.path, { strict: reviewRequired === true });
+
+  return {
+    ...story,
+    worktree: wtEntry ? wtEntry.path : null,
+    ...(wtEntry ? { landReady } : {}),
+    review,
+    ...(proof && proof.tier ? { coverageTier: proof.tier } : {}),
+    ...(proof && proof.warnings && !(proof.treeToken && proof.treeToken !== currentTreeToken(storyRoot)) ? { warnings: proof.warnings } : {}),
+    ...(staleWhy ? { staleReason: staleWhy } : {}),
+    ...(contradicted ? { contradicted } : {}),
+    ...(review !== "none" && reviewEntry ? reviewFields(reviewEntry) : {}),
+    ...(scope ? { scope, coverage: proof.tier } : {}),
+    ...(claimsDone ? { reviewRequired } : {}),
+  };
+}
+
+// What the proof says against the written status: why a green proof went
+// stale, and whether a written `done` is contradicted by it.
+function proofVerdicts(story, storyRoot, verifyByRoot) {
+  const verifyOf = () => {
+    if (!verifyByRoot.has(storyRoot)) {
+      verifyByRoot.set(storyRoot, latestVerifyByStoryDir(storyRoot));
+    }
+    return verifyByRoot.get(storyRoot);
+  };
+  // Why a green proof went stale: the rules moved ("policy changed") or the code did.
+  let staleWhy = null;
+  if (story.status === "stale") {
+    staleWhy = staleReason(verifyOf().get(story.path) || {}, currentTreeToken(storyRoot), policyFingerprint(storyRoot));
+  }
+  // A written `done` stays the author's word, but status must not repeat it
+  // silently over a proof that says otherwise.
+  let contradicted = null;
+  if (story.status === "done") {
+    const entry = verifyOf().get(story.path);
+    if (entry && !entry.ok) {
+      contradicted = "written; last verify failed";
+    } else if (entry && isStale(entry, currentTreeToken(storyRoot), policyFingerprint(storyRoot))) {
+      contradicted = "written; proof is stale";
+    } else if (!entry) {
+      contradicted = "written; no verify captured";
+    }
+  }
+  return { staleWhy, contradicted };
 }
 
 // The order states are listed in, so a dossier reads the same way twice.
