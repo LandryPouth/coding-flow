@@ -100,7 +100,7 @@ the proof-derived state comes from `ai-flow status`.
 - 26-04 · The epic closes itself · —
 - 26-05 · A run is watched live · —
 - 26-06 · The rules are printed with their source · done
-- 26-07 · We need you · —
+- 26-07 · We need you · done
 - 26-08 · Init shows the rules it applies · done
 - 26-09 · A moved folder is checked too · planned
 
@@ -125,6 +125,7 @@ the proof-derived state comes from `ai-flow status`.
 - 29-02 · A changed test runs, and a removed test is declared · planned
 - 29-03 · Destructive commands wait for the human · done
 - 29-04 · Commands built to evade the guard · planned
+- 29-05 · The guard holds on Windows · done
 - 29-08 · Auto-merge waits for the checks · in-progress
 - 29-09 · Each story ships itself · planned
 
@@ -155,6 +156,15 @@ the proof-derived state comes from `ai-flow status`.
 
 - 33-01 · The evidence has a type · planned
 - 33-02 · The guard and verify are typed · planned
+
+### Epic 34 — What waits for you reads at a glance (`epics/epic-34-what-waits-for-you-reads-at-a-glance/`)
+
+- 34-01 · The to-do list reads at a glance · in-progress
+- 34-02 · `next` answers in seconds · in-progress
+
+### Epic 35 — The tools already there (`epics/epic-35-the-tools-already-there/`)
+
+- 35-01 · Worktrees show in Herdr · in-progress
 
 <!-- coding-flow:index:end -->
 

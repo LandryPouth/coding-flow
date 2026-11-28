@@ -33,6 +33,7 @@ const { commandTimeoutDefault } = require("./validation-run");
 // for `worktreeAdd`. See placement-store.js's own header.
 const { parseBackbone, labelForDir } = require("./backbone");
 const { clearChainPlacement, gitCommonDir, withFileLock } = require("./placement-store");
+const { herdrOpenWorktree, herdrCloseWorktree } = require("./herdr");
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -294,6 +295,7 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
   }
 
   applyDeps(strategy, { pm, root, dest, hasNodeModules, quiet });
+  showInHerdr(root, dest, quiet);
 
   if (!quiet) {
     log("");
@@ -305,6 +307,12 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
   }
 
   return { path: dest, branch: name, root, branchCreated: !branchExists };
+}
+
+// Inside Herdr, the new worktree shows in its sidebar (herdr.js). Silent elsewhere.
+function showInHerdr(root, dest, quiet) {
+  const workspace = herdrOpenWorktree({ root, dest });
+  if (workspace && !quiet) log(`  herdr: opened as workspace ${workspace}`);
 }
 
 function describeStrategy(strategy, pm, hasNodeModules) {
@@ -406,6 +414,19 @@ function removeManagedLinks(wtPath) {
   }
 }
 
+// Before a worktree goes: our symlinks out, and its Herdr workspace closed
+// (optional, see herdr.js). The Herdr line is on stderr: `autoland --json`
+// keeps stdout for its JSON.
+function releaseWorktree(root, wtPath) {
+  removeManagedLinks(wtPath);
+  const outcome = herdrCloseWorktree({ root, dest: wtPath });
+  if (!outcome) return;
+  const line = outcome.closed
+    ? `herdr: closed workspace ${outcome.closed}`
+    : `herdr: workspace ${outcome.kept} left open (${outcome.reason})`;
+  process.stderr.write(`  ${line}\n`);
+}
+
 function worktreeRemove(name, { force, dryRun, cwd }) {
   assertName(name);
   const root = requireRepo(cwd);
@@ -442,7 +463,7 @@ function worktreeRemove(name, { force, dryRun, cwd }) {
 
   // We remove our symlinks first, otherwise git worktree remove may refuse
   // because of untracked files when those paths are not gitignored.
-  removeManagedLinks(match.path);
+  releaseWorktree(root, match.path);
 
   const removeArgs = ["worktree", "remove"];
   if (force) removeArgs.push("--force");
@@ -616,7 +637,7 @@ function conflictingFiles(wtPath) {
 // same chain would recommend a location that no longer exists.
 function landCleanup(root, match, branch, found) {
   worktreeUnlock({ cwd: match.path, force: true });
-  removeManagedLinks(match.path);
+  releaseWorktree(root, match.path);
 
   // `allowFail` + `throw`, not the default `git()` path: `landCleanup` always
   // runs inside `worktreeLand`'s `withFileLock` callback (both call sites
