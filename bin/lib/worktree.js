@@ -33,6 +33,7 @@ const { commandTimeoutDefault } = require("./validation-run");
 // for `worktreeAdd`. See placement-store.js's own header.
 const { parseBackbone, labelForDir } = require("./backbone");
 const { clearChainPlacement, gitCommonDir, withFileLock } = require("./placement-store");
+const { herdrOpenWorktree, herdrCloseWorktree } = require("./herdr");
 
 function log(message) {
   process.stdout.write(`${message}\n`);
@@ -295,6 +296,10 @@ function worktreeAdd(name, { from, deps, dryRun, cwd, story, quiet }) {
 
   applyDeps(strategy, { pm, root, dest, hasNodeModules, quiet });
 
+  // Inside Herdr, the new worktree shows in its sidebar. Silent no-op elsewhere.
+  const herdrWorkspace = herdrOpenWorktree({ root, dest });
+  if (herdrWorkspace && !quiet) log(`  herdr: opened as workspace ${herdrWorkspace}`);
+
   if (!quiet) {
     log("");
     log("Next step:");
@@ -406,6 +411,16 @@ function removeManagedLinks(wtPath) {
   }
 }
 
+// Herdr (optional, see herdr.js): the workspace of a worktree about to go.
+// On stderr: `autoland --json` keeps stdout for its JSON.
+function sayHerdrClose(outcome) {
+  if (!outcome) return;
+  const line = outcome.closed
+    ? `herdr: closed workspace ${outcome.closed}`
+    : `herdr: workspace ${outcome.kept} left open (${outcome.reason})`;
+  process.stderr.write(`  ${line}\n`);
+}
+
 function worktreeRemove(name, { force, dryRun, cwd }) {
   assertName(name);
   const root = requireRepo(cwd);
@@ -443,6 +458,7 @@ function worktreeRemove(name, { force, dryRun, cwd }) {
   // We remove our symlinks first, otherwise git worktree remove may refuse
   // because of untracked files when those paths are not gitignored.
   removeManagedLinks(match.path);
+  sayHerdrClose(herdrCloseWorktree({ root, dest: match.path }));
 
   const removeArgs = ["worktree", "remove"];
   if (force) removeArgs.push("--force");
@@ -638,6 +654,8 @@ function landCleanup(root, match, branch, found) {
   } catch {
     // the cwd is already gone: nothing holds the directory
   }
+
+  sayHerdrClose(herdrCloseWorktree({ root, dest: match.path }));
 
   let remove = git(root, ["worktree", "remove", match.path], { allowFail: true });
 

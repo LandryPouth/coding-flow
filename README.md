@@ -310,6 +310,8 @@ ai-flow worktree remove feat/payments     # removes the worktree, keeps the bran
 
 Worktrees are placed as **siblings** (`../<repo>-worktrees/<name>`), not inside the repo, so tools like `tsc`/eslint/jest and `git clean -fdx` can't reach them. With `--story`, the worktree↔story mapping is stateless (resolved by branch name). Worktree concepts and trade-offs: [`docs/git-worktree-bare.md`](docs/git-worktree-bare.md).
 
+**Inside [Herdr](https://herdr.dev)** (`HERDR_ENV=1`), `worktree add` and `place` also open the new worktree in Herdr's sidebar (`herdr worktree open --no-focus`, labelled with its story number), and `remove` / `land` close that workspace first — unless an agent runs in it or the command runs from it. Herdr is never required: outside it, without the `herdr` binary, or with `AI_FLOW_HERDR=0`, nothing changes, and a Herdr call that fails is ignored.
+
 **One PR per feature** — from a worktree or any feature branch, `ship` commits any
 dirty tree (behind the same secret scan as `harness check --quick`), pushes, and
 opens **one** idempotent PR against the base (via `gh` if available):

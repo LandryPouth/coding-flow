@@ -42,6 +42,13 @@ for (const name of ["OPENCODE", "OPENCODE_PID"]) {
 
 process.env.CLAUDECODE = "1";
 
+// Run from a Herdr pane, `worktree add` would open every fixture worktree in the
+// developer's real Herdr sidebar (herdr.js). The suite never talks to a real
+// Herdr; herdr.test.js hands its fake one an explicit env.
+for (const name of Object.keys(process.env)) {
+  if (name.startsWith("HERDR_")) delete process.env[name];
+}
+
 // OpenCode's install for every project lives in $XDG_CONFIG_HOME/opencode (or
 // ~/.config/opencode). `doctor` reads it, and the suite must not depend on — or
 // ever write to — the developer's real one. An empty directory nobody creates;
