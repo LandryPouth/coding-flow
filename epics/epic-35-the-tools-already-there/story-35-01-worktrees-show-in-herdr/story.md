@@ -23,19 +23,19 @@ Coding Flow depending on Herdr.
 
 ## Acceptance Criteria
 
-- [ ] Given `HERDR_ENV=1` and a `herdr` binary, when `ai-flow worktree add`
+- [x] Given `HERDR_ENV=1` and a `herdr` binary, when `ai-flow worktree add`
       creates a worktree, then `herdr worktree open --cwd <repo> --path <worktree>
       --label <story-NN-NN or name> --no-focus` is called and the workspace id is
       printed.
-- [ ] Given a worktree open in Herdr, when `ai-flow worktree remove` (or `land`)
+- [x] Given a worktree open in Herdr, when `ai-flow worktree remove` (or `land`)
       removes it, then its workspace is closed before the directory goes.
-- [ ] Given that workspace runs an agent, or the command runs from it, when the
+- [x] Given that workspace runs an agent, or the command runs from it, when the
       worktree is removed, then the workspace is left open and the reason printed
       on stderr.
-- [ ] Given no `HERDR_ENV=1`, `AI_FLOW_HERDR=0`, a missing binary, a failing or
+- [x] Given no `HERDR_ENV=1`, `AI_FLOW_HERDR=0`, a missing binary, a failing or
       garbled `herdr`, when any worktree command runs, then herdr is not called
       or its failure is ignored, and the command behaves as before.
-- [ ] Given `npm test` runs from a Herdr pane, when fixtures create worktrees,
+- [x] Given `npm test` runs from a Herdr pane, when fixtures create worktrees,
       then no real Herdr is reached (`HERDR_*` stripped by the test env guard).
 
 ## Commands
